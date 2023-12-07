@@ -61,7 +61,6 @@ mvn_verify() {
         # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
-            # echo "Skip build only version $version."
         fi
     done
 
@@ -236,7 +235,7 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
+PREMERGE_PROFILES="-Ppre-merge"
 
 # If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
 # Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.

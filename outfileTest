@@ -1,0 +1,2119 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] RAPIDS Accelerator for Apache Spark Root Project                   [pom]
+[INFO] rapids-4-spark-jdk-profiles_2.12                                   [pom]
+[INFO] rapids-4-spark-shim-deps-parent_2.12                               [pom]
+[INFO] rapids-4-spark-sql-plugin-api_2.12                                 [jar]
+[INFO] RAPIDS Accelerator for Apache Spark SQL Plugin                     [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin                 [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin               [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Delta Lake Stub                [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Aggregator                     [jar]
+[INFO] Data Generator                                                     [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Distribution                   [jar]
+[INFO] rapids-4-spark-integration-tests_2.12                              [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Tests                          [jar]
+[INFO] rapids-4-spark-api-validation_2.12                                 [jar]
+[INFO] 
+[INFO] ---------------< com.nvidia:rapids-4-spark-parent_2.12 >----------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Root Project 24.02.0-SNAPSHOT [1/14]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-parent_2.12 ---
+[INFO] Deleting /home/yanxuanl/NVProjects/spark-rapids/target/spark311
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (clean-all-modules) @ rapids-4-spark-parent_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Cleaning build directories of all modules /home/yanxuanl/NVProjects/spark-rapids/aggregator/target /home/yanxuanl/NVProjects/spark-rapids/datagen/target /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target /home/yanxuanl/NVProjects/spark-rapids/dist/target /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target /home/yanxuanl/NVProjects/spark-rapids/target /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-parent_2.12 ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-parent_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-parent_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-parent_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-parent_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-parent_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-parent_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-parent_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-parent_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-parent_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-parent_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-parent_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-parent_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-parent_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-parent_2.12 ---
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-parent_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Parsing exclusions from /home/yanxuanl/NVProjects/spark-rapids/.gitignore
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 105 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 295 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 2, unknown: 2, generated: 0, approved: 261 licenses.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (scalastyle-all-modules) @ rapids-4-spark-parent_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Checking scalastyle for all modules using following paths:
+[WARNING]      [echo]                                     /home/yanxuanl/NVProjects/spark-rapids/.download/spark-3.1.1-bin-hadoop3.2/examples/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/api_validation/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/common/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-20x/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-21x/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-22x/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-23x/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-24x/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-spark321db/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-spark330db/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-spark332db/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-spark341db/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/integration_tests/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/main/scala /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/spark311/scala /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/spark320/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/common/src/main/databricks/scala /home/yanxuanl/NVProjects/spark-rapids/delta-lake/common/src/main/delta-io/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/321db/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark311/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark312/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark313/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark320/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark321/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark321cdh/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark321db/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark322/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark323/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark324/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark330/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark330cdh/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark330db/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark331/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark332/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark332cdh/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark332db/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark333/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark340/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark341/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark341db/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/spark350/scala /home/yanxuanl/NVProjects/spark-rapids/integration_tests/src/test/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/scala /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/test/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark311/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark312/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark313/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark320/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark321/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark321cdh/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark322/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark323/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark324/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark330/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark330cdh/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark331/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark332/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark332cdh/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark333/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark340/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark341/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/spark350/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/spark311/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/spark320/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/spark321/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/spark330/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/spark340/scala /home/yanxuanl/NVProjects/spark-rapids/tests/src/test/spark341db/scala /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala-2.12 /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/main/scala-2.12
+Processed 1292 file(s)
+Found 0 errors
+Found 0 warnings
+Finished in 8575 ms
+[INFO] Executed tasks
+[INFO] 
+[INFO] ------------< com.nvidia:rapids-4-spark-jdk-profiles_2.12 >-------------
+[INFO] Building rapids-4-spark-jdk-profiles_2.12 24.02.0-SNAPSHOT        [2/14]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/jdk-profiles'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/jdk-profiles' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/jdk-profiles'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/jdk-profiles' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/jdk-profiles
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/jdk-profiles/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-jdk-profiles_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 1 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 1 licenses.
+[INFO] 
+[INFO] ----------< com.nvidia:rapids-4-spark-shim-deps-parent_2.12 >-----------
+[INFO] Building rapids-4-spark-shim-deps-parent_2.12 24.02.0-SNAPSHOT    [3/14]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/shim-deps'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/shim-deps' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/shim-deps'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/shim-deps' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/shim-deps
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shim-deps/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-shim-deps-parent_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 3 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 3 licenses.
+[INFO] 
+[INFO] -----------< com.nvidia:rapids-4-spark-sql-plugin-api_2.12 >------------
+[INFO] Building rapids-4-spark-sql-plugin-api_2.12 24.02.0-SNAPSHOT      [4/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Add Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/main/scala
+[INFO] Add Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/test/scala
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/main/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/main/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:compile (scala-compile-first) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiler bridge file is not installed yet
+/tmp/scala-maven-plugin-compiler-bridge-sources1675418583770199740/xsbt/DelegatingReporter.scala:171: warning: match may not be exhaustive.
+It would fail on the following inputs: ERROR, INFO, WARNING
+    sev match {
+    ^
+warning: one deprecation
+warning: three deprecations (since 2.12.0)
+warning: one deprecation (since 2.12.13)
+warning: two deprecations (since 2.12.9)
+warning: 7 deprecations in total; re-run with -deprecation for details
+warning: three feature warnings; re-run with -feature for details
+7 warnings found
+[INFO] Compiler bridge installed
+[INFO] Compiling 12 Scala sources and 2 Java sources to /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/classes ...
+[INFO] Done compiling.
+[INFO] compile in 10.4 s
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/test/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/test/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:testCompile (scala-test-compile-first) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] compile in 0.0 s
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/rapids-4-spark-sql-plugin-api_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/rapids-4-spark-sql-plugin-api_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Skipping packaging of the test-jar
+[INFO] 
+[INFO] >>> scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) > generate-resources @ rapids-4-spark-sql-plugin-api_2.12 >>>
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+[WARNING]      [echo] Delete /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+[WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] 
+[INFO] <<< scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) < generate-resources @ rapids-4-spark-sql-plugin-api_2.12 <<<
+[INFO] 
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) @ rapids-4-spark-sql-plugin-api_2.12 ---
+model contains 36 documentable templates
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark311/rapids-4-spark-sql-plugin-api_2.12-24.02.0-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-sql-plugin-api_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 15 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 15 licenses.
+[INFO] 
+[INFO] -----------------< com.nvidia:rapids-4-spark-sql_2.12 >-----------------
+[INFO] Building RAPIDS Accelerator for Apache Spark SQL Plugin 24.02.0-SNAPSHOT [5/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-sql_2.12 ---
+[INFO] Add Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala
+[INFO] Add Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/scala
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-sql_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-sql_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-sql_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-shim-service) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Recreating shim service file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/classes/META-INF/services
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-license-notice-resources) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 0 resource
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/resources
+[INFO] Copying 2 resources to META-INF
+[INFO] Copying 4 resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:compile (scala-compile-first) @ rapids-4-spark-sql_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 395 Scala sources and 58 Java sources to /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/classes ...
+[INFO] Done compiling.
+[INFO] compile in 41.6 s
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (copy-notice) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 2 resources
+[INFO] Copying 2 resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:testCompile (scala-test-compile-first) @ rapids-4-spark-sql_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 8 Scala sources to /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/test-classes ...
+[INFO] Done compiling.
+[INFO] compile in 7.8 s
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-sql_2.12 ---
+[INFO] Surefire report directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/surefire-reports
+
+-------------------------------------------------------
+ T E S T S
+-------------------------------------------------------
+Running com.nvidia.spark.rapids.ThreadFactoryBuilderTest
+Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.02 sec
+
+Results :
+
+Tests run: 0, Failures: 0, Errors: 0, Skipped: 0
+
+[INFO] 
+[INFO] --- scalatest-maven-plugin:2.0.2:test (test) @ rapids-4-spark-sql_2.12 ---
+[36mDiscovery starting.[0m
+[36mDiscovery completed in 1 second, 971 milliseconds.[0m
+[36mRun starting. Expected test count is: 35[0m
+[32mcom.nvidia.spark.rapids.shims.spark311.SparkShimsSuite:[0m
+[32m- spark shims version[0m
+[32m- shuffle manager class[0m
+[32mArmSuite:[0m
+[32m- withResource for Option[AutoCloseable][0m
+[32m- closeOnExcept single instance[0m
+[32m- closeOnExcept sequence[0m
+[32m- closeOnExcept arraybuffer[0m
+[32m- closeOnExcept suppression single instance[0m
+[32m- closeOnExcept suppression sequence[0m
+[32m- closeOnExcept suppression arraybuffer[0m
+[32mHostAllocSuite:[0m
+[32m- simple pinned tryAlloc[0m
+[32m- simple non-pinned tryAlloc[0m
+[32m- simple mixed tryAlloc[0m
+[32m- simple pinned blocking alloc[0m
+[32m- simple non-pinned blocking alloc[0m
+[32m- simple mixed blocking alloc[0m
+[32m- pinned blocking alloc with spill[0m
+[32m- non-pinned blocking alloc with spill[0m
+[32m- mixed blocking alloc with spill[0m
+[32mGpuDeviceManagerSuite:[0m
+[32m- Test Spark gpu resource[0m
+[32m- Test Spark custom resource missed[0m
+[32m- Test Spark multiple GPUs throws[0m
+[32m- Test Spark custom resource[0m
+[32mAlluxioConfigReaderSuite:[0m
+[32m- testReadAlluxioMasterAndPort[0m
+[32m- testReadAlluxioMasterAndPort, get default port[0m
+[32m- testReadAlluxioMasterAndPort, cfg does not specify master[0m
+[32m- testReadAlluxioMasterAndPort, cfg file does not exist[0m
+[32mAlluxioUtilsSuite:[0m
+[32m- updateFilesTaskTimeIfAlluxio[0m
+[32m- updateFilesTaskTimeIfAlluxio, multiple replacing rules[0m
+[32m- checkIfNeedsReplaced for PathsToReplace map, true[0m
+[32m- checkIfNeedsReplaced for PathsToReplace map, false[0m
+[32m- checkIfNeedsReplaced for PathsToReplace map, exception[0m
+[32m- checkIfNeedsReplaced for PathsToReplace map, invalid setting[0m
+[32m- autoMountIfNeeded, auto-mount is false[0m
+[32m- autoMountIfNeeded, auto-mount is true[0m
+[32mThreadFactoryBuilderTest:[0m
+[32m- test thread factory builder[0m
+[36mRun completed in 17 seconds, 233 milliseconds.[0m
+[36mTotal number of tests run: 35[0m
+[36mSuites: completed 8, aborted 0[0m
+[36mTests: succeeded 35, failed 0, canceled 0, ignored 0, pending 0[0m
+[32mAll tests passed.[0m
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-sql_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ rapids-4-spark-sql_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-sql_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-spark311tests.jar
+[INFO] 
+[INFO] >>> scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) > generate-resources @ rapids-4-spark-sql_2.12 >>>
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-sql_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-sql_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-sql_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-sql_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/sql-plugin' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-sql_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/sql-plugin
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-sql_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+[WARNING]      [echo] Delete /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+[WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-shim-service) @ rapids-4-spark-sql_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Skipping shim service file generation, already exists
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-license-notice-resources) @ rapids-4-spark-sql_2.12 ---
+[INFO] 
+[INFO] <<< scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) < generate-resources @ rapids-4-spark-sql_2.12 <<<
+[INFO] 
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) @ rapids-4-spark-sql_2.12 ---
+model contains 1633 documentable templates
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveTableScanExec.scala:57: warning: Could not find any member to link for "org.apache.spark.sql.hive.execution.HiveTableScanExec".
+/**
+^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsBuffer.scala:446: warning: Could not find any member to link for "addReference".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCast.scala:1348: warning: Could not find any member to link for "Int".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuCast.scala:1348: warning: Could not find any member to link for "Option".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/com/nvidia/spark/rapids/AstUtil.scala:52: warning: Could not find any member to link for "Expression".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/com/nvidia/spark/rapids/AstUtil.scala:52: warning: Could not find any member to link for "NamedExpression".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuScalaUDF.scala:613: warning: Could not find any member to link for "com.nvidia.spark.RapidsUDF".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/com/nvidia/spark/rapids/ColumnarFileFormat.scala:28: warning: Could not find any member to link for "ColumnarOutputWriterFactory".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveTableScanExec.scala:574: warning: Could not find any member to link for "com.nvidia.spark.rapids.GpuTextBasedPartitionReader.castStringToDate()".
+  /**
+  ^
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin/src/main/scala/org/apache/spark/sql/execution/datasources/rapids/GpuPartitioningUtils.scala:572: warning: Could not find any member to link for "findWiderTypeForPartitionColumn".
+  /**
+  ^
+10 warnings found
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/sql-plugin/target/spark311/rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-sql_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 786 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 786 licenses.
+[INFO] 
+[INFO] ---------------< com.nvidia:rapids-4-spark-shuffle_2.12 >---------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Shuffle Plugin 24.02.0-SNAPSHOT [6/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Add Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/main/scala
+[INFO] Add Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/test/scala
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-license-notice-resources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 0 resource
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/main/resources
+[INFO] Copying 2 resources to META-INF
+[INFO] Copying 4 resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:compile (scala-compile-first) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 4 Scala sources to /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/classes ...
+[INFO] Done compiling.
+[INFO] compile in 11.5 s
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (copy-notice) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/test/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/test/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:testCompile (scala-test-compile-first) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] compile in 0.0 s
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Skipping packaging of the test-jar
+[INFO] 
+[INFO] >>> scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) > generate-resources @ rapids-4-spark-shuffle_2.12 >>>
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+[WARNING]      [echo] Delete /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+[WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-license-notice-resources) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] 
+[INFO] <<< scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) < generate-resources @ rapids-4-spark-shuffle_2.12 <<<
+[INFO] 
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) @ rapids-4-spark-shuffle_2.12 ---
+model contains 24 documentable templates
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/shuffle-plugin/target/spark311/rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-shuffle_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 5 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 5 licenses.
+[INFO] 
+[INFO] -----------------< com.nvidia:rapids-4-spark-udf_2.12 >-----------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Scala UDF Plugin 24.02.0-SNAPSHOT [7/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-udf_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-udf_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-udf_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-udf_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-udf_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-udf_2.12 ---
+[INFO] Add Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/main/scala
+[INFO] Add Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/test/scala
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/udf-compiler
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-license-notice-resources) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 0 resource
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/main/resources
+[INFO] Copying 2 resources to META-INF
+[INFO] Copying 4 resources
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (copy-notice) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:compile (scala-compile-first) @ rapids-4-spark-udf_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 7 Scala sources to /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/classes ...
+[INFO] Done compiling.
+[INFO] compile in 11.5 s
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 2 resources
+[INFO] Copying 2 resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:testCompile (scala-test-compile-first) @ rapids-4-spark-udf_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 1 Scala source to /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/test-classes ...
+[INFO] Done compiling.
+[INFO] compile in 17.3 s
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-udf_2.12 ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- scalatest-maven-plugin:2.0.2:test (test) @ rapids-4-spark-udf_2.12 ---
+[36mDiscovery starting.[0m
+[36mDiscovery completed in 1 second, 584 milliseconds.[0m
+[36mRun starting. Expected test count is: 165[0m
+[32mOpcodeSuite:[0m
+[32m- not boolean[0m
+[32m- and boolean[0m
+[32m- not(and boolean)[0m
+[32m- or boolean[0m
+[32m- conditional floats[0m
+[32m- conditional doubles[0m
+[32m- conditional ints[0m
+[32m- conditional longs[0m
+[32m- LLOAD_<n> odd[0m
+[32m- DLOAD_<n> odd[0m
+[32m- DLOAD_<n> even[0m
+[32m- LLOAD_<n> even[0m
+[32m- ILOAD_<n> all[0m
+[32m- FLOAD_<n> all[0m
+[32m- ISTORE_<n> all[0m
+[32m- DSTORE_<n> even[0m
+[32m- DSTORE_<n> odd[0m
+[32m- ALOAD_0[0m
+[32m- ALOAD_1[0m
+[32m- ALOAD_2[0m
+[32m- ALOAD_3[0m
+[32m- ASTORE_1,2,3[0m
+[32m- FSTORE_1,2,3[0m
+[32m- LSTORE_2[0m
+[32m- LSTORE_3[0m
+[32m- Boolean check[0m
+[32m- LDC tests[0m
+[32m- UDF 4 args[0m
+[32m- math functions - trig - (a)sin and (a)cos[0m
+[32m- math functions - trig - (a)tan(h) and cosh[0m
+[32m- math functions - abs, ceil, floor[0m
+[32m- math functions - exp, log, log10, sqrt[0m
+[32m- FSTORE_0, LSTORE_1[0m
+[32m- LSTORE_0[0m
+[32m- ILOAD[0m
+[32m- LLOAD[0m
+[32m- FLOAD[0m
+[32m- DLOAD[0m
+[32m- Cast Double to Int[0m
+[32m- Cast Float to Int[0m
+[32m- Cast Long to Int[0m
+[32m- Cast Int to Long[0m
+[32m- Cast Float to Long[0m
+[32m- Cast Double to Long[0m
+[32m- Cast Int to Float[0m
+[32m- Cast Long to Float[0m
+[32m- Cast Double to Float[0m
+[32m- Cast Int to Double[0m
+[32m- Cast Long to Double[0m
+[32m- Cast Float to Double[0m
+[32m- Cast Int to Short[0m
+[32m- Cast Int to Byte[0m
+[32m- ALOAD opcode[0m
+[32m- IFNONNULL opcode[0m
+[32m- IFNULL opcode[0m
+[32m- IFNE opcode[0m
+[32m- IFEQ opcode[0m
+[32m- Conditional simplification - if (c) true else false => c[0m
+[32m- Conditional simplification - if (c) false else true => !c[0m
+[32m- LDC_W opcode[0m
+[32m- DUP opcode[0m
+[32m- FALLBACK TO CPU: math functions - unsupported[0m
+[32m- FALLBACK TO CPU: exception handling - unsupported[0m
+[32m- conditional doubles test2[0m
+[32m- conditional doubles test3[0m
+[32m- conditional doubles test4[0m
+[32m- conditional ints test2[0m
+[32m- conditional ints test3[0m
+[32m- double div and mod[0m
+[32m- float div and mod[0m
+[32m- int div and mod[0m
+[32m- long div and mod[0m
+[32m- int bitwise[0m
+[32m- long bitwise[0m
+[32m- TABLESWITCH TEST[0m
+[32m- LOOKUPSWITCH TEST[0m
+[32m- float constant in a function call[0m
+[32m- int constant in a function call[0m
+[32m- conditional ints - AND(LT,LT)[0m
+[32m- conditional ints - AND(LTE,LTE)[0m
+[32m- conditional ints - AND(LTE,LT)[0m
+[32m- conditional ints - AND(GT,GT)[0m
+[32m- conditional ints - AND(GT,GTE)[0m
+[32m- conditional ints - OR(GT,GTE)[0m
+[32m- conditional longs - AND(LT,LT)[0m
+[32m- conditional longs - AND(LTE,LTE)[0m
+[32m- conditional longs - AND(LTE,LT)[0m
+[32m- conditional longs - AND(GT,GT)[0m
+[32m- conditional longs - AND(GT,GTE)[0m
+[32m- conditional longs - OR(GT,GTE)[0m
+[32m- FALLBACK TO CPU: loops[0m
+[32m- java lang string builder test - append[0m
+[32m- string test - + concat[0m
+[32m- string test - concat method[0m
+[32m- string test - equalsIgnoreCase[0m
+[32m- string test - toUpperCase[0m
+[32m- string test - toLowerCase[0m
+[32m- string test - trim[0m
+[32m- string test - subtring - start index[0m
+[32m- string test - subtring - start and end index[0m
+[32m- string test - replace character[0m
+[32m- string test - replace character sequence[0m
+[32m- string test - startsWith[0m
+[32m- string test - endsWith[0m
+[32m- string test - equals[0m
+[32m- string test - length[0m
+[32m- string test - isEmpty[0m
+[32m- string test - valueOf - Boolean[0m
+[32m- string test - valueOf - Char[0m
+[32m- string test - valueOf - Double[0m
+[32m- string test - valueOf - Float[0m
+[32m- string test - valueOf - Int[0m
+[32m- string test - valueOf - Long[0m
+[32m- FALLBACK TO CPU: string test - charAt[0m
+[32m- string test - contains[0m
+[32m- string test - indexOf - case 1 - str,int[0m
+[32m- FALLBACK TO CPU: string test - indexOf - case 2 - char - single quotes,int[0m
+[32m- FALLBACK TO CPU: string test - indexOf - case 3 - char - utf value,int[0m
+[32m- FALLBACK TO CPU: string test - indexOf - case 4 - char - utf value[0m
+[32m- FALLBACK TO CPU: string test - indexOf - case 5 - char - single quotes[0m
+[32m- string test - indexOf - case 6 - str[0m
+[32m- FALLBACK TO CPU: string test - codePointAt method. [0m
+[32m- FALLBACK TO CPU: string test - matches method. [0m
+[32m- string test - replaceAll method[0m
+[32m- string test - split method - case 1[0m
+[32m- string test - split method - case 2[0m
+[32m- string test - getBytes - case 1 - default platform charset[0m
+[32m- string test - getBytes - case 2 - charsetName -- string[0m
+[32m- Float - isNaN - True[0m
+[32m- Float - isNaN - False[0m
+[32m- Double - isNaN - True[0m
+[32m- Double - isNaN - False[0m
+[32m- FALLBACK TO CPU: Non-literal date time pattern[0m
+[32m- FALLBACK TO CPU: Unsupported date time pattern[0m
+[32m- Get day of month from LocalDateTime string[0m
+[32m- Get hour from LocalDateTime string[0m
+[32m- Get minute from LocalDateTime string[0m
+[32m- get month from LocalDataTime string[0m
+[32m- get second from LocalDateTime string[0m
+[32m- get year from LocalDateTime string[0m
+[32m- FALLBACK TO CPU: Get hour from zoned LocalDateTime string[0m
+[32m- Get hour from pattern with escaped text[0m
+[32m- Empty string construction[0m
+[32m- Empty array construction - Boolean[0m
+[32m- Empty array construction - Byte[0m
+[32m- Empty array construction - Short[0m
+[32m- Empty array construction - Int[0m
+[32m- Empty array construction - Long[0m
+[32m- Empty array construction - Float[0m
+[32m- Empty array construction - Double[0m
+[32m- Empty array construction - String[0m
+[32m- final static method call inside UDF[0m
+[32m- FALLBACK TO CPU: class method call inside UDF[0m
+[32m- final class method call inside UDF[0m
+[32m- FALL BACK TO CPU: object method call inside UDF[0m
+[32m- final object method call inside UDF[0m
+[32m- super class final method call inside UDF[0m
+[32m- FALLBACK TO CPU: final class calls super class method inside UDF[0m
+[32m- FALLBACK TO CPU: super class method call inside UDF[0m
+[32m- FALLBACK TO CPU: capture a var in class[0m
+[32m- FALLBACK TO CPU: capture a var outside class[0m
+[32m- capture a primitive var in method[0m
+[32m- throw a SparkException object[0m
+[32m- Conditional array buffer processing[0m
+[32m- compile child expresion in explode[0m
+[36mRun completed in 13 seconds, 645 milliseconds.[0m
+[36mTotal number of tests run: 165[0m
+[36mSuites: completed 2, aborted 0[0m
+[36mTests: succeeded 165, failed 0, canceled 0, ignored 0, pending 0[0m
+[32mAll tests passed.[0m
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-udf_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ rapids-4-spark-udf_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-udf_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-spark311tests.jar
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-udf_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 10 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 10 licenses.
+[INFO] 
+[INFO] >>> scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) > generate-resources @ rapids-4-spark-udf_2.12 >>>
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-udf_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-udf_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-udf_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-udf_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/udf-compiler' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-udf_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/udf-compiler
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-udf_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-udf_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+[WARNING]      [echo] Delete /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+[WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-license-notice-resources) @ rapids-4-spark-udf_2.12 ---
+[INFO] 
+[INFO] <<< scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) < generate-resources @ rapids-4-spark-udf_2.12 <<<
+[INFO] 
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) @ rapids-4-spark-udf_2.12 ---
+model contains 18 documentable templates
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/udf-compiler/target/spark311/rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] -------------< com.nvidia:rapids-4-spark-delta-stub_2.12 >--------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Delta Lake Stub 24.02.0-SNAPSHOT [8/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Add Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/main/scala
+[INFO] Add Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/test/scala
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/main/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/main/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:compile (scala-compile-first) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 1 Scala source to /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/classes ...
+[INFO] Done compiling.
+[INFO] compile in 2.6 s
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/test/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/test/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:testCompile (scala-test-compile-first) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] compile in 0.0 s
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/rapids-4-spark-delta-stub_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/rapids-4-spark-delta-stub_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Skipping packaging of the test-jar
+[INFO] 
+[INFO] >>> scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) > generate-resources @ rapids-4-spark-delta-stub_2.12 >>>
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+[WARNING]      [echo] Delete /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+[WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] 
+[INFO] <<< scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) < generate-resources @ rapids-4-spark-delta-stub_2.12 <<<
+[INFO] 
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) @ rapids-4-spark-delta-stub_2.12 ---
+model contains 7 documentable templates
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/delta-lake/delta-stub/target/spark311/rapids-4-spark-delta-stub_2.12-24.02.0-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-delta-stub_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 2 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 2 licenses.
+[INFO] 
+[INFO] -------------< com.nvidia:rapids-4-spark-aggregator_2.12 >--------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Aggregator 24.02.0-SNAPSHOT [9/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:3.1.0:clean (default-clean) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] 
+[INFO] --- maven-clean-plugin:3.1.0:clean (clean-reduced-dependency-poms) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Deleting /home/yanxuanl/NVProjects/spark-rapids/aggregator (includes = [dependency-reduced-pom*.xml], excludes = [])
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ rapids-4-spark-aggregator_2.12 ---
+[WARNING] JAR will be empty - no content was marked for inclusion!
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/rapids-4-spark-aggregator_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (init-dirs) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/aggregator'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/aggregator' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/aggregator'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/aggregator' is left as-is...
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/rapids-4-spark-aggregator_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/aggregator
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/aggregator/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/aggregator/src/main/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/aggregator/src/main/resources
+[INFO] 
+[INFO] --- maven-shade-plugin:3.3.0:shade (main-spark311) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Including com.nvidia:rapids-4-spark-sql_2.12:jar:spark311:24.02.0-SNAPSHOT in the shaded jar.
+[INFO] Including com.nvidia:rapids-4-spark-sql-plugin-api_2.12:jar:spark311:24.02.0-SNAPSHOT in the shaded jar.
+[INFO] Including com.google.flatbuffers:flatbuffers-java:jar:1.11.0 in the shaded jar.
+[INFO] Including com.nvidia:rapids-4-spark-shuffle_2.12:jar:spark311:24.02.0-SNAPSHOT in the shaded jar.
+[INFO] Including com.nvidia:rapids-4-spark-udf_2.12:jar:spark311:24.02.0-SNAPSHOT in the shaded jar.
+[INFO] Including com.nvidia:rapids-4-spark-private_2.12:jar:spark311:24.02.0-SNAPSHOT in the shaded jar.
+[INFO] Including com.nvidia:rapids-4-spark-delta-stub_2.12:jar:spark311:24.02.0-SNAPSHOT in the shaded jar.
+[INFO] Excluding com.nvidia:spark-rapids-jni:jar:cuda11:24.02.0-SNAPSHOT from the shaded jar.
+[INFO] Excluding org.slf4j:slf4j-api:jar:1.7.30 from the shaded jar.
+[INFO] Excluding org.openucx:jucx:jar:1.15.0 from the shaded jar.
+[WARNING] flatbuffers-java-1.11.0.jar, rapids-4-spark-aggregator_2.12-24.02.0-SNAPSHOT.jar, rapids-4-spark-delta-stub_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-private_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-sql-plugin-api_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-spark311.jar define 1 overlapping resource: 
+[WARNING]   - META-INF/MANIFEST.MF
+[WARNING] rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-spark311.jar define 4 overlapping resources: 
+[WARNING]   - rapids/__init__.py
+[WARNING]   - rapids/daemon.py
+[WARNING]   - rapids/daemon_databricks.py
+[WARNING]   - rapids/worker.py
+[WARNING] rapids-4-spark-private_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-spark311.jar define 2 overlapping resources: 
+[WARNING]   - META-INF/LICENSE
+[WARNING]   - META-INF/NOTICE
+[WARNING] rapids-4-spark-delta-stub_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-shuffle_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-sql-plugin-api_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-sql_2.12-24.02.0-SNAPSHOT-spark311.jar, rapids-4-spark-udf_2.12-24.02.0-SNAPSHOT-spark311.jar define 1 overlapping resource: 
+[WARNING]   - rapids4spark-version-info.properties
+[WARNING] maven-shade-plugin has detected that some class files are
+[WARNING] present in two or more JARs. When this happens, only one
+[WARNING] single version of the class is copied to the uber jar.
+[WARNING] Usually this is not harmful and you can skip these warnings,
+[WARNING] otherwise try to manually exclude artifacts based on
+[WARNING] mvn dependency:tree -Ddetail=true and the above output.
+[WARNING] See https://maven.apache.org/plugins/maven-shade-plugin/
+[INFO] Attaching shaded artifact.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (create-aggregator-for-downstream-if-content-changed) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Checking if need to recreate: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/rapids-4-spark-aggregator_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/new-classes
+[INFO]    [delete] Deleting directory /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/new-classes
+[INFO]     [unzip] Expanding: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/rapids-4-spark-aggregator_2.12-24.02.0-SNAPSHOT-shaded.jar into /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/new-classes
+[WARNING]      [echo] Clean build? Skipping diff because /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/old-classes does not exist
+[WARNING]      [echo] Aggregator jar changed, recreating final jar
+[INFO]      [copy] Copying 1 file to /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/aggregator/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/aggregator/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/aggregator/src/test/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/aggregator/src/test/resources
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ rapids-4-spark-aggregator_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 1 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 1 licenses.
+[INFO] 
+[INFO] ----------------------< com.nvidia:datagen_2.12 >-----------------------
+[INFO] Building Data Generator 24.02.0-SNAPSHOT                         [10/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ datagen_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ datagen_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ datagen_2.12 ---
+[INFO] Add Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/scala
+[INFO] Add Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/src/test/scala
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ datagen_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ datagen_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ datagen_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ datagen_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/datagen'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/datagen' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ datagen_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/datagen'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/datagen' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ datagen_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/datagen/target/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ datagen_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/datagen
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ datagen_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ datagen_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ datagen_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ datagen_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ datagen_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 0 resource
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:compile (scala-compile-first) @ datagen_2.12 ---
+[INFO] Using incremental compilation using Mixed compile order
+[INFO] Compiler bridge file: /home/yanxuanl/NVProjects/spark-rapids/target/spark311/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.12-1.3.1-bin_2.12.15__52.0-1.3.1_20191012T045515.jar
+[INFO] Compiling 4 Scala sources to /home/yanxuanl/NVProjects/spark-rapids/datagen/target/classes ...
+[INFO] Done compiling.
+[INFO] compile in 11.6 s
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-test-sources) @ datagen_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/src/test/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-source (add-shimple-test-sources) @ datagen_2.12 ---
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/spark311/generated/src/test/scala added.
+[INFO] Test Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/spark311/generated/src/test/java added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-test-resource (add-test-resources) @ datagen_2.12 ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ datagen_2.12 ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/datagen/src/test/resources
+[INFO] skip non existing resourceDirectory /home/yanxuanl/NVProjects/spark-rapids/datagen/src/test/resources
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:testCompile (scala-test-compile-first) @ datagen_2.12 ---
+[INFO] compile in 0.0 s
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ datagen_2.12 ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ datagen_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/datagen_2.12-24.02.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:jar (create-spark311-jar) @ datagen_2.12 ---
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/datagen_2.12-24.02.0-SNAPSHOT-spark311.jar
+[INFO] 
+[INFO] --- maven-jar-plugin:3.3.0:test-jar (default-test-jar) @ datagen_2.12 ---
+[INFO] Skipping packaging of the test-jar
+[INFO] 
+[INFO] >>> scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) > generate-resources @ datagen_2.12 >>>
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ datagen_2.12 ---
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:add-source (eclipse-add-source) @ datagen_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ datagen_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ datagen_2.12 ---
+[INFO] Executing tasks
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ datagen_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ datagen_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/datagen'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/datagen' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ datagen_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/datagen'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/datagen' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ datagen_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/datagen/target/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ datagen_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/datagen
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ datagen_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ datagen_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ datagen_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Git revisions unchanged: skipping version info file generation.
+[WARNING]      [echo] Delete /home/yanxuanl/NVProjects/spark-rapids/datagen/target/classes/rapids4spark-version-info.properties or mvn clean if regeneration desired.
+[WARNING]      [echo] This will force full Scala code rebuild in downstream modules.
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-resource (add-resources) @ datagen_2.12 ---
+[INFO] 
+[INFO] <<< scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) < generate-resources @ datagen_2.12 <<<
+[INFO] 
+[INFO] 
+[INFO] --- scala-maven-plugin:4.3.0:doc-jar (attach-scaladocs) @ datagen_2.12 ---
+model contains 89 documentable templates
+[INFO] Building jar: /home/yanxuanl/NVProjects/spark-rapids/datagen/target/datagen_2.12-24.02.0-SNAPSHOT-javadoc.jar
+[INFO] 
+[INFO] --- apache-rat-plugin:0.13:check (default) @ datagen_2.12 ---
+[INFO] Enabled default license matchers.
+[INFO] Will parse SCM ignores for exclusions...
+[INFO] Finished adding exclusions from SCM ignore files.
+[INFO] 62 implicit excludes (use -debug for more details).
+[INFO] 21 explicit excludes (use -debug for more details).
+[INFO] 6 resources included (use -debug for more details)
+[INFO] You requested to accept 100 files with unapproved licenses.
+[INFO] Rat check: Summary over all files. Unapproved: 0, unknown: 0, generated: 0, approved: 6 licenses.
+[INFO] 
+[INFO] -------------------< com.nvidia:rapids-4-spark_2.12 >-------------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Distribution 24.02.0-SNAPSHOT [11/14]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-clean-plugin:2.5:clean (default-clean) @ rapids-4-spark_2.12 ---
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.3.0:enforce (enforce-maven) @ rapids-4-spark_2.12 ---
+[INFO] 
+[INFO] --- directory-maven-plugin:0.1:highest-basedir (directories) @ rapids-4-spark_2.12 ---
+[INFO] Highest basedir set to: /home/yanxuanl/NVProjects/spark-rapids
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (setup-dirs) @ rapids-4-spark_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/dist/target/extra-resources
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/dist/target/tmp
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (clean-any-prior-output) @ rapids-4-spark_2.12 ---
+[INFO] Executing tasks
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/dist/target/deps
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-highest-source-dir) @ rapids-4-spark_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids'. The initial value '/home/yanxuanl/NVProjects/spark-rapids' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-base-source-dir) @ rapids-4-spark_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/dist'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/dist' is left as-is...
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:regex-property (update-shimplify-base-source-dir) @ rapids-4-spark_2.12 ---
+[INFO] No match to regex '\/scala[0-9.]+' found in '/home/yanxuanl/NVProjects/spark-rapids/dist'. The initial value '/home/yanxuanl/NVProjects/spark-rapids/dist' is left as-is...
+[INFO] 
+[INFO] --- jacoco-maven-plugin:0.8.8:prepare-agent (prepare-agent) @ rapids-4-spark_2.12 ---
+[INFO] argLine set to -javaagent:/home/yanxuanl/.m2/repository/org/jacoco/org.jacoco.agent/0.8.8/org.jacoco.agent-0.8.8-runtime.jar=destfile=/home/yanxuanl/NVProjects/spark-rapids/dist/target/jacoco.exec,append=true,includes=ai.rapids.cudf.*:com.nvidia.spark.*:org.apache.spark.sql.rapids.*,excludes=spark311.com.nvidia.shaded.spark.*
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (shimplify-shim-sources) @ rapids-4-spark_2.12 ---
+[INFO] Executing tasks
+shimplify - INFO - # Starting Jython Task Shimplify #
+shimplify - INFO - #   config:
+#           shimplify.src.baseDir=/home/yanxuanl/NVProjects/spark-rapids/dist
+#           shimplify (if)=False
+#           shimplify.add.base=None
+#           shimplify.add.shim=None
+#           shimplify.dirs=[]
+#           shimplify.move=False
+#           shimplify.overwrite=False
+#           shimplify.shims=['', '', '311', '312', '313', '320', '321', '321cdh', '321db', '322', '323', '324', '330', '330cdh', '330db', '331', '332', '332cdh', '332db', '333', '340', '341', '341db', '350']
+#           shimplify.trace=False
+shimplify - INFO - review changes and `git restore` if necessary
+shimplify - INFO - Shim layout is not updated! If desired invoke `mvn generate-sources -Dshimplify=true` to manipulate shims
+shimplify - INFO - # generating symlinks for shim 311 main files
+shimplify - INFO - # generating symlinks for shim 311 test files
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-sources) @ rapids-4-spark_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/dist/src/main/scala-2.12 added.
+[INFO] 
+[INFO] --- build-helper-maven-plugin:3.3.0:add-source (add-shimple-sources) @ rapids-4-spark_2.12 ---
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/dist/target/spark311/generated/src/main/scala added.
+[INFO] Source directory: /home/yanxuanl/NVProjects/spark-rapids/dist/target/spark311/generated/src/main/java added.
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (generate-build-info) @ rapids-4-spark_2.12 ---
+[INFO] Executing tasks
+[WARNING]      [echo] Comparing git revisions:
+[WARNING]      [echo]     previous=N/A
+[WARNING]      [echo]      current=c1d7b7ae1c607d225256442e8d4364415cebf9f3
+[WARNING]      [echo] Generating new version info file
+[INFO]     [mkdir] Created dir: /home/yanxuanl/NVProjects/spark-rapids/dist/target/classes
+[INFO] Executed tasks
+[INFO] 
+[INFO] --- maven-antrun-plugin:3.1.0:run (create-parallel-world) @ rapids-4-spark_2.12 ---
+[INFO] Executing tasks
+[INFO]      [echo] Preparing parallel worlds with params:
+[INFO]      [echo]             included_buildvers=${included_buildvers}
+[INFO]      [echo]             project.basedir=/home/yanxuanl/NVProjects/spark-rapids/dist
+[INFO]      [echo]             project.build.directory=/home/yanxuanl/NVProjects/spark-rapids/dist/target
+[INFO]      [echo]             spark.version.classifier=spark311
+[INFO]      [echo]             URM_URL=https://urm.nvidia.com/artifactory/sw-spark-maven
+[INFO]      [echo]             maven.repo.local=${maven.repo.local}
+[INFO]      [echo]         
+[INFO]      [echo] Determined should.build.conventional.jar: ${should.build.conventional.jar}
+Helllllo
+/home/yanxuanl/NVProjects/spark-rapids/sql-plugin-api/target/spark${included_buildvers}/rapids-4-spark-sql-plugin-api_2.12-24.02.0-SNAPSHOT-spark${included_buildvers}.jar
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] RAPIDS Accelerator for Apache Spark Root Project                   [pom]
+[INFO] rapids-4-spark-jdk-profiles_2.12                                   [pom]
+[INFO] rapids-4-spark-shim-deps-parent_2.12                               [pom]
+[INFO] rapids-4-spark-sql-plugin-api_2.12                                 [jar]
+[INFO] RAPIDS Accelerator for Apache Spark SQL Plugin                     [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin                 [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin               [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Delta Lake Stub                [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Aggregator                     [jar]
+[INFO] Data Generator                                                     [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Distribution                   [jar]
+[INFO] rapids-4-spark-integration-tests_2.12                              [jar]
+[INFO] RAPIDS Accelerator for Apache Spark Tests                          [jar]
+[INFO] rapids-4-spark-api-validation_2.12                                 [jar]
+[INFO] 
+[INFO] ---------------< com.nvidia:rapids-4-spark-parent_2.12 >----------------
+[INFO] Building RAPIDS Accelerator for Apache Spark Root Project 24.02.0-SNAPSHOT [1/14]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.10:get (default-cli) @ rapids-4-spark-parent_2.12 ---
+[INFO] Resolving com.nvidia:rapids-4-spark-sql-plugin-api_2.12:jar:sparknull:24.02.0-SNAPSHOT
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for RAPIDS Accelerator for Apache Spark Root Project 24.02.0-SNAPSHOT:
+[INFO] 
+[INFO] RAPIDS Accelerator for Apache Spark Root Project ... FAILURE [  0.428 s]
+[INFO] rapids-4-spark-jdk-profiles_2.12 ................... SKIPPED
+[INFO] rapids-4-spark-shim-deps-parent_2.12 ............... SKIPPED
+[INFO] rapids-4-spark-sql-plugin-api_2.12 ................. SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark SQL Plugin ..... SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin . SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Delta Lake Stub  SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Aggregator ..... SKIPPED
+[INFO] Data Generator ..................................... SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Distribution ... SKIPPED
+[INFO] rapids-4-spark-integration-tests_2.12 .............. SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Tests .......... SKIPPED
+[INFO] rapids-4-spark-api-validation_2.12 ................. SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.633 s
+[INFO] Finished at: 2023-12-07T15:11:44+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin:2.10:get (default-cli) on project rapids-4-spark-parent_2.12: Couldn't download artifact: Failure to find com.nvidia:rapids-4-spark-sql-plugin-api_2.12:jar:sparknull:24.02.0-SNAPSHOT in https://urm.nvidia.com/artifactory/sw-spark-maven was cached in the local repository, resolution will not be reattempted until the update interval of apache-snapshots-repo has elapsed or updates are forced
+[ERROR] 
+[ERROR] Try downloading the file manually from the project website.
+[ERROR] 
+[ERROR] Then, install it using the command: 
+[ERROR]     mvn install:install-file -DgroupId=com.nvidia -DartifactId=rapids-4-spark-sql-plugin-api_2.12 -Dversion=24.02.0-SNAPSHOT -Dclassifier=sparknull -Dpackaging=jar -Dfile=/path/to/file
+[ERROR] 
+[ERROR] Alternatively, if you host your own repository you can deploy the file there: 
+[ERROR]     mvn deploy:deploy-file -DgroupId=com.nvidia -DartifactId=rapids-4-spark-sql-plugin-api_2.12 -Dversion=24.02.0-SNAPSHOT -Dclassifier=sparknull -Dpackaging=jar -Dfile=/path/to/file -Durl=[url] -DrepositoryId=[id]
+[ERROR] 
+[ERROR] 
+[ERROR]   com.nvidia:rapids-4-spark-sql-plugin-api_2.12:jar:24.02.0-SNAPSHOT
+[ERROR] 
+[ERROR] from the specified remote repositories:
+[ERROR]   apache-snapshots-repo (https://urm.nvidia.com/artifactory/sw-spark-maven, releases=true, snapshots=true),
+[ERROR]   apache.snapshots.https (https://urm.nvidia.com/artifactory/sw-spark-maven, releases=true, snapshots=true),
+[ERROR]   apache.snapshots (https://urm.nvidia.com/artifactory/sw-spark-maven, releases=true, snapshots=true),
+[ERROR]   central (https://urm.nvidia.com/artifactory/sw-spark-maven, releases=true, snapshots=false),
+[ERROR]   snapshots (https://urm.nvidia.com/artifactory/sw-spark-maven, releases=true, snapshots=true),
+[ERROR]   snapshots-repo (https://oss.sonatype.org/content/repositories/snapshots, releases=false, snapshots=true),
+[ERROR]   cloudera-repo (https://repository.cloudera.com/artifactory/cloudera-repos/, releases=false, snapshots=false)
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for RAPIDS Accelerator for Apache Spark Root Project 24.02.0-SNAPSHOT:
+[INFO] 
+[INFO] RAPIDS Accelerator for Apache Spark Root Project ... SUCCESS [ 13.050 s]
+[INFO] rapids-4-spark-jdk-profiles_2.12 ................... SUCCESS [  0.653 s]
+[INFO] rapids-4-spark-shim-deps-parent_2.12 ............... SUCCESS [  1.047 s]
+[INFO] rapids-4-spark-sql-plugin-api_2.12 ................. SUCCESS [ 15.533 s]
+[INFO] RAPIDS Accelerator for Apache Spark SQL Plugin ..... SUCCESS [02:11 min]
+[INFO] RAPIDS Accelerator for Apache Spark Shuffle Plugin . SUCCESS [ 17.979 s]
+[INFO] RAPIDS Accelerator for Apache Spark Scala UDF Plugin SUCCESS [ 49.227 s]
+[INFO] RAPIDS Accelerator for Apache Spark Delta Lake Stub  SUCCESS [  5.254 s]
+[INFO] RAPIDS Accelerator for Apache Spark Aggregator ..... SUCCESS [  2.940 s]
+[INFO] Data Generator ..................................... SUCCESS [ 18.196 s]
+[INFO] RAPIDS Accelerator for Apache Spark Distribution ... FAILURE [  6.172 s]
+[INFO] rapids-4-spark-integration-tests_2.12 .............. SKIPPED
+[INFO] RAPIDS Accelerator for Apache Spark Tests .......... SKIPPED
+[INFO] rapids-4-spark-api-validation_2.12 ................. SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  04:21 min
+[INFO] Finished at: 2023-12-07T15:11:45+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-antrun-plugin:3.1.0:run (create-parallel-world) on project rapids-4-spark_2.12: An Ant BuildException has occured: The following error occurred while executing this line:
+[ERROR] /home/yanxuanl/NVProjects/spark-rapids/dist/maven-antrun/build-parallel-worlds.xml:80: Traceback (most recent call last):
+[ERROR]   File "<script>", line 75, in <module>
+[ERROR]   File "<script>", line 26, in shell_exec
+[ERROR] 	at org.apache.tools.ant.taskdefs.optional.script.ScriptDefBase.fail(ScriptDefBase.java:129)
+[ERROR] 	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+[ERROR] 	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+[ERROR] 	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+[ERROR] 	at java.lang.reflect.Method.invoke(Method.java:498)
+[ERROR] org.apache.tools.ant.BuildException: failed to execute [u'/usr/share/maven/bin/mvn', 'org.apache.maven.plugins:maven-dependency-plugin:2.10:get', '-B', u'-Ddest=/home/yanxuanl/NVProjects/spark-rapids/dist/target/deps', '-DgroupId=com.nvidia', u'-DartifactId=rapids-4-spark-sql-plugin-api_2.12', u'-Dversion=24.02.0-SNAPSHOT', '-Dpackaging=jar', u'-Dclassifier=spark${included_buildvers}', '-Dtransitive=false', '-s', u'/home/yanxuanl/NVProjects/spark-rapids/jenkins/settings.xml']
+[ERROR] 
+[ERROR] around Ant part ...<ant antfile="${spark.rapids.source.basedir}/dist/maven-antrun/build-parallel-worlds.xml" target="remove-dependencies-from-pom" />... @ 9:135 in /home/yanxuanl/NVProjects/spark-rapids/dist/target/antrun/build-main.xml
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
+[ERROR] 
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :rapids-4-spark_2.12
