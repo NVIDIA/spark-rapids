@@ -21,12 +21,14 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.10.0</version>
+        <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
+        <version>23.12.0-SNAPSHOT</version>
+        <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>23.10.0</version>
+    <version>23.12.0-SNAPSHOT</version>
     <properties>
+        <rapids.module>integration_tests</rapids.module>
         <target.classifier/>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
@@ -74,69 +76,6 @@
             <version>4.1.0</version>
         </dependency>
     </dependencies>
-
-    <profiles>
-        <profile>
-            <id>release321cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release330cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>330cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <!--
-                 Note that we are using the Spark version for all of the Databricks dependencies as well.
-                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                 This is to make it easier and not have to change version numbers for each individual dependency
-                 and deal with differences between Databricks versions
-            -->
-            <id>dbdeps</id>
-            <activation>
-                <property>
-                    <name>databricks</name>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-db-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
-
     <build>
         <plugins>
             <plugin>
@@ -147,7 +86,7 @@
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
                     <descriptors>
-                        <descriptor>src/assembly/bin.xml</descriptor>
+                        <descriptor>${spark.rapids.source.basedir}/${rapids.module}/src/assembly/bin.xml</descriptor>
                     </descriptors>
                 </configuration>
                 <executions>
@@ -246,8 +185,8 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
-                            <executable>./run_pyspark_from_build.sh</executable>
-                            <workingDirectory>./</workingDirectory>
+                            <executable>${spark.rapids.source.basedir}/${rapids.module}/run_pyspark_from_build.sh</executable>
+                            <workingDirectory>${spark.rapids.source.basedir}</workingDirectory>
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>

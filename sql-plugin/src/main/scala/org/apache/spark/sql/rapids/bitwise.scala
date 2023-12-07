@@ -123,6 +123,8 @@ case class GpuBitwiseAnd(left: Expression, right: Expression) extends CudfBinary
 
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_AND
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.BITWISE_AND)
+
+  override val failOnError: Boolean = false
 }
 
 case class GpuBitwiseOr(left: Expression, right: Expression) extends CudfBinaryArithmetic {
@@ -132,6 +134,8 @@ case class GpuBitwiseOr(left: Expression, right: Expression) extends CudfBinaryA
 
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_OR
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.BITWISE_OR)
+
+  override val failOnError: Boolean = false
 }
 
 case class GpuBitwiseXor(left: Expression, right: Expression) extends CudfBinaryArithmetic {
@@ -141,6 +145,8 @@ case class GpuBitwiseXor(left: Expression, right: Expression) extends CudfBinary
 
   override def binaryOp: BinaryOp = BinaryOp.BITWISE_XOR
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.BITWISE_XOR)
+
+  override val failOnError: Boolean = false
 }
 
 case class GpuBitwiseNot(child: Expression) extends CudfUnaryExpression with ExpectsInputTypes {

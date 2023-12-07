@@ -183,7 +183,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v23.06.0
 * Download the [RAPIDS
@@ -247,7 +247,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v23.04.1
 * Download the [RAPIDS
@@ -308,7 +308,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v23.02.0
 * Download the [RAPIDS
@@ -368,7 +368,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.12.0
 * Download the [RAPIDS
@@ -428,7 +428,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.10.0
 * Download the [RAPIDS
@@ -488,7 +488,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.08.0
 * Download the [RAPIDS
@@ -549,7 +549,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.06.0
 * Download the [RAPIDS
@@ -610,7 +610,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.04.0
 * Download the [RAPIDS
@@ -671,7 +671,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.02.0
 * Download the [RAPIDS
@@ -737,7 +737,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.12.0
 * Download the [RAPIDS
@@ -804,7 +804,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.10.0
 * Download the [RAPIDS
@@ -863,7 +863,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.08.0
 * Download the [RAPIDS
@@ -919,7 +919,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.06.2
 * Download the [RAPIDS
@@ -962,7 +962,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.06.1
 * Download the [RAPIDS
@@ -1009,7 +1009,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v21.06.0
 * Download the [RAPIDS
@@ -1171,8 +1171,7 @@ New functionality for the release includes
 
 This release includes additional performance improvements, including
 * RAPIDS Shuffle with UCX performance improvements
-* Instructions on how to use [Alluxio caching](get-started/getting-started-alluxio.md) with Spark to
-  leverage caching.
+* Instructions on how to use Alluxio caching with Spark to leverage caching.
 
 The release is supported on Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS and
 Google Cloud Platform Dataproc 2.0.
@@ -1273,9 +1272,9 @@ CPU threads v0.2 delivers up to 6x performance improvement over the previous rel
 Parquet file reads.
 
 The RAPIDS Accelerator introduces a beta feature that accelerates
-[Spark shuffle for GPUs](get-started/getting-started-on-prem.md#enabling-rapids-shuffle-manager).  Accelerated
-shuffle makes use of high bandwidth transfers between GPUs (NVLink or p2p over PCIe) and leverages
-RDMA (RoCE or Infiniband) for remote transfers.
+[Spark shuffle for GPUs](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/on-premise.html#enabling-rapids-shuffle-manager).
+Accelerated shuffle makes use of high bandwidth transfers between GPUs (NVLink or p2p over PCIe) and
+leverages RDMA (RoCE or Infiniband) for remote transfers.
 
 The list of all supported operations is provided
 [here](configs.md#supported-gpu-operators-and-fine-tuning).

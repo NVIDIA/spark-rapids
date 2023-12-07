@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
+from conftest import is_not_utc
 from marks import *
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'
@@ -26,26 +27,31 @@ def readTable(types, classToUse):
         .orderBy("col1")
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_read_int():
     assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass))
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_read_strings():
     assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass))
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_read_all_types():
     assert_gpu_and_cpu_are_equal_collect(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
             conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_read_all_types_count():
     assert_gpu_and_cpu_row_counts_equal(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
             conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_read_arrow_off():
     assert_gpu_and_cpu_are_equal_collect(
         readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),

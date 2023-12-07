@@ -252,7 +252,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-abstract class GpuAddBase(failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
+abstract class GpuAddBase extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -281,8 +281,7 @@ abstract class GpuAddBase(failOnError: Boolean) extends CudfBinaryArithmetic wit
   }
 }
 
-abstract class GpuSubtractBase(failOnError: Boolean)
-    extends CudfBinaryArithmetic with Serializable {
+abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
@@ -480,8 +479,6 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
       regularMultiply(batch)
     }
   }
-
-  override def nullable: Boolean = left.nullable || right.nullable
 }
 
 object DecimalMultiplyChecks {
@@ -726,7 +723,8 @@ object GpuDivModLike {
 
 case class GpuMultiply(
     left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType multiplies need to be handled by GpuDecimalMultiply")
 
@@ -739,7 +737,6 @@ case class GpuMultiply(
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
-  lazy val failOnError: Boolean = SQLConf.get.ansiEnabled
 
   override def nullable: Boolean = true
 
@@ -1019,12 +1016,9 @@ object DecimalDivideChecks {
 }
 
 case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDivModLike {
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
-
-  override lazy val failOnError: Boolean = failOnErrorOverride
 
   override def inputType: AbstractDataType = DoubleType
 

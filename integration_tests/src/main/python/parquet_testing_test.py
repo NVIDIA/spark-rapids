@@ -16,7 +16,7 @@
 # https://github.com/apache/parquet-testing
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
-from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run
+from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run, is_not_utc
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
@@ -40,7 +40,7 @@ _java_reader_confs = copy_and_update(
 # by providing the error string and xfail reason.
 _error_files = {
     "large_string_map.brotli.parquet": "Exception",
-    "nation.dict-malformed.parquet": ("Exception", "https://github.com/NVIDIA/spark-rapids/issues/8644"),
+    "nation.dict-malformed.parquet": "Exception",
     "non_hadoop_lz4_compressed.parquet": "Exception",
     "PARQUET-1481.parquet": "Exception",
 }
@@ -59,7 +59,6 @@ _xfail_files = {
     "hadoop_lz4_compressed.parquet": "cudf does not support Hadoop LZ4 format",
     "hadoop_lz4_compressed_larger.parquet": "cudf does not support Hadoop LZ4 format",
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
-    "repeated_no_annotation.parquet": "https://github.com/NVIDIA/spark-rapids/issues/8631",
 }
 if is_before_spark_330():
     _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"
@@ -123,6 +122,7 @@ def gen_testing_params_for_valid_files():
 
 @pytest.mark.parametrize("path", gen_testing_params_for_valid_files())
 @pytest.mark.parametrize("confs", [_native_reader_confs, _java_reader_confs])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_parquet_testing_valid_files(path, confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(path), conf=confs)
 

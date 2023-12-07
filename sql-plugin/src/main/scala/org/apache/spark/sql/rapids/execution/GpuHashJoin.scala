@@ -162,7 +162,17 @@ object GpuHashJoin {
   /**
    * Filter rows from the batch where any of the keys are null.
    */
-  def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
+  def filterNullsWithRetryAndClose(
+      sb: SpillableColumnarBatch,
+      boundKeys: Seq[Expression]): ColumnarBatch = {
+    withRetryNoSplit(sb) { _ =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        filterNulls(cb, boundKeys)
+      }
+    }
+  }
+
+  private def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
     var mask: ai.rapids.cudf.ColumnVector = null
     try {
       withResource(GpuProjectExec.project(cb, boundKeys)) { keys =>
@@ -282,14 +292,14 @@ abstract class BaseHashJoinIterator(
       1.0
   }
 
-  override def computeNumJoinRows(cb: ColumnarBatch): Long = {
+  override def computeNumJoinRows(cb: LazySpillableColumnarBatch): Long = {
     // TODO: Replace this estimate with exact join row counts using the corresponding cudf APIs
     //       being added in https://github.com/rapidsai/cudf/issues/9053.
     joinType match {
       // Full Outer join is implemented via LeftOuter/RightOuter, so use same estimate.
       case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
-        Math.ceil(cb.numRows() * streamMagnificationFactor).toLong
-      case _ => cb.numRows()
+        Math.ceil(cb.numRows * streamMagnificationFactor).toLong
+      case _ => cb.numRows
     }
   }
 
@@ -977,9 +987,9 @@ trait GpuHashJoin extends GpuExec {
     val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
     val nullFiltered = if (builtAnyNullable) {
-      withResource(builtBatch) { _ =>
-        GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
-      }
+      val sb = closeOnExcept(builtBatch)(
+        SpillableColumnarBatch(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      GpuHashJoin.filterNullsWithRetryAndClose(sb, boundBuildKeys)
     } else {
       builtBatch
     }

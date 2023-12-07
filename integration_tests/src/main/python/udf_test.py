@@ -14,8 +14,8 @@
 
 import pytest
 
-from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
+from conftest import is_at_least_precommit_run, is_not_utc
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_340_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -42,6 +42,12 @@ import pyspark.sql.functions as f
 import pandas as pd
 import pyarrow
 from typing import Iterator, Tuple
+
+
+if is_databricks_runtime() and is_spark_340_or_later():
+    # Databricks 13.3 does not use separate reader/writer threads for Python UDFs
+    # which can lead to hangs. Skipping these tests until the Python UDF handling is updated.
+    pytestmark = pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
@@ -84,6 +90,7 @@ def test_iterator_math_udf(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_pandas_scalar_udf_nested_type(data_gen):
     def nested_size(nested):
         return pd.Series([nested.size]).repeat(len(nested))
@@ -110,6 +117,7 @@ def test_single_aggregate_udf(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('double')
     def group_size_udf(to_process: pd.Series) -> float:
@@ -140,6 +148,7 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -255,6 +264,7 @@ def test_group_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
@@ -282,6 +292,7 @@ def test_map_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_pandas_map_udf_nested_type(data_gen):
     # Supported UDF output types by plugin: (commonCudfTypes + ARRAY).nested() + STRUCT
     # STRUCT represents the whole dataframe in Map Pandas UDF, so no struct column in UDF output.
@@ -400,3 +411,13 @@ def test_map_arrow_large_var_types_fallback(data_type):
             .mapInArrow(filter_func, schema=f"a {data_type}, b {data_type}"),
         "PythonMapInArrowExec",
         conf=conf)
+
+
+def test_map_pandas_udf_with_empty_partitions():
+    def test_func(spark):
+        df = spark.range(10).withColumn("const", f.lit(1))
+        # The repartition will produce 4 empty partitions.
+        return df.repartition(5, "const").mapInPandas(
+            lambda data: [pd.DataFrame([len(list(data))])], schema="ret:integer")
+
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf)

@@ -22,12 +22,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, MemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, freeOnExcept, withResource}
 import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_SPILL_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
@@ -123,7 +124,7 @@ class RapidsHostMemoryStore(
         val totalCopySize = otherBufferIterator.getTotalCopySize
         closeOnExcept(HostAlloc.allocHighPriority(totalCopySize)) { hb =>
           hb.map { hostBuffer =>
-            withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
+            val spillNs = GpuTaskMetrics.get.spillToHostTime {
               var hostOffset = 0L
               val start = System.nanoTime()
               while (otherBufferIterator.hasNext) {
@@ -140,12 +141,12 @@ class RapidsHostMemoryStore(
                 }
               }
               stream.sync()
-              val end = System.nanoTime()
-              val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
-              val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
-              logDebug(s"Spill to host (chunked=$isChunked) " +
-                  s"size=$szMB MiB bandwidth=$bw MiB/sec")
+              System.nanoTime() - start
             }
+            val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
+            val bw = (szMB.toDouble / (spillNs.toDouble / 1000000000.0)).toLong
+            logDebug(s"Spill to host (chunked=$isChunked) " +
+                s"size=$szMB MiB bandwidth=$bw MiB/sec")
             new RapidsHostMemoryBuffer(
               other.id,
               totalCopySize,

@@ -16,8 +16,9 @@ from logging import exception
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_not_utc
 from data_gen import *
-from marks import ignore_order, incompat, approximate_float, allow_non_gpu
+from marks import ignore_order, incompat, approximate_float, allow_non_gpu, datagen_overrides
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import *
@@ -49,9 +50,19 @@ _decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
 _decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
-_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 = [
+_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0_no_38_10_no_36_5 = [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
-    _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_10
+    _decimal_gen_30_2
+]
+
+_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0_no_38_10_no_36_5 + \
+    [_decimal_gen_36_5, _decimal_gen_38_10]
+
+_arith_decimal_gens_high_precision_no_neg_scale = [_decimal_gen_36_5, _decimal_gen_38_0, _decimal_gen_38_10]
+
+_arith_decimal_gens_high_precision = _arith_decimal_gens_high_precision_no_neg_scale + [
+    _decimal_gen_36_neg5, _decimal_gen_38_neg10
 ]
 
 _arith_data_gens_diff_precision_scale_and_no_neg_scale = \
@@ -62,6 +73,11 @@ _arith_decimal_gens_no_neg_scale = _arith_data_gens_diff_precision_scale_and_no_
 _arith_decimal_gens = _arith_decimal_gens_no_neg_scale + [
     decimal_gen_32bit_neg_scale, _decimal_gen_36_neg5, _decimal_gen_38_neg10
 ]
+
+_arith_decimal_gens_low_precision = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0_no_38_10_no_36_5 + \
+    [decimal_gen_32bit_neg_scale, _decimal_gen_7_7]
+
 
 _arith_data_gens = numeric_gens + _arith_decimal_gens
 
@@ -450,13 +466,27 @@ def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('signum(a)'))
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + _arith_decimal_gens_low_precision, ids=idfn)
 def test_unary_minus(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'))
 
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + _arith_decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision (SPARK-45438)")
+def test_unary_minus_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'))
+
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] +
+    _arith_decimal_gens_low_precision, ids=idfn)
 def test_unary_minus_ansi_no_overflow(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
+            conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision (SPARK-45438)")
+def test_unary_minus_ansi_no_overflow_decimal128(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
             conf=ansi_enabled_conf)
@@ -486,16 +516,30 @@ def test_unary_positive(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'))
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + _arith_decimal_gens_low_precision, ids=idfn)
 def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
 
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision (SPARK-45438)")
+def test_abs_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
+
 # ANSI is ignored for abs prior to 3.2.0, but still okay to test it a little more.
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + _arith_decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] +
+    _arith_decimal_gens_low_precision, ids=idfn)
 def test_abs_ansi_no_overflow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'),
+            conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision")
+def test_abs_ansi_no_overflow_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('a','abs(a)'),
             conf=ansi_enabled_conf)
 
 # Only run this test for Spark v3.2.0 and later to verify abs will
@@ -529,6 +573,7 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9744')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_hypot(data_gen):
@@ -543,15 +588,14 @@ def test_floor(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', [long_gen] + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_floor_scale_zero(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'),
-            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale_38_0_overflow, ids=idfn)
+@pytest.mark.parametrize('data_gen', [long_gen] + _arith_decimal_gens_no_neg_scale_38_0_overflow, ids=idfn)
 def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
@@ -562,11 +606,10 @@ def test_ceil(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Ceil function is not supported before Spark 3.3.0')
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', [long_gen] + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_ceil_scale_zero(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'),
-            conf={'spark.rapids.sql.castFloatToDecimal.enabled':'true'})
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'))
 
 @pytest.mark.parametrize('data_gen', [_decimal_gen_36_neg5, _decimal_gen_38_neg10], ids=idfn)
 def test_floor_ceil_overflow(data_gen):
@@ -634,6 +677,7 @@ _arith_data_gens_for_round = numeric_gens + _arith_decimal_gens_no_neg_scale_38_
 
 @incompat
 @approximate_float
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9350")
 @pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -647,6 +691,7 @@ def test_decimal_bround(data_gen):
 
 @incompat
 @approximate_float
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9847")
 @pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -939,9 +984,11 @@ def test_columnar_pow(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_least(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
+    s1 = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen)))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0))
         for x in range(0, num_cols)], nullable=False)
@@ -954,9 +1001,11 @@ def test_least(data_gen):
                 f.least(*command_args)))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_greatest(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
+    s1 = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen)))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0))
         for x in range(0, num_cols)], nullable=False)
@@ -1339,3 +1388,15 @@ def test_day_time_interval_division_nan(data_type, value_pair):
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
         error_message='java.lang.ArithmeticException')
+
+
+@pytest.mark.parametrize('op_str', ['+', '- -', '*'], ids=['Add', 'Subtract', 'Multiply'])
+def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
+    def test_func(spark):
+        return spark.range(20).selectExpr("CAST(id as DECIMAL(38,0)) as dec_num")\
+            .selectExpr("99999999999999999999999999999999999991" + op_str + "dec_num as dec_over")
+    # Have to disable ansi, otherwise both CPU and GPU will throw exceptions, which is
+    # not we want for this test.
+    conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
+

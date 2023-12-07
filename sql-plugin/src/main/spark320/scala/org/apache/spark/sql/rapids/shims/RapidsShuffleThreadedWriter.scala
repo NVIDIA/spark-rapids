@@ -27,10 +27,12 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
@@ -53,6 +55,7 @@ class RapidsShuffleThreadedWriter[K, V](
     mapId: Long,
     sparkConf: SparkConf,
     writeMetrics: ShuffleWriteMetricsReporter,
+    maxBytesInFlight: Long,
     shuffleExecutorComponents: ShuffleExecutorComponents,
     numWriterThreads: Int)
   extends RapidsShuffleThreadedWriterBase[K, V](
@@ -61,6 +64,7 @@ class RapidsShuffleThreadedWriter[K, V](
     mapId,
     sparkConf,
     writeMetrics,
+    maxBytesInFlight,
     shuffleExecutorComponents,
     numWriterThreads)
       with org.apache.spark.shuffle.checksum.ShuffleChecksumSupport {

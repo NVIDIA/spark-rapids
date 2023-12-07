@@ -21,13 +21,18 @@
 set -e
 
 spark_version=${1:-"3.1.1"}
+scala_version=${2:-"2.12"}
 # Split spark version into base version (e.g. 3.3.0) and suffix (e.g. SNAPSHOT)
 PRE_IFS=$IFS
 IFS="-" read -r -a spark_version <<< "$1"
 IFS=$PRE_IFS
 # From spark 3.3.0, the pre-built binary tar starts to use new name pattern
 if [[ ${#spark_version[@]} == 1 ]] && [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then
-    BIN_HADOOP_VER="bin-hadoop3"
+    if [ "$scala_version" == "2.12" ]; then
+        BIN_HADOOP_VER="bin-hadoop3"
+    else
+        BIN_HADOOP_VER="bin-hadoop3-scala$scala_version"
+    fi
 # For spark version <3.3.0 and SNAPSHOT version, use previous name pattern
 else
     BIN_HADOOP_VER="bin-hadoop3.2"

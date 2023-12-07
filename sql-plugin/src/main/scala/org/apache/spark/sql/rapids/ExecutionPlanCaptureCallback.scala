@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.ShimLoaderTemp
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
@@ -46,7 +46,7 @@ trait ExecutionPlanCaptureCallbackBase {
 }
 
 object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
-  lazy val impl = ShimLoader.newExecutionPlanCaptureCallbackBase()
+  lazy val impl = ShimLoaderTemp.newExecutionPlanCaptureCallbackBase()
 
   override def captureIfNeeded(qe: QueryExecution): Unit =
     impl.captureIfNeeded(qe)
@@ -84,13 +84,13 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
   override def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit =
     impl.assertDidFallBack(df, fallbackCpuClass)
 
-  override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit = 
+  override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit =
     impl.assertDidFallBack(gpuPlans, fallbackCpuClass)
 
   override def assertCapturedAndGpuFellBack(
       // used by python code, should not be Array[String]
       fallbackCpuClassList: java.util.ArrayList[String],
-      timeoutMs: Long): Unit = 
+      timeoutMs: Long): Unit =
     impl.assertCapturedAndGpuFellBack(fallbackCpuClassList, timeoutMs)
 
   override def assertCapturedAndGpuFellBack(

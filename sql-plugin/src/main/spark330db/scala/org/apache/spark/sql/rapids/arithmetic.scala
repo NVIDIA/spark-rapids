@@ -19,6 +19,7 @@
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -39,6 +40,8 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
+
+  protected val failOnError: Boolean
 
   protected def allowPrecisionLoss = SQLConf.get.decimalOperationsAllowPrecisionLoss
 
@@ -64,11 +67,23 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
       TypeCheckResult.TypeCheckSuccess
     case _ => super.checkInputDataTypes()
   }
+
+  override def nullable: Boolean = super.nullable || {
+    if (left.dataType.isInstanceOf[DecimalType]) {
+      // For decimal arithmetic, we may return null even if both inputs are not null,
+      // if overflow happens and this `failOnError` flag is false.
+      !failOnError
+    } else {
+      // For non-decimal arithmetic, the calculation always return non-null result when inputs
+      // are not null. If overflow happens, we return either the overflowed value or fail.
+      false
+    }
+  }
 }
 
 trait GpuAddSub extends CudfBinaryArithmetic {
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
-  val failOnError: Boolean
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val outputType = dataType
     val leftInputType = left.dataType
@@ -177,8 +192,7 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    override val failOnError: Boolean)
-    extends GpuAddBase(failOnError) with GpuAddSub {
+    failOnError: Boolean) extends GpuAddBase with GpuAddSub {
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -191,8 +205,7 @@ case class GpuAdd(
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    override val failOnError: Boolean)
-    extends GpuSubtractBase(failOnError) with GpuAddSub {
+    failOnError: Boolean) extends GpuSubtractBase with GpuAddSub {
   def do128BitOperation(
       castLhs: ColumnView,
       castRhs: ColumnView,
@@ -201,8 +214,10 @@ case class GpuSubtract(
   }
 }
 
-case class GpuRemainder(left: Expression, right: Expression)
-    extends GpuRemainderBase(left, right) {
+case class GpuRemainder(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuRemainderBase(left, right) {
   assert(!left.dataType.isInstanceOf[DecimalType] ||
          !right.dataType.isInstanceOf[DecimalType],
     "DecimalType remainder need to be handled by GpuDecimalRemainder")
@@ -234,7 +249,10 @@ object DecimalRemainderChecks {
   }
 }
 
-case class GpuDecimalRemainder(left: Expression, right: Expression)
+case class GpuDecimalRemainder(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled)
   extends GpuRemainderBase(left, right) with Logging {
 
   // scalastyle:off
@@ -363,7 +381,8 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
 
 case class GpuPmod(
     left: Expression,
-    right: Expression) extends GpuPmodBase(left, right) {
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuPmodBase(left, right) {
   // This follows Remainder rule
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     val resultScale = max(s1, s2)
@@ -449,11 +468,19 @@ case class GpuDecimalMultiply(
       DecimalType.bounded(resultPrecision, resultScale)
     }
   }
+
+  // Should follow the nullability of GpuMultiply (inherited from
+  // CudfBinaryArithmetic for Spark340+)
+  // Since this is only for decimal type, no need to check the type here.
+  // For decimal multiply, we may return null even if both inputs are not null,
+  // if overflow happens and this `failOnError` flag is false.
+  override def nullable: Boolean = left.nullable || right.nullable || !failOnError
 }
 
 case class GpuIntegralDivide(
     left: Expression,
-    right: Expression) extends GpuIntegralDivideParent(left, right) {
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuIntegralDivideParent(left, right) {
   assert(!left.dataType.isInstanceOf[DecimalType] ||
          !right.dataType.isInstanceOf[DecimalType],
     "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")
@@ -461,7 +488,8 @@ case class GpuIntegralDivide(
 
 case class GpuIntegralDecimalDivide(
     left: Expression,
-    right: Expression)
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
@@ -474,8 +502,6 @@ case class GpuIntegralDecimalDivide(
   override def binaryOp: BinaryOp = BinaryOp.DIV
 
   override def sqlOperator: String = "div"
-
-  override def failOnError: Boolean = SQLConf.get.ansiEnabled
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     super.columnarEval(batch)

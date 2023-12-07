@@ -132,7 +132,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) extends Loggi
   @tailrec
   private def doCompile(worklist: List[BB],
       states: Map[BB, State],
-      pending: Map[BB, Int] = cfg.predecessor.mapValues(_.size),
+      pending: Map[BB, Int] = cfg.predecessor.mapValues(_.size).toMap,
       visited: Set[BB] = Set()): Option[Expression] = {
     /**
      * Pick the first block, and store the rest of the list in [[rest]].

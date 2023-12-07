@@ -14,75 +14,21 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.execution.rapids.shims
 
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
-import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
-
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources._
 
-object FilePartitionShims {
+object FilePartitionShims extends SplitFiles {
   def getPartitions(selectedPartitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
     selectedPartitions.flatMap { p =>
       p.files.map { f =>
         PartitionedFileUtil.getPartitionedFile(f, p.values)
       }
     }
-  }
-
-  def splitFiles(sparkSession: SparkSession,
-      hadoopConf: Configuration,
-      selectedPartitions: Array[PartitionDirectory],
-      maxSplitBytes: Long): Seq[PartitionedFile] = {
-
-    def canBeSplit(filePath: Path, hadoopConf: Configuration): Boolean = {
-      // Checks if file at path `filePath` can be split.
-      // Uncompressed Hive Text files may be split. GZIP compressed files are not.
-      // Note: This method works on a Path, and cannot take a `FileStatus`.
-      //       partition.files is an Array[FileStatus] on vanilla Apache Spark,
-      //       but an Array[SerializableFileStatus] on Databricks.
-      val codec = new CompressionCodecFactory(hadoopConf).getCodec(filePath)
-      codec == null || codec.isInstanceOf[SplittableCompressionCodec]
-    }
-
-    selectedPartitions.flatMap { partition =>
-      partition.files.flatMap { f =>
-        PartitionedFileUtil.splitFiles(
-          sparkSession,
-          f,
-          isSplitable = canBeSplit(f.getPath, hadoopConf),
-          maxSplitBytes,
-          partition.values
-        )
-      }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
-    }
-  }
-
-  def splitFiles(selectedPartitions: Array[PartitionDirectory],
-      relation: HadoopFsRelation,
-      maxSplitBytes: Long): Array[PartitionedFile] = {
-
-    selectedPartitions.flatMap { partition =>
-      partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
-        val filePath = file.getPath
-        val isSplitable = relation.fileFormat.isSplitable(
-          relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtil.splitFiles(
-          sparkSession = relation.sparkSession,
-          file = file,
-          isSplitable = isSplitable,
-          maxSplitBytes = maxSplitBytes,
-          partitionValues = partition.values
-        )
-      }
-    }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
   }
 }

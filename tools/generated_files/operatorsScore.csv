@@ -182,6 +182,7 @@ NthValue,4
 OctetLength,4
 Or,4
 PercentRank,4
+Percentile,4
 PivotFirst,4
 Pmod,4
 PosExplode,4
@@ -220,6 +221,7 @@ SortOrder,4
 SparkPartitionID,4
 SpecifiedWindowFrame,4
 Sqrt,4
+Stack,4
 StartsWith,4
 StddevPop,4
 StddevSamp,4
@@ -235,6 +237,7 @@ StringTranslate,4
 StringTrim,4
 StringTrimLeft,4
 StringTrimRight,4
+StructsToJson,4
 Substring,4
 SubstringIndex,4
 Subtract,4

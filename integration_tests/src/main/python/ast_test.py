@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,9 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from conftest import is_not_utc
 from data_gen import *
-from marks import approximate_float
+from marks import approximate_float, datagen_overrides, ignore_order
 from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 
@@ -32,7 +33,6 @@ ast_integral_descrs = [
 ast_arithmetic_descrs = ast_integral_descrs + [(float_gen, True), (double_gen, True)]
 
 # cudf AST cannot support comparing floating point until it is expressive enough to handle NaNs
-# cudf AST does not support strings yet
 ast_comparable_descrs = [
     (boolean_gen, True),
     (byte_gen, True),
@@ -43,7 +43,7 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    (string_gen, False)
+    (string_gen, True)
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
@@ -71,15 +71,17 @@ def assert_binary_ast(data_descr, func, conf={}):
     assert_gpu_ast(is_supported, lambda spark: func(binary_op_df(spark, data_gen)), conf=conf)
 
 @pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen, date_gen], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
     with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
-    scalar = gen_scalar(data_gen, force_no_nulls=True)
+    scalar = with_cpu_session(lambda spark: gen_scalar(data_gen, force_no_nulls=True))
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(scalar))
 
 @pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen, date_gen], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_null_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
@@ -233,8 +235,9 @@ def test_expm1(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('expm1(a)'))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_eq(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') == s1,
@@ -242,8 +245,9 @@ def test_eq(data_descr):
             f.col('a') == f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_ne(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') != s1,
@@ -251,8 +255,9 @@ def test_ne(data_descr):
             f.col('a') != f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_lt(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') < s1,
@@ -260,8 +265,9 @@ def test_lt(data_descr):
             f.col('a') < f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_lte(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') <= s1,
@@ -269,8 +275,9 @@ def test_lte(data_descr):
             f.col('a') <= f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_gt(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') > s1,
@@ -278,8 +285,9 @@ def test_gt(data_descr):
             f.col('a') > f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_gte(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') >= s1,
@@ -372,3 +380,11 @@ def test_or(data_gen):
                        f.col('a') | f.lit(True),
                        f.lit(False) | f.col('b'),
                        f.col('a') | f.col('b')))
+
+@ignore_order
+def test_multi_tier_ast():
+    assert_gpu_ast(
+        is_supported=True,
+        # repartition is here to avoid Spark simplifying the expression
+        func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
+            .selectExpr("x", "(id < x) == (id < (id + x))"))

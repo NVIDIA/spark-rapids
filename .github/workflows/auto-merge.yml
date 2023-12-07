@@ -18,7 +18,7 @@ name: auto-merge HEAD to BASE
 on:
   pull_request_target:
     branches:
-    - branch-23.10
+    - branch-23.12
     types: [closed]
 
 jobs:
@@ -29,13 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: branch-23.10 # force to fetch from latest upstream instead of PR ref
+          ref: branch-23.12 # force to fetch from latest upstream instead of PR ref
 
       - name: auto-merge job
         uses: ./.github/workflows/auto-merge
         env:
           OWNER: NVIDIA
           REPO_NAME: spark-rapids
-          HEAD: branch-23.10
-          BASE: branch-23.12
+          HEAD: branch-23.12
+          BASE: branch-24.02
           AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }} # use to merge PR

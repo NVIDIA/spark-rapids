@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_not_utc
 from data_gen import *
 from marks import allow_non_gpu, approximate_float, incompat
 from pyspark.sql.types import *
@@ -28,6 +29,7 @@ from spark_session import with_cpu_session
 # to be brought back to the CPU (rows) to be returned.
 # So we just need a very simple operation in the middle that
 # can be done on the GPU.
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_row_conversions():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
             ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
@@ -42,6 +44,7 @@ def test_row_conversions():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_row_conversions_fixed_width():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
             ["e", float_gen], ["f", double_gen], ["h", boolean_gen],
@@ -50,6 +53,7 @@ def test_row_conversions_fixed_width():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_row_conversions_fixed_width_wide():
     gens = [["a{}".format(i), ByteGen(nullable=True)] for i in range(10)] + \
            [["b{}".format(i), ShortGen(nullable=True)] for i in range(10)] + \

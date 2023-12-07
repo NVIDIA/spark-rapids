@@ -61,9 +61,7 @@ class ShuffleBufferCatalog(
   }
 
   def removeCachedHandles(): Unit = {
-    bufferIdToHandle.forEach { case (_, handle) =>
-      removeBuffer(handle)
-    }
+    bufferIdToHandle.forEach { (_, handle) => removeBuffer(handle) }
   }
 
   /**

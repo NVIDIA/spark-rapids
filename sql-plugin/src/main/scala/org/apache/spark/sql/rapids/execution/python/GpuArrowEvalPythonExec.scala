@@ -35,6 +35,7 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -89,7 +90,7 @@ class RebatchingRoundoffIterator(
       rowsSoFar += got.numRows()
       batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
     }
-    val toConcat = batches.safeMap(_.getColumnarBatch()).toArray
+    val toConcat = batches.toArray.safeMap(_.getColumnarBatch())
     ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
   }
 
@@ -314,9 +315,9 @@ case class GpuArrowEvalPythonExec(
 
       val pythonInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
         StructField(s"_$i", dt)
-      })
+      }.toArray)
 
-      val boundReferences = GpuBindReferences.bindReferences(allInputs, childOutput)
+      val boundReferences = GpuBindReferences.bindReferences(allInputs.toSeq, childOutput)
       val batchedIterator = new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize,
         numInputRows, numInputBatches)
       val pyInputIterator = batchedIterator.map { batch =>
