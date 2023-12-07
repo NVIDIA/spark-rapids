@@ -24,6 +24,12 @@ import com.nvidia.spark.rapids.jni.{DecimalUtils => du}
 
 object DecimalUtilShims {
   def multiply128(castLhs: ColumnView, castRhs: ColumnView, scale: Int): Table = {
+    /**
+     * Calling the version of multiplying 128-bit decimal numbers that casts the result only once
+     * to the final precision and scale.
+     * This version of multiplying 128-bit decimal numbers should only be used with Spark versions
+     * greater than or equal to 3.4.2, 4.0.0, 3.5.1
+     */
     du.mul128(castLhs, castRhs, scale)
   }
 }
