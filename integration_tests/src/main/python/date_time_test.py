@@ -573,9 +573,13 @@ def test_timestamp_seconds_long_overflow():
         lambda spark : unary_op_df(spark, long_gen).selectExpr("timestamp_seconds(a)").collect(),
         conf={},
         error_message='long overflow')
-    
-@pytest.mark.parametrize('data_gen', [DecimalGen(7, 7), DecimalGen(20, 7)], ids=idfn)
+
+# For Decimal(20, 7) case, the data is both 'Overflow' and 'Rounding necessary', this case is to verify
+# that 'Rounding necessary' check is before 'Overflow' check. So we should make sure that every decimal 
+# value in test data is 'Rounding necessary' by setting full_precision=True to avoid leading and trailing zeros.
+# Otherwise, the test data will bypass the 'Rounding necessary' check and throw an 'Overflow' error.
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@pytest.mark.parametrize('data_gen', [DecimalGen(7, 7, full_precision=True), DecimalGen(20, 7, full_precision=True)], ids=idfn)
 def test_timestamp_seconds_rounding_necessary(data_gen):
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
