@@ -347,8 +347,10 @@ class JsonPartitionReader(
     maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions = {
-    val builder = cudf.JSONOptions.builder().withRecoverWithNull(true)
-    builder.build
+    cudf.JSONOptions.builder()
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(true)
+      .build
   }
 
   /**
