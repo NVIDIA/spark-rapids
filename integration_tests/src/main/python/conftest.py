@@ -87,15 +87,23 @@ def is_utc():
 def is_not_utc():
     return not is_utc()
 
+# key is time zone, value is recorded boolean value
+_support_info_cache_for_time_zone = {}
+
 def is_supported_time_zone():
     """
     Is current TZ supported, forward to Java TimeZoneDB to check
     """
     tz = get_test_tz()
-    jvm = spark_jvm()
-    ret = jvm.org.apache.spark.sql.rapids.TimeZoneDB.isSupportedTimeZone(tz)
-    print("my debug: is_supported_time_zone " + str(ret))
-    return ret
+    if tz in _support_info_cache_for_time_zone:
+        # already cached
+        return _support_info_cache_for_time_zone[tz]
+    else:
+        jvm = spark_jvm()
+        support = jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.isSupportedTimeZone(tz)
+        # cache support info
+        _support_info_cache_for_time_zone[tz] = support
+        return support
 
 _is_nightly_run = False
 _is_precommit_run = False
