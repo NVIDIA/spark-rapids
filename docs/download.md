@@ -62,25 +62,28 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
-#### RAPIDS Accelerator's Support Policy for Apache Spark
+### RAPIDS Accelerator's Support Policy for Apache Spark
 The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
 
-### Download v23.12.0
-* Download the [RAPIDS
-  Accelerator for Apache Spark 23.12.0 jar - Scala 2.12](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar)
-* Download the [RAPIDS
-  Accelerator for Apache Spark 23.12.0 jar - Scala 2.13](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/23.12.0/rapids-4-spark_2.13-23.12.0.jar)
+### Download RAPIDS Accelerator for Apache Spark v23.12.0
+- **Scala 2.12:**
+  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.12 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar)
+  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.12 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar.asc)
+
+- **Scala 2.13:**
+  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.13 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/23.12.0/rapids-4-spark_2.13-23.12.0.jar)
+  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.13 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/23.12.0/rapids-4-spark_2.13-23.12.0.jar.asc)
 
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
 
 ### Verify signature
-* Download the [RAPIDS Accelerator for Apache Spark 23.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar)
-  and [RAPIDS Accelerator for Apache Spark 23.12.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar.asc)
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
-* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.12.0.jar.asc rapids-4-spark_2.12-23.12.0.jar`
-* You can use similar steps to verify RAPIDS Accelerator Scala 2.13 jar.
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-23.12.0.jar.asc rapids-4-spark_2.12-23.12.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-23.12.0.jar.asc rapids-4-spark_2.13-23.12.0.jar`
 
 The output of signature verify:
 
@@ -94,7 +97,6 @@ New functionality and performance improvements for this release include:
 * Kernel optimizations have been implemented to improve Parquet read performance.
 * RAPIDS Accelerator also built and tested with Scala 2.13.
 * Last version to support Pascal-based Nvidia GPUs; discontinued in the next release.
-* Introducing support for AST expressions.
 * Qualification and Profiling tool:
 	* Profiling Tool now processes Spark Driver log for GPU runs, enhancing feature analysis.
 	* Auto-tuner recommendations include AQE settings for optimized performance.
