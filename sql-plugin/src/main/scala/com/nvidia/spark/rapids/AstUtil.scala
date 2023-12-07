@@ -186,7 +186,7 @@ object AstUtil {
   // For inner joins we can apply a post-join condition for any conditions that cannot be
   // evaluated directly in a mixed join that leverages a cudf AST expression.
   case class JoinCondSplitAsPostFilter(expr: Option[Expression],
-      attributeSeq: scala.Seq[Attribute], left: Seq[NamedExpression],
+      attributeSeq: Seq[Attribute], left: Seq[NamedExpression],
       right: Seq[NamedExpression], buildSide: GpuBuildSide)
     extends JoinCondSplitStrategy(left, right, buildSide) {
     private[this] val postFilter = expr.map { e =>
