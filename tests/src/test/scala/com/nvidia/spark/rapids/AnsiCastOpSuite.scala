@@ -458,14 +458,14 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("ansi_cast decimal to string") {
-    val sqlCtx = SparkSession.getActiveSession.get.sqlContext
-    sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
-
-    Seq(10, 15, 18).foreach { precision =>
-      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
-        testCastToString(DataTypes.createDecimalType(precision, scale),
-          ansiMode = true,
-          comparisonFunc = None)
+    withGpuSparkSession { spark =>
+      spark.conf.set("spark.sql.legacy.allowNegativeScaleOfDecimal", true.toString)
+      Seq(10, 15, 18).foreach { precision =>
+        Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+          testCastToString(DataTypes.createDecimalType(precision, scale),
+            ansiMode = true,
+            comparisonFunc = None)
+        }
       }
     }
   }

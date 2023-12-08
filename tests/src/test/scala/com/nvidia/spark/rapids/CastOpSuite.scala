@@ -448,13 +448,13 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast decimal to string") {
-    val sqlCtx = SparkSession.getActiveSession.get.sqlContext
-    sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
-
-    Seq(10, 15, 28).foreach { precision =>
-      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
-        testCastToString(DataTypes.createDecimalType(precision, scale),
-          comparisonFunc = None)
+    withGpuSparkSession { spark =>
+      spark.conf.set("spark.sql.legacy.allowNegativeScaleOfDecimal", true.toString)
+      Seq(10, 15, 28).foreach { precision =>
+        Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+          testCastToString(DataTypes.createDecimalType(precision, scale),
+            comparisonFunc = None)
+        }
       }
     }
   }
@@ -530,16 +530,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  def before3_4_0(s: SparkSession): (Boolean, String) = {
-    (s.version < "3.4.0", s"Spark version must be prior to 3.4.0")
-  }
-
-  def since3_4_0(s: SparkSession): (Boolean, String) = {
-    (s.version >= "3.4.0", s"Spark version must be at least 3.4.0")
-  }
-
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
-    assumeCondition = before3_4_0) {
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -552,14 +543,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(LongType),
       col("date").cast(TimestampType))
    }
-
-  testSparkResultsAreEqual("Test cast from date Spark 3.4.0+", timestampDatesMsecParquet,
-    assumeCondition = since3_4_0) {
-    frame =>
-      frame.select(
-        col("date"),
-        col("date").cast(TimestampType))
-  }
 
   testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))

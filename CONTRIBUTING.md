@@ -218,6 +218,12 @@ for a single Spark version Shim alone.
 To this end in a pre-production build you can set the Boolean property
 `dist.jar.compress` to `false`, its default value is `true`.
 
+Furthermore, after the first build execution on the clean repository the spark-rapids-jni
+SNAPSHOT dependency typically does not change until the next nightly CI build, or the next install
+to the local Maven repo if you are working on a change to the native code. So you can save
+significant time spent on repeated unpacking these dependencies by adding `-Drapids.jni.unpack.skip`
+to the `dist` build command.
+
 The time saved is more significant if you are merely changing
 the `aggregator` module, or the `dist` module, or just incorporating changes from
 [spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-23.04/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
@@ -225,12 +231,12 @@ the `aggregator` module, or the `dist` module, or just incorporating changes fro
 For example, to quickly repackage `rapids-4-spark` after the
 initial `./build/buildall` you can iterate by invoking
 ```Bash
-mvn package -pl dist -PnoSnapshots -Ddist.jar.compress=false
+mvn package -pl dist -PnoSnapshots -Ddist.jar.compress=false -Drapids.jni.unpack.skip
 ```
 
 or similarly
 ```Bash
- ./build/buildall --rebuild-dist-only --option="-Ddist.jar.compress=false"
+ ./build/buildall --rebuild-dist-only --option="-Ddist.jar.compress=false -Drapids.jni.unpack.skip"
 ```
 
 ## Code contributions
@@ -282,7 +288,7 @@ Before proceeding with importing spark-rapids into IDEA or switching to a differ
 profile, execute the install phase with the corresponding `buildver`, e.g. for Spark 3.4.0:
 
 ```bash
- mvn clean install -Dbuildver=340 -Dskip -DskipTests
+ mvn clean install -Dbuildver=340 -Dmaven.scaladoc.skip -DskipTests
 ```
 
 ##### Importing the project
@@ -353,13 +359,10 @@ interested in. For example, to generate the Bloop projects for the Spark 3.2.0 d
 just for the production code run:
 
 ```shell script
-mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -pl aggregator -am \
-  -DdownloadSources=true \
-  -Dbuildver=320 \
-  -DskipTests \
-  -Dskip \
-  -Dmaven.scalastyle.skip=true \
-  -Dmaven.updateconfig.skip=true
+mvn -B clean install \
+    -DbloopInstall \
+    -DdownloadSources=true \
+    -Dbuildver=320
 ```
 
 With `--generate-bloop` we integrated Bloop project generation into `buildall`. It makes it easier
@@ -383,6 +386,11 @@ You can now open the spark-rapids as a
 [BSP project in IDEA](https://www.jetbrains.com/help/idea/bsp-support.html)
 
 Read on for VS Code Scala Metals instructions.
+
+##### JDK 11 Requirement
+
+It is known that Bloop's SemanticDB generation with JDK 8 is broken for spark-rapids. Please use JDK
+11 or later for Bloop builds.
 
 #### Bloop, Scala Metals, and Visual Studio Code
 
@@ -431,18 +439,11 @@ jps -l
 ###### java.lang.RuntimeException: boom
 
 Metals background compilation process status appears to be resetting to 0% after reaching 99%
-and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. You can work around
-it by making sure Metals Server (Bloop client) and Bloop Server are both running on Java 11+.
+and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. This is a known issue
+when running Metals/Bloop on Java 8. To work around it, ensure Metals and Bloop are both running on
+Java 11+.
 
-1. To this end make sure that Bloop projects are generated using Java 11+
-
-    ```bash
-    JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 \
-      mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
-      -DdownloadSources=true \
-      -Dbuildver=331 \
-      -Dskip -DskipTests
-    ```
+1. The `-DbloopInstall` profile will enforce Java 11+ compliance.
 
 1. Add [`metals.javaHome`][2] to VSCode preferences to point to Java 11+.
 

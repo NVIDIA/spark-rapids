@@ -114,7 +114,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       this.nameMapping = NameMappingParser.fromJson(nameMapping);
     }
     files = Maps.newLinkedHashMapWithExpectedSize(task.files().size());
-    task.files().forEach(fst -> this.files.putIfAbsent(fst.file().path().toString(), fst));
+    task.files().forEach(fst -> this.files.putIfAbsent(toEncodedPathString(fst), fst));
   }
 
   @Override
@@ -190,6 +190,15 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     }
   }
 
+  /**
+   * MultiFiles readers expect the path string is encoded and url safe.
+   * Here leverages this conversion to do this encoding because Iceberg
+   * gives the raw data path by `file().path()` call.
+   */
+  private String toEncodedPathString(FileScanTask fst) {
+    return new Path(fst.file().path().toString()).toUri().toString();
+  }
+
   static class FilteredParquetFileInfo {
     private final ParquetFileInfoWithBlockMeta parquetBlockMeta;
     private final Map<Integer, ?> idToConstant;
@@ -220,10 +229,12 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     private final Schema expectedSchema;
     private final PartitionSpec partitionSpec;
 
-    IcebergParquetExtraInfo(boolean isCorrectedRebaseMode,
-        boolean isCorrectedInt96RebaseMode, boolean hasInt96Timestamps,
-        Map<Integer, ?> idToConstant, Schema expectedSchema, PartitionSpec partitionSpec) {
-      super(isCorrectedRebaseMode, isCorrectedInt96RebaseMode, hasInt96Timestamps);
+    IcebergParquetExtraInfo(DateTimeRebaseMode dateRebaseMode,
+                            DateTimeRebaseMode timestampRebaseMode,
+                            boolean hasInt96Timestamps,
+                            Map<Integer, ?> idToConstant, Schema expectedSchema,
+                            PartitionSpec partitionSpec) {
+      super(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps);
       this.idToConstant = idToConstant;
       this.expectedSchema = expectedSchema;
       this.partitionSpec = partitionSpec;
@@ -252,7 +263,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       final InternalRow emptyPartValue = InternalRow.empty();
       PartitionedFile[] pFiles = files.values().stream()
           .map(fst -> PartitionedFileUtilsShim.newPartitionedFile(emptyPartValue,
-              fst.file().path().toString(), fst.start(), fst.length()))
+              toEncodedPathString(fst), fst.start(), fst.length()))
           .toArray(PartitionedFile[]::new);
       rapidsReader = createRapidsReader(pFiles, emptyPartSchema);
     }
@@ -275,7 +286,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         StructType partitionSchema);
 
     /** The filter function for the Parquet multi-file reader */
-    protected FilteredParquetFileInfo filterParquetBlocks(FileScanTask fst) {
+    protected FilteredParquetFileInfo filterParquetBlocks(FileScanTask fst,
+        String partFilePathString) {
       GpuDeleteFilter deleteFilter = deleteFilter(fst);
       if (deleteFilter != null) {
         throw new UnsupportedOperationException("Delete filter is not supported");
@@ -307,10 +319,12 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             GpuParquetReader.addNullsForMissingFields(idToConstant, reorder.getMissingFields());
 
         ParquetFileInfoWithBlockMeta parquetBlockMeta = ParquetFileInfoWithBlockMeta.apply(
-            new Path(new URI(fst.file().path().toString())), clippedBlocks,
+            // The path conversion aligns with that in Rapids multi-files readers.
+            // So here should use the file path of a PartitionedFile.
+            new Path(new URI(partFilePathString)), clippedBlocks,
             InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
-            true, // isCorrectedInt96RebaseMode
-            true, // isCorrectedRebaseMode
+            DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
+            DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
             true //  hasInt96Timestamps
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
@@ -352,9 +366,10 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     }
 
     private ParquetFileInfoWithBlockMeta filterParquetBlocks(PartitionedFile file) {
-      FileScanTask fst = files.get(file.filePath());
-      FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst);
-      constsSchemaMap.put(file.filePath().toString(),
+      String partFilePathString = file.filePath().toString();
+      FileScanTask fst = files.get(partFilePathString);
+      FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst, partFilePathString);
+      constsSchemaMap.put(partFilePathString,
           Tuple2.apply(filteredInfo.idToConstant(), filteredInfo.expectedSchema()));
       return filteredInfo.parquetBlockMeta();
     }
@@ -386,8 +401,10 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     protected FilePartitionReaderBase createRapidsReader(PartitionedFile[] pFiles,
         StructType partitionSchema) {
       ArrayList<ParquetSingleDataBlockMeta> clippedBlocks = new ArrayList<>();
-      files.values().forEach(fst -> {
-        FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst);
+      Arrays.stream(pFiles).forEach(pFile -> {
+        String partFilePathString = pFile.filePath().toString();
+        FileScanTask fst = files.get(partFilePathString);
+        FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst, partFilePathString);
         List<ParquetSingleDataBlockMeta> fileSingleMetas =
           JavaConverters.asJavaCollection(filteredInfo.parquetBlockMeta.blocks()).stream()
             .map(b -> ParquetSingleDataBlockMeta.apply(
@@ -397,8 +414,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
                 ParquetSchemaWrapper.apply(filteredInfo.parquetBlockMeta.schema()),
                 filteredInfo.parquetBlockMeta.readSchema(),
                 new IcebergParquetExtraInfo(
-                    filteredInfo.parquetBlockMeta.isCorrectedRebaseMode(),
-                    filteredInfo.parquetBlockMeta.isCorrectedInt96RebaseMode(),
+                    filteredInfo.parquetBlockMeta.dateRebaseMode(),
+                    filteredInfo.parquetBlockMeta.timestampRebaseMode(),
                     filteredInfo.parquetBlockMeta.hasInt96Timestamps(),
                     filteredInfo.idToConstant(),
                     filteredInfo.expectedSchema(),

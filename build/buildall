@@ -65,15 +65,10 @@ function bloopInstall() {
       bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
       mkdir -p $bloopTmpConfigDir
       $MVN -B clean install \
-        ch.epfl.scala:bloop-maven-plugin:bloopInstall \
-        -pl aggregator -am \
+        -DbloopInstall \
         -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
-        -Dbuildver="$bv" \
-        -DskipTests \
-        -Dskip \
-        -Dmaven.scalastyle.skip=true \
-        -Dmaven.updateconfig.skip=true
+        -Dbuildver="$bv"
 
       specifier="spark$bv"
       bloopDir=$PWD/.bloop-$specifier
@@ -267,7 +262,7 @@ function build_single_shim() {
       -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
-      -Dskip \
+      -Dmaven.scaladoc.skip \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl aggregator -am > "$LOG_FILE" 2>&1 || {
         [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -20 "$LOG_FILE" || true
@@ -308,5 +303,5 @@ time (
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
   $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
-    -DskipTests -Dskip
+    -DskipTests -Dmaven.scaladoc.skip
 )

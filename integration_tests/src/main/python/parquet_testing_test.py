@@ -16,8 +16,9 @@
 # https://github.com/apache/parquet-testing
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
-from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run
-from data_gen import copy_and_update
+from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run, is_not_utc
+from data_gen import copy_and_update, non_utc_allow
+from marks import allow_non_gpu
 from pathlib import Path
 import pytest
 from spark_session import is_before_spark_330, is_spark_350_or_later
@@ -122,6 +123,7 @@ def gen_testing_params_for_valid_files():
 
 @pytest.mark.parametrize("path", gen_testing_params_for_valid_files())
 @pytest.mark.parametrize("confs", [_native_reader_confs, _java_reader_confs])
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_testing_valid_files(path, confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(path), conf=confs)
 

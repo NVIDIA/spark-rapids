@@ -22,7 +22,7 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetry
-import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.{StringType, StructType}
@@ -340,6 +340,8 @@ object BatchWithPartitionDataUtils {
    * Splits the input ColumnarBatch into smaller batches, wraps these batches with partition
    * data, and returns them as a sequence of [[BatchWithPartitionData]].
    *
+   * This function does not take ownership of `batch`, and callers should make sure to close.
+   *
    * @note Partition values are merged with the columnar batches lazily by the resulting Iterator
    *       to save GPU memory.
    * @param batch                     Input ColumnarBatch.
@@ -498,13 +500,14 @@ object BatchWithPartitionDataUtils {
       withResource(batchWithPartData) { _ =>
         // Split partition rows data into two halves
         val splitPartitionData = splitPartitionDataInHalf(batchWithPartData.partitionedRowsData)
-        if(splitPartitionData.length < 2) {
-          throw new SplitAndRetryOOM("GPU OutOfMemory: cannot split input with one row")
+        if (splitPartitionData.length < 2) {
+          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: cannot split input with one row")
         }
         // Split the batch into two halves
-        val cb = batchWithPartData.inputBatch.getColumnarBatch()
-        splitAndCombineBatchWithPartitionData(cb, splitPartitionData,
-          batchWithPartData.partitionSchema)
+        withResource(batchWithPartData.inputBatch.getColumnarBatch()) { cb =>
+          splitAndCombineBatchWithPartitionData(cb, splitPartitionData,
+            batchWithPartData.partitionSchema)
+        }
       }
     }
   }
