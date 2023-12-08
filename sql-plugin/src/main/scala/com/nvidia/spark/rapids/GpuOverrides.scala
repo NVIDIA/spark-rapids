@@ -1700,8 +1700,8 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
-        // String type is not supported yet for timezone.
-        override val isTimezoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
+        // String type is not supported yet for non-UTC timezone.
+        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
           a.left.dataType match {
             case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
             case _ => true
@@ -1727,8 +1727,8 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
-        // String type is not supported yet for timezone.
-        override val isTimezoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
+        // String type is not supported yet for non-UTC timezone.
+        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
             a.left.dataType match {
               case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
               case _ => true
