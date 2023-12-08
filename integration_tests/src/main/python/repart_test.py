@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from spark_session import is_before_spark_320, is_before_spark_330
+from conftest import is_not_utc
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -165,12 +166,14 @@ def test_union_by_name(data_gen):
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample + [ArrayGen(BinaryGen(max_length=5), max_length=5)])]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
 ], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_coalesce_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).coalesce(2))
 
 @pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + [binary_gen])]
@@ -186,6 +189,7 @@ def test_coalesce_df(num_parts, length):
 @pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@allow_non_gpu(*non_utc_allow)
 def test_repartition_df(data_gen, num_parts, length):
     from pyspark.sql.functions import lit
     assert_gpu_and_cpu_are_equal_collect(
@@ -202,6 +206,7 @@ def test_repartition_df(data_gen, num_parts, length):
 @pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@allow_non_gpu(*non_utc_allow)
 def test_repartition_df_for_round_robin(data_gen, num_parts, length):
     from pyspark.sql.functions import lit
     assert_gpu_and_cpu_are_equal_collect(
@@ -275,6 +280,7 @@ def test_hash_fallback(data_gen):
     ([('a', decimal_gen_64bit), ('b', decimal_gen_64bit), ('c', decimal_gen_64bit)], ['a', 'b', 'c']),
     ([('a', decimal_gen_128bit), ('b', decimal_gen_128bit), ('c', decimal_gen_128bit)], ['a', 'b', 'c']),
     ], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
     part_on = gen[1]

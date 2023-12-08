@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
+from conftest import is_not_utc
 from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
@@ -150,6 +151,9 @@ def test_cache_diff_req_order(spark_tmp_path):
 
     with_cpu_session(n_fold)
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_orc_save_table_allow = ['DataWritingCommandExec', 'WriteFilesExec'] if is_not_utc() else []
+
 # This test doesn't allow negative scale for Decimals as ` df.write.mode('overwrite').parquet(data_path)`
 # writes parquet which doesn't allow negative decimals
 @pytest.mark.parametrize('data_gen', [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
@@ -164,7 +168,7 @@ def test_cache_diff_req_order(spark_tmp_path):
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
-@allow_non_gpu("SortExec", "ShuffleExchangeExec", "RangePartitioning")
+@allow_non_gpu("SortExec", "ShuffleExchangeExec", "RangePartitioning", *non_utc_orc_save_table_allow)
 def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA'
     def read_parquet_cached(data_path):

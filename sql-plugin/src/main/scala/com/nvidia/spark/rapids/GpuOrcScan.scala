@@ -21,6 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.charset.StandardCharsets
+import java.time.ZoneId
 import java.util
 import java.util.concurrent.{Callable, TimeUnit}
 import java.util.regex.Pattern
@@ -152,6 +153,19 @@ object GpuOrcScan {
 
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(schema)) {
       meta.willNotWorkOnGpu("GpuOrcScan does not support default values in schema")
+    }
+
+    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
+    // timezone offset is considered when getting [[java.sql.date]] from
+    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
+    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
+    val types = schema.map(_.dataType).toSet
+    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
+      if (!GpuOverrides.isUTCTimezone()) {
+        meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+      }
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)

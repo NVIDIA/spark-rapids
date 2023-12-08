@@ -20,14 +20,11 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuOverrides
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.internal.SQLConf
 
 object TimeZoneDB {
-  def isUTCTimezone(timezoneId: ZoneId): Boolean = {
-    timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
-  }
 
   // Copied from Spark. Used to format time zone ID string with (+|-)h:mm and (+|-)hh:m
   def getZoneId(timezoneId: String): ZoneId = {
@@ -40,9 +37,25 @@ object TimeZoneDB {
   }
 
   // Support fixed offset or no transition rule case
-  def isSupportedTimezone(timezoneId: String): Boolean = {
+  def isSupportedTimeZone(timezoneId: String): Boolean = {
     val rules = getZoneId(timezoneId).getRules
     rules.isFixedOffset || rules.getTransitionRules.isEmpty
+  }
+
+  def isSupportedTimezone(timezoneId: ZoneId): Boolean = {
+    val rules = timezoneId.getRules
+    rules.isFixedOffset || rules.getTransitionRules.isEmpty
+  }
+
+  def nonUTCTimezoneNotSupportedStr(exprName: String): String = {
+    s"$exprName is not supported with timezone settings: (JVM:" +
+      s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+      s" Set both of the timezones to UTC to enable $exprName support"
+  }
+
+  def timezoneNotSupportedStr(timezoneIdStr: String): String = {
+    s"Timezone $timezoneIdStr is not supported yet. Only Non DST (daylight saving time) timezone" +
+      s" is supported."
   }
 
   def cacheDatabase(): Unit = {}
@@ -153,7 +166,7 @@ object TimeZoneDB {
     assert(inputVector.getType == DType.TIMESTAMP_DAYS)
     val rowCount = inputVector.getRowCount.toInt
     withResource(inputVector.copyToHost()) { input =>
-      withResource(HostColumnVector.builder(DType.INT64, rowCount)) { builder =>
+      withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
         var currRow = 0
         while (currRow < rowCount) {
           if (input.isNull(currRow)) {

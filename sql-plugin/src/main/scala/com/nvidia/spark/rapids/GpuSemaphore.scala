@@ -24,7 +24,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -269,6 +268,8 @@ private final class GpuSemaphore() extends Logging {
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
   def acquireIfNecessary(context: TaskContext): Unit = {
+    // Make sure that the thread/task is registered before we try and block
+    TaskRegistryTracker.registerThreadForRetry()
     GpuTaskMetrics.get.semWaitTime {
       val taskAttemptId = context.taskAttemptId()
       val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
@@ -276,7 +277,6 @@ private final class GpuSemaphore() extends Logging {
         new SemaphoreTaskInfo()
       })
       taskInfo.blockUntilReady(semaphore)
-      RmmSpark.associateCurrentThreadWithTask(taskAttemptId)
       GpuDeviceManager.initializeFromTask()
     }
   }
@@ -286,7 +286,6 @@ private final class GpuSemaphore() extends Logging {
     try {
       val taskAttemptId = context.taskAttemptId()
       GpuTaskMetrics.get.updateRetry(taskAttemptId)
-      RmmSpark.removeCurrentThreadAssociation()
       val taskInfo = tasks.get(taskAttemptId)
       if (taskInfo != null) {
         taskInfo.releaseSemaphore(semaphore)
@@ -299,7 +298,6 @@ private final class GpuSemaphore() extends Logging {
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
-    RmmSpark.taskDone(taskAttemptId)
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")
