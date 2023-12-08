@@ -10770,7 +10770,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>only support partToExtract=PROTOCOL;<br/>Literal value only</em></td>
+<td><em>PS<br/>only support partToExtract = PROTOCOL | HOST;<br/>Literal value only</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
