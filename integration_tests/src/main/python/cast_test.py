@@ -61,13 +61,11 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
-date_after_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{0,2}[01])-[0-3]?[0-9])-[0-5]?[0-9]'
-
 def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen(date_after_1_2_1)).select(f.col('a').cast(DateType())),
+            lambda spark : unary_op_df(spark, StringGen(date_start_1_2_1)).select(f.col('a').cast(DateType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
@@ -148,9 +146,9 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-@pytest.mark.parametrize('data_gen', [StringGen(date_after_1_2_1),
-                                      StringGen(date_after_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
-                                      StringGen(date_after_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
+@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_2_1),
+                                      StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
                                       ],
                         ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -459,7 +457,6 @@ long_gen_to_timestamp = LongGen(max_val=math.floor((9999-1970) * 365 * 86400),
     short_gen,
     int_gen,
     long_gen_to_timestamp], ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_cast_integral_to_timestamp(gen, ansi_enabled):
     if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
         pytest.skip()
@@ -496,7 +493,6 @@ def test_cast_double_to_timestamp(ansi_enabled):
     (INT_MIN - 1, IntegerType()),
 ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
-@allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
     (invalid, to_type) = invalid_and_type
     assert_gpu_and_cpu_error(
@@ -507,7 +503,6 @@ def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
         error_message="overflow")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
-@allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_numeric_ansi_no_overflow():
     data = [datetime.fromtimestamp(i) for i in range(BYTE_MIN, BYTE_MAX + 1)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -516,7 +511,6 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
                         "cast(value as float)", "cast(value as double)"),
         conf=ansi_enabled_conf)
 
-@allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_numeric_non_ansi():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)
@@ -694,3 +688,8 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         "Cast",
         {"spark.sql.session.timeZone": "+08",
          "spark.rapids.sql.castStringToTimestamp.enabled": "true"})
+
+def test_cast_date_integral_and_fp():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, date_gen).selectExpr(
+            "cast(a as boolean)", "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)", "cast(a as float)", "cast(a as double)"))

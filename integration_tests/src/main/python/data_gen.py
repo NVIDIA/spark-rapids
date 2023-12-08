@@ -280,10 +280,13 @@ class DecimalGen(DataGen):
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
+_MISSING_ARG = object()
+
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = []):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
+    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX,
+                 special_cases = _MISSING_ARG):
+        _special_cases = [min_val, max_val, 0, 1, -1] if special_cases is _MISSING_ARG else special_cases
         super().__init__(LongType(), nullable=nullable, special_cases=_special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -1201,3 +1204,11 @@ def get_25_partitions_df(spark):
 non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
                  'ExecutedCommandExec'] if is_not_utc() else []
+
+# date related regexps for generating date strings within python's range limits
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{0,2}[01])-[0-3]?[0-9])-[0-5]?[0-9]'
+
+# regexp to generate year from 0002, format is yyyy
+yyyy_start_0002 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'

@@ -128,11 +128,17 @@ def is_before_spark_312():
 def is_before_spark_313():
     return spark_version() < "3.1.3"
 
+def is_before_spark_314():
+    return spark_version() < "3.1.4"
+
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
 def is_before_spark_322():
     return spark_version() < "3.2.2"
+
+def is_before_spark_323():
+    return spark_version() < "3.2.3"
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
