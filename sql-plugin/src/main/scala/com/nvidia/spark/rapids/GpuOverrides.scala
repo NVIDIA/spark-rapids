@@ -39,7 +39,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.catalyst.util.ArrayData
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
@@ -320,7 +320,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     if (cmd.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
     }
@@ -630,6 +630,11 @@ object GpuOverrides extends Logging {
     isUTCTimezone(GpuTimeZoneDB.getZoneId(timezoneIdStr))
   }
 
+  def isUTCTimezone(): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
+    isUTCTimezone(zoneId.normalized())
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))
 
   /**
@@ -702,6 +707,12 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  def isOrContainsDateOrTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType || dt == DateType)
+
+  def isOrContainsTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType)
 
   /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
   def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
@@ -1790,9 +1801,10 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           // passing the already converted strf string for a little optimization
-          GpuFromUnixTime(lhs, rhs, strfFormat)
+          GpuFromUnixTime(lhs, rhs, strfFormat, a.timeZoneId)
       }),
     expr[FromUTCTimestamp](
       "Render the input UTC timestamp in the input timezone",
