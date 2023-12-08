@@ -247,7 +247,8 @@ def test_dayofyear(data_gen):
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
+            lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
+        {"spark.rapids.sql.nonUTC.enabled": "true"})
 
 
 @allow_non_gpu('ProjectExec')

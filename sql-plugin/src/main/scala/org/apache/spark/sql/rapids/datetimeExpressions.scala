@@ -370,11 +370,6 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
-    val zoneIdStr = SQLConf.get.sessionLocalTimeZone
-    if(!GpuTimeZoneDB.isSupportedTimeZone(zoneIdStr)) {
-      return willNotWorkOnGpu(s"Not supported timezone ID ${zoneIdStr}")
-    }
-
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       extractStringLit(expr.right) match {
@@ -866,7 +861,6 @@ abstract class GpuToTimestamp
         // and timestampNtp.
         lhs.getBase.asTimestampMicroseconds()
     }
-
     // Return Timestamp value if dataType it is expecting is of TimestampType
     if (dataType.equals(TimestampType)) {
       tmp
