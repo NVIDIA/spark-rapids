@@ -385,14 +385,14 @@ def test_unix_timestamp_improved(data_gen, ansi_enabled):
             "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
+        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled, "spark.rapids.sql.nonUTC.enabled": "true"}, conf))
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
-        {'spark.sql.ansi.enabled': ansi_enabled})
+        {'spark.sql.ansi.enabled': ansi_enabled, "spark.rapids.sql.nonUTC.enabled": "true"})
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -400,7 +400,7 @@ def test_to_unix_timestamp_improved(data_gen, ansi_enabled):
     conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
+        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled, "spark.rapids.sql.nonUTC.enabled": "true"}, conf))
 
 str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
