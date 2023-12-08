@@ -18,17 +18,19 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{ColumnarRdd, ColumnarToRowIterator, GpuBatchUtilsSuite, GpuColumnVectorUtils, NoopMetric, RapidsHostColumnVector, SparkQueryCompareTestSuite, TestResourceFinder}
+import com.nvidia.spark.rapids.{ColumnarRdd, ColumnarToRowIterator, GpuBatchUtilsSuite, GpuColumnVectorUtils, NoopMetric, RapidsHostColumnVector, RmmSparkRetrySuiteBase, SparkQueryCompareTestSuite, TestResourceFinder}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import org.scalatest.Assertion
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.util.MapData
 import org.apache.spark.sql.types._
 
-class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
+class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
+    with RmmSparkRetrySuiteBase {
 
-  def compareMapAndMapDate[K,V](map: collection.Map[K, V], mapData: MapData) = {
+  def compareMapAndMapDate[K,V](map: collection.Map[K, V], mapData: MapData): Assertion = {
     assert(map.size == mapData.numElements())
     val outputMap = mutable.Map[Any, Any]()
     // Only String now, TODO: support other data types in Map
@@ -46,9 +48,9 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
     withResource(new GpuColumnarBatchBuilder(schema, numRows)) { batchBuilder =>
       val extR2CConverter = new GpuExternalRowToColumnConverter(schema)
       rows.foreach(extR2CConverter.convert(_, batchBuilder))
-      closeOnExcept(batchBuilder.build(numRows)) { columnarBatch =>
-        val c2rIterator = new ColumnarToRowIterator(Iterator(columnarBatch),
-          NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+      val columnarBatch = batchBuilder.build(numRows)
+      withResource(new ColumnarToRowIterator(Iterator(columnarBatch),
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric)) { c2rIterator =>
         rows.foreach { input =>
           val output = c2rIterator.next()
           if (input.isNullAt(0)) {

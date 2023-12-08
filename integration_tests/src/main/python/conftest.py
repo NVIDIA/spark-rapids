@@ -88,13 +88,23 @@ def is_utc():
 def is_not_utc():
     return not is_utc()
 
-def is_dst_time_zone():
+# key is time zone, value is recorded boolean value
+_support_info_cache_for_time_zone = {}
+
+def is_supported_time_zone():
     """
-    Is current TZ is Daylight Saving Time zone
+    Is current TZ supported, forward to Java TimeZoneDB to check
     """
     tz = get_test_tz()
-    assert tz in all_valid_time_zones
-    return tz in dst_time_zones
+    if tz in _support_info_cache_for_time_zone:
+        # already cached
+        return _support_info_cache_for_time_zone[tz]
+    else:
+        jvm = spark_jvm()
+        support = jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.isSupportedTimeZone(tz)
+        # cache support info
+        _support_info_cache_for_time_zone[tz] = support
+        return support
 
 _is_nightly_run = False
 _is_precommit_run = False
@@ -164,7 +174,14 @@ def pytest_runtest_setup(item):
     _inject_oom = item.get_closest_marker('inject_oom')
     datagen_overrides = item.get_closest_marker('datagen_overrides')
     if datagen_overrides:
-        _test_datagen_random_seed = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
+        try:
+            seed = datagen_overrides.kwargs["seed"]
+        except KeyError:
+            raise Exception("datagen_overrides requires an override seed value")
+
+        override_seed = datagen_overrides.kwargs.get('condition', True)
+        if override_seed:
+            _test_datagen_random_seed = seed
 
     order = item.get_closest_marker('ignore_order')
     if order:
