@@ -127,7 +127,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     Tuple2<SpillableColumnarBatch, NvtxRange> batchAndRange;
     AutoCloseableTargetSize numRowsWrapper =
         new AutoCloseableTargetSize(numRowsEstimate, 1);
-    Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize> bufsAndRows;
+    Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize> bufsAndNumRows;
 
     // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
     // don't do a great job from a performance standpoint with building this type of data structure
@@ -135,7 +135,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     // buffers.  One will be for the byte data and the second will be for the offsets. We will then
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
-    bufsAndRows =
+    bufsAndNumRows =
         // Starting with initial num rows estimate, this retry block will
         // recalculate the buffer sizes from the rows estimate, which is split
         // in half if we get a split and retry oom, until we hit the min of 1 row.
@@ -143,21 +143,17 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
             RmmRapidsRetryIterator.splitTargetSizeInHalfCpu(), (numRows) -> {
           return allocBuffersWithRestore(numRows);
         }).next();
-    // Update our estimate for number of rows.
-    numRowsEstimate = (int) bufsAndRows._2.targetSize();
+    // Update our estimate for number of rows with the final size used to allocate the buffers.
+    numRowsEstimate = (int) bufsAndNumRows._2.targetSize();
     long dataLength = calcDataLengthEstimate(numRowsEstimate);
     try (
-        SpillableHostBuffer sdb = bufsAndRows._1[0];
-        SpillableHostBuffer sob = bufsAndRows._1[1];
+        SpillableHostBuffer sdb = bufsAndNumRows._1[0];
+        SpillableHostBuffer sob = bufsAndNumRows._1[1];
     ) {
       // Fill in buffer under write lock for host buffers
-      int[] used = sdb.withHostBufferWriteLock( (dataBuffer) -> {
+      batchAndRange = sdb.withHostBufferWriteLock( (dataBuffer) -> {
         return sob.withHostBufferWriteLock( (offsetsBuffer) -> {
-          return fillBatch(dataBuffer, offsetsBuffer, dataLength, numRowsEstimate);
-        });
-      });
-      batchAndRange = sdb.withHostBufferReadOnly( (dataBuffer) -> {
-        return sob.withHostBufferReadOnly( (offsetsBuffer) -> {
+          int[] used = fillBatch(dataBuffer, offsetsBuffer, dataLength, numRowsEstimate);
           int dataOffset = used[0];
           int currentRow = used[1];
           // We don't want to loop forever trying to copy nothing
