@@ -160,7 +160,17 @@ ci_2() {
     # Test a portion of cases for non-UTC time zone because of limited GPU resources.
     # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
     # Nightly CIs will cover all the cases.
-    TZ=Iran TEST='test_parquet_read_round_trip or test_read_round_trip or test_basic_csv_read or test_cast_string_ts_valid_format or test_unix_timestamp or test_from_utc_timestamp' ./integration_tests/run_pyspark_from_build.sh
+    #
+    # potential corner cases:
+    # Hebron and Casablanca are chosen because they contain many zone transitions.
+    # Belize is chosen for containing the most intra-hour zone transitions.
+    # Punta_Arenas is chosen for containing the most intra-minute zone transitions.
+    # Morocco is chosen for frequently changing transition rules between the release of Java 8 and Java 17
+    non_utc_time_zones=("Iran" "Hebron" "Casablanca" "Belize" "Punta_Arenas" "Morocco")
+    for tz in "${non_utc_time_zones[@]}"
+    do
+        TZ=$tz TEST='test_parquet_read_round_trip or test_read_round_trip or test_basic_csv_read or test_cast_string_ts_valid_format or test_unix_timestamp or test_from_utc_timestamp' ./integration_tests/run_pyspark_from_build.sh
+    done
 
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
