@@ -1010,15 +1010,13 @@ case class GpuFromUnixTime(
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
     // expressions map and passed down here as strfFormat
     withResource(lhs.getBase.asTimestampSeconds) { secondsVector =>
-      withResource(secondsVector.asTimestampMicroseconds) { tsVector =>
-        if (GpuOverrides.isUTCTimezone(zoneId)) {
-          // UTC time zone
-          tsVector.asStrings(strfFormat)
-        } else {
-          // Non-UTC TZ
-          withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(tsVector, zoneId.normalized())) {
-            shifted => shifted.asStrings(strfFormat)
-          }
+      if (GpuOverrides.isUTCTimezone(zoneId)) {
+        // UTC time zone
+        secondsVector.asStrings(strfFormat)
+      } else {
+        // Non-UTC TZ
+        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(secondsVector, zoneId.normalized())) {
+          shifted => shifted.asStrings(strfFormat)
         }
       }
     }
