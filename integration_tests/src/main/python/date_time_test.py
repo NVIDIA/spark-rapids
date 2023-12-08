@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_supported_time_zone
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import ignore_order, incompat, allow_non_gpu
+from marks import ignore_order, incompat, allow_non_gpu, timestamp_range
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -281,6 +281,7 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
 @pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
+@timestamp_range
 def test_from_utc_timestamp(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
@@ -288,6 +289,7 @@ def test_from_utc_timestamp(data_gen, time_zone):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "EST", "MST", "VST", "PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@timestamp_range
 def test_from_utc_timestamp_non_utc_fallback(data_gen, time_zone):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
@@ -296,6 +298,7 @@ def test_from_utc_timestamp_non_utc_fallback(data_gen, time_zone):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('time_zone', ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@timestamp_range
 def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
@@ -306,6 +309,7 @@ def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
 @pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai", "EST", "MST", "VST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
+@timestamp_range
 def test_from_utc_timestamp_supported_timezones(data_gen, time_zone):
     # TODO: Remove spark.rapids.sql.nonUTC.enabled configuration 
     assert_gpu_and_cpu_are_equal_collect(

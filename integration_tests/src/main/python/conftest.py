@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from contextlib import contextmanager, ExitStack
 import os
 import pytest
 import random
+from unittest.mock import patch
 import warnings
 
 # TODO redo _spark stuff using fixtures
@@ -27,12 +29,27 @@ pytest_plugins = [
 ]
 
 _approximate_float_args = None
+_pyspark_monkey_patches = []
 
 def get_float_check():
     if not _approximate_float_args is None:
         return lambda lhs,rhs: lhs == pytest.approx(rhs, **_approximate_float_args)
     else:
         return lambda lhs,rhs: lhs == rhs
+
+def add_timestamp_monkey_patches():
+    global _pyspark_monkey_patches
+    from pyspark.sql.types import TimestampType, TimestampNTZType
+    _pyspark_monkey_patches.append(patch.object(TimestampType, 'fromInternal', lambda _, ts: ts))
+    _pyspark_monkey_patches.append(patch.object(TimestampNTZType, 'fromInternal', lambda _, ts: ts))
+
+@contextmanager
+def pyspark_monkey_patches():
+    global _pyspark_monkey_patches
+    with ExitStack() as stack:
+        for cm in _pyspark_monkey_patches:
+            stack.enter_context(cm)
+        yield
 
 _incompat = False
 
@@ -205,6 +222,10 @@ def pytest_runtest_setup(item):
         _approximate_float_args = app_f.kwargs
     else:
         _approximate_float_args = None
+
+    ts_range = item.get_closest_marker('timestamp_range')
+    if ts_range:
+        add_timestamp_monkey_patches()
 
     global _allow_any_non_gpu
     global _non_gpu_allowed
