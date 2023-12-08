@@ -17,8 +17,6 @@ import pytest
 import random
 import warnings
 
-from time_zone_utils import *
-
 # TODO redo _spark stuff using fixtures
 #
 # Don't import pyspark / _spark directly in conftest globally
