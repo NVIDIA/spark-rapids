@@ -829,40 +829,44 @@ abstract class GpuToTimestamp
   val failOnError: Boolean = SQLConf.get.ansiEnabled
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val tmp = if (lhs.dataType == StringType) {
-      // rhs is ignored we already parsed the format
-      if (getTimeParserPolicy == LegacyTimeParserPolicy) {
-        parseStringAsTimestampWithLegacyParserPolicy(
-          lhs,
-          sparkFormat,
-          strfFormat,
-          DType.TIMESTAMP_MICROSECONDS,
-          (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
-      } else {
-        parseStringAsTimestamp(
-          lhs,
-          sparkFormat,
-          strfFormat,
-          DType.TIMESTAMP_MICROSECONDS,
-          failOnError)
-      }
-    } else { // Timestamp or DateType
-      timeZoneId match {
-        case Some(idStr) => {
-          val zoneId = GpuTimeZoneDB.getZoneId(idStr)
-          if (GpuOverrides.isUTCTimezone(zoneId)) {
-            lhs.getBase.asTimestampMicroseconds()
-          } else {
-            assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
-            withResource(lhs) { gcv =>
-              GpuTimeZoneDB.fromTimestampToUtcTimestamp(gcv.getBase, zoneId)
-                .asTimestampMicroseconds()
-            }
-          }
+    val tmp = lhs.dataType match {
+      case _: StringType =>
+        // rhs is ignored we already parsed the format
+        if (getTimeParserPolicy == LegacyTimeParserPolicy) {
+          parseStringAsTimestampWithLegacyParserPolicy(
+            lhs,
+            sparkFormat,
+            strfFormat,
+            DType.TIMESTAMP_MICROSECONDS,
+            (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
+        } else {
+          parseStringAsTimestamp(
+            lhs,
+            sparkFormat,
+            strfFormat,
+            DType.TIMESTAMP_MICROSECONDS,
+            failOnError)
         }
-        case None => lhs.getBase.asTimestampMicroseconds()
-      }
+      case _: DateType =>
+        timeZoneId match {
+          case Some(idStr) =>
+            val zoneId = GpuTimeZoneDB.getZoneId(idStr)
+            if (GpuOverrides.isUTCTimezone(zoneId)) {
+              lhs.getBase.asTimestampMicroseconds()
+            } else {
+              assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
+              withResource(lhs.getBase.asTimestampMicroseconds) { tsInMs =>
+                GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId)
+              }
+            }
+          case None => lhs.getBase.asTimestampMicroseconds()
+        }
+      case _ =>
+        // Consistent with Spark's behavior which ignores timeZone for other types like timestamp
+        // and timestampNtp.
+        lhs.getBase.asTimestampMicroseconds()
     }
+
     // Return Timestamp value if dataType it is expecting is of TimestampType
     if (dataType.equals(TimestampType)) {
       tmp
@@ -911,8 +915,20 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
           failOnError)
       }
     } else if (lhs.dataType() == DateType){
-      lhs.getBase.asTimestampSeconds()
-    } else { // Timestamp
+      timeZoneId match {
+        case Some(idStr) =>
+          val zoneId = GpuTimeZoneDB.getZoneId(idStr)
+          if (GpuOverrides.isUTCTimezone(zoneId)) {
+            lhs.getBase.asTimestampSeconds()
+          } else {
+            assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
+            withResource(lhs.getBase.asTimestampSeconds) { tsInMs =>
+              GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId)
+            }
+          }
+        case None => lhs.getBase.asTimestampSeconds()
+      }
+    } else { // Timestamp. Note: no need to consider timezone which is consistent with Spark
       // https://github.com/rapidsai/cudf/issues/5166
       // The time is off by 1 second if the result is < 0
       val longSecs = withResource(lhs.getBase.asTimestampSeconds()) { secs =>
