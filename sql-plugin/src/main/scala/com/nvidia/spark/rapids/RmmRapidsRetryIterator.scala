@@ -583,12 +583,13 @@ object RmmRapidsRetryIterator extends Logging {
         doSplit = false
         try {
           // call the user's function
-          if (config.exists(_.testRetryOOMInjectionEnabled) && !injectedOOM) {
-            injectedOOM = true
-            // ensure we have associated our thread with the running task, as
-            // `forceRetryOOM` requires a prior association.
-            RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
-            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+          config.foreach {
+            case rapidsConf if !injectedOOM =>
+              injectedOOM = true
+              // ensure we have associated our thread with the running task, as
+              // `forceRetryOOM` requires a prior association.
+              rapidsConf.testRetryOOMInjectionMode.inject(TaskContext.get().taskAttemptId())
+            case _ => ()
           }
           result = Some(attemptIter.next())
           clearInjectedOOMIfNeeded()

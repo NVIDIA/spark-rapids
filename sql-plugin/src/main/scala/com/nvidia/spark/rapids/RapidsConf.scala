@@ -29,6 +29,7 @@ import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -117,7 +118,7 @@ object ConfHelper {
   }
 }
 
-abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String, 
+abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String,
     val isInternal: Boolean, val isStartUpOnly: Boolean, val isCommonlyUsed: Boolean) {
 
   def get(conf: Map[String, String]): T
@@ -127,7 +128,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
   override def toString: String = key
 }
 
-class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String, 
+class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false,
     val defaultValue: T)
   extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly, isCommonlyUsed) {
@@ -164,7 +165,7 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, 
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal,
   isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): Option[T] = {
@@ -1378,12 +1379,12 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
-  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
+  val TEST_RETRY_OOM_INJECTION_MODE = conf("spark.rapids.sql.test.injectRetryOOM")
     .doc("Only to be used in tests. If enabled the retry iterator will inject a GpuRetryOOM " +
          "or CpuRetryOOM once per invocation.")
     .internal()
-    .booleanConf
-    .createWithDefault(false)
+    .stringConf
+    .createWithDefault(false.toString)
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
@@ -2059,7 +2060,7 @@ object RapidsConf {
         "The gpu to disk spill bounce buffer must have a positive size")
       .createWithDefault(128L * 1024 * 1024)
 
-  val NON_UTC_TIME_ZONE_ENABLED = 
+  val NON_UTC_TIME_ZONE_ENABLED =
     conf("spark.rapids.sql.nonUTC.enabled")
       .doc("An option to enable/disable non-UTC time zone support.")
       .internal()
@@ -2296,11 +2297,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
-  lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
-
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
-  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
+  lazy val testRetryOOMInjectionMode : RmmSpark.OomInjection = {
+    RmmSpark.OomInjection.fromString(get(TEST_RETRY_OOM_INJECTION_MODE))
+  }
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
@@ -2365,8 +2366,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
-
-  lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
@@ -2606,10 +2605,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
 
-  lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
-
-  lazy val shuffleUcxMgmtConnTimeout: Int = get(SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT)
-
   lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
 
   lazy val shuffleUcxDeviceBounceBuffersCount: Int = get(SHUFFLE_UCX_BOUNCE_BUFFERS_DEVICE_COUNT)
@@ -2618,11 +2613,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleMaxClientThreads: Int = get(SHUFFLE_MAX_CLIENT_THREADS)
 
-  lazy val shuffleMaxClientTasks: Int = get(SHUFFLE_MAX_CLIENT_TASKS)
-
   lazy val shuffleClientThreadKeepAliveTime: Int = get(SHUFFLE_CLIENT_THREAD_KEEPALIVE)
-
-  lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
 
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
@@ -2652,8 +2643,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
 
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
-
-  lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
