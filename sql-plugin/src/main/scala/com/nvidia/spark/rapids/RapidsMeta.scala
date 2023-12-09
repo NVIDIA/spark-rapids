@@ -20,6 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
@@ -1130,7 +1131,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (!isTimeZoneSupported) return checkUTCTimezone(this)
 
     // Level 4 check
-    if (TimeZoneDB.isSupportedTimezone(getZoneId())) {
+    if (!GpuTimeZoneDB.isSupportedTimeZone(getZoneId())) {
       willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
     }
   }
@@ -1201,7 +1202,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   // Level 3 timezone checking flag, need to override to true when supports timezone in functions
   // Useless if it's not timezone related expression defined in [[needTimeZoneCheck]]
-  val isTimeZoneSupported: Boolean = false
+  def isTimeZoneSupported: Boolean = false
 
   /**
    * Timezone check which only allows UTC timezone. This is consistent with previous behavior.

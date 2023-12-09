@@ -65,8 +65,7 @@ conditions within the computation itself the result may not be the same each tim
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with
-the config
+worked with plain Spark. This is behavior is enabled by default but can be disabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](additional-functionality/advanced_configs.md#sql.variableFloatAgg.enabled).
 
 ### `0.0` vs `-0.0`
@@ -277,23 +276,22 @@ E        at org.apache.spark.sql.execution.datasources.orc.OrcUtils$.createAggIn
 The Spark community is planning to work on a runtime fallback to read from actual rows when ORC
 file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.org/jira/browse/SPARK-34960)).
 
-**Limitations With RAPIDS**
-
-RAPIDS does not support whole file statistics in ORC file in releases prior to release 22.06.
-
 *Writing ORC Files*
 
-If you are using release prior to release 22.06 where CUDF does not support writing file statistics, then the ORC files
-written by the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.
-In order to prevent job failures in releases prior to release 22.06, `spark.sql.orc.aggregatePushdown` should be disabled
-while reading ORC files that were written by the GPU.
+There are issues writing ORC files with dates or timestamps that fall within the lost days during
+the switch from the Julian to Gregorian calendar, i.e.: between October 3rd, 1582 and October 15th,
+1582. Dates or timestamps that fall within the range of lost days will not always be written
+properly by the GPU to the ORC file. The values read by the CPU and the GPU may differ with the
+CPU often rounding the day up to October 15th, 1582 whereas the GPU does not.
+
+Note that the CPU rounds up dates or timestamps in the lost days range to October 15th, 1582
+_before_ writing to the ORC file. If the CPU writes these problematic dates or timestamps to an
+ORC file, they will be read properly by both the CPU and the GPU.
 
 *Reading ORC Files*
 
-To take advantage of the aggregate optimization, the plugin falls back to the CPU as it is a meta data only query.
-As long as the ORC file has valid statistics (written by the CPU), then the pushing down aggregates to the ORC layer
-should be successful.
-Otherwise, reading an ORC file written by the GPU requires `aggregatePushdown` to be disabled.
+To take advantage of the aggregate query optimization, where only the ORC metadata is read to
+satisfy the query, the ORC read falls back to the CPU as it is a metadata-only query.
 
 ## Parquet
 
@@ -696,8 +694,7 @@ leads to restrictions:
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or
-later, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToDecimal.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToDecimal.enabled) to `false`
 
 ### Float to Integral Types
@@ -708,11 +705,9 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
-
-This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
 ### Float to String
 
@@ -724,7 +719,7 @@ The `format_number` function will retain 10 digits of precision for the GPU when
 point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
 will return `1,234,567,890.00000` on the GPU and `1,234,567,890.12346` on the CPU. To enable this on the GPU, set [`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `true`.
 
-Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
@@ -738,7 +733,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
