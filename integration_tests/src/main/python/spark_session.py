@@ -60,7 +60,8 @@ def _set_all_confs(conf):
     newconf = _default_conf.copy()
     inject_oom = get_inject_oom_conf()
     if inject_oom:
-        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", inject_oom.args[0])
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM",
+                         inject_oom.args[0] if len(inject_oom.args) > 0 else "true")
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:

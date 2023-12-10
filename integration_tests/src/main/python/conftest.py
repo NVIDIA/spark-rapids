@@ -171,7 +171,6 @@ def pytest_runtest_setup(item):
     global _inject_oom
     global _test_datagen_random_seed
     _inject_oom = item.get_closest_marker('inject_oom')
-    print(f"##### GERA_DEBUG _inject_oom= {_inject_oom}", file=sys.stderr)
     datagen_overrides = item.get_closest_marker('datagen_overrides')
     if datagen_overrides:
         try:
@@ -327,8 +326,9 @@ def pytest_collection_modifyitems(config, items):
             inject_choice = True
         if inject_choice:
             extras.append('INJECT_OOM_%s' % injection_conf if injection_conf else 'INJECT_OOM')
-            print("***** GERA_DEBUG appending inject_oom marker")
-            item.add_marker(pytest.mark.inject_oom(injection_conf), append=True)
+            item.add_marker(
+                pytest.mark.inject_oom(injection_conf) if injection_conf else 'inject_oom',
+                append=True)
         if order:
             if order.kwargs:
                 extras.append('IGNORE_ORDER(' + str(order.kwargs) + ')')
