@@ -92,9 +92,10 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
   }
 
   private int calcNumRowsEstimate(long targetBytes) {
-    return (int) Math.max(1,
-        Math.min(Integer.MAX_VALUE - 1, targetBytes / sizePerRowEstimate));
+    return Math.max(1,
+        Math.min(Integer.MAX_VALUE - 1, (int) (targetBytes / sizePerRowEstimate)));
   }
+
   private long calcDataLengthEstimate(int numRows) {
     return ((long) sizePerRowEstimate) * numRows;
   }
@@ -208,27 +209,43 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
   }
 
   private Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize>
-  allocBuffers(HostMemoryBuffer[] hBufs, SpillableHostBuffer[] sBufs,
-      AutoCloseableTargetSize numRowsWrapper) {
-    long dataBytes = calcDataLengthEstimate((int) numRowsWrapper.targetSize());
-    long offsetBytes = calcOffsetLengthEstimate((int) numRowsWrapper.targetSize());
-    hBufs[0] = HostAlloc$.MODULE$.alloc(dataBytes, true);
-    sBufs[0] = SpillableHostBuffer$.MODULE$.apply(hBufs[0], hBufs[0].getLength(),
-        SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
-        RapidsBufferCatalog$.MODULE$.singleton());
-    hBufs[0] = null; // Was closed by spillable
-    hBufs[1] = HostAlloc$.MODULE$.alloc(offsetBytes, true);
-    sBufs[1] = SpillableHostBuffer$.MODULE$.apply(hBufs[1], hBufs[1].getLength(),
-        SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
-        RapidsBufferCatalog$.MODULE$.singleton());
-    hBufs[1] = null;  // Was closed by spillable
-    return Tuple2.apply(sBufs, numRowsWrapper);
+  allocBuffers(SpillableHostBuffer[] sBufs, AutoCloseableTargetSize numRowsWrapper) {
+    HostMemoryBuffer[] hBufs = new HostMemoryBuffer[]{ null, null };
+    try {
+      long dataBytes = calcDataLengthEstimate((int) numRowsWrapper.targetSize());
+      long offsetBytes = calcOffsetLengthEstimate((int) numRowsWrapper.targetSize());
+      hBufs[0] = HostAlloc$.MODULE$.alloc(dataBytes, true);
+      sBufs[0] = SpillableHostBuffer$.MODULE$.apply(hBufs[0], hBufs[0].getLength(),
+          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
+          RapidsBufferCatalog$.MODULE$.singleton());
+      hBufs[0] = null; // Was closed by spillable
+      hBufs[1] = HostAlloc$.MODULE$.alloc(offsetBytes, true);
+      sBufs[1] = SpillableHostBuffer$.MODULE$.apply(hBufs[1], hBufs[1].getLength(),
+          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
+          RapidsBufferCatalog$.MODULE$.singleton());
+      hBufs[1] = null;  // Was closed by spillable
+      return Tuple2.apply(sBufs, numRowsWrapper);
+    } finally {
+      // Make sure host buffers are always closed
+      for (int i = 0; i < hBufs.length; i++) {
+        if (hBufs[i] != null) {
+          hBufs[i].close();
+          hBufs[i] = null;
+        }
+      }
+      // If the second spillable buffer is null, we must have thrown,
+      // so we need to close the first one in case this is not a retry exception.
+      // Restore on retry is handled by the caller.
+      if ((sBufs[1] == null) && (sBufs[0] != null)) {
+        sBufs[0].close();
+        sBufs[0] = null;
+      }
+    }
   }
 
   private Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize>
   allocBuffersWithRestore(AutoCloseableTargetSize numRows) {
-    HostMemoryBuffer[] hostBufs = new HostMemoryBuffer[]{null, null };
-    SpillableHostBuffer[] spillableBufs = new SpillableHostBuffer[]{null, null};
+    SpillableHostBuffer[] spillableBufs = new SpillableHostBuffer[]{ null, null};
     Retryable retryBufs = new Retryable() {
       @Override
       public void checkpoint() {}
@@ -239,15 +256,12 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
             spillableBufs[i].close();
             spillableBufs[i] = null;
           }
-          if (hostBufs[i] != null) {
-            hostBufs[i].close();
-            hostBufs[i] = null;
-          }
         }
       }
     };
+
     return RmmRapidsRetryIterator.withRestoreOnRetry(retryBufs, () -> {
-      return allocBuffers(hostBufs, spillableBufs, numRows);
+      return allocBuffers(spillableBufs, numRows);
     });
   }
 
