@@ -136,9 +136,9 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
     bufsAndNumRows =
-        // Starting with initial num rows estimate, this retry block will
-        // recalculate the buffer sizes from the rows estimate, which is split
-        // in half if we get a split and retry oom, until we hit the min of 1 row.
+        // Starting with initial num rows estimate, this retry block will recalculate the buffer
+        // sizes from the rows estimate, which is split in half if we get a split and retry oom,
+        // until we succeed or hit the min of 1 row.
         RmmRapidsRetryIterator.withRetry(numRowsWrapper,
             RmmRapidsRetryIterator.splitTargetSizeInHalfCpu(), (numRows) -> {
           return allocBuffersWithRestore(numRows);
