@@ -75,7 +75,6 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Support for pushing down filters for decimal types gpu write gpu read") {
-    assume(false, "https://github.com/rapidsai/cudf/issues/13933")
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
@@ -87,7 +86,6 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Support for pushing down filters for decimal types gpu write cpu read") {
-    assume(false, "https://github.com/rapidsai/cudf/issues/13933")
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
@@ -132,7 +130,6 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Support for pushing down filters for timestamp types gpu write cpu read") {
-    assume(false, "https://github.com/rapidsai/cudf/issues/13899")
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
@@ -151,7 +148,6 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Support for pushing down filters for timestamp types gpu write gpu read") {
-    assume(false, "https://github.com/rapidsai/cudf/issues/13899")
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"

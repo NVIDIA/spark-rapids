@@ -22,7 +22,7 @@ import scala.collection.mutable.Queue
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.splitSpillableInHalfByRows
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RowConversion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -258,18 +258,21 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     // perform conversion
     try {
       devCb.foreach { devCb =>
-        withResource(devCb) { _ =>
-          withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
-            cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).safeMap(toHost),
-              devCb.numRows())
-            it = cb.rowIterator()
-            // In order to match the numOutputRows metric in the generated code we update
-            // numOutputRows for each batch. This is less accurate than doing it at output
-            // because it will over count the number of rows output in the case of a limit,
-            // but it is more efficient.
-            numOutputRows += cb.numRows()
+        val sDevCb = SpillableColumnarBatch(devCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        cb = withRetryNoSplit(sDevCb) { _ =>
+          withResource(sDevCb.getColumnarBatch()) { devCb =>
+            withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+              new ColumnarBatch(GpuColumnVector.extractColumns(devCb).safeMap(toHost),
+                devCb.numRows())
+            }
           }
         }
+        it = cb.rowIterator()
+        // In order to match the numOutputRows metric in the generated code we update
+        // numOutputRows for each batch. This is less accurate than doing it at output
+        // because it will over count the number of rows output in the case of a limit,
+        // but it is more efficient.
+        numOutputRows += cb.numRows()
       }
     } finally {
       // Leaving the GPU for a while: if this iterator is configured to release

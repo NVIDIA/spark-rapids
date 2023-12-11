@@ -1845,7 +1845,6 @@ object RapidsConf {
   }
 
   val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
-    .internal()
     .startupOnly()
     .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
       "Spark will take the first one it finds, so the version may not be expected. Possisble " +

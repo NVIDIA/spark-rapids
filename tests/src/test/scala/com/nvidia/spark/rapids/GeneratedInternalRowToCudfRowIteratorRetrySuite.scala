@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.jni.{CpuSplitAndRetryOOM, RmmSpark}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{doAnswer, spy, times, verify}
 import org.mockito.invocation.InvocationOnMock
@@ -97,7 +97,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
           TestUtils.compareBatches(expected, devBatch)
         }
       }
-      assertResult(5)(getAndResetNumRetryThrowCurrentTask)
+      assertResult(6)(getAndResetNumRetryThrowCurrentTask)
       assert(!myIter.hasNext)
       assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
       // This is my wrap around of checking that we did retry the last part
@@ -141,7 +141,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
           TestUtils.compareBatches(expected, devBatch)
         }
       }
-      assertResult(5)(getAndResetNumRetryThrowCurrentTask)
+      assertResult(6)(getAndResetNumRetryThrowCurrentTask)
       assert(!myIter.hasNext)
       assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
       // This is my wrap around of checking that we did retry the last part
@@ -164,7 +164,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         ctriter, schema, TargetSize(1),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
-      assertThrows[GpuSplitAndRetryOOM] {
+      assertThrows[CpuSplitAndRetryOOM] {
         myIter.next()
       }
       assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
