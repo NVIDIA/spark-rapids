@@ -895,6 +895,22 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return incRefCounts(ret);
   }
 
+  public static ColumnarBatch combineColumns(ColumnarBatch cb, GpuColumnVector ... vectors) {
+    final int numRows = cb.numRows();
+    ArrayList<ColumnVector> columns = new ArrayList<>();
+    int numColumns = cb.numCols();
+    for (int i = 0; i < numColumns; i++) {
+      columns.add(cb.column(i));
+    }
+    for (GpuColumnVector cv: vectors) {
+      assert cv.getBase().getRowCount() == numRows : "Rows do not match expected " + numRows + " found " +
+          cv.getBase().getRowCount();
+      columns.add(cv);
+    }
+    ColumnarBatch ret = new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]), numRows);
+    return incRefCounts(ret);
+  }
+
   /**
    * Remove columns from the batch.  The order of the remaining columns is preserved.
    * dropList[] has an entry for each column in the batch which indicates whether the column should
