@@ -71,7 +71,7 @@ object GpuJsonToStructsShim {
             GpuCast.castStringToDate(trimmed)
           }
         }
-      case Some(_) =>
+      case _ =>
         val twoDigits = raw"\d{2}"
         val fourDigits = raw"\d{4}"
 
@@ -80,14 +80,8 @@ object GpuJsonToStructsShim {
           .replace("MM", twoDigits)
           .replace("dd", twoDigits)
         GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat)
-      case _ =>
-        withResource(input.strip()) { trimmed =>
-          // TODO respect failOnInvalid
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode = false)
-        }
     }
   }
-
 
   def castJsonStringToTimestamp(input: ColumnVector,
       options: Map[String, String]): ColumnVector = {
