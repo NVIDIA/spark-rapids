@@ -13,9 +13,12 @@
 # limitations under the License.
 
 import os
+from contextlib import contextmanager, ExitStack
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, should_inject_oom
 from pyspark.sql import DataFrame
+from pyspark.sql.types import TimestampType, DateType
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
+from unittest.mock import patch
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -82,6 +85,23 @@ def _check_for_proper_return_values(something):
     if (isinstance(something, DataFrame)):
         raise RuntimeError("You should never return a DataFrame from a with_*_session, you will not get the results that you expect")
 
+@contextmanager
+def pyspark_compatibility_fixes():
+    pyspark_compatibility_fixes = []
+    # Patch timestamp and date types so that we only compare in testing to the internal integral representations
+    pyspark_compatibility_fixes.append(patch.object(TimestampType, 'fromInternal', lambda _, ts: ts))
+    try:
+        from pyspark.sql.types import TimestampNTZType
+        pyspark_compatibility_fixes.append(patch.object(TimestampNTZType, 'fromInternal', lambda _, ts: ts))
+    except ImportError:
+        pass
+    pyspark_compatibility_fixes.append(patch.object(DateType, 'fromInternal', lambda _, v: v))
+    with ExitStack() as stack:
+        for cm in pyspark_compatibility_fixes:
+            stack.enter_context(cm)
+        yield
+
+@pyspark_compatibility_fixes()
 def with_spark_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()

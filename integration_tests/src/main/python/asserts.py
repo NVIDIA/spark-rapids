@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm, pyspark_monkey_patches
+from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import math
@@ -25,9 +25,6 @@ import types as pytypes
 import data_gen
 import difflib
 import sys
-
-with_cpu_session = pyspark_monkey_patches()(with_cpu_session)
-with_gpu_session = pyspark_monkey_patches()(with_gpu_session)
 
 def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)

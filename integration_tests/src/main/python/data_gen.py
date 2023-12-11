@@ -585,18 +585,10 @@ class TimestampGen(DataGen):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         min_start = datetime(1, 1, 1, tzinfo=tzinfo)
         if start is None:
-            # Spark supports times starting at
-            # "0001-01-01 00:00:00.000000"
-            # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days, even a month,
-            # just to be sure
             start = min_start
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
-        # Spark supports time through: "9999-12-31 23:59:59.999999"
-        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
-        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
         max_end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
             end = max_end
@@ -613,10 +605,10 @@ class TimestampGen(DataGen):
         self._start_time = self._to_us_since_epoch(start)
         self._end_time = self._to_us_since_epoch(end)
         self._tzinfo = tzinfo
-        if (start == min_start):
-            self.with_special_case(min_start)
-        if (end == max_end):
-            self.with_special_case(max_end)
+
+        self.with_special_case(start)
+        self.with_special_case(end)
+
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
