@@ -844,8 +844,7 @@ abstract class GpuToTimestamp
         }
       case _: DateType =>
         timeZoneId match {
-          case Some(idStr) =>
-            val zoneId = GpuTimeZoneDB.getZoneId(idStr)
+          case Some(_) =>
             if (GpuOverrides.isUTCTimezone(zoneId)) {
               lhs.getBase.asTimestampMicroseconds()
             } else {
@@ -910,8 +909,7 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
       }
     } else if (lhs.dataType() == DateType){
       timeZoneId match {
-        case Some(idStr) =>
-          val zoneId = GpuTimeZoneDB.getZoneId(idStr)
+        case Some(_) =>
           if (GpuOverrides.isUTCTimezone(zoneId)) {
             lhs.getBase.asTimestampSeconds()
           } else {
