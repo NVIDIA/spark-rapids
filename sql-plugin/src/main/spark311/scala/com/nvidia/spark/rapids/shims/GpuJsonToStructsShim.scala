@@ -38,7 +38,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
-import com.nvidia.spark.rapids.DateUtils
+//import com.nvidia.spark.rapids.DateUtils
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 
@@ -62,24 +62,8 @@ object GpuJsonToStructsShim {
 
   def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
       failOnInvalid: Boolean): ColumnVector = {
-    val dateFormatPattern = dateFormat.getOrElse("yyyy-MM-dd")
-    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
-    dateFormat match {
-      case None | Some("yyyy-MM-dd") =>
-        withResource(Scalar.fromString(" ")) { space =>
-          withResource(input.strip(space)) { trimmed =>
-            GpuCast.castStringToDate(trimmed)
-          }
-        }
-      case _ =>
-        val twoDigits = raw"\d{2}"
-        val fourDigits = raw"\d{4}"
-
-        val regexRoot = dateFormatPattern
-          .replace("yyyy", fourDigits)
-          .replace("MM", twoDigits)
-          .replace("dd", twoDigits)
-        GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat)
+    withResource(input.strip()) { trimmed =>
+      GpuCast.castStringToDate(trimmed)
     }
   }
 
