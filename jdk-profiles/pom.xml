@@ -43,33 +43,5 @@
                 <jdk>[9,)</jdk>
             </activation>
         </profile>
-        <!-- 
-            TODO does not really belong here but this is a pom without activatedByDefault profiles 
-            that would be deactivated by mistake
-        -->
-        <profile>
-            <id>buildFaster</id>
-            <properties>
-                <maven.scalastyle.skip>true</maven.scalastyle.skip>
-                <maven.scaladoc.skip>true</maven.scaladoc.skip>
-                <rat.skip>true</rat.skip>
-                <dist.jar.compress>false</dist.jar.compress>
-                <skipTests>true</skipTests>
-                <maven.test.skip>true</maven.test.skip>
-                <rapids.jni.unpack.skip>true</rapids.jni.unpack.skip>
-            </properties>
-        </profile>
-        <profile>
-            <id>testFaster</id>
-            <properties>
-                <maven.scalastyle.skip>true</maven.scalastyle.skip>
-                <maven.scaladoc.skip>true</maven.scaladoc.skip>
-                <rat.skip>true</rat.skip>
-                <dist.jar.compress>false</dist.jar.compress>
-                <skipTests>false</skipTests>
-                <maven.test.skip>false</maven.test.skip>
-                <rapids.jni.unpack.skip>true</rapids.jni.unpack.skip>
-            </properties>
-        </profile>
     </profiles>
 </project>
