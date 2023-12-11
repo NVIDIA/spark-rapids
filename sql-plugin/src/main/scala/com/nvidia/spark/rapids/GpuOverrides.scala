@@ -1770,7 +1770,7 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
-      (a, conf, p, r) => new FromUnitTimeMeta(a ,conf ,p ,r)),
+      (a, conf, p, r) => new FromUnixTimeMeta(a ,conf ,p ,r)),
     expr[FromUTCTimestamp](
       "Render the input UTC timestamp in the input timezone",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,

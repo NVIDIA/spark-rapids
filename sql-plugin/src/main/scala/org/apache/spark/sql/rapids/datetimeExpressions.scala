@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
@@ -997,10 +998,11 @@ case class GpuGetTimestamp(
   override def right: Expression = format
 }
 
-class FromUnitTimeMeta(a: FromUnixTime,
+class FromUnixTimeMeta(a: FromUnixTime,
     override val conf: RapidsConf,
     val p: Option[RapidsMeta[_, _, _]],
-    r: DataFromReplacementRule) extends UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
+    r: DataFromReplacementRule
+) extends UnixTimeExprMeta[FromUnixTime](a, conf, p, r) with Logging {
 
   private type FmtConverter = ColumnView => ColumnVector
 
@@ -1024,6 +1026,7 @@ class FromUnitTimeMeta(a: FromUnixTime,
   )
 
   override def tagExprForGpu(): Unit = {
+    logInfo(s"==> FORMAT_BY_CONVERSION: Start conversion to support more formats")
     extractStringLit(a.right) match {
       case Some(rightLit) =>
         sparkFormat = rightLit
@@ -1034,6 +1037,8 @@ class FromUnitTimeMeta(a: FromUnixTime,
           }.getOrElse(sparkFormat)
         strfFormat = DateUtils.tagAndGetCudfFormat(this,
           sparkFormat, a.left.dataType == DataTypes.StringType, inputFormat)
+        logInfo(s"==> FORMAT_BY_CONVERSION: Get converted temp format $inputFormat " +
+          s"for target format $sparkFormat")
       case None =>
         willNotWorkOnGpu("format has to be a string literal")
     }
