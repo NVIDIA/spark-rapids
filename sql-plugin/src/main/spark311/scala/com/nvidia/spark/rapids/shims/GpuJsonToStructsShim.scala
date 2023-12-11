@@ -35,9 +35,10 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
+import com.nvidia.spark.rapids.DateUtils
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 
@@ -56,6 +57,37 @@ object GpuJsonToStructsShim {
         throw new IllegalStateException(s"Unsupported dateFormat $other")
     }
   }
+
+  // TODO combine the two implementations of castJsonStringToDate*
+
+  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
+      failOnInvalid: Boolean): ColumnVector = {
+    val dateFormatPattern = dateFormat.getOrElse("yyyy-MM-dd")
+    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
+    dateFormat match {
+      case None | Some("yyyy-MM-dd") =>
+        withResource(Scalar.fromString(" ")) { space =>
+          withResource(input.strip(space)) { trimmed =>
+            GpuCast.castStringToDate(trimmed)
+          }
+        }
+      case Some(_) =>
+        val twoDigits = raw"\d{2}"
+        val fourDigits = raw"\d{4}"
+
+        val regexRoot = dateFormatPattern
+          .replace("yyyy", fourDigits)
+          .replace("MM", twoDigits)
+          .replace("dd", twoDigits)
+        GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat)
+      case _ =>
+        withResource(input.strip()) { trimmed =>
+          // TODO respect failOnInvalid
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode = false)
+        }
+    }
+  }
+
 
   def castJsonStringToTimestamp(input: ColumnVector,
       options: Map[String, String]): ColumnVector = {

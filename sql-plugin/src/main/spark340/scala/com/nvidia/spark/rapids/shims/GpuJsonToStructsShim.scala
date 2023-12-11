@@ -46,6 +46,30 @@ object GpuJsonToStructsShim {
     }
   }
 
+  // TODO combine the two implementations of castJsonStringToDate*
+
+  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
+      failOnInvalid: Boolean): ColumnVector = {
+    val dateFormatPattern = dateFormat.getOrElse("yyyy-MM-dd")
+    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
+    dateFormat match {
+      case Some(_) =>
+        val twoDigits = raw"\d{2}"
+        val fourDigits = raw"\d{4}"
+
+        val regexRoot = dateFormatPattern
+          .replace("yyyy", fourDigits)
+          .replace("MM", twoDigits)
+          .replace("dd", twoDigits)
+        GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat)
+      case _ =>
+        withResource(input.strip()) { trimmed =>
+          // TODO respect failOnInvalid
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode = false)
+        }
+    }
+  }
+
   def castJsonStringToTimestamp(input: ColumnVector,
       options: Map[String, String]): ColumnVector = {
     options.get("timestampFormat") match {

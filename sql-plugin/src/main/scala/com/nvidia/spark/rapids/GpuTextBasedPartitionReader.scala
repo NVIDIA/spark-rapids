@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.util
 import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
@@ -24,8 +25,7 @@ import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, Hos
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.GpuTypeShims
-import java.util
+import com.nvidia.spark.rapids.shims.{GpuJsonToStructsShim, GpuTypeShims}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -379,33 +379,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
-
-    // TODO make these same changes for timestamps and add tests
-
-    val dateFormatPattern = dateFormat.getOrElse("yyyy-MM-dd")
-
-    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
-
-    dateFormat match {
-      case Some(_) =>
-        val twoDigits = raw"\d{2}"
-        val fourDigits = raw"\d{4}"
-
-        val regexRoot = dateFormatPattern
-          .replace("yyyy", fourDigits)
-          .replace("MM", twoDigits)
-          .replace("dd", twoDigits)
-        GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat)
-      case _ =>
-        // legacy behavior
-        // TODO this is similar to, but different from  GpuJsonToStructsShim
-//        withResource(Scalar.fromString(" ")) { space =>
-          withResource(input.strip()) { trimmed =>
-            // TODO add tests for EXCEPTION policy handling
-            GpuCast.castStringToDateAnsi(trimmed, ansiMode = false) // TODO
-          }
-//        }
-    }
+    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat, failOnInvalid)
   }
 
   def castStringToTimestamp(
