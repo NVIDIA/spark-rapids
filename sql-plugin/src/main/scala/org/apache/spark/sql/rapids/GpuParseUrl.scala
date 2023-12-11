@@ -79,7 +79,8 @@ case class GpuParseUrl(children: Seq[Expression])
       // return a null columnvector
       return ColumnVector.fromStrings(null, null)
     }
-    throw new UnsupportedOperationException(s"$this only supports partToExtract = PROTOCOL")
+    throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
+        s"Only PROTOCOL and HOST are supported")
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
@@ -91,8 +92,8 @@ case class GpuParseUrl(children: Seq[Expression])
             case partScalar: GpuScalar =>
               GpuColumnVector.from(doColumnar(urls, partScalar), dataType)
             case _ =>
-              throw new 
-                  UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+              throw new UnsupportedOperationException(
+                s"Cannot columnar evaluate expression: $this")
           }
         }
       }
