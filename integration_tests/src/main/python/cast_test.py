@@ -689,7 +689,7 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         {"spark.sql.session.timeZone": "+08",
          "spark.rapids.sql.castStringToTimestamp.enabled": "true"})
 
-def test_cast_date_integral():
+def test_cast_date_integral_and_fp():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, date_gen).selectExpr(
-            "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)"))
+            "cast(a as boolean)", "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)", "cast(a as float)", "cast(a as double)"))
