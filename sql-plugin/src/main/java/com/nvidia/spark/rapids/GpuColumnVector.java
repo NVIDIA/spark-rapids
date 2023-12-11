@@ -895,11 +895,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return incRefCounts(ret);
   }
 
-  public static ColumnarBatch combineColumns(ColumnarBatch cb, GpuColumnVector ... vectors) {
+  public static ColumnarBatch appendColumns(ColumnarBatch cb, GpuColumnVector ... vectors) {
     final int numRows = cb.numRows();
-    ArrayList<ColumnVector> columns = new ArrayList<>();
-    int numColumns = cb.numCols();
-    for (int i = 0; i < numColumns; i++) {
+    final int numCbColumns = cb.numCols();
+    ArrayList<ColumnVector> columns = new ArrayList<>(numCbColumns + vectors.length);
+    for (int i = 0; i < numCbColumns; i++) {
       columns.add(cb.column(i));
     }
     for (GpuColumnVector cv: vectors) {
