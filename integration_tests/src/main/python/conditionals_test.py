@@ -219,6 +219,7 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
 @pytest.mark.skipif(not is_jvm_charset_utf8(), reason="regular expressions require UTF-8")
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9992')
 def test_conditional_with_side_effects_cast(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
