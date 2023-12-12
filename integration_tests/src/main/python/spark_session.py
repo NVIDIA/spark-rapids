@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import sys
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf
 from pyspark.sql import DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version

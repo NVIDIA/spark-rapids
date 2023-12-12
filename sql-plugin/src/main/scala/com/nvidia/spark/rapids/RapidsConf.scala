@@ -1380,8 +1380,11 @@ object RapidsConf {
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_RETRY_OOM_INJECTION_MODE = conf("spark.rapids.sql.test.injectRetryOOM")
-    .doc("Only to be used in tests. If enabled the retry iterator will inject a GpuRetryOOM " +
-         "or CpuRetryOOM once per invocation.")
+    .doc("Only to be used in tests. If `true` the retry iterator will inject a GpuRetryOOM " +
+         "or CpuRetryOOM once per invocation. Furthermore an extended config " +
+         "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU` can be provided to specify" +
+         "the number of OOMs to generate, how many to skip before doing so, and whether to " +
+         "filter by allocation events by host(CPU), device(GPU), or not (CPU_OR_GPU)")
     .internal()
     .stringConf
     .createWithDefault(false.toString)
@@ -2297,6 +2300,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
+  lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
+
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val testRetryOOMInjectionMode : RmmSpark.OomInjection = {
@@ -2366,6 +2371,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
+
+  lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
@@ -2605,6 +2612,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
 
+  lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
+
+  lazy val shuffleUcxMgmtConnTimeout: Int = get(SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT)
+
   lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
 
   lazy val shuffleUcxDeviceBounceBuffersCount: Int = get(SHUFFLE_UCX_BOUNCE_BUFFERS_DEVICE_COUNT)
@@ -2612,6 +2623,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleUcxHostBounceBuffersCount: Int = get(SHUFFLE_UCX_BOUNCE_BUFFERS_HOST_COUNT)
 
   lazy val shuffleMaxClientThreads: Int = get(SHUFFLE_MAX_CLIENT_THREADS)
+
+  lazy val shuffleMaxClientTasks: Int = get(SHUFFLE_MAX_CLIENT_TASKS)
 
   lazy val shuffleClientThreadKeepAliveTime: Int = get(SHUFFLE_CLIENT_THREAD_KEEPALIVE)
 
