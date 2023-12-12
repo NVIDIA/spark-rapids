@@ -119,6 +119,10 @@ object GpuJsonScan {
 
     val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])
     if (hasTimestamps) {
+      GpuJsonToStructsShim.tagTimestampFormatSupport(meta,
+        GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions))
+
+
       GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions) match {
         case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
           // this is fine

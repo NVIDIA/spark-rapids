@@ -29,7 +29,7 @@ import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
 
-import org.apache.spark.sql.catalyst.json.GpuJsonUtils
+//import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
@@ -38,17 +38,11 @@ object GpuJsonToStructsShim {
   }
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
-    GpuJsonUtils.optionalDateFormatInRead(options) match {
-      case None =>
-        // legacy behavior
-        withResource(Scalar.fromString(" ")) { space =>
-          withResource(input.strip(space)) { trimmed =>
-            GpuCast.castStringToDate(trimmed)
-          }
-        }
-      case Some(f) =>
-        // from_json does not respect EXCEPTION policy
-        jsonStringToDate(input, f, failOnInvalid = false)
+    // dateFormat is ignored in Spark 3.3
+    withResource(Scalar.fromString(" ")) { space =>
+      withResource(input.strip(space)) { trimmed =>
+        GpuCast.castStringToDate(trimmed)
+      }
     }
   }
 
@@ -56,7 +50,7 @@ object GpuJsonToStructsShim {
   }
 
   def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
-                                   failOnInvalid: Boolean): ColumnVector = {
+      failOnInvalid: Boolean): ColumnVector = {
     dateFormat match {
       case None =>
         // legacy behavior
@@ -64,8 +58,10 @@ object GpuJsonToStructsShim {
           GpuCast.castStringToDateAnsi(trimmed, ansiMode = false)
         }
       case Some(f) =>
-        jsonStringToDate(input, f, failOnInvalid &&
-          GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
+        withResource(input.strip()) { trimmed =>
+          jsonStringToDate(trimmed, f, failOnInvalid &&
+            GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
+        }
     }
   }
 
@@ -73,31 +69,23 @@ object GpuJsonToStructsShim {
                                failOnInvalid: Boolean): ColumnVector = {
     val regexRoot = dateFormatPattern
       .replace("yyyy", raw"\d{4}")
-      .replace("MM", raw"\d{2}")
-      .replace("dd", raw"\d{2}")
+      .replace("MM", raw"\d{1,2}")
+      .replace("dd", raw"\d{1,2}")
     val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
-    withResource(input.strip()) { input =>
-      GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat, failOnInvalid)
-    }
+    GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat, failOnInvalid)
   }
+
+  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
+      timestampFormat: Option[String]): Unit = {}
 
   def castJsonStringToTimestamp(input: ColumnVector,
                                 options: Map[String, String]): ColumnVector = {
-    options.get("timestampFormat") match {
-      case None =>
-        // legacy behavior
-        withResource(Scalar.fromString(" ")) { space =>
-          withResource(input.strip(space)) { trimmed =>
-            // from_json doesn't respect ansi mode
-            GpuCast.castStringToTimestamp(trimmed, ansiMode = false)
-          }
-        }
-      case Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
-        GpuCast.convertTimestampOrNull(input,
-          "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z?$", "%Y-%m-%d")
-      case other =>
-        // should be unreachable due to GpuOverrides checks
-        throw new IllegalStateException(s"Unsupported timestampFormat $other")
+    // legacy behavior
+    withResource(Scalar.fromString(" ")) { space =>
+      withResource(input.strip(space)) { trimmed =>
+        // from_json doesn't respect ansi mode
+        GpuCast.castStringToTimestamp(trimmed, ansiMode = false)
+      }
     }
   }
 }

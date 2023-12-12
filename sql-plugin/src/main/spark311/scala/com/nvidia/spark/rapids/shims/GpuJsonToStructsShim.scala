@@ -37,7 +37,6 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
     dateFormat match {
       case None | Some("yyyy-MM-dd") =>
-        // this is fine
       case dateFormat =>
         meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
     }
@@ -73,6 +72,9 @@ object GpuJsonToStructsShim {
         throw new IllegalStateException(s"Unsupported dateFormat $other")
     }
   }
+
+  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
+    timestampFormat: Option[String]): Unit = {}
 
   def castJsonStringToTimestamp(input: ColumnVector,
       options: Map[String, String]): ColumnVector = {

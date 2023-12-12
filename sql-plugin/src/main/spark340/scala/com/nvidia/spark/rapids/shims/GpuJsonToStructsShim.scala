@@ -66,6 +66,7 @@ object GpuJsonToStructsShim {
     }
   }
 
+
   private def jsonStringToDate(input: ColumnVector, dateFormatPattern: String,
       failOnInvalid: Boolean): ColumnVector = {
     val regexRoot = dateFormatPattern
@@ -74,6 +75,16 @@ object GpuJsonToStructsShim {
       .replace("dd", raw"\d{2}")
     val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
     GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat, failOnInvalid)
+  }
+
+  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
+                                timestampFormat: Option[String]): Unit = {
+    timestampFormat match {
+      case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
+        // fine
+      case other =>
+        meta.willNotWorkOnGpu(s"Unsupported timestampFormat ${other}")
+    }
   }
 
   def castJsonStringToTimestamp(input: ColumnVector,
