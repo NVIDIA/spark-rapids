@@ -91,7 +91,14 @@ case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
     copy(timeZoneId = Option(timeZoneId))
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector =
-    input.getBase.minute()
+    if (GpuOverrides.isUTCTimezone(zoneId)) {
+      input.getBase.minute()
+    } else {
+      // Non-UTC time zone
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId.normalized())) {
+        shifted => shifted.minute()
+      }
+    }
 }
 
 case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
@@ -101,7 +108,14 @@ case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
     copy(timeZoneId = Option(timeZoneId))
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector =
-    input.getBase.second()
+    if (GpuOverrides.isUTCTimezone(zoneId)) {
+      input.getBase.second()
+    } else {
+      // Non-UTC time zone
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId.normalized())) {
+        shifted => shifted.second()
+      }
+    }
 }
 
 case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
@@ -111,7 +125,14 @@ case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
     copy(timeZoneId = Option(timeZoneId))
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector =
-    input.getBase.hour()
+    if (GpuOverrides.isUTCTimezone(zoneId)) {
+      input.getBase.hour()
+    } else {
+      // Non-UTC time zone
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId.normalized())) {
+        shifted => shifted.hour()
+      }
+    }
 }
 
 case class GpuYear(child: Expression) extends GpuDateUnaryExpression {
