@@ -427,7 +427,7 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
     '[1-3]{1,2}/[1-3]{1,2}/[1-9]{4}',
 ])
 @pytest.mark.parametrize('schema', [StructType([StructField('value', DateType())])])
-@pytest.mark.parametrize('date_format', json_supported_date_formats)
+@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_340 else json_supported_date_formats)
 @pytest.mark.parametrize('ansi_enabled', [True, False])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', [True, False])
 def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date_gen_pattern, schema, date_format, \
@@ -451,6 +451,8 @@ def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date
     f = read_json_df(path, schema, spark_tmp_table_factory, options)
     assert_gpu_and_cpu_are_equal_collect(f, conf = updated_conf)
 
+## TODO fallback tests for unsupported date formats prior to spark 340
+
 @approximate_float
 @pytest.mark.parametrize('filename', [
     'dates_invalid.json',
@@ -458,7 +460,7 @@ def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date
 @pytest.mark.parametrize('schema', [_date_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'])
+@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_340 else json_supported_date_formats)
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
     pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow)),

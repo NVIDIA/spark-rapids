@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuJsonToStructsShim, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -113,12 +113,8 @@ object GpuJsonScan {
 
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
     if (hasDates) {
-      GpuJsonUtils.optionalDateFormatInRead(parsedOptions) match {
-        case None | Some("yyyy-MM-dd") =>
-          // this is fine
-        case dateFormat =>
-          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
-      }
+      GpuJsonToStructsShim.tagDateFormatSupport(meta,
+        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
     }
 
     val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])

@@ -29,6 +29,9 @@ import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 
 object GpuJsonToStructsShim {
 
+  def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
+  }
+
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
     GpuJsonUtils.optionalDateFormatInRead(options) match {
       case None =>
