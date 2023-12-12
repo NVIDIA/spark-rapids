@@ -330,6 +330,19 @@ Basically, you need first to upload the test resources onto the cloud path `reso
 `root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
 to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
 
+### Running with a fixed data generation seed
+
+By default the tests are run with a different random data generator seed to increase the chance of
+uncovering bugs due to specific inputs. The seed used for a test is printed as part of the test
+name, see the `DATAGEN_SEED=` part of the test name printed as tests are run. If a problem is found
+with a specific data generation seed, the seed can be set explicitly when running the tests by
+exporting the `DATAGEN_SEED` environment variable to the desired seed before running the
+integration tests. For example:
+
+```shell
+$ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
+```
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have

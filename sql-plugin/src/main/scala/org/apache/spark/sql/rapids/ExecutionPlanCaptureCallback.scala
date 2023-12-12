@@ -26,6 +26,8 @@ trait ExecutionPlanCaptureCallbackBase {
   def captureIfNeeded(qe: QueryExecution): Unit
   def startCapture(): Unit
   def startCapture(timeoutMillis: Long): Unit
+  def endCapture(): Unit
+  def endCapture(timeoutMillis: Long): Unit
   def getResultsWithTimeout(timeoutMs: Long = 10000): Array[SparkPlan]
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
   def assertContains(gpuPlan: SparkPlan, className: String): Unit
@@ -56,6 +58,10 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
 
   override def startCapture(timeoutMillis: Long): Unit =
     impl.startCapture(timeoutMillis)
+
+  override def endCapture(): Unit = impl.endCapture()
+
+  override def endCapture(timeoutMillis: Long): Unit = impl.endCapture(timeoutMillis)
 
   override def getResultsWithTimeout(timeoutMs: Long = 10000): Array[SparkPlan] =
     impl.getResultsWithTimeout(timeoutMs)

@@ -244,7 +244,8 @@ class IntegerGen(DataGen):
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False):
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False, full_precision=False):
+        """full_precision: If True, generate decimals with full precision without leading and trailing zeros."""
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
@@ -259,12 +260,14 @@ class DecimalGen(DataGen):
         self.scale = scale
         self.precision = precision
         self.avoid_positive_values = avoid_positive_values
+        self.full_precision = full_precision
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self.precision) + ',' + str(self.scale) + ',' + str(self.avoid_positive_values) + ')'
+        return super()._cache_repr() + '(' + str(self.precision) + ',' + str(self.scale) + ',' +\
+              str(self.avoid_positive_values) + ',' + str(self.full_precision) + ')'
 
     def start(self, rand):
         def random_decimal(rand):
@@ -272,7 +275,15 @@ class DecimalGen(DataGen):
                 sign = "-"
             else:
                 sign = rand.choice(["-", ""])
-            int_part = "".join([rand.choice("0123456789") for _ in range(self.precision)]) 
+            if self.full_precision:
+                if self.precision == 1:
+                    int_part = rand.choice("123456789")
+                else:
+                    int_part = rand.choice("123456789") + \
+                        "".join([rand.choice("0123456789") for _ in range(self.precision - 2)]) + \
+                        rand.choice("123456789")
+            else:
+                int_part = "".join([rand.choice("0123456789") for _ in range(self.precision)]) 
             result = f"{sign}{int_part}e{str(-self.scale)}" 
             return Decimal(result)
 
@@ -280,10 +291,13 @@ class DecimalGen(DataGen):
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
+_MISSING_ARG = object()
+
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = []):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
+    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX,
+                 special_cases = _MISSING_ARG):
+        _special_cases = [min_val, max_val, 0, 1, -1] if special_cases is _MISSING_ARG else special_cases
         super().__init__(LongType(), nullable=nullable, special_cases=_special_cases)
         self._min_val = min_val
         self._max_val = max_val

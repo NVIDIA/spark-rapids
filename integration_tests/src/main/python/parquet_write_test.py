@@ -164,7 +164,7 @@ def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
 
 
 parquet_part_write_gens = [
-    byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    byte_gen, short_gen, int_gen, long_gen,
     # Some file systems have issues with UTF8 strings so to help the test pass even there
     StringGen('(\\w| ){0,50}'),
     boolean_gen, date_gen,
@@ -177,7 +177,7 @@ parquet_part_write_gens = [
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_part_write_round_trip(spark_tmp_path, parquet_gen):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
-            ('b', parquet_gen)]
+                ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),

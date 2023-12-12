@@ -192,7 +192,9 @@ def test_basic_scalar_map_get_map_value(key_gen):
 
 
 @allow_non_gpu('WindowLocalExec')
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9683')
+@datagen_overrides(seed=0, condition=is_before_spark_314()
+                             or (not is_before_spark_320() and is_before_spark_323())
+                             or (not is_before_spark_330() and is_before_spark_331()), reason="https://issues.apache.org/jira/browse/SPARK-40089")
 @pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_map_scalars_supported_key_types(data_gen):
