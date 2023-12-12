@@ -3241,6 +3241,34 @@ object GpuOverrides extends Logging {
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
+    expr[ParseUrl](
+      "Extracts a part from a URL",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
+            TypeEnum.STRING, "only support partToExtract=PROTOCOL"), TypeSig.STRING)),
+          // Should really be an OptionalParam
+          Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.failOnError) {
+            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
+          }
+
+          extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            case Some(GpuParseUrl.PROTOCOL) =>
+            case Some(other) =>
+              willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
+            case None =>
+              // Should never get here, but just in case
+              willNotWorkOnGpu("GPU only supports a literal for the part to extract")
+          }
+        }
+
+        override def convertToGpu(): GpuExpression = {
+          GpuParseUrl(childExprs.map(_.convertToGpu()))
+        }
+      }),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
