@@ -33,16 +33,19 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object AddOverflowChecks {
+trait AddSubOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    // Check overflow. It is true when both arguments have the opposite sign of the result.
-    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
-    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
-      withResource(ret.bitXor(rhs)) { rXor =>
-        lXor.bitAnd(rXor)
+      ret: ColumnVector,
+      message: String): Unit = {
+    // Check overflow. It is true if the arguments have different signs and
+    // the sign of the result is different from the sign of x.
+    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
+
+    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
+      withResource(lhs.bitXor(ret)) { xrXor =>
+        xyXor.bitAnd(xrXor)
       }
     }
     val signDiffCV = withResource(signCV) { sign =>
@@ -53,12 +56,20 @@ object AddOverflowChecks {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Add operation."
-          )
+          throw RapidsErrorUtils.arithmeticOverflowError(message)
         }
       }
     }
+  }
+}
+
+object AddOverflowChecks extends AddSubOverflowChecks {
+  def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    super.basicOpOverflowCheck(lhs, rhs, ret,
+      "One or more rows overflow for Add operation.")
   }
 
   def didDecimalOverflow(
@@ -106,6 +117,16 @@ object AddOverflowChecks {
         }
       }
     }
+  }
+}
+
+object SubtractOverflowChecks extends AddSubOverflowChecks {
+  def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    super.basicOpOverflowCheck(lhs, rhs, ret,
+      "One or more rows overflow for Subtract operation.")
   }
 }
 
@@ -289,35 +310,6 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
   override def binaryOp: BinaryOp = BinaryOp.SUB
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.SUB)
 
-  private[this] def basicOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    // Check overflow. It is true if the arguments have different signs and
-    // the sign of the result is different from the sign of x.
-    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
-
-    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
-      withResource(lhs.bitXor(ret)) { xrXor =>
-        xyXor.bitAnd(xrXor)
-      }
-    }
-    val signDiffCV = withResource(signCV) { sign =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        sign.lessThan(zero)
-      }
-    }
-    withResource(signDiffCV) { signDiff =>
-      withResource(signDiff.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Subtract operation."
-          )
-        }
-      }
-    }
-  }
-
   private[this] def decimalOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
@@ -367,7 +359,7 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-        basicOpOverflowCheck(lhs, rhs, ret)
+        SubtractOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
