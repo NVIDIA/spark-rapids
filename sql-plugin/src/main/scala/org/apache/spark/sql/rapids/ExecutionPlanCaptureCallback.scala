@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.ShimLoaderTemp
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
@@ -26,6 +26,8 @@ trait ExecutionPlanCaptureCallbackBase {
   def captureIfNeeded(qe: QueryExecution): Unit
   def startCapture(): Unit
   def startCapture(timeoutMillis: Long): Unit
+  def endCapture(): Unit
+  def endCapture(timeoutMillis: Long): Unit
   def getResultsWithTimeout(timeoutMs: Long = 10000): Array[SparkPlan]
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
   def assertContains(gpuPlan: SparkPlan, className: String): Unit
@@ -46,7 +48,7 @@ trait ExecutionPlanCaptureCallbackBase {
 }
 
 object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
-  lazy val impl = ShimLoader.newExecutionPlanCaptureCallbackBase()
+  lazy val impl = ShimLoaderTemp.newExecutionPlanCaptureCallbackBase()
 
   override def captureIfNeeded(qe: QueryExecution): Unit =
     impl.captureIfNeeded(qe)
@@ -56,6 +58,10 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
 
   override def startCapture(timeoutMillis: Long): Unit =
     impl.startCapture(timeoutMillis)
+
+  override def endCapture(): Unit = impl.endCapture()
+
+  override def endCapture(timeoutMillis: Long): Unit = impl.endCapture(timeoutMillis)
 
   override def getResultsWithTimeout(timeoutMs: Long = 10000): Array[SparkPlan] =
     impl.getResultsWithTimeout(timeoutMs)
@@ -84,13 +90,13 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
   override def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit =
     impl.assertDidFallBack(df, fallbackCpuClass)
 
-  override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit = 
+  override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit =
     impl.assertDidFallBack(gpuPlans, fallbackCpuClass)
 
   override def assertCapturedAndGpuFellBack(
       // used by python code, should not be Array[String]
       fallbackCpuClassList: java.util.ArrayList[String],
-      timeoutMs: Long): Unit = 
+      timeoutMs: Long): Unit =
     impl.assertCapturedAndGpuFellBack(fallbackCpuClassList, timeoutMs)
 
   override def assertCapturedAndGpuFellBack(

@@ -661,7 +661,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       (value, o.value) match {
         case (null, null) => true
         case (a: Array[Byte], b: Array[Byte]) => util.Arrays.equals(a, b)
-        case (a, b) => a != null && a.equals(b)
+        case (a, b) => a != null && a == b
       }
     case _ => false
   }
@@ -734,6 +734,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       case LongType => ast.Literal.ofLong(value.asInstanceOf[java.lang.Long])
       case FloatType => ast.Literal.ofFloat(value.asInstanceOf[java.lang.Float])
       case DoubleType => ast.Literal.ofDouble(value.asInstanceOf[java.lang.Double])
+      case StringType => ast.Literal.ofString(value.asInstanceOf[UTF8String].toString)
       case TimestampType =>
         ast.Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
           value.asInstanceOf[java.lang.Long])

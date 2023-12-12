@@ -21,15 +21,17 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.10.0</version>
+        <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
+        <version>23.12.0</version>
+        <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>23.10.0</version>
+    <version>23.12.0</version>
 
     <properties>
+        <rapids.module>sql-plugin</rapids.module>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
@@ -101,121 +103,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <profiles>
-        <profile>
-            <id>release321cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release330cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>330cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release330db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>330db</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.logging.log4j</groupId>
-                    <artifactId>log4j-core</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release332db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>332db</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.logging.log4j</groupId>
-                    <artifactId>log4j-core</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <!--
-                 Note that we are using the Spark version for all of the Databricks dependencies as well.
-                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                 This is to make it easier and not have to change version numbers for each individual dependency
-                 and deal with differences between Databricks versions
-            -->
-            <id>dbdeps</id>
-            <activation>
-                <property>
-                    <name>databricks</name>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-db-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-
-        <profile>
-            <id>with-classifier</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-
-    </profiles>
-
     <build>
         <resources>
           <resource>
@@ -223,20 +110,37 @@
             <directory>${project.build.directory}/extra-resources</directory>
             <filtering>true</filtering>
           </resource>
-          <resource>
-            <directory>${project.basedir}/..</directory>
-            <targetPath>META-INF</targetPath>
-            <includes>
-              <!-- The NOTICE will be taken care of by the antrun task below -->
-              <include>LICENSE</include>
-            </includes>
-          </resource>
-          <resource>
-            <!-- Include python files for Python UDF support. -->
-            <directory>${project.basedir}/../python/</directory>
-          </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-license-notice-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>add-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <directory>${spark.rapids.source.basedir}</directory>
+                                    <targetPath>META-INF</targetPath>
+                                    <includes>
+                                        <!-- The NOTICE will be taken care of by the antrun task below -->
+                                        <include>LICENSE</include>
+                                        <include>NOTICE</include>
+                                    </includes>
+                                </resource>
+                                <resource>
+                                    <directory>${spark.rapids.source.basedir}/python</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
@@ -250,9 +154,9 @@
                     <target>
                       <!-- copy NOTICE-binary to NOTICE -->
                       <copy
-                          todir="${project.build.directory}/classes/META-INF/"
+                          todir="${project.build.outputDirectory}/META-INF/"
                           verbose="true">
-                        <fileset dir="${project.basedir}/..">
+                        <fileset dir="${spark.rapids.source.basedir}">
                           <include name="NOTICE-binary"/>
                         </fileset>
                         <mapper type="glob" from="*-binary" to="*"/>
@@ -267,13 +171,38 @@
                       <goal>run</goal>
                   </goals>
                   <configuration>
-                      <target>
-                          <property name="servicesDir"
-                                    value="${project.build.directory}/extra-resources/META-INF/services"/>
-                          <mkdir dir="${servicesDir}"/>
-                          <echo file="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"
-                                message="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider${line.separator}"/>
-                      </target>
+                    <target>
+                        <taskdef resource="net/sf/antcontrib/antcontrib.properties" />
+                        <property name="servicesDir"
+                            value="${project.build.outputDirectory}/META-INF/services" />
+                        <property name="serviceFile"
+                            value="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                        <property name="shimServiceClass"
+                            value="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider"/>
+                        <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                            <available file="${serviceFile}" type="file"/>
+                            <then>
+                                <loadfile property="currentServiceClass"
+                                    srcFile="${serviceFile}"
+                                    failonerror="false"
+                                    quiet="${nonfail.errors.quiet}"/>
+                            </then>
+                            <else>
+                                <property name="currentServiceClass" value="N/A"/>
+                            </else>
+                        </ac:if>
+                        <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                            <equals arg1="${currentServiceClass}" arg2="${shimServiceClass}${line.separator}"/>
+                            <then>
+                                <echo>Skipping shim service file generation, already exists</echo>
+                            </then>
+                            <else>
+                                <echo>Recreating shim service file</echo>
+                                <mkdir dir="${servicesDir}"/>
+                                <echo file="${serviceFile}" message="${shimServiceClass}${line.separator}"/>
+                            </else>
+                        </ac:if>
+                    </target>
                   </configuration>
                 </execution>
               </executions>

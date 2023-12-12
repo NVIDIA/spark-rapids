@@ -101,6 +101,9 @@ For manual installation, you need to setup your environment:
   tests across multiple CPUs to speed up test execution
 - findspark
   : Adds pyspark to sys.path at runtime
+- [fastparquet](https://fastparquet.readthedocs.io)
+  : A Python library (independent of Apache Spark) for reading/writing Parquet. Used in the
+  integration tests for checking Parquet read/write compatibility with the RAPIDS plugin.
 
 You can install all the dependencies using `pip` by running the following command:
 
@@ -153,7 +156,8 @@ Tests will run as a part of the maven build if you have the environment variable
 The suggested way to run these tests is to use the shell-script file located in the
  integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes
 care of some of the flags that are required to run the tests which will have to be set for the
-plugin to work. It will be very useful to read the contents of the
+plugin to work. It will also automatically detect the Scala version used by the Spark located
+at `$SPARK_HOME`.  It will be very useful to read the contents of the
 [run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight
 into what is needed as we constantly keep working on to improve and expand the plugin-support.
 
@@ -231,7 +235,7 @@ For example, `spark.sql.catalog.spark_catalog` is represented by the environment
 
 We also have a large number of integration tests that currently run as a part of the unit tests
 using scala test. Those are in the `src/test/scala` sub-directory and depend on the testing
-framework from the `rapids-4-spark-tests_2.12` test jar.
+framework from the `rapids-4-spark-tests_2.x` test jar.
 
 You can run these tests against a cluster similar to how you can run `pytests` against an
 existing cluster. To do this you need to launch a cluster with the plugin jars on the
@@ -250,7 +254,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-23.10.0-tests.jar,rapids-4-spark-integration-tests_2.12-23.10.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-23.12.0-tests.jar,rapids-4-spark-integration-tests_2.12-23.12.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -270,10 +274,10 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
 If you just want to verify the SQL replacement is working you will need to add the
 `rapids-4-spark` jar to your `spark-submit` command. Note the following example
-assumes CUDA 11.0 is being used.
+assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.10.0-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.12.0-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -326,6 +330,19 @@ Basically, you need first to upload the test resources onto the cloud path `reso
 `root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
 to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
 
+### Running with a fixed data generation seed
+
+By default the tests are run with a different random data generator seed to increase the chance of
+uncovering bugs due to specific inputs. The seed used for a test is printed as part of the test
+name, see the `DATAGEN_SEED=` part of the test name printed as tests are run. If a problem is found
+with a specific data generation seed, the seed can be set explicitly when running the tests by
+exporting the `DATAGEN_SEED` environment variable to the desired seed before running the
+integration tests. For example:
+
+```shell
+$ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
+```
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
@@ -372,7 +389,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.10.0-cuda11.jar,rapids-4-spark-tests_2.12-23.10.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.10.0-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.10.0-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.12.0-cuda11.jar,rapids-4-spark-tests_2.12-23.12.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.12.0-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.12.0-cuda11.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -401,6 +418,10 @@ If Spark has been configured to support Delta Lake then these tests can be enabl
 ### Enabling large data tests
 Some tests are testing large data which will take a long time. By default, these tests are disabled.
 These tests can be enabled by adding the `--large_data_test` option to the command.
+
+### Enabling Pyarrow tests
+Some tests require that Pyarrow is installed. By default, these tests are disabled.
+These tests can be enabled by adding the `--pyarrow_test` option to the command.
 
 ## Writing tests
 
@@ -453,6 +474,12 @@ The marks you care about are all in marks.py
 
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
+
+All data generation and Spark function calls should occur within a Spark session. Typically 
+this is done by passing a lambda to functions in `asserts.py` such as 
+`assert_gpu_and_cpu_are_equal_collect`. However, for scalar generation like `gen_scalars`, you 
+may need to put it in a `with_cpu_session`. It is because negative scale decimals can have 
+problems when calling `f.lit` from outside of `with_spark_session`.
 
 ## Guidelines for Testing
 

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.{Comparator, LinkedList, PriorityQueue}
 
-import scala.collection.mutable.{ArrayBuffer, ArrayStack}
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -381,7 +381,7 @@ case class GpuOutOfCoreSortIterator(
         }
       }
     }
-    (sortedCb, pendingObs)
+    (sortedCb, pendingObs.toSeq)
   }
 
   /** Save the splitting result returned from `splitAfterSort` into the cache */
@@ -450,8 +450,8 @@ case class GpuOutOfCoreSortIterator(
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
       var bytesLeftToFetch = targetSize
-      val pendingSort = new ArrayStack[SpillableColumnarBatch]()
-      closeOnExcept(pendingSort) { _ =>
+      val pendingSort = new RapidsStack[SpillableColumnarBatch]()
+      closeOnExcept(pendingSort.toSeq) { _ =>
         while (!pending.isEmpty &&
             (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {
           val buffer = pending.poll().buffer
@@ -545,7 +545,7 @@ case class GpuOutOfCoreSortIterator(
       }
     } else {
       // withRetryNoSplit will take over the batches.
-      withRetryNoSplit(spillCbs) { attempt =>
+      withRetryNoSplit(spillCbs.toSeq) { attempt =>
         onConcatOutput()
         val tables = attempt.safeMap { sp =>
           withResource(sp.getColumnarBatch())(GpuColumnVector.from)

@@ -75,6 +75,8 @@ case class GpuLambdaFunction(
   override def dataType: DataType = function.dataType
   override def nullable: Boolean = function.nullable
 
+  override def disableTieredProjectCombine: Boolean = true
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     function.asInstanceOf[GpuExpression].columnarEval(batch)
 }

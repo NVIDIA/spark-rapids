@@ -160,6 +160,7 @@ def __csv_as_arr(str_val):
     else:
         return str_val.translate(None, ' ' + os.linesep).split(',')
 
+__src_basedir = __ant_proj_prop('shimplify.src.basedir') or str(__project().getBaseDir())
 
 __should_add_comment = __is_enabled_attr('if')
 
@@ -301,6 +302,7 @@ def task_impl():
     """Ant task entry point """
     __log.info('# Starting Jython Task Shimplify #')
     config_format = """#   config:
+#           shimplify.src.baseDir=%s
 #           shimplify (if)=%s
 #           shimplify.add.base=%s
 #           shimplify.add.shim=%s
@@ -310,6 +312,7 @@ def task_impl():
 #           shimplify.shims=%s
 #           shimplify.trace=%s"""
     __log.info(config_format,
+               __src_basedir,
                __should_add_comment,
                __add_shim_base,
                __add_shim_buildver,
@@ -370,7 +373,7 @@ def __generate_symlinks():
 
 def __traverse_source_tree_of_all_shims(src_type, func):
     """Walks src/<src_type>/sparkXYZ"""
-    base_dir = str(__project().getBaseDir())
+    base_dir = __src_basedir
     src_root = os.path.join(base_dir, 'src', src_type)
     for dir, subdirs, files in os.walk(src_root, topdown=True):
         if dir == src_root:
@@ -396,9 +399,10 @@ def __traverse_source_tree_of_all_shims(src_type, func):
 
 def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr):
     if buildver in build_ver_arr:
-        base_dir = str(__project().getBaseDir())
+        project_base_dir = str(__project().getBaseDir())
+        base_dir = __src_basedir
         src_root = os.path.join(base_dir, 'src', src_type)
-        target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
+        target_root = os.path.join(project_base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
                                    src_type)
         first_build_ver = build_ver_arr[0]
         __log.debug("top shim comment %s", first_build_ver)

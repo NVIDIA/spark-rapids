@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_not_utc
 from data_gen import *
 from pyspark.sql.types import *
 
@@ -33,6 +34,7 @@ def test_struct_scalar_project():
     StructGen([["first", decimal_gen_64bit], ["second", decimal_gen_32bit], ["third", decimal_gen_32bit]]),
     StructGen([["first", decimal_gen_128bit], ["second", decimal_gen_128bit], ["third", decimal_gen_128bit]]),
     StructGen([["first", binary_gen], ["second", ArrayGen(BinaryGen(max_length=10), max_length=10)], ["third", binary_gen]])], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_struct_get_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -43,6 +45,7 @@ def test_struct_get_item(data_gen):
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + [binary_gen,
     null_gen] + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_make_struct(data_gen):
     # Spark has no good way to create a map literal without the map function
     # so we are inserting one.

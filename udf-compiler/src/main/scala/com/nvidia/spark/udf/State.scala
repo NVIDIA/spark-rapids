@@ -146,7 +146,11 @@ object State {
                         objref: Option[Expression]): State = {
     val max = lambdaReflection.maxLocals
     val args = lambdaReflection.capturedArgs ++ children
-    val paramTypesAndArgs: Seq[(CtClass, Expression)] = lambdaReflection.parameters.view.zip(args)
+    val paramTypesAndArgs: Seq[(CtClass, Expression)] = lambdaReflection
+          .parameters
+          .view
+          .zip(args)
+          .toSeq
     val locals = paramTypesAndArgs.foldLeft(objref.toVector) { (l, p) =>
       val (paramType : CtClass, argExp) = p
       if (paramType == CtClass.doubleType || paramType == CtClass.longType) {

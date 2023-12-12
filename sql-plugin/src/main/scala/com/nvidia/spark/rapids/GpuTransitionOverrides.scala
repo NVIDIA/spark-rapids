@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv, GpuTaskMetrics}
+import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
@@ -329,30 +329,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => false
   }
 
-
-
   /**
    * Because we cannot change the executors in spark itself we need to try and account for
    * the ones that might have issues with coalesce here.
    */
   private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
-  }
-
-  private def disableScanUntilInput(exec: Expression): Boolean = {
-    exec match {
-      case _: InputFileName => true
-      case _: InputFileBlockStart => true
-      case _: InputFileBlockLength => true
-      case _: GpuInputFileName => true
-      case _: GpuInputFileBlockStart => true
-      case _: GpuInputFileBlockLength => true
-      case e => e.children.exists(disableScanUntilInput)
-    }
+    InputFileBlockRule.hasInputFileExpression(plan)
   }
 
   private def disableScanUntilInput(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(disableScanUntilInput)
+    InputFileBlockRule.hasInputFileExpression(plan)
   }
 
   // This walks from the output to the input to look for any uses of InputFileName,
@@ -510,6 +496,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def insertColumnarFromGpu(plan: SparkPlan): SparkPlan = {
     if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
       GpuBringBackToHost(insertColumnarToGpu(plan))
+    } else if (plan.isInstanceOf[ColumnarToRowTransition] && plan.isInstanceOf[GpuExec]) {
+      plan.withNewChildren(plan.children.map(insertColumnarToGpu))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarFromGpu))
     }
@@ -839,15 +827,4 @@ object GpuTransitionOverrides {
     }
   }
 
-  /**
-   * Check the Expression is or has Input File expressions.
-   * @param exec expression to check
-   * @return true or false
-   */
-  def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
-    case _: InputFileName => true
-    case _: InputFileBlockStart => true
-    case _: InputFileBlockLength => true
-    case e => e.children.exists(checkHasInputFileExpressions)
-  }
 }

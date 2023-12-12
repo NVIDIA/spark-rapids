@@ -270,7 +270,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    val ret = batchBuilder.build(totalRows)
+    val ret = RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch]{
+      batchBuilder.tryBuild(totalRows)
+    }
     val maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
 
     // refine the estimate for number of rows based on this batch

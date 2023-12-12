@@ -22,7 +22,9 @@ import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
@@ -35,6 +37,8 @@ trait DeltaRuntimeShim {
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
 
   def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean
+
+  def getGpuDeltaCatalog(cpuCatalog: DeltaCatalog, rapidsConf: RapidsConf): StagingTableCatalog
 }
 
 object DeltaRuntimeShim {
@@ -49,7 +53,11 @@ object DeltaRuntimeShim {
       Try {
         DeltaUDF.getClass.getMethod("stringStringUdf", classOf[String => String])
       }.map(_ => "org.apache.spark.sql.delta.rapids.delta21x.Delta21xRuntimeShim")
-          .getOrElse("org.apache.spark.sql.delta.rapids.delta22x.Delta22xRuntimeShim")
+        .orElse {
+          Try {
+            classOf[DeltaLog].getMethod("assertRemovable")
+          }.map(_ => "org.apache.spark.sql.delta.rapids.delta22x.Delta22xRuntimeShim")
+        }.getOrElse("org.apache.spark.sql.delta.rapids.delta23x.Delta23xRuntimeShim")
     } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
     } else {
@@ -81,4 +89,8 @@ object DeltaRuntimeShim {
 
   def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
     shimInstance.getTightBoundColumnOnFileInitDisabled(spark)
+
+  def getGpuDeltaCatalog(cpuCatalog: DeltaCatalog, rapidsConf: RapidsConf): StagingTableCatalog = {
+    shimInstance.getGpuDeltaCatalog(cpuCatalog, rapidsConf)
+  }
 }

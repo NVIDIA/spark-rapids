@@ -21,13 +21,14 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.10.0</version>
+        <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
+        <version>23.12.0</version>
+        <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>23.10.0</version>
+    <version>23.12.0</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -39,10 +40,12 @@
     </dependencies>
 
     <properties>
+        <rapids.module>dist</rapids.module>
         <target.classifier/>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${jni.classifier}.jar</dist.jar.name>
         <dist.jar.pom.url>jar:file:${dist.jar.name}!/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml</dist.jar.pom.url>
         <rapids.default.jar.phase>none</rapids.default.jar.phase>
+        <rapids.jni.unpack.skip>false</rapids.jni.unpack.skip>
     </properties>
     <profiles>
         <profile>
@@ -58,7 +61,12 @@
             <id>noSnapshots</id>
             <properties>
                 <included_buildvers>
+                    <!-- #if scala-2.12 -->
                     ${noSnapshot.buildvers}
+                    <!-- #endif scala-2.12 -->
+                    <!-- #if scala-2.13 --><!--
+                    ${noSnapshotScala213.buildvers}
+                    --><!-- #endif scala-2.13 -->
                 </included_buildvers>
             </properties>
         </profile>
@@ -83,6 +91,14 @@
             <properties>
                 <included_buildvers>
                     ${premergeUTF8.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeScala213.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
@@ -161,6 +177,31 @@
                     ${noSnapshot.buildvers},
                     ${snapshot.buildvers},
                     ${databricks.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>noSnapshotsScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>snapshotsScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshotScala213.buildvers},
+                    ${snapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>snapshotScala213Only</id>
+            <properties>
+                <included_buildvers>
+                    ${snapshotScala213.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
@@ -277,9 +318,31 @@
                                 <property name="scala.binary.version" value="${scala.binary.version}"/>
                                 <property name="included_buildvers" value="${included_buildvers}"/>
                                 <ant
-                                    antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                    antfile="${spark.rapids.source.basedir}/${rapids.module}/maven-antrun/build-parallel-worlds.xml"
                                     target="remove-dependencies-from-pom"
                                 />
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-jni-and-ucx-classes</id>
+                        <!-- after optional unpack -->
+                        <phase>process-resources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${project.build.directory}/jni-deps" type="dir"/>
+                                    <then>
+                                        <copy todir="${project.build.directory}/parallel-world">
+                                            <fileset dir="${project.build.directory}/jni-deps"/>
+                                        </copy>
+                                    </then>
+                                    <else>
+                                        <fail>Re-execute build with the default `-Drapids.jni.unpack.skip=false`</fail>
+                                    </else>
+                                </ac:if>
                             </target>
                         </configuration>
                     </execution>
@@ -407,6 +470,7 @@ self.log("... OK")
                             <goal>unpack</goal>
                         </goals>
                         <configuration>
+                            <skip>${rapids.jni.unpack.skip}</skip>
                             <artifactItems>
                                 <!-- if add new artifacts, should set `overWrite` as true -->
                                 <artifactItem>
@@ -414,14 +478,14 @@ self.log("... OK")
                                     <artifactId>spark-rapids-jni</artifactId>
                                     <classifier>${jni.classifier}</classifier>
                                     <excludes>META-INF/**</excludes>
-                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                    <outputDirectory>${project.build.directory}/jni-deps</outputDirectory>
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>org.openucx</groupId>
                                     <artifactId>jucx</artifactId>
                                     <excludes>META-INF/**</excludes>
-                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                    <outputDirectory>${project.build.directory}/jni-deps</outputDirectory>
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                             </artifactItems>

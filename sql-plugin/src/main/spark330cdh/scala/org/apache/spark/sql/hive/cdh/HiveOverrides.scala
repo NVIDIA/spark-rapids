@@ -15,6 +15,7 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "330cdh"}
+{"spark": "332cdh"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.cdh
 

@@ -55,16 +55,6 @@ _default_conf = {
     'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
 }
 
-def is_tz_utc(spark=_spark):
-    """
-    true if the tz is UTC else false
-    """
-    # Now we have to do some kind of ugly internal java stuff
-    jvm = spark.sparkContext._jvm
-    utc = jvm.java.time.ZoneId.of('UTC').normalized()
-    sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
-    return utc == sys_tz
-
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
     if (should_inject_oom()):
@@ -138,11 +128,17 @@ def is_before_spark_312():
 def is_before_spark_313():
     return spark_version() < "3.1.3"
 
+def is_before_spark_314():
+    return spark_version() < "3.1.4"
+
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
 def is_before_spark_322():
     return spark_version() < "3.2.2"
+
+def is_before_spark_323():
+    return spark_version() < "3.2.3"
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
@@ -183,8 +179,11 @@ def is_spark_321cdh():
 def is_spark_330cdh():
     return "3.3.0.3.3.718" in spark_version()
 
+def is_spark_332cdh():
+    return "3.3.2.3.3.719" in spark_version()
+
 def is_spark_cdh():
-    return is_spark_321cdh() or is_spark_330cdh()
+    return is_spark_321cdh() or is_spark_330cdh() or is_spark_332cdh()
 
 def is_databricks_version_or_later(major, minor):
     spark = get_spark_i_know_what_i_am_doing()
@@ -211,6 +210,10 @@ def supports_delta_lake_deletion_vectors():
     else:
         return is_spark_340_or_later()
 
+def is_support_default_values_in_schema():
+    # Spark 340 + and Databricks 330 + support
+    return is_spark_340_or_later() or is_databricks113_or_later()
+
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")
     # Allow these formats:
@@ -231,6 +234,19 @@ def get_java_major_version():
 def get_jvm_charset():
     sc = _spark.sparkContext
     return str(sc._jvm.java.nio.charset.Charset.defaultCharset())
+
+def get_scala_version():
+    sc = _spark.sparkContext
+    return str(sc._jvm.scala.tools.nsc.Properties.versionNumberString())
+
+def get_scala_binary_version():
+    ".".join(get_scala_version().split(".")[:2])
+
+def is_scala212():
+    return get_scala_version().startswith("2.12")
+
+def is_scala213():
+    return get_scala_version().startswith("2.13")
 
 def is_jvm_charset_utf8():
     return get_jvm_charset() == 'UTF-8'

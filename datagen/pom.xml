@@ -18,17 +18,18 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.10.0</version>
+        <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
+        <version>23.12.0</version>
+        <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>datagen_2.12</artifactId>
     <name>Data Generator</name>
     <description>Tools for generating large amounts of data</description>
-    <version>23.10.0</version>
+    <version>23.12.0</version>
     <properties>
+        <rapids.module>datagen</rapids.module>
         <target.classifier/>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
@@ -59,69 +60,6 @@
             <version>3.7.1</version>
         </dependency>
     </dependencies>
-
-    <profiles>
-        <profile>
-            <id>release321cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release330cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>330cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <!--
-                 Note that we are using the Spark version for all of the Databricks dependencies as well.
-                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                 This is to make it easier and not have to change version numbers for each individual dependency
-                 and deal with differences between Databricks versions
-            -->
-            <id>dbdeps</id>
-            <activation>
-                <property>
-                    <name>databricks</name>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-db-bom</artifactId>
-                    <version>${project.version}</version>
-                    <type>pom</type>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
-
     <build>
         <plugins>
             <!-- disable surefire as we are using scalatest only -->

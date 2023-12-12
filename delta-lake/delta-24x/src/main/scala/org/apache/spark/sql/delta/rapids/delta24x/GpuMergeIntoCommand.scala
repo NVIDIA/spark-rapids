@@ -43,11 +43,10 @@ import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddCDCFile, AddFile, FileAction}
 import org.apache.spark.sql.delta.commands.DeltaCommand
 import org.apache.spark.sql.delta.commands.merge.MergeIntoMaterializeSource
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuDeltaLog}
+import org.apache.spark.sql.delta.rapids.GpuDeltaLog
 import org.apache.spark.sql.delta.schema.{ImplicitMetadataOperation, SchemaUtils}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.util.{AnalysisHelper, SetAccumulator}
-import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -96,9 +95,10 @@ case class GpuMergeStats(
     insertExprs: Seq[String],
     deleteConditionExpr: String,
 
-    // Newer expressions used in MERGE with any number of MATCHED/NOT MATCHED
+    // Newer expressions used in MERGE with any number of MATCHED/NOT MATCHED/NOT MATCHED BY SOURCE
     matchedStats: Seq[GpuMergeClauseStats],
     notMatchedStats: Seq[GpuMergeClauseStats],
+    notMatchedBySourceStats: Seq[GpuMergeClauseStats],
 
     // Timings
     executionTimeMs: Long,
@@ -129,8 +129,12 @@ case class GpuMergeStats(
     targetPartitionsAddedTo: Option[Long],
     targetRowsCopied: Long,
     targetRowsUpdated: Long,
+    targetRowsMatchedUpdated: Long,
+    targetRowsNotMatchedBySourceUpdated: Long,
     targetRowsInserted: Long,
     targetRowsDeleted: Long,
+    targetRowsMatchedDeleted: Long,
+    targetRowsNotMatchedBySourceDeleted: Long,
 
     // MergeMaterializeSource stats
     materializeSourceReason: Option[String] = None,
@@ -145,6 +149,7 @@ object GpuMergeStats {
       condition: Expression,
       matchedClauses: Seq[DeltaMergeIntoMatchedClause],
       notMatchedClauses: Seq[DeltaMergeIntoNotMatchedClause],
+      notMatchedBySourceClauses: Seq[DeltaMergeIntoNotMatchedBySourceClause],
       isPartitioned: Boolean): GpuMergeStats = {
 
     def metricValueIfPartitioned(metricName: String): Option[Long] = {
@@ -155,9 +160,11 @@ object GpuMergeStats {
       // Merge condition expression
       conditionExpr = condition.sql,
 
-      // Newer expressions used in MERGE with any number of MATCHED/NOT MATCHED
+      // Newer expressions used in MERGE with any number of MATCHED/NOT MATCHED/
+      // NOT MATCHED BY SOURCE
       matchedStats = matchedClauses.map(GpuMergeClauseStats(_)),
       notMatchedStats = notMatchedClauses.map(GpuMergeClauseStats(_)),
+      notMatchedBySourceStats = notMatchedBySourceClauses.map(GpuMergeClauseStats(_)),
 
       // Timings
       executionTimeMs = metrics("executionTimeMs").value,
@@ -189,8 +196,12 @@ object GpuMergeStats {
       targetPartitionsAddedTo = metricValueIfPartitioned("numTargetPartitionsAddedTo"),
       targetRowsCopied = metrics("numTargetRowsCopied").value,
       targetRowsUpdated = metrics("numTargetRowsUpdated").value,
+      targetRowsMatchedUpdated = metrics("numTargetRowsMatchedUpdated").value,
+      targetRowsNotMatchedBySourceUpdated = metrics("numTargetRowsNotMatchedBySourceUpdated").value,
       targetRowsInserted = metrics("numTargetRowsInserted").value,
       targetRowsDeleted = metrics("numTargetRowsDeleted").value,
+      targetRowsMatchedDeleted = metrics("numTargetRowsMatchedDeleted").value,
+      targetRowsNotMatchedBySourceDeleted = metrics("numTargetRowsNotMatchedBySourceDeleted").value,
 
       // Deprecated fields
       updateConditionExpr = null,
@@ -220,13 +231,15 @@ object GpuMergeStats {
  *
  * Phase 3: Use the Delta protocol to atomically remove the touched files and add the new files.
  *
- * @param source            Source data to merge from
- * @param target            Target table to merge into
- * @param gpuDeltaLog       Delta log to use
- * @param condition         Condition for a source row to match with a target row
- * @param matchedClauses    All info related to matched clauses.
- * @param notMatchedClauses  All info related to not matched clause.
- * @param migratedSchema    The final schema of the target - may be changed by schema evolution.
+ * @param source                     Source data to merge from
+ * @param target                     Target table to merge into
+ * @param gpuDeltaLog                Delta log to use
+ * @param condition                  Condition for a source row to match with a target row
+ * @param matchedClauses             All info related to matched clauses.
+ * @param notMatchedClauses          All info related to not matched clauses.
+ * @param notMatchedBySourceClauses  All info related to not matched by source clauses.
+ * @param migratedSchema             The final schema of the target - may be changed by schema
+ *                                   evolution.
  */
 case class GpuMergeIntoCommand(
     @transient source: LogicalPlan,
@@ -269,8 +282,8 @@ case class GpuMergeIntoCommand(
    */
   @transient private lazy val targetOutputAttributesMap: Map[String, Attribute] = {
     val attrMap: Map[String, Attribute] = target
-        .outputSet.view
-        .map(attr => attr.name -> attr).toMap
+      .outputSet.view
+      .map(attr => attr.name -> attr).toMap
     if (conf.caseSensitiveAnalysis) {
       attrMap
     } else {
@@ -279,8 +292,8 @@ case class GpuMergeIntoCommand(
   }
 
   /** Whether this merge statement has only a single insert (NOT MATCHED) clause. */
-  private def isSingleInsertOnly: Boolean = matchedClauses.isEmpty && notMatchedClauses.length == 1
-
+  private def isSingleInsertOnly: Boolean =
+    matchedClauses.isEmpty && notMatchedBySourceClauses.isEmpty && notMatchedClauses.length == 1
   /** Whether this merge statement has no insert (NOT MATCHED) clause. */
   private def hasNoInserts: Boolean = notMatchedClauses.isEmpty
 
@@ -291,7 +304,7 @@ case class GpuMergeIntoCommand(
   override lazy val metrics = Map[String, SQLMetric](
     "numSourceRows" -> createMetric(sc, "number of source rows"),
     "numSourceRowsInSecondScan" ->
-        createMetric(sc, "number of source rows (during repeated scan)"),
+      createMetric(sc, "number of source rows (during repeated scan)"),
     "numTargetRowsCopied" -> createMetric(sc, "number of target rows rewritten unmodified"),
     "numTargetRowsInserted" -> createMetric(sc, "number of inserted rows"),
     "numTargetRowsUpdated" -> createMetric(sc, "number of updated rows"),
@@ -309,25 +322,25 @@ case class GpuMergeIntoCommand(
     "numTargetFilesRemoved" -> createMetric(sc, "number of files removed to target"),
     "numTargetFilesAdded" -> createMetric(sc, "number of files added to target"),
     "numTargetChangeFilesAdded" ->
-        createMetric(sc, "number of change data capture files generated"),
+      createMetric(sc, "number of change data capture files generated"),
     "numTargetChangeFileBytes" ->
-        createMetric(sc, "total size of change data capture files generated"),
+      createMetric(sc, "total size of change data capture files generated"),
     "numTargetBytesBeforeSkipping" -> createMetric(sc, "number of target bytes before skipping"),
     "numTargetBytesAfterSkipping" -> createMetric(sc, "number of target bytes after skipping"),
     "numTargetBytesRemoved" -> createMetric(sc, "number of target bytes removed"),
     "numTargetBytesAdded" -> createMetric(sc, "number of target bytes added"),
     "numTargetPartitionsAfterSkipping" ->
-        createMetric(sc, "number of target partitions after skipping"),
+      createMetric(sc, "number of target partitions after skipping"),
     "numTargetPartitionsRemovedFrom" ->
-        createMetric(sc, "number of target partitions from which files were removed"),
+      createMetric(sc, "number of target partitions from which files were removed"),
     "numTargetPartitionsAddedTo" ->
-        createMetric(sc, "number of target partitions to which files were added"),
+      createMetric(sc, "number of target partitions to which files were added"),
     "executionTimeMs" ->
-        createTimingMetric(sc, "time taken to execute the entire operation"),
+      createTimingMetric(sc, "time taken to execute the entire operation"),
     "scanTimeMs" ->
-        createTimingMetric(sc, "time taken to scan the files for matches"),
+      createTimingMetric(sc, "time taken to scan the files for matches"),
     "rewriteTimeMs" ->
-        createTimingMetric(sc, "time taken to rewrite the matched files"))
+      createTimingMetric(sc, "time taken to rewrite the matched files"))
 
   override def run(spark: SparkSession): Seq[Row] = {
     metrics("executionTimeMs").set(0)
@@ -343,11 +356,10 @@ case class GpuMergeIntoCommand(
       if (newNullColumn.isDefined) {
         throw new AnalysisException(
           s"""Cannot add column '${newNullColumn.get}' with type 'void'. Please explicitly specify a
-             |non-void type.""".stripMargin.replaceAll("\n", " ")
+              |non-void type.""".stripMargin.replaceAll("\n", " ")
         )
       }
     }
-
     val (materializeSource, _) = shouldMaterializeSource(spark, source, isSingleInsertOnly)
     if (!materializeSource) {
       runMerge(spark)
@@ -401,6 +413,7 @@ case class GpuMergeIntoCommand(
           }
         }
 
+        val finalActions = createSetTransaction(spark, targetDeltaLog).toSeq ++ deltaActions
         // Metrics should be recorded before commit (where they are written to delta logs).
         metrics("executionTimeMs").set((System.nanoTime() - startTime) / 1000 / 1000)
         deltaTxn.registerSQLMetrics(spark, metrics)
@@ -408,17 +421,15 @@ case class GpuMergeIntoCommand(
         // This is a best-effort sanity check.
         if (metrics("numSourceRowsInSecondScan").value >= 0 &&
             metrics("numSourceRows").value != metrics("numSourceRowsInSecondScan").value) {
-          log.warn(s"Merge source has ${metrics("numSourceRows").value} rows in initial scan but " +
-              s"${metrics("numSourceRowsInSecondScan").value} rows in second scan")
+          log.warn(s"Merge source has ${metrics("numSourceRows")} rows in initial scan but " +
+            s"${metrics("numSourceRowsInSecondScan")} rows in second scan")
           if (conf.getConf(DeltaSQLConf.MERGE_FAIL_IF_SOURCE_CHANGED)) {
             throw DeltaErrors.sourceNotDeterministicInMergeException(spark)
           }
         }
 
-        // Note that this changed as of Delta Lake 2.4.0 to use `commitIfNeeded`
-        // instead of `commit`
         deltaTxn.commitIfNeeded(
-          deltaActions,
+          finalActions,
           DeltaOperations.Merge(
             Option(condition),
             matchedClauses.map(DeltaOperations.MergePredicate(_)),
@@ -427,7 +438,11 @@ case class GpuMergeIntoCommand(
 
         // Record metrics
         var stats = GpuMergeStats.fromMergeSQLMetrics(
-          metrics, condition, matchedClauses, notMatchedClauses,
+          metrics,
+          condition,
+          matchedClauses,
+          notMatchedClauses,
+          notMatchedBySourceClauses,
           deltaTxn.metadata.partitionColumns.nonEmpty)
         stats = stats.copy(
           materializeSourceReason = Some(materializeSourceReason.toString),
@@ -438,10 +453,7 @@ case class GpuMergeIntoCommand(
       }
       spark.sharedState.cacheManager.recacheByPlan(spark, target)
     }
-    // This is needed to make the SQL metrics visible in the Spark UI. Also this needs
-    // to be outside the recordMergeOperation because this method will update some metric.
-    val executionId = spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
-    SQLMetrics.postDriverMetricUpdates(spark.sparkContext, executionId, metrics.values.toSeq)
+    sendDriverMetrics(spark, metrics)
     Seq(Row(metrics("numTargetRowsUpdated").value + metrics("numTargetRowsDeleted").value +
             metrics("numTargetRowsInserted").value, metrics("numTargetRowsUpdated").value,
             metrics("numTargetRowsDeleted").value, metrics("numTargetRowsInserted").value))
@@ -453,8 +465,8 @@ case class GpuMergeIntoCommand(
    * the merge condition.
    */
   private def findTouchedFiles(
-      spark: SparkSession,
-      deltaTxn: OptimisticTransaction
+    spark: SparkSession,
+    deltaTxn: OptimisticTransaction
   ): Seq[AddFile] = recordMergeOperation(sqlMetricName = "scanTimeMs") {
 
     // Accumulator to collect all the distinct touched files
@@ -478,7 +490,7 @@ case class GpuMergeIntoCommand(
     // UDF to increment metrics
     val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRows")
     val sourceDF = getSourceDF()
-        .filter(new Column(incrSourceRowCountExpr))
+      .filter(new Column(incrSourceRowCountExpr))
 
     // Join the source and target table using the merge condition to find touched files. An inner
     // join collects all candidate files for MATCHED clauses, a right outer join also includes
@@ -495,7 +507,7 @@ case class GpuMergeIntoCommand(
 
     // Process the matches from the inner join to record touched files and find multiple matches
     val collectTouchedFiles = joinToFindTouchedFiles
-        .select(col(ROW_ID_COL), recordTouchedFileName(col(FILE_NAME_COL)).as("one"))
+      .select(col(ROW_ID_COL), recordTouchedFileName(col(FILE_NAME_COL)).as("one"))
 
     // Calculate frequency of matches per source row
     val matchedRowCounts = collectTouchedFiles.groupBy(ROW_ID_COL).agg(sum("one").as("count"))
@@ -505,11 +517,11 @@ case class GpuMergeIntoCommand(
     // multipleMatchSum = total # of duplicate matched rows
     import org.apache.spark.sql.delta.implicits._
     val (multipleMatchCount, multipleMatchSum) = matchedRowCounts
-        .filter("count > 1")
-        .select(coalesce(count(new Column("*")), lit(0)), coalesce(sum("count"), lit(0)))
-        .as[(Long, Long)]
-        .collect()
-        .head
+      .filter("count > 1")
+      .select(coalesce(count(new Column("*")), lit(0)), coalesce(sum("count"), lit(0)))
+      .as[(Long, Long)]
+      .collect()
+      .head
 
     val hasMultipleMatches = multipleMatchCount > 0
 
@@ -550,7 +562,7 @@ case class GpuMergeIntoCommand(
     // numSourceRows will be incorrectly 0. We need to scan the source table once to get the correct
     // metric here.
     if (metrics("numSourceRows").value == 0 &&
-        (dataSkippedFiles.isEmpty || targetDF.take(1).isEmpty)) {
+      (dataSkippedFiles.isEmpty || targetDF.take(1).isEmpty)) {
       val numSourceRows = sourceDF.count()
       metrics("numSourceRows").set(numSourceRows)
     }
@@ -579,7 +591,7 @@ case class GpuMergeIntoCommand(
   private def writeInsertsOnlyWhenNoMatchedClauses(
       spark: SparkSession,
       deltaTxn: OptimisticTransaction
-  ): Seq[FileAction] = recordMergeOperation(sqlMetricName = "rewriteTimeMs") {
+    ): Seq[FileAction] = recordMergeOperation(sqlMetricName = "rewriteTimeMs") {
 
     // UDFs to update metrics
     val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRows")
@@ -594,8 +606,8 @@ case class GpuMergeIntoCommand(
 
     // source DataFrame
     val sourceDF = getSourceDF()
-        .filter(new Column(incrSourceRowCountExpr))
-        .filter(new Column(notMatchedClauses.head.condition.getOrElse(Literal.TrueLiteral)))
+      .filter(new Column(incrSourceRowCountExpr))
+      .filter(new Column(notMatchedClauses.head.condition.getOrElse(Literal.TrueLiteral)))
 
     // Skip data based on the merge condition
     val conjunctivePredicates = splitConjunctivePredicates(condition)
@@ -607,20 +619,20 @@ case class GpuMergeIntoCommand(
     val targetDF = buildTargetPlanWithFiles(spark, deltaTxn, dataSkippedFiles)
 
     val insertDf = sourceDF.join(targetDF, new Column(condition), "leftanti")
-        .select(outputCols: _*)
-        .filter(new Column(incrInsertedCountExpr))
+      .select(outputCols: _*)
+      .filter(new Column(incrInsertedCountExpr))
 
     val newFiles = deltaTxn
-        .writeFiles(repartitionIfNeeded(spark, insertDf, deltaTxn.metadata.partitionColumns))
-        .filter {
-          // In some cases (e.g. insert-only when all rows are matched, insert-only with an empty
-          // source, insert-only with an unsatisfied condition) we can write out an empty insertDf.
-          // This is hard to catch before the write without collecting the DF ahead of time.
-          // Instead, we can just accept only the AddFiles that actually add rows or
-          // when we don't know the number of records
-          case a: AddFile => a.numLogicalRecords.forall(_ > 0)
-          case _ => true
-        }
+      .writeFiles(repartitionIfNeeded(spark, insertDf, deltaTxn.metadata.partitionColumns))
+      .filter {
+        // In some cases (e.g. insert-only when all rows are matched, insert-only with an empty
+        // source, insert-only with an unsatisfied condition) we can write out an empty insertDf.
+        // This is hard to catch before the write without collecting the DF ahead of time. Instead,
+        // we can just accept only the AddFiles that actually add rows or
+        // when we don't know the number of records
+        case a: AddFile => a.numLogicalRecords.forall(_ > 0)
+        case _ => true
+      }
 
     // Update metrics
     metrics("numTargetFilesBeforeSkipping") += deltaTxn.snapshot.numOfFiles
@@ -649,11 +661,11 @@ case class GpuMergeIntoCommand(
    * CDC_TYPE_COL_NAME used for handling CDC when enabled.
    */
   private def writeAllChanges(
-      spark: SparkSession,
-      deltaTxn: OptimisticTransaction,
-      filesToRewrite: Seq[AddFile]
+    spark: SparkSession,
+    deltaTxn: OptimisticTransaction,
+    filesToRewrite: Seq[AddFile]
   ): Seq[FileAction] = recordMergeOperation(sqlMetricName = "rewriteTimeMs") {
-    import org.apache.spark.sql.catalyst.expressions.Literal.{FalseLiteral, TrueLiteral}
+    import org.apache.spark.sql.catalyst.expressions.Literal.{TrueLiteral, FalseLiteral}
 
     val cdcEnabled = DeltaConfigs.CHANGE_DATA_FEED.fromMetaData(deltaTxn.metadata)
 
@@ -682,11 +694,11 @@ case class GpuMergeIntoCommand(
     // need to drop the duplicate matches.
     val isDeleteWithDuplicateMatchesAndCdc = multipleMatchDeleteOnlyOvercount.nonEmpty && cdcEnabled
 
-    // Generate a new logical plan that has same output attributes exprIds as the target plan.
+    // Generate a new target dataframe that has same output attributes exprIds as the target plan.
     // This allows us to apply the existing resolved update/insert expressions.
     val baseTargetDF = buildTargetPlanWithFiles(spark, deltaTxn, filesToRewrite)
     val joinType = if (hasNoInserts &&
-        spark.conf.get(DeltaSQLConf.MERGE_MATCHED_ONLY_ENABLED)) {
+      spark.conf.get(DeltaSQLConf.MERGE_MATCHED_ONLY_ENABLED)) {
       "rightOuter"
     } else {
       "fullOuter"
@@ -726,9 +738,9 @@ case class GpuMergeIntoCommand(
     // matches and CDC is enabled, and additionally add row IDs to the source if we also have an
     // insert clause. See above at isDeleteWithDuplicateMatchesAndCdc definition for more details.
     var sourceDF = getSourceDF()
-        .withColumn(SOURCE_ROW_PRESENT_COL, new Column(incrSourceRowCountExpr))
+      .withColumn(SOURCE_ROW_PRESENT_COL, new Column(incrSourceRowCountExpr))
     var targetDF = baseTargetDF
-        .withColumn(TARGET_ROW_PRESENT_COL, lit(true))
+      .withColumn(TARGET_ROW_PRESENT_COL, lit(true))
     if (isDeleteWithDuplicateMatchesAndCdc) {
       targetDF = targetDF.withColumn(TARGET_ROW_ID_COL, monotonically_increasing_id())
       if (notMatchedClauses.nonEmpty) { // insert clause
@@ -783,9 +795,9 @@ case class GpuMergeIntoCommand(
 
     if (cdcEnabled) {
       outputRowSchema = outputRowSchema
-          .add(ROW_DROPPED_COL, DataTypes.BooleanType)
-          .add(INCR_ROW_COUNT_COL, DataTypes.BooleanType)
-          .add(CDC_TYPE_COLUMN_NAME, DataTypes.StringType)
+        .add(ROW_DROPPED_COL, DataTypes.BooleanType)
+        .add(INCR_ROW_COUNT_COL, DataTypes.BooleanType)
+        .add(CDC_TYPE_COLUMN_NAME, DataTypes.StringType)
     }
 
     def updateOutput(resolvedActions: Seq[DeltaMergeAction], incrMetricExpr: Expression)
@@ -800,12 +812,12 @@ case class GpuMergeIntoCommand(
           // CDC_TYPE_COLUMN_NAME = CDC_TYPE_UPDATE_PREIMAGE and INCR_ROW_COUNT_COL as a no-op
           // (because the metric will be incremented in `mainDataOutput`)
           val preImageOutput = targetOutputCols :+ FalseLiteral :+ TrueLiteral :+
-              Literal(CDC_TYPE_UPDATE_PREIMAGE)
+            Literal(CDC_TYPE_UPDATE_PREIMAGE)
           // For update postimage, we have the same expressions as for mainDataOutput but with
           // INCR_ROW_COUNT_COL as a no-op (because the metric will be incremented in
           // `mainDataOutput`), and CDC_TYPE_COLUMN_NAME = CDC_TYPE_UPDATE_POSTIMAGE
           val postImageOutput = mainDataOutput.dropRight(2) :+ TrueLiteral :+
-              Literal(CDC_TYPE_UPDATE_POSTIMAGE)
+            Literal(CDC_TYPE_UPDATE_POSTIMAGE)
           Seq(mainDataOutput, preImageOutput, postImageOutput)
         } else {
           Seq(mainDataOutput)
@@ -819,7 +831,7 @@ case class GpuMergeIntoCommand(
         // Generate expressions to set the ROW_DELETED_COL = true and CDC_TYPE_COLUMN_NAME =
         // CDC_TYPE_NOT_CDC
         val mainDataOutput = targetOutputCols :+ TrueLiteral :+ incrMetricExpr :+
-            CDC_TYPE_NOT_CDC_LITERAL
+          CDC_TYPE_NOT_CDC_LITERAL
         if (cdcEnabled) {
           // For delete we do a no-op copy with ROW_DELETED_COL = false, INCR_ROW_COUNT_COL as a
           // no-op (because the metric will be incremented in `mainDataOutput`) and
@@ -845,8 +857,8 @@ case class GpuMergeIntoCommand(
           // clause we know the target row-id will be null. See above at
           // isDeleteWithDuplicateMatchesAndCdc definition for more details.
           insertExprs :+
-              Alias(Literal(null), TARGET_ROW_ID_COL)() :+ UnresolvedAttribute(SOURCE_ROW_ID_COL) :+
-              FalseLiteral :+ incrMetricExpr :+ CDC_TYPE_NOT_CDC_LITERAL
+            Alias(Literal(null), TARGET_ROW_ID_COL)() :+ UnresolvedAttribute(SOURCE_ROW_ID_COL) :+
+            FalseLiteral :+ incrMetricExpr :+ CDC_TYPE_NOT_CDC_LITERAL
         } else {
           insertExprs :+ FalseLiteral :+ incrMetricExpr :+ CDC_TYPE_NOT_CDC_LITERAL
         }
@@ -1014,8 +1026,8 @@ case class GpuMergeIntoCommand(
         Seq(TARGET_ROW_ID_COL)
       }
       outputDF = outputDF
-          .dropDuplicates(columnsToDedupeBy)
-          .drop(ROW_DROPPED_COL, INCR_ROW_COUNT_COL, TARGET_ROW_ID_COL, SOURCE_ROW_ID_COL)
+        .dropDuplicates(columnsToDedupeBy)
+        .drop(ROW_DROPPED_COL, INCR_ROW_COUNT_COL, TARGET_ROW_ID_COL, SOURCE_ROW_ID_COL)
     } else {
       outputDF = outputDF.drop(ROW_DROPPED_COL, INCR_ROW_COUNT_COL)
     }
@@ -1024,7 +1036,7 @@ case class GpuMergeIntoCommand(
 
     // Write to Delta
     val newFiles = deltaTxn
-        .writeFiles(repartitionIfNeeded(spark, outputDF, deltaTxn.metadata.partitionColumns))
+      .writeFiles(repartitionIfNeeded(spark, outputDF, deltaTxn.metadata.partitionColumns))
 
     // Update metrics
     val (addedBytes, addedPartitions) = totalBytesAndDistinctPartitionValues(newFiles)
@@ -1048,15 +1060,16 @@ case class GpuMergeIntoCommand(
     newFiles
   }
 
+
   /**
    * Build a new logical plan using the given `files` that has the same output columns (exprIds)
    * as the `target` logical plan, so that existing update/insert expressions can be applied
    * on this new plan.
    */
   private def buildTargetPlanWithFiles(
-      spark: SparkSession,
-      deltaTxn: OptimisticTransaction,
-      files: Seq[AddFile]): DataFrame = {
+    spark: SparkSession,
+    deltaTxn: OptimisticTransaction,
+    files: Seq[AddFile]): DataFrame = {
     val targetOutputCols = getTargetOutputCols(deltaTxn)
     val targetOutputColsMap = {
       val colsMap: Map[String, NamedExpression] = targetOutputCols.view
@@ -1072,7 +1085,7 @@ case class GpuMergeIntoCommand(
       // We have to do surgery to use the attributes from `targetOutputCols` to scan the table.
       // In cases of schema evolution, they may not be the same type as the original attributes.
       val original =
-      deltaTxn.deltaLog.createDataFrame(deltaTxn.snapshot, files).queryExecution.analyzed
+        deltaTxn.deltaLog.createDataFrame(deltaTxn.snapshot, files).queryExecution.analyzed
       val transformed = original.transform {
         case LogicalRelation(base, _, catalogTbl, isStreaming) =>
           LogicalRelation(
@@ -1087,7 +1100,7 @@ case class GpuMergeIntoCommand(
       // because under column mapping, the reference schema within DeltaParquetFileFormat
       // that is used to populate metadata needs to be updated
       if (deltaTxn.metadata.columnMappingMode != NoMapping) {
-        val updatedFileFormat = DeltaRuntimeShim.fileFormatFromLog(deltaTxn.deltaLog)
+        val updatedFileFormat = deltaTxn.deltaLog.fileFormat(deltaTxn.protocol, deltaTxn.metadata)
         DeltaTableUtils.replaceFileFormat(transformed, updatedFileFormat)
       } else {
         transformed
@@ -1099,10 +1112,10 @@ case class GpuMergeIntoCommand(
     val aliases = plan.output.map {
       case newAttrib: AttributeReference =>
         val existingTargetAttrib = targetOutputColsMap.get(newAttrib.name)
-            .getOrElse {
-              throw DeltaErrors.failedFindAttributeInOutputColumns(
-                newAttrib.name, targetOutputCols.mkString(","))
-            }.asInstanceOf[AttributeReference]
+          .getOrElse {
+            throw DeltaErrors.failedFindAttributeInOutputColumns(
+              newAttrib.name, targetOutputCols.mkString(","))
+          }.asInstanceOf[AttributeReference]
 
         if (existingTargetAttrib.exprId == newAttrib.exprId) {
           // It's not valid to alias an expression to its own exprId (this is considered a
@@ -1130,12 +1143,12 @@ case class GpuMergeIntoCommand(
   private def getTargetOutputCols(txn: OptimisticTransaction): Seq[NamedExpression] = {
     txn.metadata.schema.map { col =>
       targetOutputAttributesMap
-          .get(col.name)
-          .map { a =>
-            AttributeReference(col.name, col.dataType, col.nullable)(a.exprId)
-          }
-          .getOrElse(Alias(Literal(null), col.name)()
-          )
+        .get(col.name)
+        .map { a =>
+          AttributeReference(col.name, col.dataType, col.nullable)(a.exprId)
+        }
+        .getOrElse(Alias(Literal(null), col.name)()
+      )
     }
   }
 
@@ -1209,6 +1222,11 @@ object GpuMergeIntoCommand {
    * @param notMatchedOutputs     corresponding output for each not-matched clause. for each clause,
    *                              we have 1-2 output rows, each of which is a sequence of
    *                              expressions to apply to the joined row
+   * @param notMatchedBySourceConditions  condition for each not-matched-by-source clause
+   * @param notMatchedBySourceOutputs     corresponding output for each not-matched-by-source
+   *                                      clause. for each clause, we have 1-3 output rows, each of
+   *                                      which is a sequence of expressions to apply to the joined
+   *                                      row
    * @param noopCopyOutput        no-op expression to copy a target row to the output
    * @param deleteRowOutput       expression to drop a row from the final output. this is used for
    *                              source rows that don't match any not-matched clauses
@@ -1258,7 +1276,7 @@ object GpuMergeIntoCommand {
       def shouldDeleteRow(row: InternalRow): Boolean = {
         row.getBoolean(
           outputRowEncoder.schema.getFieldIndex(ROW_DROPPED_COL)
-              .getOrElse(outputRowEncoder.schema.fields.size)
+            .getOrElse(outputRowEncoder.schema.fields.size)
         )
       }
 
@@ -1290,12 +1308,12 @@ object GpuMergeIntoCommand {
       val toRow = joinedRowEncoder.createSerializer()
       val fromRow = outputRowEncoder.createDeserializer()
       rowIterator
-          .map(toRow)
-          .flatMap(processRow)
-          .filter(!shouldDeleteRow(_))
-          .map { notDeletedInternalRow =>
-            fromRow(outputProj(notDeletedInternalRow))
-          }
+        .map(toRow)
+        .flatMap(processRow)
+        .filter(!shouldDeleteRow(_))
+        .map { notDeletedInternalRow =>
+          fromRow(outputProj(notDeletedInternalRow))
+        }
     }
   }
 
@@ -1312,7 +1330,7 @@ object GpuMergeIntoCommand {
     // If the only distinct value map is an empty map, then it must be an unpartitioned table.
     // Return 0 in that case.
     val numDistinctValues =
-    if (distinctValues.size == 1 && distinctValues.head.isEmpty) 0 else distinctValues.size
+      if (distinctValues.size == 1 && distinctValues.head.isEmpty) 0 else distinctValues.size
     (bytes, numDistinctValues)
   }
 }

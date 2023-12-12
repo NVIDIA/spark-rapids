@@ -27,7 +27,6 @@ import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpressio
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, CaseWhen, Coalesce, Expression, If, LeafExpression, PlanExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
-import org.apache.spark.sql.catalyst.expressions.objects.LambdaVariable
 
 /**
  * This class is used to compute equality of (sub)expression trees. Expressions can be added
@@ -195,9 +194,6 @@ class GpuEquivalentExpressions {
       expr.isInstanceOf[GpuUnevaluable] ||
       (expr.isInstanceOf[GpuExpression] &&
           expr.asInstanceOf[GpuExpression].disableTieredProjectCombine) ||
-      // `LambdaVariable` is usually used as a loop variable, which can't be evaluated ahead of the
-      // loop. So we can't evaluate sub-expressions containing `LambdaVariable` at the beginning.
-      expr.find(_.isInstanceOf[LambdaVariable]).isDefined ||
       // `PlanExpression` wraps query plan. To compare query plans of `PlanExpression` on executor,
       // can cause error like NPE.
       (expr.find(_.isInstanceOf[PlanExpression[_]]).isDefined && TaskContext.get != null)
@@ -244,6 +240,22 @@ class GpuEquivalentExpressions {
 }
 
 object GpuEquivalentExpressions {
+  /**
+   * Recursively replaces semantic equal expression with its proxy expression in `substitutionMap`.
+   */
+  def replaceWithSemanticCommonRef(
+      expr: Expression,
+      substitutionMap: mutable.HashMap[GpuExpressionEquals, Expression]): Expression = {
+    expr match {
+      case e: AttributeReference => e
+      case _ =>
+        substitutionMap.get(GpuExpressionEquals(expr)) match {
+          case Some(attr) => attr
+          case None => expr.mapChildren(replaceWithSemanticCommonRef(_, substitutionMap))
+        }
+    }
+  }
+
   /**
    * Recursively replaces expression with its proxy expression in `substitutionMap`.
    */
