@@ -17,8 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
-import java.text.DecimalFormatSymbols
-import java.util.{Locale, Optional}
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -2225,62 +2224,6 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
   }
 
-  private def handleInfAndNan(cv: ColumnVector, res: ColumnVector): ColumnVector = {
-    // replace inf and nan with infSymbol and nanSymbol in res according to cv
-    val symbols = DecimalFormatSymbols.getInstance(Locale.US)
-    val nanSymbol = symbols.getNaN
-    val infSymbol = symbols.getInfinity
-    val negInfSymbol = "-" + infSymbol
-    val handleNan = withResource(cv.isNan()) { isNan =>
-      withResource(Scalar.fromString(nanSymbol)) { nan =>
-        isNan.ifElse(nan, res)
-      }
-    }
-    val isInf = closeOnExcept(handleNan) { _ =>
-        x.dataType match {
-        case DoubleType => {
-          withResource(Scalar.fromDouble(Double.PositiveInfinity)) { inf =>
-            cv.equalTo(inf)
-          }
-        }
-        case FloatType => {
-          withResource(Scalar.fromFloat(Float.PositiveInfinity)) { inf =>
-            cv.equalTo(inf)
-          }
-        }
-      }
-    }
-    val handleInf = withResource(isInf) { _ =>
-      withResource(handleNan) { _ =>
-        withResource(Scalar.fromString(infSymbol)) { inf =>
-            isInf.ifElse(inf, handleNan)
-        }
-      }
-    }
-    val isNegInf = closeOnExcept(handleInf) { _ =>
-        x.dataType match {
-        case DoubleType => {
-          withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negInf =>
-            cv.equalTo(negInf)
-          }
-        }
-        case FloatType => {
-          withResource(Scalar.fromFloat(Float.NegativeInfinity)) { negInf =>
-            cv.equalTo(negInf)
-          }
-        }
-      }
-    }
-    val handleNegInf = withResource(isNegInf) { _ =>
-      withResource(Scalar.fromString(negInfSymbol)) { negInf =>
-        withResource(handleInf) { _ =>
-          isNegInf.ifElse(negInf, handleInf)
-        }
-      }
-    }
-    handleNegInf
-  }
-
   private def formatNumberNonKernel(cv: ColumnVector, d: Int): ColumnVector = {
     val (integerPart, decimalPart) = getParts(cv, d)
     // reverse integer part for adding commas
@@ -2353,10 +2296,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val d = rhs.getValue.asInstanceOf[Int]
     x.dataType match {
       case FloatType | DoubleType => {
-        val res = CastStrings.fromFloatWithFormat(lhs.getBase, d)
-        withResource(res) { _ =>
-          handleInfAndNan(lhs.getBase, res)
-        }
+        CastStrings.fromFloatWithFormat(lhs.getBase, d)
       }
       case _ => {
         formatNumberNonKernel(lhs.getBase, d) 

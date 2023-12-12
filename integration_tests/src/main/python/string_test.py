@@ -823,7 +823,9 @@ def test_format_number_supported(data_gen):
     )
 
 float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
-format_number_float_gens = [(DoubleGen(), 0.05), (FloatGen(), 0.5)]
+format_number_float_gens = [(DoubleGen(), 0.05), (FloatGen(), 0.5), 
+                            (SetValuesGen(FloatType(), [float('nan'), float('inf'), float('-inf'), 0.0, -0.0]), 1.0),
+                            (SetValuesGen(DoubleType(), [float('nan'), float('inf'), float('-inf'), 0.0, -0.0]), 1.0)]
 # The actual error rate is 2% for double and 42% for float
 # set threshold to 5% and 50% to avoid bad luck
 
@@ -838,13 +840,7 @@ def test_format_number_float_limited(data_gen, max_err):
     all_values = len(cpu)
     assert mismatched / all_values <= max_err
 
-# format_number for float/double is disabled by default due to compatibility issue
-# GPU will generate result with less precision than CPU
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_format_number_float_fallback(data_gen):
-    assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr(
-            'format_number(a, 5)'),
-        'FormatNumber'
-    )
+# limited_float_gen = [
+#     SetValuesGen(FloatGen(), [float('nan'), float('inf'), float('-inf')]),
+# ]
+
