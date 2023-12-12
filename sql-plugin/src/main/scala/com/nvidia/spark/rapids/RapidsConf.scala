@@ -2628,6 +2628,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleClientThreadKeepAliveTime: Int = get(SHUFFLE_CLIENT_THREAD_KEEPALIVE)
 
+  lazy val shuffleMaxServerTasks: Int = get(SHUFFLE_MAX_SERVER_TASKS)
+
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
@@ -2656,6 +2658,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
 
   def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
+
+  lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
