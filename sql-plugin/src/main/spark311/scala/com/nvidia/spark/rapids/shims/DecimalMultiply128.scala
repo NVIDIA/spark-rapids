@@ -41,16 +41,16 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnView, Table}
-import com.nvidia.spark.rapids.jni.DecimalUtils
+import com.nvidia.spark.rapids.jni.DecimalUtils._
 
-object DecimalUtilShims {
-  def multiply128(castLhs: ColumnView, castRhs: ColumnView, scale: Int): Table = {
+object DecimalMultiply128 {
+  def apply(castLhs: ColumnView, castRhs: ColumnView, scale: Int): Table = {
     /**
      * We are calling multiply128 that casts the interim result to a 38 precision before casting to
      * the final precision and scale.
      * This version of multiplying 128-bits should only be used for versions of Spark before 3.4.2,
      * 4.0.0, 3.5.1
      */
-    DecimalUtils.multiply128(castLhs, castRhs, scale)
+    multiply128(castLhs, castRhs, scale)
   }
 }
