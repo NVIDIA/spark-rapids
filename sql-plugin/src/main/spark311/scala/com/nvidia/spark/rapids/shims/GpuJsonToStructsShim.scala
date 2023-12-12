@@ -42,7 +42,6 @@ import com.nvidia.spark.rapids.{GpuCast, RapidsMeta}
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 
 object GpuJsonToStructsShim {
-
   def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
     dateFormat match {
       case None | Some("yyyy-MM-dd") =>
@@ -64,6 +63,10 @@ object GpuJsonToStructsShim {
         // should be unreachable due to GpuOverrides checks
         throw new IllegalStateException(s"Unsupported dateFormat $other")
     }
+  }
+
+  def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
+    tagDateFormatSupport(meta, dateFormat)
   }
 
   def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],

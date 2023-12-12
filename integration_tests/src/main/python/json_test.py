@@ -695,6 +695,7 @@ def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
         conf={"spark.rapids.sql.expression.JsonToStructs": True,
               'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
 
+@pytest.mark.skipif(is_spark_340_or_later(), "We support custom formats with Spark 340+")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
 @pytest.mark.parametrize('date_format', [

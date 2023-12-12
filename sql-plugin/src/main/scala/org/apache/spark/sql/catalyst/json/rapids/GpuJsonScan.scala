@@ -159,9 +159,16 @@ object GpuJsonScan {
     tagSupportOptions(parsedOptions, meta)
 
     val types = readSchema.map(_.dataType)
-    if (types.contains(DateType)) {
+
+    val hasDates = TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[DateType])
+    if (hasDates) {
+
+      //TODO consolidate these two calls
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
+
+      GpuJsonToStructsShim.tagDateFormatSupportFromScan(meta,
+        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
 
       // For date type, timezone needs to be checked also. This is because JVM timezone is used
       // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
