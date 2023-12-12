@@ -32,14 +32,16 @@ rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -Dtransitive=false \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
-if [ "$CUDA_CLASSIFIER"x == x ];then
+
+CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
+if [ "$CLASSIFIER"x == x ];then
     $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
         -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
     export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 else
     $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CUDA_CLASSIFIER
-    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CUDA_CLASSIFIER}.jar"
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CLASSIFIER
+    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CLASSIFIER}.jar"
 fi
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
@@ -119,10 +121,16 @@ export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
 
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
-PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
-# Put conda package path ahead of the env 'PYTHONPATH',
-# to import the right pandas from conda instead of spark binary path.
-export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
+if [[ x"$CONDA_ROOT" != x ]]; then
+  # Put conda package path ahead of the env 'PYTHONPATH',
+  # to import the right pandas from conda instead of spark binary path.
+  PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
+  export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
+else
+  # if no conda, then try with default python
+  DEFAULT_SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+  export PYTHONPATH="$DEFAULT_SITE_PACKAGES:$PYTHONPATH"
+fi
 
 
 echo "----------------------------START TEST------------------------------------"
@@ -263,6 +271,21 @@ run_pyarrow_tests() {
   ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
 }
 
+run_non_utc_time_zone_tests() {
+  # select one time zone according to current day of week
+  non_utc_time_zones=("Asia/Shanghai" "Iran")
+  time_zones_length=${#non_utc_time_zones[@]}
+  # get day of week, Sunday is represented by 0 and Saturday by 6
+  current_date=$(date +%w)
+  echo "Current day of week is: ${current_date}"
+  time_zone_index=$((current_date % time_zones_length))
+  time_zone="${non_utc_time_zones[${time_zone_index}]}"
+  echo "Run Non-UTC tests, time zone is ${time_zone}"
+
+  # run tests
+  TZ=${time_zone} ./run_pyspark_from_build.sh
+}
+
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
@@ -270,6 +293,7 @@ run_pyarrow_tests() {
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only
+# - NON_UTC_TZ: test all tests in a non-UTC time zone which is selected according to current day of week.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
@@ -319,6 +343,11 @@ fi
 # Pyarrow tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
   run_pyarrow_tests
+fi
+
+# Non-UTC time zone tests
+if [[ "$TEST_MODE" == "NON_UTC_TZ" ]]; then
+  run_non_utc_time_zone_tests
 fi
 
 popd

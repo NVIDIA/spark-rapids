@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuPythonRunnerBase}
+import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuPythonRunnerBase, GpuPythonRunnerUtils}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -94,7 +94,7 @@ class GpuGroupUDFArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
-          GpuArrowPythonRunner.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+          GpuPythonRunnerUtils.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)
               } else {
