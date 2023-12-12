@@ -31,7 +31,6 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -1293,7 +1292,7 @@ object GpuCast {
     }
 
     withResource(isValidDate) { _ =>
-      if (failOnInvalid && GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
+      if (failOnInvalid) {
         withResource(isValidDate.all()) { all =>
           if (all.isValid && !all.getBoolean) {
             throw new DateTimeException("One or more values is not a valid date")

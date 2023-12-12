@@ -23,19 +23,14 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.{DateUtils, GpuCast, RapidsMeta}
+import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
+import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
 
   def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
-//    dateFormat match {
-//      case None | Some("yyyy-MM-dd") =>
-//        // this is fine
-//      case dateFormat =>
-//        meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
-//    }
   }
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
@@ -62,10 +57,12 @@ object GpuJsonToStructsShim {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode = failOnInvalid)
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode = failOnInvalid &&
+            GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(f) =>
-        jsonStringToDate(input, f, failOnInvalid)
+        jsonStringToDate(input, f, failOnInvalid &&
+          GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
     }
   }
 
