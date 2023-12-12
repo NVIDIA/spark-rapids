@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
+import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -29,7 +30,6 @@ import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
-import com.nvidia.spark.rapids.jni.RmmSpark
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -421,7 +421,7 @@ object RapidsConf {
     .stringConf
     .createOptional
 
-  val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
+val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("The pattern to use to generate the named pipe path. Occurrences of %p in the pattern " +
       "will be replaced with the process ID of the executor.")
     .internal
@@ -1654,7 +1654,7 @@ object RapidsConf {
     .stringConf
     .createWithDefault("none")
 
-  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
     .startupOnly()
@@ -2302,10 +2302,46 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
-  lazy val isTestEnabled: Boolean = get(TEST_CONF)
+lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
-  lazy val testRetryOOMInjectionMode : RmmSpark.OomInjection = {
-    RmmSpark.OomInjection.fromString(get(TEST_RETRY_OOM_INJECTION_MODE))
+  /**
+   * Convert a string value to the injection configuration OomInjection.
+   *
+   * The new format is a CSV in any order
+   *  "num_ooms=<integer>,skip=<integer>,type=<string value of OomInjectionType>"
+   *
+   * "type" maps to OomInjectionType to run count against oomCount and skipCount
+   * "num_ooms" maps to oomCount (default 1), the number of allocations resulting in an OOM
+   * "skip" maps to skipCount (default 0), the number of matching  allocations to skip before
+   * injecting an OOM at the skip+1st allocation.
+   *
+   * For backwards compatibility support existing binary configuration
+   *   "false", disabled, i.e. oomCount=0, skipCount=0, injectionType=None
+   *   "true" or anything else but "false"  yields the default
+   *      oomCount=1, skipCount=0, injectionType=CPU_OR_GPU
+   */
+  lazy val testRetryOOMInjectionMode : OomInjectionConf = {
+    get(TEST_RETRY_OOM_INJECTION_MODE).toLowerCase match {
+      case "false" =>
+        OomInjectionConf(numOoms = 0, skipCount = 0,
+        oomInjectionFilter = OomInjectionType.CPU_OR_GPU)
+      case s =>
+        val injectConfMap = s.split(',').map(_.split('-')).collect {
+          case Array(k, v) => k -> v
+        }.toMap
+        val numOoms = injectConfMap.getOrElse("num_ooms", 1.toString)
+        val skipCount = injectConfMap.getOrElse("skip", 0.toString)
+        val oomFilterStr = injectConfMap
+          .getOrElse("type", OomInjectionType.CPU_OR_GPU.toString)
+          .toUpperCase()
+        val oomFilter = OomInjectionType.valueOf(oomFilterStr)
+
+        OomInjectionConf(
+          numOoms = numOoms.toInt,
+          skipCount = skipCount.toInt,
+          oomInjectionFilter = oomFilter
+        )
+    }
   }
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
@@ -2853,3 +2889,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     conf.contains(key)
   }
 }
+
+case class OomInjectionConf(
+  numOoms: Int,
+  skipCount: Int,
+  oomInjectionFilter: OomInjectionType
+)

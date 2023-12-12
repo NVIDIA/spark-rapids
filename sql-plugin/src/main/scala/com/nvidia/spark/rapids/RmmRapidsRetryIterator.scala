@@ -584,11 +584,16 @@ object RmmRapidsRetryIterator extends Logging {
         try {
           // call the user's function
           config.foreach {
-            case rapidsConf if !injectedOOM =>
+            case rapidsConf if !injectedOOM && rapidsConf.testRetryOOMInjectionMode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
-              rapidsConf.testRetryOOMInjectionMode.inject(TaskContext.get().taskAttemptId())
+              RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              val injectConf = rapidsConf.testRetryOOMInjectionMode
+              RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                injectConf.numOoms,
+                injectConf.oomInjectionFilter.ordinal,
+                injectConf.skipCount)
             case _ => ()
           }
           result = Some(attemptIter.next())
