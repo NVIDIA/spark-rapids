@@ -118,6 +118,7 @@ Generated on 2023-12-12
 ### PRs
 |||
 |:---|:---|
+|[#9943](https://github.com/NVIDIA/spark-rapids/pull/9943)|[DOC] Update docs for 23.12.0 release [skip ci]|
 |[#10014](https://github.com/NVIDIA/spark-rapids/pull/10014)|Add documentation for how to run tests with a fixed datagen seed [skip ci]|
 |[#9954](https://github.com/NVIDIA/spark-rapids/pull/9954)|Update private and JNI version to released 23.12.0|
 |[#10009](https://github.com/NVIDIA/spark-rapids/pull/10009)|Using fix seed to unblock 23.12 release; Move the blocked issues to 24.02|
