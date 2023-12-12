@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{ComputeSequenceSizes, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, NullIntolerant, RowOrdering, Sequence, TimeZoneAwareExpression}
@@ -33,7 +33,6 @@ import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
@@ -1311,7 +1310,7 @@ class GpuSequenceMeta(
 
 object GpuSequenceUtil {
 
-  private def checkSequenceInputs(
+  def checkSequenceInputs(
       start: ColumnVector,
       stop: ColumnVector,
       step: ColumnVector): Unit = {
@@ -1364,76 +1363,11 @@ object GpuSequenceUtil {
     } // end of zero
   }
 
-  /**
-   * Compute the size of each sequence according to 'start', 'stop' and 'step'.
-   * A row (Row[start, stop, step]) contains at least one null element will produce
-   * a null in the output.
-   *
-   * The returned column should be closed.
-   */
-  def computeSequenceSizes(
-      start: ColumnVector,
-      stop: ColumnVector,
-      step: ColumnVector): ColumnVector = {
-    checkSequenceInputs(start, stop, step)
-
-    // Spark's algorithm to get the length (aka size)
-    // ``` Scala
-    //   size = if (start == stop) 1L else 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
-    //   require(size <= MAX_ROUNDED_ARRAY_LENGTH,
-    //       s"Too long sequence: $len. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
-    //   size.toInt
-    // ```
-    val sizeAsLong = withResource(Scalar.fromLong(1L)) { one =>
-      val diff = withResource(stop.castTo(DType.INT64)) { stopAsLong =>
-        withResource(start.castTo(DType.INT64)) { startAsLong =>
-          stopAsLong.sub(startAsLong)
-        }
-      }
-      val quotient = withResource(diff) { _ =>
-        withResource(step.castTo(DType.INT64)) { stepAsLong =>
-          diff.div(stepAsLong)
-        }
-      }
-      // actualSize = 1L + (stop.toLong - start.toLong) / estimatedStep.toLong
-      val actualSize = withResource(quotient) { quotient =>
-        quotient.add(one, DType.INT64)
-      }
-      withResource(actualSize) { _ =>
-        val mergedEquals = withResource(start.equalTo(stop)) { equals =>
-          if (step.hasNulls) {
-            // Also set the row to null where step is null.
-            equals.mergeAndSetValidity(BinaryOp.BITWISE_AND, equals, step)
-          } else {
-            equals.incRefCount()
-          }
-        }
-        withResource(mergedEquals) { _ =>
-          mergedEquals.ifElse(one, actualSize)
-        }
-      }
-    }
-
-    withResource(sizeAsLong) { _ =>
-      // check max size
-      withResource(Scalar.fromInt(MAX_ROUNDED_ARRAY_LENGTH)) { maxLen =>
-        withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
-          require(isAllValidTrue(allValid),
-              s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH")
-        }
-      }
-      // cast to int and return
-      sizeAsLong.castTo(DType.INT32)
-    }
-  }
-
 }
 
 case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expression],
     timeZoneId: Option[String] = None) extends TimeZoneAwareExpression with GpuExpression
     with ShimExpression {
-
-  import GpuSequenceUtil._
 
   override def dataType: ArrayType = ArrayType(start.dataType, containsNull = false)
 
@@ -1460,7 +1394,7 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
           val steps = stepGpuColOpt.map(_.getBase.incRefCount())
               .getOrElse(defaultStepsFunc(startCol, stopCol))
           closeOnExcept(steps) { _ =>
-            (computeSequenceSizes(startCol, stopCol, steps), steps)
+            (ComputeSequenceSizes(startCol, stopCol, steps), steps)
           }
         }
 
