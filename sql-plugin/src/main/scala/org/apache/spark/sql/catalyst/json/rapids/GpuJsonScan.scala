@@ -167,7 +167,6 @@ object GpuJsonScan {
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[DateType])
     if (hasDates) {
 
-      //TODO consolidate these two calls
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
 
