@@ -51,17 +51,17 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
-      failOnInvalid: Boolean): ColumnVector = {
+  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+      dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode = failOnInvalid &&
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(f) =>
-        jsonStringToDate(input, f, failOnInvalid &&
+        jsonStringToDate(input, f,
           GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
     }
   }
@@ -78,7 +78,7 @@ object GpuJsonToStructsShim {
   }
 
   def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
-                                timestampFormat: Option[String]): Unit = {
+      timestampFormat: Option[String]): Unit = {
     timestampFormat match {
       case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
         // fine

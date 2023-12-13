@@ -54,12 +54,12 @@ object GpuJsonToStructsShim {
     tagDateFormatSupport(meta, dateFormat)
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
-      failOnInvalid: Boolean): ColumnVector = {
+  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+      dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None | Some("yyyy-MM-dd") =>
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode = failOnInvalid &&
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case other =>

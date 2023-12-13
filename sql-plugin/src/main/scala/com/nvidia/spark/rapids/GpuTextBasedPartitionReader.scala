@@ -375,11 +375,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   def timestampFormat: String
 
   def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
-    castStringToDate(input, dt, failOnInvalid = true)
-  }
-
-  def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
-    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat, failOnInvalid)
+    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat)
   }
 
   def castStringToTimestamp(

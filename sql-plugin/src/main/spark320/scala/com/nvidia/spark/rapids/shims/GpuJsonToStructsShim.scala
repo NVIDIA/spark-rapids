@@ -44,7 +44,7 @@ object GpuJsonToStructsShim {
   }
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
-    // dateFormat is ignored in Spark 3.2
+    // dateFormat is ignored in from_json in Spark 3.2
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
         GpuCast.castStringToDate(trimmed)
@@ -55,31 +55,26 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType, dateFormat: Option[String],
-      failOnInvalid: Boolean): ColumnVector = {
+  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+      dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode = failOnInvalid &&
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(f) =>
         withResource(input.strip()) { trimmed =>
-          jsonStringToDate(trimmed, f, failOnInvalid &&
-            GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
+          val regexRoot = dateFormatPattern
+            .replace("yyyy", raw"\d{4}")
+            .replace("MM", raw"\d{1,2}")
+            .replace("dd", raw"\d{1,2}")
+          val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
+          GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat,
+            failOnInvalid = GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
     }
-  }
-
-  private def jsonStringToDate(input: ColumnVector, dateFormatPattern: String,
-                               failOnInvalid: Boolean): ColumnVector = {
-    val regexRoot = dateFormatPattern
-      .replace("yyyy", raw"\d{4}")
-      .replace("MM", raw"\d{1,2}")
-      .replace("dd", raw"\d{1,2}")
-    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
-    GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat, failOnInvalid)
   }
 
   def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
