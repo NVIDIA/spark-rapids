@@ -66,7 +66,6 @@ object GpuJsonToStructsShim {
     }
   }
 
-
   private def jsonStringToDate(input: ColumnVector, dateFormatPattern: String,
       failOnInvalid: Boolean): ColumnVector = {
     val regexRoot = dateFormatPattern
