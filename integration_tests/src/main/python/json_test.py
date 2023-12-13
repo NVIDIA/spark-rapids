@@ -415,7 +415,7 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
     '[1-3]{1,2}/[1-3]{1,2}/[1-9]{4}',
 ])
 @pytest.mark.parametrize('schema', [StructType([StructField('value', DateType())])])
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_330 else json_supported_date_formats)
+@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @pytest.mark.parametrize('ansi_enabled', [True, False])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', [True, False])
 def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date_gen_pattern, schema, date_format, \
@@ -446,7 +446,7 @@ def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date
 @pytest.mark.parametrize('schema', [_date_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_330 else json_supported_date_formats)
+@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
     pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow)),
@@ -681,7 +681,7 @@ def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
         conf={"spark.rapids.sql.expression.JsonToStructs": True,
               'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
 
-@pytest.mark.skipif(is_spark_330_or_later(), reason="We only support custom formats with Spark 330+")
+@pytest.mark.skipif(is_spark_320_or_later(), reason="We only fallback for non-default formats prior to 320")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
 @pytest.mark.parametrize('date_format', [

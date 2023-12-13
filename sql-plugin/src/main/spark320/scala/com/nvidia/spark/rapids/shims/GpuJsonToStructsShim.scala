@@ -14,6 +14,13 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
@@ -37,7 +44,7 @@ object GpuJsonToStructsShim {
   }
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
-    // dateFormat is ignored in Spark 3.3
+    // dateFormat is ignored in Spark 3.2
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
         GpuCast.castStringToDate(trimmed)
