@@ -64,13 +64,13 @@ object GpuJsonToStructsShim {
           GpuCast.castStringToDateAnsi(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
-      case Some(f) =>
+      case Some(fmt) =>
         withResource(input.strip()) { trimmed =>
-          val regexRoot = dateFormatPattern
+          val regexRoot = fmt
             .replace("yyyy", raw"\d{4}")
             .replace("MM", raw"\d{1,2}")
             .replace("dd", raw"\d{1,2}")
-          val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
+          val cudfFormat = DateUtils.toStrf(fmt, parseString = true)
           GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat,
             failOnInvalid = GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
