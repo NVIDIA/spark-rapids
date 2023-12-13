@@ -15,7 +15,6 @@
 import os
 import pytest
 import random
-import sys
 import warnings
 
 # TODO redo _spark stuff using fixtures
