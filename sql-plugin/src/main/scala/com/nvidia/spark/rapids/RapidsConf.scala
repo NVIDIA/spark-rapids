@@ -2302,7 +2302,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
-lazy val isTestEnabled: Boolean = get(TEST_CONF)
+  lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   /**
    * Convert a string value to the injection configuration OomInjection.
@@ -2324,9 +2324,12 @@ lazy val isTestEnabled: Boolean = get(TEST_CONF)
     get(TEST_RETRY_OOM_INJECTION_MODE).toLowerCase match {
       case "false" =>
         OomInjectionConf(numOoms = 0, skipCount = 0,
-        oomInjectionFilter = OomInjectionType.CPU_OR_GPU)
-      case s =>
-        val injectConfMap = s.split(',').map(_.split('-')).collect {
+        oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case "true" =>
+        OomInjectionConf(numOoms = 1, skipCount = 0,
+          oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case injectConfStr =>
+        val injectConfMap = injectConfStr.split(',').map(_.split('=')).collect {
           case Array(k, v) => k -> v
         }.toMap
         val numOoms = injectConfMap.getOrElse("num_ooms", 1.toString)
@@ -2335,12 +2338,15 @@ lazy val isTestEnabled: Boolean = get(TEST_CONF)
           .getOrElse("type", OomInjectionType.CPU_OR_GPU.toString)
           .toUpperCase()
         val oomFilter = OomInjectionType.valueOf(oomFilterStr)
-
-        OomInjectionConf(
+        val withSplit = injectConfMap.getOrElse("split", false.toString)
+        val ret = OomInjectionConf(
           numOoms = numOoms.toInt,
           skipCount = skipCount.toInt,
-          oomInjectionFilter = oomFilter
+          oomInjectionFilter = oomFilter,
+          withSplit = withSplit.toBoolean
         )
+        logDebug(s"Parsed ${ret} from ${injectConfStr} via injectConfMap=${injectConfMap}");
+        ret
     }
   }
 
@@ -2893,5 +2899,6 @@ lazy val isTestEnabled: Boolean = get(TEST_CONF)
 case class OomInjectionConf(
   numOoms: Int,
   skipCount: Int,
+  withSplit: Boolean,
   oomInjectionFilter: OomInjectionType
 )

@@ -590,10 +590,17 @@ object RmmRapidsRetryIterator extends Logging {
               // `forceRetryOOM` requires a prior association.
               RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
               val injectConf = rapidsConf.testRetryOOMInjectionMode
-              RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                injectConf.numOoms,
-                injectConf.oomInjectionFilter.ordinal,
-                injectConf.skipCount)
+              if (injectConf.withSplit) {
+                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                          injectConf.numOoms,
+                          injectConf.oomInjectionFilter.ordinal,
+                          injectConf.skipCount)
+              } else {
+                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                  injectConf.numOoms,
+                  injectConf.oomInjectionFilter.ordinal,
+                  injectConf.skipCount)
+              }
             case _ => ()
           }
           result = Some(attemptIter.next())
