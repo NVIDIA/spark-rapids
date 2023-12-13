@@ -3252,7 +3252,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
-            TypeEnum.STRING, "only support partToExtract=PROTOCOL"), TypeSig.STRING)),
+            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST"), TypeSig.STRING)),
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
@@ -3262,7 +3262,7 @@ object GpuOverrides extends Logging {
           }
 
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
-            case Some(GpuParseUrl.PROTOCOL) =>
+            case Some(part) if GpuParseUrl.isSupportedPart(part) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
             case None =>
