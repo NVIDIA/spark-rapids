@@ -299,18 +299,15 @@ def test_from_utc_timestamp_non_utc_fallback(data_gen, time_zone):
 def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
-    'FromUTCTimestamp',
-    conf = {"spark.rapids.sql.nonUTC.enabled": "true"})
+    'FromUTCTimestamp')
 
 
 @pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai", "EST", "MST", "VST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_from_utc_timestamp_supported_timezones(data_gen, time_zone):
-    # TODO: Remove spark.rapids.sql.nonUTC.enabled configuration 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
-        conf = {"spark.rapids.sql.nonUTC.enabled": "true"})
+        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
@@ -460,10 +457,8 @@ def test_date_format(data_gen, date_format):
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 def test_from_unixtime(data_gen, date_format):
-    conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)),
-        conf)
+        lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)))
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
@@ -471,10 +466,8 @@ def test_from_unixtime(data_gen, date_format):
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
 @pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 def test_from_unixtime_fall_back(data_gen, date_format):
-    conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_fallback_collect(lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)),
-        'ProjectExec',
-        conf)
+        'ProjectExec')
 
 unsupported_date_formats = ['F']
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
