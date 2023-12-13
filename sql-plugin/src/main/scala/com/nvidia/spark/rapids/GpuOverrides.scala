@@ -1696,12 +1696,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuToUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }
       }),
     expr[UnixTimestamp](
@@ -1715,12 +1710,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }
       }),
     expr[Hour](

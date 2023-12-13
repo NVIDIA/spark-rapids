@@ -866,59 +866,6 @@ abstract class GpuToTimestamp
   }
 }
 
-/**
- * An improved version of GpuToTimestamp conversion which converts time to UNIX timestamp without
- * first converting to microseconds
- */
-abstract class GpuToTimestampImproved extends GpuToTimestamp {
-  import GpuToTimestamp._
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val tmp = if (lhs.dataType == StringType) {
-      // rhs is ignored we already parsed the format
-      if (getTimeParserPolicy == LegacyTimeParserPolicy) {
-        parseStringAsTimestampWithLegacyParserPolicy(
-          lhs,
-          sparkFormat,
-          strfFormat,
-          DType.TIMESTAMP_SECONDS,
-          (col, strfFormat) => col.asTimestampSeconds(strfFormat))
-      } else {
-        parseStringAsTimestamp(
-          lhs,
-          sparkFormat,
-          strfFormat,
-          DType.TIMESTAMP_SECONDS,
-          failOnError)
-      }
-    } else if (lhs.dataType() == DateType){
-      lhs.getBase.asTimestampSeconds()
-    } else { // Timestamp
-      // https://github.com/rapidsai/cudf/issues/5166
-      // The time is off by 1 second if the result is < 0
-      val longSecs = withResource(lhs.getBase.asTimestampSeconds()) { secs =>
-        secs.asLongs()
-      }
-      withResource(longSecs) { secs =>
-        val plusOne = withResource(Scalar.fromLong(1)) { one =>
-          secs.add(one)
-        }
-        withResource(plusOne) { plusOne =>
-          withResource(Scalar.fromLong(0)) { zero =>
-            withResource(secs.lessThan(zero)) { neg =>
-              neg.ifElse(plusOne, secs)
-            }
-          }
-        }
-      }
-    }
-    withResource(tmp) { r =>
-      // The type we are returning is a long not an actual timestamp
-      r.asLongs()
-    }
-  }
-}
-
 case class GpuUnixTimestamp(strTs: Expression,
     format: Expression,
     sparkFormat: String,
@@ -939,36 +886,6 @@ case class GpuToUnixTimestamp(strTs: Expression,
     sparkFormat: String,
     strf: String,
     timeZoneId: Option[String] = None) extends GpuToTimestamp {
-  override def strfFormat = strf
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
-
-  override def left: Expression = strTs
-  override def right: Expression = format
-
-}
-
-case class GpuUnixTimestampImproved(strTs: Expression,
-    format: Expression,
-    sparkFormat: String,
-    strf: String,
-    timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
-  override def strfFormat = strf
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
-
-  override def left: Expression = strTs
-  override def right: Expression = format
-
-}
-
-case class GpuToUnixTimestampImproved(strTs: Expression,
-    format: Expression,
-    sparkFormat: String,
-    strf: String,
-    timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
   override def strfFormat = strf
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
