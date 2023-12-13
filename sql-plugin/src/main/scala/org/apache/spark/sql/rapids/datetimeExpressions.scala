@@ -95,7 +95,7 @@ case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
       input.getBase.minute()
     } else {
       // Non-UTC time zone
-      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId.normalized())) {
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId)) {
         shifted => shifted.minute()
       }
     }
@@ -112,7 +112,7 @@ case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
       input.getBase.second()
     } else {
       // Non-UTC time zone
-      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId.normalized())) {
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId)) {
         shifted => shifted.second()
       }
     }
@@ -129,7 +129,7 @@ case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
       input.getBase.hour()
     } else {
       // Non-UTC time zone
-      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId.normalized())) {
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId)) {
         shifted => shifted.hour()
       }
     }
