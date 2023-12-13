@@ -19,14 +19,17 @@ package com.nvidia.spark.rapids
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 import java.util.Optional
+
 import scala.collection.mutable.ArrayBuffer
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, DecimalUtils, RegexProgram, Scalar}
+
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 import org.apache.commons.text.StringEscapeUtils
+
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND

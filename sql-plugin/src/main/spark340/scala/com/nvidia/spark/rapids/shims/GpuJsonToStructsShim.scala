@@ -22,8 +22,8 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
