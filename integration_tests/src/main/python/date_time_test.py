@@ -135,20 +135,25 @@ def test_datediff(data_gen):
             'datediff(a, date(null))',
             'datediff(a, \'2016-03-02\')'))
 
-@allow_non_gpu(*non_utc_allow)
+hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
+
+@allow_non_gpu(*hms_fallback)
 def test_hour():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*hms_fallback)
 def test_minute():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*hms_fallback)
 def test_second():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 def test_quarter():
     assert_gpu_and_cpu_are_equal_collect(
