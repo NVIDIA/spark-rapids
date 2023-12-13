@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -914,19 +914,83 @@ case class GpuGetTimestamp(
   override def right: Expression = format
 }
 
+class FromUnixTimeMeta(a: FromUnixTime,
+    override val conf: RapidsConf,
+    val p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
+
+  private type FmtConverter = ColumnView => ColumnVector
+
+  private var colConverter: Option[FmtConverter] = None
+
+  /**
+   * More supported formats by post conversions. The idea is
+   *  1) Map the unsupported target format to a supported format as
+   *     the intermediate format,
+   *  2) Call into cuDF with this intermediate format,
+   *  3) Run a post conversion to get the right output for the target format.
+   *
+   * NOTE: Need to remove the entry if the key format is supported by cuDF.
+   */
+  private val FORMATS_BY_CONVERSION: Map[String, (String, FmtConverter)] = Map(
+    // spark format -> (intermediate format, converter)
+    "yyyyMMdd" -> (("yyyy-MM-dd",
+      col => {
+        withResource(Scalar.fromString("-")) { dashStr =>
+          withResource(Scalar.fromString("")) { emptyStr =>
+            col.stringReplace(dashStr, emptyStr)
+          }
+        }
+      }
+    ))
+  )
+
+  override def tagExprForGpu(): Unit = {
+    extractStringLit(a.right) match {
+      case Some(rightLit) =>
+        sparkFormat = rightLit
+        var inputFormat: Option[String] = None
+        FORMATS_BY_CONVERSION.get(sparkFormat).foreach { case (tempFormat, converter) =>
+            colConverter = Some(converter)
+            inputFormat = Some(tempFormat)
+        }
+        strfFormat = DateUtils.tagAndGetCudfFormat(this, sparkFormat,
+          a.left.dataType == DataTypes.StringType, inputFormat)
+      case None =>
+        willNotWorkOnGpu("format has to be a string literal")
+    }
+  }
+
+  override def isTimeZoneSupported = true
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+    // passing the already converted strf string for a little optimization
+    GpuFromUnixTime(lhs, rhs, strfFormat, colConverter, a.timeZoneId)
+  }
+}
+
 case class GpuFromUnixTime(
     sec: Expression,
     format: Expression,
     strfFormat: String,
-    timeZoneId: Option[String] = None)
+    colConverter: Option[ColumnView => ColumnVector],
+    timeZoneId: Option[String])
   extends GpuBinaryExpressionArgsAnyScalar
     with TimeZoneAwareExpression
     with ImplicitCastInputTypes {
 
+  // To avoid duplicated "if...else" for each input batch
+  private val convertFunc: ColumnVector => ColumnVector = {
+    if (colConverter.isDefined) {
+      col => withResource(col)(colConverter.get.apply)
+    } else {
+      identity[ColumnVector]
+    }
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
     // expressions map and passed down here as strfFormat
-    withResource(lhs.getBase.asTimestampSeconds) { secondCV =>
+    val ret = withResource(lhs.getBase.asTimestampSeconds) { secondCV =>
       if (GpuOverrides.isUTCTimezone(zoneId)) {
         // UTC time zone
         secondCV.asStrings(strfFormat)
@@ -937,6 +1001,7 @@ case class GpuFromUnixTime(
         }
       }
     }
+    convertFunc(ret)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
