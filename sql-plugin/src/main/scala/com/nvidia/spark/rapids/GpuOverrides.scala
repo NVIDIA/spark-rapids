@@ -1696,12 +1696,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuToUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }
       }),
     expr[UnixTimestamp](
@@ -1715,12 +1710,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }
       }),
     expr[Hour](
@@ -1779,12 +1769,7 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
-      (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
-        override def isTimeZoneSupported = true
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          // passing the already converted strf string for a little optimization
-          GpuFromUnixTime(lhs, rhs, strfFormat, a.timeZoneId)
-      }),
+      (a, conf, p, r) => new FromUnixTimeMeta(a ,conf ,p ,r)),
     expr[FromUTCTimestamp](
       "Render the input UTC timestamp in the input timezone",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,

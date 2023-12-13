@@ -24,6 +24,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsPostFilter, JoinCondSplitAsProject, JoinCondSplitStrategy, NoopJoinCondSplit}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -45,12 +46,6 @@ class GpuBroadcastHashJoinMeta(
     rule: DataFromReplacementRule) extends GpuBroadcastHashJoinMetaBase(join, conf, parent, rule) {
 
   override def convertToGpu(): GpuExec = {
-    val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
-      (condition, None)
-    } else {
-      (None, condition)
-    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSideMeta = buildSide match {
@@ -58,18 +53,32 @@ class GpuBroadcastHashJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
-    val joinExec = GpuBroadcastHashJoinExec(
+    // First to check whether we can extract some non-supported AST conditions. If not, will do a
+    // post-join filter right after hash join node. Otherwise, do split as project.
+    val nonAstJoinCond = if (!canJoinCondAstAble()) {
+      JoinCondSplitAsPostFilter(
+        conditionMeta.map(_.convertToGpu()), GpuHashJoin.output(
+          join.joinType, left.output, right.output), left.output, right.output, buildSide)
+    } else {
+      val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output, true)
+      if (leftExpr.isEmpty && rightExpr.isEmpty) {
+        NoopJoinCondSplit(remain, left.output, right.output, buildSide)
+      } else {
+        JoinCondSplitAsProject(
+          remain, left.output, leftExpr, right.output, rightExpr,
+          GpuHashJoin.output(join.joinType, left.output, right.output), buildSide)
+      }
+    }
+
+    GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       buildSide,
-      joinCondition,
-      left,
-      right,
-      join.isExecutorBroadcast)
-    // For inner joins we can apply a post-join condition for any conditions that cannot be
-    // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+      nonAstJoinCond.astCondition(),
+      nonAstJoinCond,
+      left, right, join.isExecutorBroadcast)
   }
 }
 
@@ -79,11 +88,12 @@ case class GpuBroadcastHashJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
+    override val joinCondSplitStrategy: JoinCondSplitStrategy,
     left: SparkPlan,
-    right: SparkPlan, 
+    right: SparkPlan,
     executorBroadcast: Boolean)
-      extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
+      extends GpuBroadcastHashJoinExecBase(leftKeys, rightKeys, joinType, buildSide,
+        condition, joinCondSplitStrategy, left, right) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -147,8 +157,8 @@ case class GpuBroadcastHashJoinExec(
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
-      val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
-          buildSchema, buildOutput, metricsMap, targetSize)
+      val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(
+        buildRelation, buildSchema, buildOutput, metricsMap, targetSize)
       (buildBatch, bufferedStreamIter)
     }
   }

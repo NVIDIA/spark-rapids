@@ -382,29 +382,10 @@ def test_string_to_timestamp_functions_ansi_valid(parser_policy):
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_unix_timestamp_improved(data_gen, ansi_enabled):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
-            "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
-
-@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
         {'spark.sql.ansi.enabled': ansi_enabled})
-
-@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
-def test_to_unix_timestamp_improved(data_gen, ansi_enabled):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
 
 str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
@@ -474,7 +455,7 @@ def test_date_format(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
-@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
@@ -593,8 +574,12 @@ def test_timestamp_seconds_long_overflow():
         lambda spark : unary_op_df(spark, long_gen).selectExpr("timestamp_seconds(a)").collect(),
         conf={},
         error_message='long overflow')
-    
-@pytest.mark.parametrize('data_gen', [DecimalGen(7, 7), DecimalGen(20, 7)], ids=idfn)
+
+# For Decimal(20, 7) case, the data is both 'Overflow' and 'Rounding necessary', this case is to verify
+# that 'Rounding necessary' check is before 'Overflow' check. So we should make sure that every decimal 
+# value in test data is 'Rounding necessary' by setting full_precision=True to avoid leading and trailing zeros.
+# Otherwise, the test data will bypass the 'Rounding necessary' check and throw an 'Overflow' error.
+@pytest.mark.parametrize('data_gen', [DecimalGen(7, 7, full_precision=True), DecimalGen(20, 7, full_precision=True)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_seconds_rounding_necessary(data_gen):
     assert_gpu_and_cpu_error(
