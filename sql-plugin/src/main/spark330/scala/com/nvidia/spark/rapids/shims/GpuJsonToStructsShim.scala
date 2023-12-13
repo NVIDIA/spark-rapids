@@ -29,7 +29,6 @@ import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
 
-//import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
@@ -55,7 +54,8 @@ object GpuJsonToStructsShim {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode = false)
+          GpuCast.castStringToDateAnsi(trimmed, ansiMode = failOnInvalid &&
+            GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(f) =>
         withResource(input.strip()) { trimmed =>
@@ -79,7 +79,7 @@ object GpuJsonToStructsShim {
       timestampFormat: Option[String]): Unit = {}
 
   def castJsonStringToTimestamp(input: ColumnVector,
-                                options: Map[String, String]): ColumnVector = {
+      options: Map[String, String]): ColumnVector = {
     // legacy behavior
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
