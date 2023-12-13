@@ -122,6 +122,7 @@ def test_delta_update_partitions(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
 def test_delta_update_rows(spark_tmp_path, use_cdf, partition_columns):
     # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
     num_slices_to_test = 1 if is_databricks_runtime() else 10

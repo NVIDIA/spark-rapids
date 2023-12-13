@@ -18,11 +18,15 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
+import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructType}
 
 /**
  * Utility class with methods for calculating various metrics about GPU memory usage
- * prior to allocation.
+ * prior to allocation, along with some operations with batches.
  */
 object GpuBatchUtils {
 
@@ -174,5 +178,38 @@ object GpuBatchUtils {
     } else {
       bytes
     }
+  }
+
+  /**
+   * Concatenate the input batches into a single one.
+   * The caller is responsible for closing the returned batch.
+   *
+   * @param spillBatches the batches to be concatenated, will be closed after the call
+   *                     returns.
+   * @return the concatenated SpillableColumnarBatch or None if the input is empty.
+   */
+  def concatSpillBatchesAndClose(
+      spillBatches: Seq[SpillableColumnarBatch]): Option[SpillableColumnarBatch] = {
+    val retBatch = if (spillBatches.length >= 2) {
+      // two or more batches, concatenate them
+      val (concatTable, types) = RmmRapidsRetryIterator.withRetryNoSplit(spillBatches) { _ =>
+        withResource(spillBatches.safeMap(_.getColumnarBatch())) { batches =>
+          val batchTypes = GpuColumnVector.extractTypes(batches.head)
+          withResource(batches.safeMap(GpuColumnVector.from)) { tables =>
+            (Table.concatenate(tables: _*), batchTypes)
+          }
+        }
+      }
+      // Make the concatenated table spillable.
+      withResource(concatTable) { _ =>
+        SpillableColumnarBatch(GpuColumnVector.from(concatTable, types),
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      }
+    } else if (spillBatches.length == 1) {
+      // only one batch
+      spillBatches.head
+    } else null
+
+    Option(retBatch)
   }
 }
