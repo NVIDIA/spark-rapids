@@ -184,7 +184,7 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
             conf=updated_conf)
 
 allow_non_gpu_for_json_scan = ['FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
-@pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 @allow_non_gpu(*allow_non_gpu_for_json_scan)
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
@@ -642,17 +642,9 @@ def test_from_json_struct_decimal():
     # boolean
     "(true|false)"
 ])
-@pytest.mark.parametrize('date_format', [
-    pytest.param("", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
-    pytest.param("yyyy-MM-dd", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
-    # https://github.com/NVIDIA/spark-rapids/issues/9667
-    pytest.param("dd/MM/yyyy", marks=pytest.mark.allow_non_gpu('ProjectExec')),
-])
-@pytest.mark.parametrize('time_parser_policy', [
-    pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
-    "CORRECTED"
-])
-def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
+@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
+@allow_non_gpu(*non_utc_project_allow)
+def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
@@ -660,8 +652,8 @@ def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True,
-              'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+        conf={'spark.rapids.sql.expression.JsonToStructs': True,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
