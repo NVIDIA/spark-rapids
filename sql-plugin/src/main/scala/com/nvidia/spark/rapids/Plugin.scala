@@ -147,13 +147,10 @@ object RapidsPluginUtils extends Logging {
         }.mkString + "\n"
       }
     }.mkString
-    // scalastyle:off line.size.limit
-    lazy val msg = s"""Multiple $jarName jars found in the classpath:
-        |$rapidsJarsVersMsg
-        |Please make sure there is only one $jarName jar in the classpath.
-        |If it is impossible to fix the classpath you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS.
-        """.stripMargin
-    // scalastyle:on line.size.limit
+    lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
+        s"Please make sure there is only one $jarName jar in the classpath. "
+
+    require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
 
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
@@ -161,12 +158,19 @@ object RapidsPluginUtils extends Logging {
           logWarning(msg)
         }
       case AllowMultipleJars.SAME_REVISION =>
-        require(revisionMap.size == 1, msg)
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+              s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS, but this " +
+              s"can cause unpredictable behavior as the plugin may pick up the wrong jar."
+        require(revisionMap.size == 1, msg + recommended)
         if (revisionMap.values.exists(_.size != 1)) {
-          logWarning(msg)
+          logWarning(msg + recommended)
         }
       case AllowMultipleJars.NEVER =>
-        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+            s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS." +
+            " But setting it to ALWAYS can cause unpredictable behavior as the plugin may pick " +
+            "up the wrong jar."
+        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
     }
   }
 
@@ -443,13 +447,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         case Some(value) => ZoneId.of(value)
         case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
       }
-      if (TypeChecks.areTimestampsSupported(driverTimezone)) {
-        val executorTimezone = ZoneId.systemDefault()
-        if (executorTimezone.normalized() != driverTimezone.normalized()) {
-          throw new RuntimeException(s" Driver and executor timezone mismatch. " +
-              s"Driver timezone is $driverTimezone and executor timezone is " +
-              s"$executorTimezone. Set executor timezone to $driverTimezone.")
-        }
+      val executorTimezone = ZoneId.systemDefault()
+      if (executorTimezone.normalized() != driverTimezone.normalized()) {
+        throw new RuntimeException(s" Driver and executor timezone mismatch. " +
+          s"Driver timezone is $driverTimezone and executor timezone is " +
+          s"$executorTimezone. Set executor timezone to $driverTimezone.")
       }
 
       GpuCoreDumpHandler.executorInit(conf, pluginContext)

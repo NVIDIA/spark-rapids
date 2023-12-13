@@ -667,13 +667,6 @@ object RapidsConf {
 
   // ENABLE/DISABLE PROCESSING
 
-  val IMPROVED_TIMESTAMP_OPS =
-    conf("spark.rapids.sql.improvedTimeOps.enabled")
-      .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          "directly to seconds without first converting to microseconds")
-      .booleanConf
-      .createWithDefault(false)
-
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
     .commonlyUsed()
@@ -1845,7 +1838,6 @@ object RapidsConf {
   }
 
   val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
-    .internal()
     .startupOnly()
     .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
       "Spark will take the first one it finds, so the version may not be expected. Possisble " +
@@ -2378,8 +2370,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shouldExplain: Boolean = !explain.equalsIgnoreCase("NONE")
 
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
-
-  lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 

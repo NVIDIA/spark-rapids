@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.catalyst.util.ArrayData
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
@@ -319,7 +319,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     if (cmd.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
     }
@@ -625,6 +625,11 @@ object GpuOverrides extends Logging {
     timezoneId.normalized() == UTC_TIMEZONE_ID
   }
 
+  def isUTCTimezone(): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
+    isUTCTimezone(zoneId.normalized())
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))
 
   /**
@@ -673,9 +678,7 @@ object GpuOverrides extends Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType =>
-        TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
-        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
+      case TimestampType => true
       case StringType => true
       case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
       case NullType => allowNull
@@ -699,6 +702,12 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  def isOrContainsDateOrTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType || dt == DateType)
+
+  def isOrContainsTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType)
 
   /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
   def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
@@ -1687,12 +1696,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuToUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }
       }),
     expr[UnixTimestamp](
@@ -1706,12 +1710,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }
       }),
     expr[Hour](
@@ -1770,11 +1769,7 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
-      (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          // passing the already converted strf string for a little optimization
-          GpuFromUnixTime(lhs, rhs, strfFormat)
-      }),
+      (a, conf, p, r) => new FromUnixTimeMeta(a ,conf ,p ,r)),
     expr[FromUTCTimestamp](
       "Render the input UTC timestamp in the input timezone",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
@@ -3231,6 +3226,34 @@ object GpuOverrides extends Logging {
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
+    expr[ParseUrl](
+      "Extracts a part from a URL",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
+            TypeEnum.STRING, "only support partToExtract=PROTOCOL"), TypeSig.STRING)),
+          // Should really be an OptionalParam
+          Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.failOnError) {
+            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
+          }
+
+          extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            case Some(GpuParseUrl.PROTOCOL) =>
+            case Some(other) =>
+              willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
+            case None =>
+              // Should never get here, but just in case
+              willNotWorkOnGpu("GPU only supports a literal for the part to extract")
+          }
+        }
+
+        override def convertToGpu(): GpuExpression = {
+          GpuParseUrl(childExprs.map(_.convertToGpu()))
+        }
+      }),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,

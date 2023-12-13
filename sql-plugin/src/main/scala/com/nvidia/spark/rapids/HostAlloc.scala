@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
-import com.nvidia.spark.rapids.jni.RmmSpark
+import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 
 import org.apache.spark.internal.Logging
 
-private class HostAlloc(nonPinnedLimit: Long) extends Logging {
+private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
   private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes
   // For now we are going to assume that we are the only ones calling into the pinned pool
@@ -137,14 +137,14 @@ private class HostAlloc(nonPinnedLimit: Long) extends Logging {
         s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
     if (storeSpillableSize == 0) {
       logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
-          s"Total RMM allocated is $totalSize bytes.")
+          s"Total host allocated is $totalSize bytes.")
       false
     } else {
       val targetSize = Math.max(storeSpillableSize - allocSize, 0)
       logDebug(s"Targeting host store size of $targetSize bytes")
       // We could not make it work so try and spill enough to make it work
       val maybeAmountSpilled =
-        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, allocSize)
+        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
       maybeAmountSpilled.foreach { amountSpilled =>
         logInfo(s"Spilled $amountSpilled bytes from the host store")
       }
@@ -213,12 +213,26 @@ private class HostAlloc(nonPinnedLimit: Long) extends Logging {
   def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
     checkSize(amount, preferPinned)
     var ret = Option.empty[HostMemoryBuffer]
-    while (ret.isEmpty) {
+    var count = 0
+    while (ret.isEmpty && count < 1000) {
       val (r, _) = tryAllocInternal(amount, preferPinned, blocking = true)
       ret = r
+      count += 1
+    }
+    if (ret.isEmpty) {
+      // This can happen if someone broke the rules and not all host memory is
+      // spillable when doing an allocation, like if not all of the code has
+      // been updated yet.
+      throw new CpuRetryOOM("Could not complete allocation after 1000 retries")
     }
     ret.get
   }
+
+  override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
+    alloc(amount, preferPinned)
+
+  override def allocate(amount: Long): HostMemoryBuffer =
+    alloc(amount)
 }
 
 /**
@@ -233,6 +247,7 @@ object HostAlloc {
 
   def initialize(nonPinnedLimit: Long): Unit = synchronized {
     singleton = new HostAlloc(nonPinnedLimit)
+    DefaultHostMemoryAllocator.set(singleton)
   }
 
   def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
