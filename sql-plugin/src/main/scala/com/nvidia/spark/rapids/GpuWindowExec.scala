@@ -179,6 +179,8 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
 
     if (isPostNeeded) {
       GpuProjectExec(post.toList, windowExpr)()
+    } else if (windowExpr.output != windowExec.output) {
+      GpuProjectExec(windowExec.output.toList, windowExpr)()
     } else {
       windowExpr
     }
