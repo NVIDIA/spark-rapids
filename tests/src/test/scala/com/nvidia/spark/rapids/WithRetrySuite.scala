@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
@@ -245,7 +245,7 @@ class WithRetrySuite
     }
   }
 
-  test("splitTargetSizeInHalf splits for AutoCloseableTargetSize") {
+  test("splitTargetSizeInHalfGpu splits for AutoCloseableTargetSize") {
     val initialValue = 20L
     val minValue = 5L
     val numSplits = 2
@@ -253,7 +253,7 @@ class WithRetrySuite
     var lastSplitSize = 0L
     val myTarget = AutoCloseableTargetSize(initialValue, minValue)
     try {
-      withRetry(myTarget, splitTargetSizeInHalf) { attempt =>
+      withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
         lastSplitSize = attempt.targetSize
         if (doThrow > 0) {
           doThrow = doThrow - 1
@@ -266,7 +266,7 @@ class WithRetrySuite
     }
   }
 
-  test("splitTargetSizeInHalf on AutoCloseableTargetSize throws if limit reached") {
+  test("splitTargetSizeInHalfGpu on AutoCloseableTargetSize throws if limit reached") {
     val initialValue = 20L
     val minValue = 5L
     val numSplits = 3
@@ -275,7 +275,7 @@ class WithRetrySuite
     val myTarget = AutoCloseableTargetSize(initialValue, minValue)
     try {
       assertThrows[GpuSplitAndRetryOOM] {
-        withRetry(myTarget, splitTargetSizeInHalf) { attempt =>
+        withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
           lastSplitSize = attempt.targetSize
           if (doThrow > 0) {
             doThrow = doThrow - 1
