@@ -451,6 +451,10 @@ class JsonPartitionReader(
     }
   }
 
+  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat)
+  }
+
   /**
    * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
    *

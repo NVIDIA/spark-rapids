@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.DateTimeException
 import java.util
 import java.util.Optional
 
@@ -25,7 +26,7 @@ import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, Hos
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.{GpuJsonToStructsShim, GpuTypeShims}
+import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -35,7 +36,7 @@ import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuToTimestamp, LegacyTimeParserPolicy}
+import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
 import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -375,7 +376,23 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   def timestampFormat: String
 
   def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
-    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat)
+    val cudfFormat = DateUtils.toStrf(dateFormat.getOrElse("yyyy-MM-dd"), parseString = true)
+    withResource(input.strip()) { stripped =>
+      withResource(stripped.isTimestamp(cudfFormat)) { isDate =>
+        if (GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
+          withResource(isDate.all()) { all =>
+            if (all.isValid && !all.getBoolean) {
+              throw new DateTimeException("One or more values is not a valid date")
+            }
+          }
+        }
+        withResource(stripped.asTimestamp(dt, cudfFormat)) { asDate =>
+          withResource(Scalar.fromNull(dt)) { nullScalar =>
+            isDate.ifElse(asDate, nullScalar)
+          }
+        }
+      }
+    }
   }
 
   def castStringToTimestamp(
