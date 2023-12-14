@@ -273,19 +273,13 @@ run_pyarrow_tests() {
 
 run_non_utc_time_zone_tests() {
   # select one time zone according to current day of week
-  #
-  # potential corner cases:
-  # Hebron and Newfoundland are chosen because they contain many zone transitions.
-  # Belize is chosen for containing the most intra-hour zone transitions.
-  # Punta_Arenas is chosen for containing the most intra-minute zone transitions.
-  # Morocco(Africa/Casablanca) is chosen for frequently changing transition rules between the release of Java 8 and Java 17
-  non_utc_time_zones=("Asia/Shanghai" "Iran" "Asia/Hebron" "Canada/Newfoundland" "America/Belize" "America/Punta_Arenas" "Africa/Casablanca")
-  time_zones_length=${#non_utc_time_zones[@]}
+  source "$(dirname "$0")"/test-timezones.sh
+  time_zones_length=${#time_zones_test_cases}
   # get day of week, Sunday is represented by 0 and Saturday by 6
   current_date=$(date +%w)
   echo "Current day of week is: ${current_date}"
   time_zone_index=$((current_date % time_zones_length))
-  time_zone="${non_utc_time_zones[${time_zone_index}]}"
+  time_zone="${time_zones_test_cases[${time_zone_index}]}"
   echo "Run Non-UTC tests, time zone is ${time_zone}"
 
   # run tests

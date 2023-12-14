@@ -160,14 +160,8 @@ ci_2() {
     # Test a portion of cases for non-UTC time zone because of limited GPU resources.
     # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
     # Nightly CIs will cover all the cases.
-    #
-    # potential corner cases:
-    # Hebron and Newfoundland are chosen because they contain many zone transitions.
-    # Belize is chosen for containing the most intra-hour zone transitions.
-    # Punta_Arenas is chosen for containing the most intra-minute zone transitions.
-    # Morocco(Africa/Casablanca) is chosen for frequently changing transition rules between the release of Java 8 and Java 17
-    non_utc_time_zones=("Iran" "Asia/Hebron" "Canada/Newfoundland" "America/Belize" "America/Punta_Arenas" "Africa/Casablanca")
-    for tz in "${non_utc_time_zones[@]}"
+    source "$(dirname "$0")"/test-timezones.sh
+    for tz in "${time_zones_test_cases[@]}"
     do
         TZ=$tz TEST='test_parquet_read_round_trip or test_read_round_trip or test_basic_csv_read or test_cast_string_ts_valid_format or test_unix_timestamp or test_from_utc_timestamp' ./integration_tests/run_pyspark_from_build.sh
     done
