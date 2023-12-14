@@ -667,13 +667,6 @@ object RapidsConf {
 
   // ENABLE/DISABLE PROCESSING
 
-  val IMPROVED_TIMESTAMP_OPS =
-    conf("spark.rapids.sql.improvedTimeOps.enabled")
-      .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          "directly to seconds without first converting to microseconds")
-      .booleanConf
-      .createWithDefault(false)
-
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
     .commonlyUsed()
@@ -1339,6 +1332,15 @@ object RapidsConf {
       "DECIMAL type order-by column")
     .booleanConf
     .createWithDefault(true)
+
+  val BATCHED_BOUNDED_ROW_WINDOW_MAX: ConfEntryWithDefault[Integer] =
+    conf("spark.rapids.sql.window.batched.bounded.row.max")
+      .doc("Max value for bounded row window preceding/following extents " +
+      "permissible for the window to be evaluated in batched mode. This value affects " +
+      "both the preceding and following bounds, potentially doubling the window size " +
+      "permitted for batched execution")
+      .integerConf
+      .createWithDefault(value = 100)
 
   val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
@@ -2378,8 +2380,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
 
-  lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
-
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
@@ -2742,6 +2742,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val batchedBoundedRowsWindowMax: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
