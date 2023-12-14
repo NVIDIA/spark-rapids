@@ -455,11 +455,31 @@ def test_gettimestamp_ansi_exception():
 supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/MM/yyyy',
                           'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM']
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
-def test_date_format(data_gen, date_format):
+@pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
+@allow_non_gpu('ProjectExec')
+def test_date_format_for_date(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
+
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+def test_date_format_for_time(data_gen, date_format):
+    conf = {'spark.rapids.sql.nonUTC.enabled': True}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        conf)
+
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@allow_non_gpu('ProjectExec')
+def test_date_format_for_time_fall_back(data_gen, date_format):
+    conf = {'spark.rapids.sql.nonUTC.enabled': True}
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        'ProjectExec',
+        conf)
 
 @pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
@@ -582,7 +602,7 @@ def test_timestamp_seconds_long_overflow():
         error_message='long overflow')
 
 # For Decimal(20, 7) case, the data is both 'Overflow' and 'Rounding necessary', this case is to verify
-# that 'Rounding necessary' check is before 'Overflow' check. So we should make sure that every decimal 
+# that 'Rounding necessary' check is before 'Overflow' check. So we should make sure that every decimal
 # value in test data is 'Rounding necessary' by setting full_precision=True to avoid leading and trailing zeros.
 # Otherwise, the test data will bypass the 'Rounding necessary' check and throw an 'Overflow' error.
 @pytest.mark.parametrize('data_gen', [DecimalGen(7, 7, full_precision=True), DecimalGen(20, 7, full_precision=True)], ids=idfn)
