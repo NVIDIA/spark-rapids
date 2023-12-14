@@ -147,55 +147,61 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     // Update our estimate for number of rows with the final size used to allocate the buffers.
     numRowsEstimate = (int) bufsAndNumRows._2.targetSize();
     long dataLength = calcDataLengthEstimate(numRowsEstimate);
+    int used[];
     try (
         SpillableHostBuffer sdb = bufsAndNumRows._1[0];
         SpillableHostBuffer sob = bufsAndNumRows._1[1];
     ) {
-      // Fill in buffer under write lock for host buffers
-      batchAndRange = sdb.withHostBufferWriteLock( (dataBuffer) -> {
-        return sob.withHostBufferWriteLock( (offsetsBuffer) -> {
-          int[] used = fillBatch(dataBuffer, offsetsBuffer, dataLength, numRowsEstimate);
-          int dataOffset = used[0];
-          int currentRow = used[1];
-          // We don't want to loop forever trying to copy nothing
-          assert (currentRow > 0);
-          if (numInputRows != null) {
-            numInputRows.add(currentRow);
-          }
-          if (numOutputRows != null) {
-            numOutputRows.add(currentRow);
-          }
-          if (numOutputBatches != null) {
-            numOutputBatches.add(1);
-          }
-          // Now that we have filled the buffers with the data, we need to turn them into a
-          // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
-          // To do this we first need to make a HostColumnCoreVector for the data, and then
-          // put that into a HostColumnVector as its child.  This the basics of building up
-          // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
-          // APIs.
-          dataBuffer.incRefCount();
-          offsetsBuffer.incRefCount();
-          try (HostColumnVectorCore dataCv =
-                   new HostColumnVectorCore(DType.INT8, dataOffset, Optional.of(0L),
-                       dataBuffer, null, null, new ArrayList<>());
-               HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
-                   currentRow, Optional.of(0L), null, null,
-                   offsetsBuffer, Collections.singletonList(dataCv))) {
+      try (
+          HostMemoryBuffer dataBuffer = sdb.getHostBuffer();
+          HostMemoryBuffer offsetsBuffer = sob.getHostBuffer();
+          ) {
+        used = fillBatch(dataBuffer, offsetsBuffer, dataLength, numRowsEstimate);
+      }
+      try (
+          HostMemoryBuffer dataBuffer = sdb.getHostBuffer();
+          HostMemoryBuffer offsetsBuffer = sob.getHostBuffer();
+      ) {
+        int dataOffset = used[0];
+        int currentRow = used[1];
+        // We don't want to loop forever trying to copy nothing
+        assert (currentRow > 0);
+        if (numInputRows != null) {
+          numInputRows.add(currentRow);
+        }
+        if (numOutputRows != null) {
+          numOutputRows.add(currentRow);
+        }
+        if (numOutputBatches != null) {
+          numOutputBatches.add(1);
+        }
+        // Now that we have filled the buffers with the data, we need to turn them into a
+        // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
+        // To do this we first need to make a HostColumnCoreVector for the data, and then
+        // put that into a HostColumnVector as its child.  This the basics of building up
+        // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
+        // APIs.
+        dataBuffer.incRefCount();
+        offsetsBuffer.incRefCount();
+        try (HostColumnVectorCore dataCv =
+                 new HostColumnVectorCore(DType.INT8, dataOffset, Optional.of(0L),
+                     dataBuffer, null, null, new ArrayList<>());
+             HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
+                 currentRow, Optional.of(0L), null, null,
+                 offsetsBuffer, Collections.singletonList(dataCv))) {
 
-            long ct = System.nanoTime() - collectStart;
-            streamTime.add(ct);
+          long ct = System.nanoTime() - collectStart;
+          streamTime.add(ct);
 
-            // Grab the semaphore because we are about to put data onto the GPU.
-            GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
-            NvtxRange range = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN,
-                Option.apply(opTime));
-            ColumnVector devColumn =
-                RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
-            return Tuple2.apply(makeSpillableBatch(devColumn), range);
-          }
-        });
-      });
+          // Grab the semaphore because we are about to put data onto the GPU.
+          GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
+          NvtxRange range = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN,
+              Option.apply(opTime));
+          ColumnVector devColumn =
+              RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
+          batchAndRange = Tuple2.apply(makeSpillableBatch(devColumn), range);
+        }
+      }
     }
     try (NvtxRange ignored = batchAndRange._2;
          Table tab =

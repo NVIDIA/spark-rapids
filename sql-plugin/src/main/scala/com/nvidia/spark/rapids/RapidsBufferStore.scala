@@ -24,7 +24,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -514,6 +514,31 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
         }
       }
+    }
+
+    override def getHostMemoryBuffer: HostMemoryBuffer = {
+      (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
+        catalog.acquireBuffer(id, HOST) match {
+          case Some(buffer) =>
+            withResource(buffer) { _ =>
+              return buffer.getHostMemoryBuffer
+            }
+          case _ =>
+            try {
+              logDebug(s"Unspilling $this $id to $HOST")
+              val newBuffer = catalog.unspillBufferToHostStore(
+                this,
+                Cuda.DEFAULT_STREAM)
+              withResource(newBuffer) { _ =>
+                return newBuffer.getHostMemoryBuffer
+              }
+            } catch {
+              case _: DuplicateBufferException =>
+                logDebug(s"Lost host buffer registration race for buffer $id, retrying...")
+            }
+        }
+      }
+      throw new IllegalStateException(s"Unable to get host memory buffer for ID: $id")
     }
 
     /**

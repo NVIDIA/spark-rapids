@@ -371,6 +371,12 @@ class SpillableHostBuffer(handle: RapidsBufferHandle,
     handle.close()
   }
 
+  def getHostBuffer(): HostMemoryBuffer = {
+    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
+      rapidsBuffer.getHostMemoryBuffer
+    }
+  }
+
   /**
    * Acquires the underlying `RapidsBuffer` and uses
    * `RapidsBuffer.withMemoryBufferReadLock` to obtain a read lock
