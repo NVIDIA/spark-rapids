@@ -3718,11 +3718,12 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
       }),
     expr[Ascii](
-      "The numeric value of the first character of string data",
+      "The numeric value of the first character of string data.",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[Ascii](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAscii(child)
-      }),
+      }).disabledByDefault("it only supports strings starting with ASCII or Latin-1 characters." +
+          " Otherwise the results will not match the CPU."),
     expr[GetArrayStructFields](
       "Extracts the `ordinal`-th fields of all array elements for the data with the type of" +
         " array of struct",
