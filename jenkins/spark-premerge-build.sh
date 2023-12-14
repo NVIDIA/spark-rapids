@@ -59,9 +59,10 @@ mvn_verify() {
               $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
               -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
         # build only for other versions
-        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
-            $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+        # elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
+        #     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
         fi
+        $MVN_INSTALL_CMD -DskipTests -Dbuildver=$SPARK_BASE_SHIM_VERSION
     done
 
     # enable UTF-8 for regular expression tests
@@ -235,7 +236,7 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
+PREMERGE_PROFILES="-Ppre-merge"
 
 # If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
 # Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
