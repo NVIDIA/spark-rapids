@@ -1384,7 +1384,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
          "or CpuRetryOOM once per invocation. Furthermore an extended config " +
          "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU` can be provided to specify" +
          "the number of OOMs to generate, how many to skip before doing so, and whether to " +
-         "filter by allocation events by host(CPU), device(GPU), or not (CPU_OR_GPU)")
+         "filter by allocation events by host(CPU), device(GPU), or both (CPU_OR_GPU)")
     .internal()
     .stringConf
     .createWithDefault(false.toString)
