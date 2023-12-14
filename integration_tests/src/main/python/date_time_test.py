@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import ignore_order, incompat, allow_non_gpu
+from marks import ignore_order, incompat, allow_non_gpu, datagen_overrides
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -207,6 +207,7 @@ def test_datesub(data_gen):
 # than -106032829 for date('0001-01-01') so we have to cap the days values to the lower upper and
 # lower ranges.
 to_unix_timestamp_days_gen=[ByteGen(), ShortGen(), IntegerGen(min_val=-106032829, max_val=103819094, special_cases=[-106032829, 103819094,0,1,-1])]
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10027')
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 @incompat
 @allow_non_gpu(*non_utc_allow)
@@ -221,6 +222,7 @@ def test_dateadd_with_date_overflow(data_gen):
            'unix_timestamp(date_add(a, cast(24 as {})))'.format(string_type)))
 
 to_unix_timestamp_days_gen=[ByteGen(), ShortGen(), IntegerGen(max_val=106032829, min_val=-103819094, special_cases=[106032829, -103819094,0,1,-1])]
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10027')
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 @incompat
 @allow_non_gpu(*non_utc_allow)
