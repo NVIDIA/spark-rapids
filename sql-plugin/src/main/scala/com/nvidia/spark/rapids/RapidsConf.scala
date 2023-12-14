@@ -2316,6 +2316,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * "num_ooms" maps to oomCount (default 1), the number of allocations resulting in an OOM
    * "skip" maps to skipCount (default 0), the number of matching  allocations to skip before
    * injecting an OOM at the skip+1st allocation.
+   * *split* maps to withSplit (default false), determining whether to inject
+   * *SplitAndRetryOOM instead of plain *RetryOOM exceptions
    *
    * For backwards compatibility support existing binary configuration
    *   "false", disabled, i.e. oomCount=0, skipCount=0, injectionType=None
