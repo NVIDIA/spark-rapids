@@ -50,6 +50,9 @@ object DayTimeIntervalShims {
             .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
             TypeSig.DAYTIME + TypeSig.CALENDAR)),
       (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
+
+        override def isTimeZoneSupported = true
+
         override def tagExprForGpu(): Unit = {
           GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
             lit.dataType match {
@@ -64,7 +67,7 @@ object DayTimeIntervalShims {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeAdd(lhs, rhs)
+          GpuTimeAdd(lhs, rhs, timeAdd.timeZoneId)
       }),
     GpuOverrides.expr[Abs](
       "Absolute value",

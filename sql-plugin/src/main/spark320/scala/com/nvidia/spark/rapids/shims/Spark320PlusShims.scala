@@ -208,6 +208,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         ("interval", TypeSig.lit(TypeEnum.DAYTIME) + TypeSig.lit(TypeEnum.CALENDAR),
           TypeSig.DAYTIME + TypeSig.CALENDAR)),
       (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
+
+        override def isTimeZoneSupported = true
+
         override def tagExprForGpu(): Unit = {
           GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
             lit.dataType match {
@@ -222,7 +225,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeAdd(lhs, rhs)
+          GpuTimeAdd(lhs, rhs, timeAdd.timeZoneId)
       }),
     GpuOverrides.expr[SpecifiedWindowFrame](
       "Specification of the width of the group (or \"frame\") of input rows " +

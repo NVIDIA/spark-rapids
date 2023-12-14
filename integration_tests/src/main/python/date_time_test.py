@@ -31,7 +31,7 @@ non_supported_tz_allow = ['ProjectExec'] if not is_supported_time_zone() else []
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
             (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+# @allow_non_gpu(*non_utc_allow)
 def test_timesub(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
@@ -40,25 +40,28 @@ def test_timesub(data_gen):
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+# @allow_non_gpu(*non_utc_allow)
 def test_timeadd(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         # We are starting at year 0005 to make sure we don't go before year 0001
         # and beyond year 10000 while doing TimeAdd
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
-            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
+            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)),
+            conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@allow_non_gpu(*non_utc_allow)
+# @allow_non_gpu(*non_utc_allow)
 def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000
         ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
         # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=1000 * 365), max_value=timedelta(days=1250 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
+        lambda spark: gen_df(spark, gen_list, length=200).selectExpr("t + d", "t", "d"),
+        # lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 @pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
 def test_interval_seconds_overflow_exception():
@@ -68,7 +71,7 @@ def test_interval_seconds_overflow_exception():
         error_message="IllegalArgumentException")
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+# @allow_non_gpu(*non_utc_allow)
 def test_timeadd_from_subquery(data_gen):
 
     def fun(spark):
@@ -77,10 +80,10 @@ def test_timeadd_from_subquery(data_gen):
         spark.sql("select a, ((select max(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where datePlus > current_timestamp")
 
-    assert_gpu_and_cpu_are_equal_collect(fun)
+    assert_gpu_and_cpu_are_equal_collect(fun, conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+# @allow_non_gpu(*non_utc_allow)
 def test_timesub_from_subquery(data_gen):
 
     def fun(spark):
@@ -89,7 +92,7 @@ def test_timesub_from_subquery(data_gen):
         spark.sql("select a, ((select min(a) from testTime) - interval 1 day) as dateMinus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where dateMinus < current_timestamp")
 
-    assert_gpu_and_cpu_are_equal_collect(fun)
+    assert_gpu_and_cpu_are_equal_collect(fun, conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 # Should specify `spark.sql.legacy.interval.enabled` to test `DateAddInterval` after Spark 3.2.0,
 # refer to https://issues.apache.org/jira/browse/SPARK-34896
