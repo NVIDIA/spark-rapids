@@ -566,7 +566,8 @@ def test_unsupported_fallback_to_date():
 # (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds 
 # considering the influence of time zone.
 ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, 16777215.0, float('inf'), float('-inf'), float('nan')])
-seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(), 
+# FIXME: min_val is changed to -62135410400 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
+seconds_gens = [LongGen(min_val=-62135410400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(),
                 DoubleGen(min_exp=0, max_exp=32), ts_float_gen, DecimalGen(16, 6), DecimalGen(13, 3), DecimalGen(10, 0), DecimalGen(7, -3), DecimalGen(6, 6)]
 @pytest.mark.parametrize('data_gen', seconds_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -601,7 +602,8 @@ def test_timestamp_seconds_decimal_overflow(data_gen):
         conf={},
         error_message='Overflow')
 
-millis_gens = [LongGen(min_val=-62135510400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
+# FIXME: min_val is changed to -62135410400000 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
+millis_gens = [LongGen(min_val=-62135410400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
 @pytest.mark.parametrize('data_gen', millis_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_millis(data_gen):
@@ -615,7 +617,8 @@ def test_timestamp_millis_long_overflow():
         conf={},
         error_message='long overflow')
 
-micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
+# FIXME: min_val is changed to -62135410400 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
+micros_gens = [LongGen(min_val=-62135410400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
 @pytest.mark.parametrize('data_gen', micros_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_micros(data_gen):
