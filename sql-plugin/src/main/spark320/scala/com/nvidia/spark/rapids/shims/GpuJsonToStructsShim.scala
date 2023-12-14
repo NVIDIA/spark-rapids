@@ -71,7 +71,7 @@ object GpuJsonToStructsShim {
             .replace("MM", raw"\d{1,2}")
             .replace("dd", raw"\d{1,2}")
           val cudfFormat = DateUtils.toStrf(fmt, parseString = true)
-          GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat,
+          GpuCast.convertDateOrNull(trimmed, "^" + regexRoot + "$", cudfFormat,
             failOnInvalid = GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
     }
