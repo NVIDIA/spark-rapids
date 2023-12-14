@@ -1382,8 +1382,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val TEST_RETRY_OOM_INJECTION_MODE = conf("spark.rapids.sql.test.injectRetryOOM")
     .doc("Only to be used in tests. If `true` the retry iterator will inject a GpuRetryOOM " +
          "or CpuRetryOOM once per invocation. Furthermore an extended config " +
-         "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU,split=<bool>` can be provided to specify" +
-         "the number of OOMs to generate; how many to skip before doing so; whether to " +
+         "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU,split=<bool>` can be provided to " +
+         "specify the number of OOMs to generate; how many to skip before doing so; whether to " +
          "filter by allocation events by host(CPU), device(GPU), or both (CPU_OR_GPU); " +
          "whether to inject *SplitAndRetryOOM in stead of plain *RetryOOM exceptions." +
          "Note *SplitAndRetryOOM exceptions are not always handled - use with care.")
