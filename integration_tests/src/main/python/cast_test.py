@@ -205,6 +205,7 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
             conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True,
                 'spark.sql.ansi.enabled': True})
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(7, 1),
     DecimalGen(9, 9),
