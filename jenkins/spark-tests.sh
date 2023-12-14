@@ -274,7 +274,7 @@ run_pyarrow_tests() {
 run_non_utc_time_zone_tests() {
   # select one time zone according to current day of week
   source "$(dirname "$0")"/test-timezones.sh
-  time_zones_length=${#time_zones_test_cases}
+  time_zones_length=${#time_zones_test_cases[@]}
   # get day of week, Sunday is represented by 0 and Saturday by 6
   current_date=$(date +%w)
   echo "Current day of week is: ${current_date}"
