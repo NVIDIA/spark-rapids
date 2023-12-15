@@ -590,12 +590,25 @@ object RmmRapidsRetryIterator extends Logging {
         doSplit = false
         try {
           // call the user's function
-          if (config.exists(_.testRetryOOMInjectionEnabled) && !injectedOOM) {
-            injectedOOM = true
-            // ensure we have associated our thread with the running task, as
-            // `forceRetryOOM` requires a prior association.
-            RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
-            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+          config.foreach {
+            case rapidsConf if !injectedOOM && rapidsConf.testRetryOOMInjectionMode.numOoms > 0 =>
+              injectedOOM = true
+              // ensure we have associated our thread with the running task, as
+              // `forceRetryOOM` requires a prior association.
+              RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              val injectConf = rapidsConf.testRetryOOMInjectionMode
+              if (injectConf.withSplit) {
+                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                          injectConf.numOoms,
+                          injectConf.oomInjectionFilter.ordinal,
+                          injectConf.skipCount)
+              } else {
+                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                  injectConf.numOoms,
+                  injectConf.oomInjectionFilter.ordinal,
+                  injectConf.skipCount)
+              }
+            case _ => ()
           }
           result = Some(attemptIter.next())
           clearInjectedOOMIfNeeded()
