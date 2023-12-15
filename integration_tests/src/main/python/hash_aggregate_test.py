@@ -16,10 +16,11 @@ import math
 import pytest
 
 from asserts import *
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, spark_jvm
 from conftest import is_not_utc
 from data_gen import *
 from functools import reduce
+from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
@@ -637,10 +638,10 @@ def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
         df = gen_df(spark, data_gen, length=100)\
             .groupby('a')\
             .agg(f.collect_list('b').alias("blist"))
-        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # collect the data and schema and create a new dataframe to run SortArray
         # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
         # to ObjectHashAggregateExec
-        return spark.createDataFrame(df.rdd, schema=df.schema).select("a", f.sort_array("blist"))
+        return spark.createDataFrame(df.collect(), schema=df.schema).select("a", f.sort_array("blist"))
     assert_gpu_and_cpu_are_equal_collect(
         doit,
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
@@ -697,10 +698,10 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
         df = gen_df(spark, data_gen, length=100)\
             .groupby('a')\
             .agg(f.collect_set('b').alias("collect_set"))
-        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # collect the data and schema and create a new dataframe to run SortArray
         # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
         # to ObjectHashAggregateExec
-        return spark.createDataFrame(df.rdd, schema=df.schema)\
+        return spark.createDataFrame(df.collect(), schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
@@ -739,10 +740,10 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     def do_it(spark):
         df = gen_df(spark, data_gen, length=100)\
             .agg(f.collect_set('b').alias("collect_set"))
-        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # collect the data and schema and create a new dataframe to run SortArray
         # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
         # to ObjectHashAggregateExec
-        return spark.createDataFrame(df.rdd, schema=df.schema)\
+        return spark.createDataFrame(df.collect(), schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)

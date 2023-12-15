@@ -13,10 +13,12 @@
 # limitations under the License.
 
 import os
+import calendar, time
+from datetime import date, datetime
 from contextlib import contextmanager, ExitStack
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, should_inject_oom
 from pyspark.sql import DataFrame
-from pyspark.sql.types import TimestampType, DateType
+from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 from unittest.mock import patch
 
@@ -86,15 +88,35 @@ def _check_for_proper_return_values(something):
 
 @contextmanager
 def pyspark_compatibility_fixes():
+    def timestampToInternal(_, dt):
+        if isinstance(dt, int):
+            return dt
+        if isinstance(dt, datetime):
+            seconds = (calendar.timegm(dt.utctimetuple()) if dt.tzinfo
+                       else time.mktime(dt.timetuple()))
+            return int(seconds) * 1000000 + dt.microsecond
+
+    def dateToInternal(self, d):
+        if isinstance(d, int):
+            return d
+        if isinstance(d, (datetime, date)):
+            return d.toordinal() - self.EPOCH_ORDINAL
+
     pyspark_compatibility_fixes = []
     # Patch timestamp and date types so that we only compare in testing to the internal integral representations
     pyspark_compatibility_fixes.append(patch.object(TimestampType, 'fromInternal', lambda _, ts: ts))
+    pyspark_compatibility_fixes.append(patch.object(TimestampType, 'toInternal', timestampToInternal))
+    pyspark_compatibility_fixes.append(patch.dict(_acceptable_types, { TimestampType: (datetime, int)}))
     try:
         from pyspark.sql.types import TimestampNTZType
         pyspark_compatibility_fixes.append(patch.object(TimestampNTZType, 'fromInternal', lambda _, ts: ts))
+        pyspark_compatibility_fixes.append(patch.object(TimestampNTZType, 'toInternal', timestampToInternal))
+        pyspark_compatibility_fixes.append(patch.dict(_acceptable_types, { TimestampNTZType: (datetime, int)}))
     except ImportError:
         pass
     pyspark_compatibility_fixes.append(patch.object(DateType, 'fromInternal', lambda _, v: v))
+    pyspark_compatibility_fixes.append(patch.object(DateType, 'toInternal', dateToInternal))
+    pyspark_compatibility_fixes.append(patch.dict(_acceptable_types, { DateType: (datetime, date, int)}))
     with ExitStack() as stack:
         for cm in pyspark_compatibility_fixes:
             stack.enter_context(cm)
