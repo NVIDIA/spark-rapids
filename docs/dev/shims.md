@@ -17,7 +17,7 @@ common code, maximize reuse, and minimize logic duplication.
 This is achieved by using a ServiceProvider pattern. All Shims implement the same API,
 the suitable Shim implementation is loaded after detecting the current Spark build version
 attempting to instantiate our plugin. We use the
-[ShimLoader](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/scala/com/nvidia/spark/rapids/ShimLoader.scala)
+[ShimLoader](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin-api/src/main/scala/com/nvidia/spark/rapids/ShimLoader.scala)
 class as a tight entry point for interacting with the host Spark runtime.
 
 In the following we provide recipes for typical scenarios addressed by the Shim layer.
@@ -111,7 +111,7 @@ has not been loaded yet. More accurately, it may not be strictly needed until la
 query can be run when the Spark SQL session and its extensions are initialized. It improves the
 user experience if the first query is not penalized beyond necessary though. By design, Plugin guarantees
 that the classloader is
-[set up at load time](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/scala/com/nvidia/spark/SQLPlugin.scala#L29)
+[set up at load time](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin-api/src/main/scala/com/nvidia/spark/SQLPlugin.scala#L29)
 before the DriverPlugin and ExecutorPlugin instances are called the `init` method on.
 
 By making a visible class merely a wrapper of the real implementation where the real implementation

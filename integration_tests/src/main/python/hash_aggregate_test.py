@@ -395,6 +395,7 @@ def test_hash_reduction_sum(data_gen, conf):
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [
     DecimalGen(precision=38, scale=0), DecimalGen(precision=38, scale=-10)], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9779')
 def test_hash_reduction_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
@@ -1167,6 +1168,7 @@ def test_hash_multiple_filters(data_gen, conf):
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10026')
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,

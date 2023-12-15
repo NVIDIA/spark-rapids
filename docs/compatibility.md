@@ -711,8 +711,7 @@ to `false`.
 
 ### Float to String
 
-The GPU use [ryu](https://github.com/ulfjack/ryu) as the solution when converting floating-point data
-types to strings. As a result the computed string can differ from the output of Spark in some cases: sometimes the output is shorter (which is arguably more accurate) and sometimes the output may differ in the precise digits output.
+The Rapids Accelerator for Apache Spark uses uses a method based on [ryu](https://github.com/ulfjack/ryu) when converting floating point data type to string. As a result the computed string can differ from the output of Spark in some cases: sometimes the output is shorter (which is arguably more accurate) and sometimes the output may differ in the precise digits output.
 
 This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
