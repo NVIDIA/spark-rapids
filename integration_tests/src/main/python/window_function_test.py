@@ -1525,7 +1525,7 @@ def test_window_aggs_for_rows_collect_set_nested_array():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_128
         from window_collect_table
         """)
-        df = spark.createDataFrame(df.rdd, schema=df.schema)
+        df = spark.createDataFrame(df.collect(), schema=df.schema)
         # pull out the rdd and schema and create a new dataframe to run SortArray
         # to handle Databricks 10.4+ optimization that moves SortArray from ProjectExec
         # to ObjectHashAggregateExec
