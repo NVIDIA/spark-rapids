@@ -723,8 +723,8 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
     pytest.param("\"" + optional_whitespace_regex + "[0-9]{5}" + optional_whitespace_regex + "\"", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
-    pytest.param("[0-9]{1,5}", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9588")),
-    "[1-9]{1,8}",
+    pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9588")),
+    pytest.param("[1-9]{1,8}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/4940")),
     # floating-point
     "[0-9]{0,2}\.[0-9]{1,2}"
     # boolean
@@ -733,8 +733,8 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
 @pytest.mark.parametrize('timestamp_format', [
     # Even valid timestamp format, CPU fallback happens still since non UTC is not supported for json.
     pytest.param("", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
-    pytest.param("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
     # https://github.com/NVIDIA/spark-rapids/issues/9723
+    pytest.param("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     pytest.param("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     pytest.param("dd/MM/yyyy'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
 ])
@@ -746,6 +746,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
 def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
         .with_special_case('{ "a": null }') \
+        .with_special_case('{ "a": "6395-12-21T56:86:40.205705Z" }') \
         .with_special_case('null')
     options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
     assert_gpu_and_cpu_are_equal_collect(

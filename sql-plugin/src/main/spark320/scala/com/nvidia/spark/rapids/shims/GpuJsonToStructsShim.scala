@@ -78,7 +78,10 @@ object GpuJsonToStructsShim {
   }
 
   def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
-      timestampFormat: Option[String]): Unit = {}
+      timestampFormat: Option[String]): Unit = {
+    // we only support the case where no format is specified
+    timestampFormat.foreach(f => meta.willNotWorkOnGpu(s"Unsupported timestampFormat: $f"))
+  }
 
   def castJsonStringToTimestamp(input: ColumnVector,
       options: Map[String, String]): ColumnVector = {
