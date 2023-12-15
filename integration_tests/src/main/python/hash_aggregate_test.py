@@ -1169,6 +1169,7 @@ def test_hash_multiple_filters(data_gen, conf):
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10026')
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
