@@ -78,12 +78,8 @@ object GpuJsonToStructsShim {
 
   def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
       timestampFormat: Option[String]): Unit = {
-    timestampFormat match {
-      case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
-        // fine
-      case other =>
-        meta.willNotWorkOnGpu(s"Unsupported timestampFormat ${other}")
-    }
+    // we only support the case where no format is specified
+    timestampFormat.foreach(f => meta.willNotWorkOnGpu(s"Unsupported timestampFormat: $f"))
   }
 
   def castJsonStringToTimestamp(input: ColumnVector,
@@ -97,9 +93,6 @@ object GpuJsonToStructsShim {
             GpuCast.castStringToTimestamp(trimmed, ansiMode = false)
           }
         }
-      case Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
-        GpuCast.convertTimestampOrNull(input,
-          "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z?$", "%Y-%m-%d")
       case other =>
         // should be unreachable due to GpuOverrides checks
         throw new IllegalStateException(s"Unsupported timestampFormat $other")
