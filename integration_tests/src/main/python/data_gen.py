@@ -583,9 +583,8 @@ class TimestampGen(DataGen):
     """Generate Timestamps in a given range. All timezones are UTC by default."""
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
-        min_start = datetime(1, 1, 1, tzinfo=tzinfo)
         if start is None:
-            start = min_start
+            start = datetime(1, 1, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
