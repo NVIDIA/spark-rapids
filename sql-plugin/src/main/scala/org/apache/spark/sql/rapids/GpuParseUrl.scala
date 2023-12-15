@@ -40,7 +40,7 @@ object GpuParseUrl {
 
   def isSupportedPart(part: String): Boolean = {
     part match {
-      case PROTOCOL | HOST =>
+      case PROTOCOL | HOST | QUERY =>
         true
       case _ =>
         false
@@ -65,7 +65,9 @@ case class GpuParseUrl(children: Seq[Expression])
         ParseURI.parseURIProtocol(url.getBase)
       case HOST =>
         ParseURI.parseURIHost(url.getBase)
-      case PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
+      case QUERY =>
+        ParseURI.parseURIQuery(url.getBase)
+      case PATH | REF | FILE | AUTHORITY | USERINFO =>
         throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
             s"Only PROTOCOL and HOST are supported")
       case _ =>
