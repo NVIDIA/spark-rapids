@@ -24,6 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
 
@@ -623,6 +624,10 @@ object GpuOverrides extends Logging {
 
   def isUTCTimezone(timezoneId: ZoneId): Boolean = {
     timezoneId.normalized() == UTC_TIMEZONE_ID
+  }
+
+  def isUTCTimezone(timezoneIdStr: String): Boolean = {
+    isUTCTimezone(GpuTimeZoneDB.getZoneId(timezoneIdStr))
   }
 
   def isUTCTimezone(): Boolean = {
@@ -1695,13 +1700,16 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuToUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
+        // String type is not supported yet for non-UTC timezone.
+        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
+          a.left.dataType match {
+            case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
+            case _ => true
           }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
       }),
     expr[UnixTimestamp](
@@ -1714,13 +1722,16 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
+        // String type is not supported yet for non-UTC timezone.
+        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
+            a.left.dataType match {
+              case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
+              case _ => true
+            }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          if (conf.isImprovedTimestampOpsEnabled) {
-            // passing the already converted strf string for a little optimization
-            GpuUnixTimestampImproved(lhs, rhs, sparkFormat, strfFormat)
-          } else {
-            GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
-          }
+          GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
       }),
     expr[Hour](
@@ -1728,26 +1739,26 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
-
-        override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
+        override def isTimeZoneSupported = true
+        override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr, hour.timeZoneId)
       }),
     expr[Minute](
       "Returns the minute component of the string/timestamp",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
-
+        override def isTimeZoneSupported = true
         override def convertToGpu(expr: Expression): GpuExpression =
-          GpuMinute(expr)
+          GpuMinute(expr, minute.timeZoneId)
       }),
     expr[Second](
       "Returns the second component of the string/timestamp",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
-
+        override def isTimeZoneSupported = true
         override def convertToGpu(expr: Expression): GpuExpression =
-          GpuSecond(expr)
+          GpuSecond(expr, second.timeZoneId)
       }),
     expr[WeekDay](
       "Returns the day of the week (0 = Monday...6=Sunday)",
@@ -1779,12 +1790,7 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
-      (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
-        override def isTimeZoneSupported = true
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          // passing the already converted strf string for a little optimization
-          GpuFromUnixTime(lhs, rhs, strfFormat, a.timeZoneId)
-      }),
+      (a, conf, p, r) => new FromUnixTimeMeta(a ,conf ,p ,r)),
     expr[FromUTCTimestamp](
       "Render the input UTC timestamp in the input timezone",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
@@ -3241,6 +3247,34 @@ object GpuOverrides extends Logging {
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
+    expr[ParseUrl](
+      "Extracts a part from a URL",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
+            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST"), TypeSig.STRING)),
+          // Should really be an OptionalParam
+          Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.failOnError) {
+            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
+          }
+
+          extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            case Some(part) if GpuParseUrl.isSupportedPart(part) =>
+            case Some(other) =>
+              willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
+            case None =>
+              // Should never get here, but just in case
+              willNotWorkOnGpu("GPU only supports a literal for the part to extract")
+          }
+        }
+
+        override def convertToGpu(): GpuExpression = {
+          GpuParseUrl(childExprs.map(_.convertToGpu()))
+        }
+      }),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,

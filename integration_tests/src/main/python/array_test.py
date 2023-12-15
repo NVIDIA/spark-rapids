@@ -332,6 +332,16 @@ def test_array_transform(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+def test_array_transform_non_deterministic():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(1).selectExpr("transform(sequence(0, cast(rand(5)*10 as int) + 1), x -> x * 22) as t"),
+            conf={'spark.rapids.sql.castFloatToIntegralTypes.enabled': True})
+
+def test_array_transform_non_deterministic_second_param():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : debug_df(spark.range(1).selectExpr("transform(sequence(0, cast(rand(5)*10 as int) + 1), (x, i) -> x + i) as t")),
+            conf={'spark.rapids.sql.castFloatToIntegralTypes.enabled': True})
+
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens

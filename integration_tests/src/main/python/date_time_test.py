@@ -14,13 +14,18 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
-from conftest import is_supported_time_zone
+from conftest import is_utc, is_supported_time_zone
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
+
+# Some operations only work in UTC specifically
+non_utc_tz_allow = ['ProjectExec'] if not is_utc() else []
+# Others work in all supported time zones
+non_supported_tz_allow = ['ProjectExec'] if not is_supported_time_zone() else []
 
 # We only support literal intervals for TimeSub
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
@@ -130,20 +135,25 @@ def test_datediff(data_gen):
             'datediff(a, date(null))',
             'datediff(a, \'2016-03-02\')'))
 
-@allow_non_gpu(*non_utc_allow)
+hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
+
+@allow_non_gpu(*hms_fallback)
 def test_hour():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*hms_fallback)
 def test_minute():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*hms_fallback)
 def test_second():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'),
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 def test_quarter():
     assert_gpu_and_cpu_are_equal_collect(
@@ -245,20 +255,22 @@ def test_dayofyear(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
+        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
+        {"spark.rapids.sql.nonUTC.enabled": "true"})
 
 
+@pytest.mark.skipif(is_supported_time_zone(), reason='fallback only happens on unsupported timezones')
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unsupported_fallback_unix_timestamp(data_gen):
     assert_gpu_fallback_collect(lambda spark: gen_df(
         spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
         "unix_timestamp(a, b)"),
-        "UnixTimestamp")
-
+        "UnixTimestamp",
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -266,32 +278,26 @@ def test_unsupported_fallback_unix_timestamp(data_gen):
 def test_to_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
-        {'spark.sql.ansi.enabled': ansi_enabled})
+        conf = {'spark.sql.ansi.enabled': ansi_enabled,
+            'spark.rapids.sql.nonUTC.enabled': True})
 
-
+@pytest.mark.skipif(is_supported_time_zone(), reason='fallback only happens on unsupported timezones')
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unsupported_fallback_to_unix_timestamp(data_gen):
     assert_gpu_fallback_collect(lambda spark: gen_df(
         spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
         "to_unix_timestamp(a, b)"),
-        "ToUnixTimestamp")
+        "ToUnixTimestamp",
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
-
-@pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
+@pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "Iran", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_from_utc_timestamp(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
-
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "EST", "MST", "VST", "PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"], ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-def test_from_utc_timestamp_non_utc_fallback(data_gen, time_zone):
-    assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
-    'FromUTCTimestamp')
+        conf = {'spark.rapids.sql.nonUTC.enabled': True})
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('time_zone', ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"], ids=idfn)
@@ -301,7 +307,6 @@ def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
     'FromUTCTimestamp',
     conf = {"spark.rapids.sql.nonUTC.enabled": "true"})
-
 
 @pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai", "EST", "MST", "VST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
@@ -381,30 +386,12 @@ def test_string_to_timestamp_functions_ansi_valid(parser_policy):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
-def test_unix_timestamp_improved(data_gen, ansi_enabled):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
-            "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
-
-@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
-        {'spark.sql.ansi.enabled': ansi_enabled})
+        {'spark.sql.ansi.enabled': ansi_enabled, "spark.rapids.sql.nonUTC.enabled": "true"})
 
-@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
-def test_to_unix_timestamp_improved(data_gen, ansi_enabled):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
 
 str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
@@ -418,11 +405,11 @@ def invalid_date_string_df(spark):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_tz_allow)
 def test_string_to_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
-        {'spark.sql.ansi.enabled': ansi_enabled})
+        {'spark.sql.ansi.enabled': ansi_enabled, "spark.rapids.sql.nonUTC.enabled": "true"})
 
 def test_string_to_unix_timestamp_ansi_exception():
     assert_gpu_and_cpu_error(
@@ -432,11 +419,11 @@ def test_string_to_unix_timestamp_ansi_exception():
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_tz_allow)
 def test_string_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),
-        {'spark.sql.ansi.enabled': ansi_enabled})
+        {'spark.sql.ansi.enabled': ansi_enabled, "spark.rapids.sql.nonUTC.enabled": True})
 
 def test_string_unix_timestamp_ansi_exception():
     assert_gpu_and_cpu_error(
@@ -474,7 +461,7 @@ def test_date_format(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
-@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")

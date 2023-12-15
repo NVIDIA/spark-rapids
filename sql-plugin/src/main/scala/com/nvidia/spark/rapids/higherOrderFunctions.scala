@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.DType
+import ai.rapids.cudf.{DType, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -214,7 +214,7 @@ trait GpuSimpleHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
 
 trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
   def isBound: Boolean
-  def  boundIntermediate: Seq[GpuExpression]
+  def boundIntermediate: Seq[GpuExpression]
 
   protected lazy val inputToLambda: Seq[DataType] = {
     assert(isBound)
@@ -223,18 +223,26 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
 
   private[this] def makeElementProjectBatch(
       inputBatch: ColumnarBatch,
-      listColumn: cudf.ColumnVector): ColumnarBatch = {
-    assert(listColumn.getType.equals(DType.LIST))
+      argColumn: GpuColumnVector): ColumnarBatch = {
+    assert(argColumn.getBase.getType.equals(DType.LIST))
     assert(isBound, "Trying to execute an un-bound transform expression")
+
+    def projectAndExplode(explodeOp: Table => Table): Table = {
+      withResource(GpuProjectExec.project(inputBatch, boundIntermediate)) {
+        intermediateBatch =>
+          withResource(GpuColumnVector.appendColumns(intermediateBatch, argColumn)) {
+            projectedBatch =>
+              withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+                explodeOp(projectedTable)
+              }
+          }
+      }
+    }
 
     if (function.asInstanceOf[GpuLambdaFunction].arguments.length >= 2) {
       // Need to do an explodePosition
-      val boundProject = boundIntermediate :+ argument
-      val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
-        projectedBatch =>
-          withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
-            projectedTable.explodePosition(boundIntermediate.length)
-          }
+      val explodedTable = projectAndExplode { projectedTable =>
+        projectedTable.explodePosition(boundIntermediate.length)
       }
       val reorderedTable = withResource(explodedTable) { explodedTable =>
         // The column order is wrong after an explodePosition. It is
@@ -257,12 +265,8 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
       }
     } else {
       // Need to do an explode
-      val boundProject = boundIntermediate :+ argument
-      val explodedTable = withResource(GpuProjectExec.project(inputBatch, boundProject)) {
-        projectedBatch =>
-          withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
-            projectedTable.explode(boundIntermediate.length)
-          }
+      val explodedTable = projectAndExplode { projectedTable =>
+        projectedTable.explode(boundIntermediate.length)
       }
       withResource(explodedTable) { explodedTable =>
         GpuColumnVector.from(explodedTable, inputToLambda.toArray)
@@ -278,12 +282,12 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(argument.columnarEval(batch)) { arg =>
-      val dataCol = withResource(makeElementProjectBatch(batch, arg.getBase)) { cb =>
+      val dataCol = withResource(makeElementProjectBatch(batch, arg)) { cb =>
         function.columnarEval(cb)
       }
       withResource(dataCol) { _ =>
         val cv = GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)
-        withResource(cv)(transformListColumnView(_))
+        withResource(cv)(transformListColumnView)
       }
     }
   }
