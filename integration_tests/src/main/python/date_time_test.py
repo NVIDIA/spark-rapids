@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import ignore_order, incompat, allow_non_gpu
+from marks import ignore_order, incompat, allow_non_gpu, datagen_overrides
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -204,6 +204,7 @@ def test_datesub(data_gen):
 # than -106032829 for date('0001-01-01') so we have to cap the days values to the lower upper and
 # lower ranges.
 to_unix_timestamp_days_gen=[ByteGen(), ShortGen(), IntegerGen(min_val=-106032829, max_val=103819094, special_cases=[-106032829, 103819094,0,1,-1])]
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10027')
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 @incompat
 @allow_non_gpu(*non_utc_allow)
@@ -218,6 +219,7 @@ def test_dateadd_with_date_overflow(data_gen):
            'unix_timestamp(date_add(a, cast(24 as {})))'.format(string_type)))
 
 to_unix_timestamp_days_gen=[ByteGen(), ShortGen(), IntegerGen(max_val=106032829, min_val=-103819094, special_cases=[106032829, -103819094,0,1,-1])]
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10027')
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 @incompat
 @allow_non_gpu(*non_utc_allow)
@@ -444,11 +446,31 @@ def test_gettimestamp_ansi_exception():
 supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/MM/yyyy',
                           'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM']
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
-def test_date_format(data_gen, date_format):
+@pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
+@allow_non_gpu('ProjectExec')
+def test_date_format_for_date(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
+
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+def test_date_format_for_time(data_gen, date_format):
+    conf = {'spark.rapids.sql.nonUTC.enabled': True}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        conf)
+
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@allow_non_gpu('ProjectExec')
+def test_date_format_for_time_fall_back(data_gen, date_format):
+    conf = {'spark.rapids.sql.nonUTC.enabled': True}
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        'ProjectExec',
+        conf)
 
 @pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
@@ -551,7 +573,8 @@ def test_unsupported_fallback_to_date():
 # (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds 
 # considering the influence of time zone.
 ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, 16777215.0, float('inf'), float('-inf'), float('nan')])
-seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(), 
+# FIXME: min_val is changed to -62135410400 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
+seconds_gens = [LongGen(min_val=-62135410400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(),
                 DoubleGen(min_exp=0, max_exp=32), ts_float_gen, DecimalGen(16, 6), DecimalGen(13, 3), DecimalGen(10, 0), DecimalGen(7, -3), DecimalGen(6, 6)]
 @pytest.mark.parametrize('data_gen', seconds_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -567,7 +590,7 @@ def test_timestamp_seconds_long_overflow():
         error_message='long overflow')
 
 # For Decimal(20, 7) case, the data is both 'Overflow' and 'Rounding necessary', this case is to verify
-# that 'Rounding necessary' check is before 'Overflow' check. So we should make sure that every decimal 
+# that 'Rounding necessary' check is before 'Overflow' check. So we should make sure that every decimal
 # value in test data is 'Rounding necessary' by setting full_precision=True to avoid leading and trailing zeros.
 # Otherwise, the test data will bypass the 'Rounding necessary' check and throw an 'Overflow' error.
 @pytest.mark.parametrize('data_gen', [DecimalGen(7, 7, full_precision=True), DecimalGen(20, 7, full_precision=True)], ids=idfn)
@@ -586,7 +609,8 @@ def test_timestamp_seconds_decimal_overflow(data_gen):
         conf={},
         error_message='Overflow')
 
-millis_gens = [LongGen(min_val=-62135510400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
+# FIXME: min_val is changed to -62135410400000 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
+millis_gens = [LongGen(min_val=-62135410400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
 @pytest.mark.parametrize('data_gen', millis_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_millis(data_gen):
@@ -600,7 +624,8 @@ def test_timestamp_millis_long_overflow():
         conf={},
         error_message='long overflow')
 
-micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
+# FIXME: min_val is changed to -62135410400 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
+micros_gens = [LongGen(min_val=-62135410400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
 @pytest.mark.parametrize('data_gen', micros_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_micros(data_gen):

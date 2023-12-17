@@ -145,23 +145,19 @@ edge_cases = [
 edge_cases_gen = SetValuesGen(StringType(), edge_cases)
 
 url_gen = StringGen(url_pattern)
+
+supported_parts = ['PROTOCOL', 'HOST']
+unsupported_parts = ['PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
-def test_parse_url_protocol(data_gen):
+@pytest.mark.parametrize('part', supported_parts, ids=idfn)
+def test_parse_url_supported(data_gen, part):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
-                "a",
-                "parse_url(a, 'PROTOCOL')"
-                ))
-    
-unsupported_parts = ['HOST', 'PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+        lambda spark: unary_op_df(spark, data_gen).selectExpr("a", "parse_url(a, '" + part + "')"))
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')
 @pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
-def test_parse_url_host_fallback(part):
+def test_parse_url_unsupported_fallback(part):
     assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, '" + part + "')"
-                ),
-            'ParseUrl')
+        lambda spark: unary_op_df(spark, url_gen).selectExpr("a", "parse_url(a, '" + part + "')"),
+        'ParseUrl')

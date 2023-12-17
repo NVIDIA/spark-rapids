@@ -37,6 +37,15 @@ object GpuParseUrl {
   val FILE = "FILE"
   val AUTHORITY = "AUTHORITY"
   val USERINFO = "USERINFO"
+
+  def isSupportedPart(part: String): Boolean = {
+    part match {
+      case PROTOCOL | HOST =>
+        true
+      case _ =>
+        false
+    }
+  }
 }
 
 case class GpuParseUrl(children: Seq[Expression]) 
@@ -54,8 +63,11 @@ case class GpuParseUrl(children: Seq[Expression])
     part match {
       case PROTOCOL =>
         ParseURI.parseURIProtocol(url.getBase)
-      case HOST | PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
-        throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part")
+      case HOST =>
+        ParseURI.parseURIHost(url.getBase)
+      case PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
+        throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
+            s"Only PROTOCOL and HOST are supported")
       case _ =>
         throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
     }
@@ -67,7 +79,8 @@ case class GpuParseUrl(children: Seq[Expression])
       // return a null columnvector
       return ColumnVector.fromStrings(null, null)
     }
-    throw new UnsupportedOperationException(s"$this only supports partToExtract = PROTOCOL")
+    throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
+        s"Only PROTOCOL and HOST are supported")
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
@@ -79,8 +92,8 @@ case class GpuParseUrl(children: Seq[Expression])
             case partScalar: GpuScalar =>
               GpuColumnVector.from(doColumnar(urls, partScalar), dataType)
             case _ =>
-              throw new 
-                  UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+              throw new UnsupportedOperationException(
+                s"Cannot columnar evaluate expression: $this")
           }
         }
       }

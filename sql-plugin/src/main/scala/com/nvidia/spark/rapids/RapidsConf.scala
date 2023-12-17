@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
+import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -117,7 +118,7 @@ object ConfHelper {
   }
 }
 
-abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String, 
+abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String,
     val isInternal: Boolean, val isStartUpOnly: Boolean, val isCommonlyUsed: Boolean) {
 
   def get(conf: Map[String, String]): T
@@ -127,7 +128,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
   override def toString: String = key
 }
 
-class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String, 
+class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false,
     val defaultValue: T)
   extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly, isCommonlyUsed) {
@@ -164,7 +165,7 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, 
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal,
   isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): Option[T] = {
@@ -420,7 +421,7 @@ object RapidsConf {
     .stringConf
     .createOptional
 
-  val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
+val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("The pattern to use to generate the named pipe path. Occurrences of %p in the pattern " +
       "will be replaced with the process ID of the executor.")
     .internal
@@ -1380,12 +1381,17 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
-  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
-    .doc("Only to be used in tests. If enabled the retry iterator will inject a GpuRetryOOM " +
-         "or CpuRetryOOM once per invocation.")
+  val TEST_RETRY_OOM_INJECTION_MODE = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If `true` the retry iterator will inject a GpuRetryOOM " +
+         "or CpuRetryOOM once per invocation. Furthermore an extended config " +
+         "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU,split=<bool>` can be provided to " +
+         "specify the number of OOMs to generate; how many to skip before doing so; whether to " +
+         "filter by allocation events by host(CPU), device(GPU), or both (CPU_OR_GPU); " +
+         "whether to inject *SplitAndRetryOOM instead of plain *RetryOOM exceptions." +
+         "Note *SplitAndRetryOOM exceptions are not always handled - use with care.")
     .internal()
-    .booleanConf
-    .createWithDefault(false)
+    .stringConf
+    .createWithDefault(false.toString)
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
@@ -1652,7 +1658,7 @@ object RapidsConf {
     .stringConf
     .createWithDefault("none")
 
-  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
     .startupOnly()
@@ -2295,7 +2301,53 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
-  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
+  /**
+   * Convert a string value to the injection configuration OomInjection.
+   *
+   * The new format is a CSV in any order
+   *  "num_ooms=<integer>,skip=<integer>,type=<string value of OomInjectionType>"
+   *
+   * "type" maps to OomInjectionType to run count against oomCount and skipCount
+   * "num_ooms" maps to oomCount (default 1), the number of allocations resulting in an OOM
+   * "skip" maps to skipCount (default 0), the number of matching  allocations to skip before
+   * injecting an OOM at the skip+1st allocation.
+   * *split* maps to withSplit (default false), determining whether to inject
+   * *SplitAndRetryOOM instead of plain *RetryOOM exceptions
+   *
+   * For backwards compatibility support existing binary configuration
+   *   "false", disabled, i.e. oomCount=0, skipCount=0, injectionType=None
+   *   "true" or anything else but "false"  yields the default
+   *      oomCount=1, skipCount=0, injectionType=CPU_OR_GPU, withSplit=false
+   */
+  lazy val testRetryOOMInjectionMode : OomInjectionConf = {
+    get(TEST_RETRY_OOM_INJECTION_MODE).toLowerCase match {
+      case "false" =>
+        OomInjectionConf(numOoms = 0, skipCount = 0,
+        oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case "true" =>
+        OomInjectionConf(numOoms = 1, skipCount = 0,
+          oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case injectConfStr =>
+        val injectConfMap = injectConfStr.split(',').map(_.split('=')).collect {
+          case Array(k, v) => k -> v
+        }.toMap
+        val numOoms = injectConfMap.getOrElse("num_ooms", 1.toString)
+        val skipCount = injectConfMap.getOrElse("skip", 0.toString)
+        val oomFilterStr = injectConfMap
+          .getOrElse("type", OomInjectionType.CPU_OR_GPU.toString)
+          .toUpperCase()
+        val oomFilter = OomInjectionType.valueOf(oomFilterStr)
+        val withSplit = injectConfMap.getOrElse("split", false.toString)
+        val ret = OomInjectionConf(
+          numOoms = numOoms.toInt,
+          skipCount = skipCount.toInt,
+          oomInjectionFilter = oomFilter,
+          withSplit = withSplit.toBoolean
+        )
+        logDebug(s"Parsed ${ret} from ${injectConfStr} via injectConfMap=${injectConfMap}");
+        ret
+    }
+  }
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
@@ -2840,3 +2892,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     conf.contains(key)
   }
 }
+
+case class OomInjectionConf(
+  numOoms: Int,
+  skipCount: Int,
+  withSplit: Boolean,
+  oomInjectionFilter: OomInjectionType
+)
