@@ -32,13 +32,22 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * A helper case class that contains the buffer we spilled from our current tier
- * and likely a new buffer created in a spill store tier, but it can be set to None.
- * If the buffer already exists in the target spill store, `newBuffer` will be None.
- * @param spilledBuffer a `RapidsBuffer` we spilled from this store
- * @param newBuffer an optional `RapidsBuffer` in the target spill store.
+ * Helper case classes that contain the buffer we spilled or unspilled from our current tier
+ * and likely a new buffer created in a target store tier, but it can be set to None.
+ * If the buffer already exists in the target store, `newBuffer` will be None.
+ * @param spillBuffer a `RapidsBuffer` we spilled or unspilled from this store
+ * @param newBuffer an optional `RapidsBuffer` in the target store.
  */
-case class BufferSpill(spilledBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
+trait SpillAction {
+  val spillBuffer: RapidsBuffer
+  val newBuffer: Option[RapidsBuffer]
+}
+
+case class BufferSpill(spillBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
+    extends SpillAction
+
+case class BufferUnspill(spillBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
+    extends SpillAction
 
 /**
  * Base class for all buffer store types.
@@ -307,7 +316,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
                     // as it has already spilled.
                     BufferSpill(nextSpillableBuffer, None)
                   }
-                  totalSpilled += bufferSpill.spilledBuffer.memoryUsedBytes
+                  totalSpilled += bufferSpill.spillBuffer.memoryUsedBytes
                   bufferSpills.append(bufferSpill)
                   catalog.updateTiers(bufferSpill)
                 }
@@ -333,7 +342,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
             // the buffer via events.
             // https://github.com/NVIDIA/spark-rapids/issues/8610
             Cuda.deviceSynchronize()
-            bufferSpills.foreach(_.spilledBuffer.safeFree())
+            bufferSpills.foreach(_.spillBuffer.safeFree())
           }
         }
       }

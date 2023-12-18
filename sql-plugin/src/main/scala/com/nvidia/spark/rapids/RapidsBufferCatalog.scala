@@ -613,7 +613,7 @@ class RapidsBufferCatalog(
     }
   }
 
-  def updateTiers(bufferSpill: BufferSpill): Long = bufferSpill match {
+  def updateTiers(bufferSpill: SpillAction): Long = bufferSpill match {
     case BufferSpill(spilledBuffer, maybeNewBuffer) =>
       logDebug(s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
           s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
@@ -621,6 +621,14 @@ class RapidsBufferCatalog(
       maybeNewBuffer.foreach(registerNewBuffer)
       removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
       spilledBuffer.memoryUsedBytes
+
+    case BufferUnspill(unspilledBuffer, maybeNewBuffer) =>
+      logDebug(s"Unspilled ${unspilledBuffer.id} from tier ${unspilledBuffer.storageTier}. " +
+          s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
+          s"${maybeNewBuffer}")
+      maybeNewBuffer.foreach(registerNewBuffer)
+      removeBufferTier(unspilledBuffer.id, unspilledBuffer.storageTier)
+      unspilledBuffer.memoryUsedBytes
   }
 
   /**
@@ -667,10 +675,10 @@ class RapidsBufferCatalog(
         maybeNewBuffer.map { newBuffer =>
           logDebug(s"got new RapidsHostMemoryStore buffer ${newBuffer.id}")
           newBuffer.addReference() // add a reference since we are about to use it
-          updateTiers(BufferSpill(buffer, Some(newBuffer)))
+          updateTiers(BufferUnspill(buffer, Some(newBuffer)))
           buffer.safeFree()
           newBuffer
-        }.get // the GPU store has to return a buffer here for now, or throw OOM
+        }.get // the host store has to return a buffer here for now, or throw OOM
     }
   }
 

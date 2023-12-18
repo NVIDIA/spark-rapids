@@ -267,7 +267,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
         withResource(spillableBuffer) { _ =>
           // the refcount of 1 is the store
           assertResult(1)(hmb.getRefCount)
-          spillableBuffer.withHostBufferReadOnly { memoryBuffer =>
+          withResource(spillableBuffer.getHostBuffer()) { memoryBuffer =>
             assertResult(hmb)(memoryBuffer)
             assertResult(2)(memoryBuffer.getRefCount)
           }
@@ -278,33 +278,46 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
   }
 
   test("host buffer originated: get host memory buffer after spill") {
+    RapidsBufferCatalog.close()
     val spillPriority = -10
     val hostStoreMaxSize = 1L * 1024 * 1024
-    val bm = new RapidsDiskBlockManager(new SparkConf())
-    withResource(new RapidsDiskStore(bm)) { diskStore =>
-      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) { hostStore =>
-        withResource(new RapidsDeviceMemoryStore) { devStore =>
-          val catalog = new RapidsBufferCatalog(devStore, hostStore)
-          devStore.setSpillStore(hostStore)
-          hostStore.setSpillStore(diskStore)
-          val hmb = HostMemoryBuffer.allocate(1L * 1024)
-          val spillableBuffer = SpillableHostBuffer(
-            hmb,
-            hmb.getLength,
-            spillPriority,
-            catalog)
-          assertResult(1)(hmb.getRefCount)
-          //  we spill it
-          catalog.synchronousSpill(hostStore, 0)
-          withResource(spillableBuffer) { _ =>
-            // the refcount of the original buffer is 0 because it spilled
-            assertResult(0)(hmb.getRefCount)
-            spillableBuffer.withHostBufferReadOnly { memoryBuffer =>
-              assertResult(memoryBuffer.getLength)(hmb.getLength)
+    try {
+      val bm = new RapidsDiskBlockManager(new SparkConf())
+      val (catalog, devStore, hostStore, diskStore) =
+        closeOnExcept(new RapidsDiskStore(bm)) { diskStore =>
+          closeOnExcept(new RapidsDeviceMemoryStore()) { devStore =>
+            closeOnExcept(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) { hostStore =>
+              devStore.setSpillStore(hostStore)
+              hostStore.setSpillStore(diskStore)
+              val catalog = closeOnExcept(
+                new RapidsBufferCatalog(devStore, hostStore)) { catalog => catalog }
+              (catalog, devStore, hostStore, diskStore)
             }
           }
         }
+
+      RapidsBufferCatalog.setDeviceStorage(devStore)
+      RapidsBufferCatalog.setHostStorage(hostStore)
+      RapidsBufferCatalog.setDiskStorage(diskStore)
+      RapidsBufferCatalog.setCatalog(catalog)
+
+      val hmb = HostMemoryBuffer.allocate(1L * 1024)
+      val spillableBuffer = SpillableHostBuffer(
+        hmb,
+        hmb.getLength,
+        spillPriority)
+      assertResult(1)(hmb.getRefCount)
+      //  we spill it
+      RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, 0)
+      withResource(spillableBuffer) { _ =>
+        // the refcount of the original buffer is 0 because it spilled
+        assertResult(0)(hmb.getRefCount)
+        withResource(spillableBuffer.getHostBuffer()) { memoryBuffer =>
+          assertResult(memoryBuffer.getLength)(hmb.getLength)
+        }
       }
+    } finally {
+      RapidsBufferCatalog.close()
     }
   }
 
@@ -326,7 +339,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
             catalog)
           // spillable is 1K
           assertResult(hmb.getLength)(hostStore.currentSpillableSize)
-          spillableBuffer.withHostBufferReadOnly { memoryBuffer =>
+          withResource(spillableBuffer.getHostBuffer()) { memoryBuffer =>
             // 0 because we have a reference to the memoryBuffer
             assertResult(0)(hostStore.currentSpillableSize)
             val spilled = catalog.synchronousSpill(hostStore, 0)

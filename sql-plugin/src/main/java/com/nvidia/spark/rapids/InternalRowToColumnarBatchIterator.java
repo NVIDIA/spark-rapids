@@ -148,20 +148,15 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     numRowsEstimate = (int) bufsAndNumRows._2.targetSize();
     long dataLength = calcDataLengthEstimate(numRowsEstimate);
     int used[];
-    try (SpillableHostBuffer sdb = bufsAndNumRows._1[0];
-        SpillableHostBuffer sob = bufsAndNumRows._1[1];
+    try (SpillableHostBuffer spillableDataBuffer = bufsAndNumRows._1[0];
+        SpillableHostBuffer spillableOffsetsBuffer = bufsAndNumRows._1[1];
     ) {
-      HostMemoryBuffer[] hBufs = getHostBuffersWithRetry(sdb, sob);
+      HostMemoryBuffer[] hBufs =
+          getHostBuffersWithRetry(spillableDataBuffer, spillableOffsetsBuffer);
       try(HostMemoryBuffer dataBuffer = hBufs[0];
           HostMemoryBuffer offsetsBuffer = hBufs[1];
       ) {
         used = fillBatch(dataBuffer, offsetsBuffer, dataLength, numRowsEstimate);
-      }
-      hBufs = getHostBuffersWithRetry(sdb, sob);
-      try (
-          HostMemoryBuffer dataBuffer = hBufs[0];
-          HostMemoryBuffer offsetsBuffer = hBufs[1];
-      ) {
         int dataOffset = used[0];
         int currentRow = used[1];
         // We don't want to loop forever trying to copy nothing
