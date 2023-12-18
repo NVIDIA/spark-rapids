@@ -65,8 +65,7 @@ conditions within the computation itself the result may not be the same each tim
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with
-the config
+worked with plain Spark. This is behavior is enabled by default but can be disabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](additional-functionality/advanced_configs.md#sql.variableFloatAgg.enabled).
 
 ### `0.0` vs `-0.0`
@@ -82,6 +81,33 @@ after Spark 3.1.0.
 
 We do not disable operations that produce different results due to `-0.0` in the data because it is
 considered to be a rare occurrence.
+
+### `NaN` vs `NaN`
+
+Apache Spark does not have a consistent way to handle `NaN` comparison. Sometimes, all `NaN` are
+considered as one unique value while other times they can be treated as different. The outcome of
+`NaN` comparison can differ in various operations and also changed between Spark versions.
+The RAPIDS Accelerator tries to match its output with Apache Spark except for a few operation(s) listed below:
+ - `IN` SQL expression: `NaN` can be treated as different values in Spark 3.1.2 and
+ prior versions, see [SPARK-36792](https://issues.apache.org/jira/browse/SPARK-36792) for more details.
+The RAPIDS Accelerator compares `NaN` values as equal for this operation which matches
+the behavior of Apache Spark 3.1.3 and later versions.
+
+
+## Decimal Support
+
+Apache Spark supports decimal values with a precision up to 38. This equates to 128-bits.
+When processing the data, in most cases, it is temporarily converted to Java's `BigDecimal` type
+which allows for effectively unlimited precision. Overflows will be detected whenever the
+`BigDecimal` value is converted back into the Spark decimal type.
+
+The RAPIDS Accelerator does not implement a GPU equivalent of `BigDecimal`, but it does implement
+computation on 256-bit values to allow the detection of overflows. The points at which overflows
+are detected may differ between the CPU and GPU. Spark gives no guarantees that overflows are
+detected if an intermediate value could overflow the original decimal type during computation
+but the final value does not (e.g.: a sum of values with many large positive values followed by
+many large negative values). Spark injects overflow detection at various points during aggregation,
+and these points can fluctuate depending on cluster shape and number of shuffle partitions.
 
 ## Unicode
 
@@ -105,6 +131,10 @@ it and they should be avoided.
 
 Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
+
+The GPU accelerated CSV parser does not replace invalid UTF-8 characters with the Unicode
+replacement character �.  Instead it just passes them through as described in this
+[issue](https://github.com/NVIDIA/spark-rapids/issues/9560).
 
 ### CSV Dates
 
@@ -246,23 +276,22 @@ E        at org.apache.spark.sql.execution.datasources.orc.OrcUtils$.createAggIn
 The Spark community is planning to work on a runtime fallback to read from actual rows when ORC
 file-statistics are missing (see [SPARK-34960 discussion](https://issues.apache.org/jira/browse/SPARK-34960)).
 
-**Limitations With RAPIDS**
-
-RAPIDS does not support whole file statistics in ORC file in releases prior to release 22.06.
-
 *Writing ORC Files*
 
-If you are using release prior to release 22.06 where CUDF does not support writing file statistics, then the ORC files
-written by the GPU are incompatible with the optimization causing an ORC read-job to fail as described above.
-In order to prevent job failures in releases prior to release 22.06, `spark.sql.orc.aggregatePushdown` should be disabled
-while reading ORC files that were written by the GPU.
+There are issues writing ORC files with dates or timestamps that fall within the lost days during
+the switch from the Julian to Gregorian calendar, i.e.: between October 3rd, 1582 and October 15th,
+1582. Dates or timestamps that fall within the range of lost days will not always be written
+properly by the GPU to the ORC file. The values read by the CPU and the GPU may differ with the
+CPU often rounding the day up to October 15th, 1582 whereas the GPU does not.
+
+Note that the CPU rounds up dates or timestamps in the lost days range to October 15th, 1582
+_before_ writing to the ORC file. If the CPU writes these problematic dates or timestamps to an
+ORC file, they will be read properly by both the CPU and the GPU.
 
 *Reading ORC Files*
 
-To take advantage of the aggregate optimization, the plugin falls back to the CPU as it is a meta data only query.
-As long as the ORC file has valid statistics (written by the CPU), then the pushing down aggregates to the ORC layer
-should be successful.
-Otherwise, reading an ORC file written by the GPU requires `aggregatePushdown` to be disabled.
+To take advantage of the aggregate query optimization, where only the ORC metadata is read to
+satisfy the query, the ORC read falls back to the CPU as it is a metadata-only query.
 
 ## Parquet
 
@@ -315,25 +344,50 @@ In the current version, nested types (array, struct, and map types) are not yet 
 
 This particular function supports to output a map or struct type with limited functionalities.
 
-For struct output type, the function only supports struct of struct, array, string and int types. The output is incompatible if duplicated json key names are present in the input strings. For schemas that include IntegerType,
-if arbitrarily large numbers are specified in the JSON strings, the GPU implementation will cast the numbers to
-IntegerType, whereas CPU Spark will return null.
+The `from_json` function is disabled by default because it is experimental and has some known incompatibilities
+with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStructs=true`.
+
+Dates are partially supported but there are some known issues:
+
+- Only the default `dateFormat` of `yyyy-MM-dd` is supported. The query will fall back to CPU if any other format
+  is specified ([#9667](https://github.com/NVIDIA/spark-rapids/issues/9667))
+- Strings containing integers with more than four digits will be 
+  parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4 
+  will parse these numbers as number of days since the epoch, and in Spark 3.4 and later, an exception will be thrown.
+
+Timestamps are partially supported but there are some known issues:
+
+- Only the default `timestampFormat` of `yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]` is supported. The query will fall back to CPU if any other format
+  is specified ([#9273](https://github.com/NVIDIA/spark-rapids/issues/9723))
+- Strings containing integers with more than four digits will be
+  parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4
+  will parse these numbers as number of days since the epoch, and in Spark 3.4 and later, an exception will be thrown.
+- Strings containing special date constant values such as `now` and `today` will parse as null ([#9724](https://github.com/NVIDIA/spark-rapids/issues/9724)),
+  which differs from the behavior in Spark 3.1.x
+
+When reading numeric values, the GPU implementation always supports leading zeros regardless of the setting
+for the JSON option `allowNumericLeadingZeros` ([#9588](https://github.com/NVIDIA/spark-rapids/issues/9588)).
+
+For struct output type, the function only supports struct of struct, array, string,  integral, floating-point, and
+decimal types. The output is incompatible if duplicated json key names are present in the input strings. For schemas
+that include IntegerType, if arbitrarily large numbers are specified in the JSON strings, the GPU implementation will
+cast the numbers to IntegerType, whereas CPU Spark will return null.
 
 In particular, the output map is not resulted from a regular JSON parsing but instead it will just contain plain text of key-value pairs extracted directly from the input JSON string. Due to such limitations, the input JSON map type schema must be `MAP<STRING,STRING>` and nothing else. Furthermore, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. This may lead to some minor differences in the output if compared to the result of Spark CPU's `from_json`, such as:
  * Floating point numbers in the input JSON string such as `1.2000` will not be reformatted to `1.2`. Instead, the output will be the same as the input.
- * If the input JSON is given as multiple rows, any row containing invalid JSON format will lead to an application crash. On the other hand, Spark CPU version just produces nulls for the invalid rows, as shown below:
- ```
-scala> val df = Seq("{}", "BAD", "{\"A\": 100}").toDF
-df: org.apache.spark.sql.DataFrame = [value: string]
-scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
-+----------+
-|   entries|
-+----------+
-|        {}|
-|      null|
-|{A -> 100}|
-+----------+
-```
+ * If the input JSON is given as multiple rows, any row containing invalid JSON format will be parsed as an empty 
+   struct instead of a null value ([#9592](https://github.com/NVIDIA/spark-rapids/issues/9592)).
+
+### `to_json` function
+
+The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
+with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsToJson=true`.
+
+Known issues are:
+
+- There can be rounding differences when formatting floating-point numbers as strings. For example, Spark may
+  produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
+- Not all JSON options are respected
 
 ### JSON Floating Point
 
@@ -640,8 +694,7 @@ leads to restrictions:
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or
-later, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToDecimal.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToDecimal.enabled) to `false`
 
 ### Float to Integral Types
@@ -652,11 +705,9 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
-
-This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
 ### Float to String
 
@@ -668,7 +719,7 @@ The `format_number` function will retain 10 digits of precision for the GPU when
 point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
 will return `1,234,567,890.00000` on the GPU and `1,234,567,890.12346` on the CPU. To enable this on the GPU, set [`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `true`.
 
-Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
@@ -682,7 +733,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date

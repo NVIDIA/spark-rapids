@@ -68,17 +68,17 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 Spark 3.0.2's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes
@@ -114,17 +114,19 @@ that the classloader is
 [set up at load time](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/scala/com/nvidia/spark/SQLPlugin.scala#L29)
 before the DriverPlugin and ExecutorPlugin instances are called the `init` method on.
 
-By making a visible class merely a wrapper of the real implementation, extending `scala.Proxy` where `self` is a lazy
-val, we prevent classes from Parallel Worlds to be loaded before they can be, and are actually required.
+By making a visible class merely a wrapper of the real implementation where the real implementation
+is a `lazy val` we prevent classes from Parallel Worlds to be loaded before they can be, and are
+actually required.
+
 For examples see:
 
-1. `abstract class ProxyRapidsShuffleInternalManagerBase`
+1. `class ProxyRapidsShuffleInternalManagerBase`
 2. `class ExclusiveModeGpuDiscoveryPlugin`
 
 Note that we currently have to manually code up the delegation methods to the tune of:
 
 ```Scala
-  def method(x: SomeThing) = self.method(x)
+  def method(x: SomeThing) = realImpl.method(x)
 ```
 
 This could be automatically generated with a simple tool processing the `scalap` output or Scala macros at
