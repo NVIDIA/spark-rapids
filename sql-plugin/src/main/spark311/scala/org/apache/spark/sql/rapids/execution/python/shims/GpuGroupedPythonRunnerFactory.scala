@@ -37,22 +37,21 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import org.apache.spark.api.python._
-import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuArrowPythonRunnerShims(
-  conf: org.apache.spark.sql.internal.SQLConf,
-  chainedFunc: Seq[ChainedPythonFunctions],
-  argOffsets: Array[Array[Int]],
-  dedupAttrs: StructType,
-  pythonOutputSchema: StructType) {
+case class GpuGroupedPythonRunnerFactory(
+    conf: org.apache.spark.sql.internal.SQLConf,
+    chainedFunc: Seq[ChainedPythonFunctions],
+    argOffsets: Array[Array[Int]],
+    dedupAttrs: StructType,
+    pythonOutputSchema: StructType) {
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
-  def getRunner(): GpuPythonRunnerBase[ColumnarBatch] = {
+  def getRunner(): GpuBasePythonRunner[ColumnarBatch] = {
     new GpuArrowPythonRunner(
       chainedFunc,
       PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,

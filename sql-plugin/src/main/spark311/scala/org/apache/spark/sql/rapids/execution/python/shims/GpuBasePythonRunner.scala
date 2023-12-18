@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
@@ -34,28 +37,14 @@
 {"spark": "341"}
 {"spark": "342"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.rapids.shims.api.python
+package org.apache.spark.sql.rapids.execution.python.shims
 
-import java.io.DataInputStream
-import java.net.Socket
-import java.util.concurrent.atomic.AtomicBoolean
+import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python.BasePythonRunner
-
-abstract class ShimBasePythonRunner[IN, OUT](
-    funcs : scala.Seq[org.apache.spark.api.python.ChainedPythonFunctions],
-    evalType : scala.Int, argOffsets : scala.Array[scala.Array[scala.Int]]
-) extends BasePythonRunner[IN, OUT](funcs, evalType, argOffsets) {
-  protected abstract class ShimReaderIterator(
-    stream: DataInputStream,
-    writerThread: WriterThread,
-    startTime: Long,
-    env: SparkEnv,
-    worker: Socket,
-    pid: Option[Int],
-    releasedOrClosed: AtomicBoolean,
-    context: TaskContext
-  ) extends ReaderIterator(stream, writerThread, startTime, env, worker, pid,
-    releasedOrClosed, context)
-}
+abstract class GpuBasePythonRunner[IN](
+    funcs: Seq[ChainedPythonFunctions],
+    evalType: Int,
+    argOffsets: Array[Array[Int]],
+    jobArtifactUUID: Option[String] // Introduced after 341
+) extends BasePythonRunner[IN, ColumnarBatch](funcs, evalType, argOffsets)
