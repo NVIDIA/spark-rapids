@@ -66,7 +66,7 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
 
   override private[spark] def killTaskIfInterrupted(): Unit = {}
 
-  override private[spark] def getKillReason() = None
+  override def getKillReason() = None
 
   override def taskMemoryManager() = null
 
