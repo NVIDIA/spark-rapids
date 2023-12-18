@@ -37,12 +37,15 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.GpuOverrides
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, TimeZoneAwareExpression}
@@ -104,9 +107,23 @@ case class GpuTimeAdd(start: Expression,
 
             // add interval
             if (interval != 0) {
-              withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { d =>
-                GpuColumnVector.from(timestampAddDuration(l.getBase, d), dataType)
+              val zoneID = ZoneId.of(timeZoneId.getOrElse("UTC"))
+              val resCv = if (GpuOverrides.isUTCTimezone(zoneId)) {
+                withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { d =>
+                  timestampAddDuration(l.getBase, d)
+                }
+              } else {
+                val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
+                  zoneID)) { utcTimestamp =>
+                  withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { 
+                    d => timestampAddDuration(utcTimestamp, d)
+                  }
+                }
+                withResource(utcRes) { _ =>
+                  GpuTimeZoneDB.fromTimestampToUtcTimestamp(utcRes, zoneID)
+                }
               }
+              GpuColumnVector.from(resCv, dataType)
             } else {
               l.incRefCount()
             }
@@ -115,9 +132,23 @@ case class GpuTimeAdd(start: Expression,
               case (_: TimestampType, _: DayTimeIntervalType) =>
                 // DayTimeIntervalType is stored as long
                 // bitCastTo is similar to reinterpret_cast, it's fast, the time can be ignored.
-                withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
-                  GpuColumnVector.from(timestampAddDuration(l.getBase, duration), dataType)
+                val zoneID = ZoneId.of(timeZoneId.getOrElse("UTC"))
+                val resCv = if (GpuOverrides.isUTCTimezone(zoneId)) {
+                  withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
+                    timestampAddDuration(l.getBase, duration)
+                  }
+                } else {
+                  val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
+                    zoneID)) { utcTimestamp =>
+                    withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
+                      timestampAddDuration(utcTimestamp, duration)
+                    }
+                  }
+                  withResource(utcRes) { utc =>
+                    GpuTimeZoneDB.fromTimestampToUtcTimestamp(utc, zoneID)
+                  }
                 }
+                GpuColumnVector.from(resCv, dataType)
               case _ =>
                 throw new UnsupportedOperationException(
                   "GpuTimeAdd takes column and interval as an argument only")

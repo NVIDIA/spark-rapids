@@ -140,15 +140,15 @@ case class GpuYear(child: Expression) extends GpuDateUnaryExpression {
     input.getBase.year()
 }
 
-abstract class GpuTimeMath(
-    start: Expression,
+case class GpuDateAddInterval(start: Expression,
     interval: Expression,
-    timeZoneId: Option[String] = None)
-   extends ShimBinaryExpression
-       with GpuExpression
-       with TimeZoneAwareExpression
-       with ExpectsInputTypes
-       with Serializable {
+    timeZoneId: Option[String] = None,
+    ansiEnabled: Boolean = SQLConf.get.ansiEnabled)
+  extends ShimBinaryExpression
+  with GpuExpression
+  with TimeZoneAwareExpression
+  with ExpectsInputTypes
+  with Serializable {
 
   def this(start: Expression, interval: Expression) = this(start, interval, None)
 
@@ -157,61 +157,16 @@ abstract class GpuTimeMath(
 
   override def toString: String = s"$left - $right"
   override def sql: String = s"${left.sql} - ${right.sql}"
-  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, CalendarIntervalType)
-
-  override def dataType: DataType = TimestampType
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
-        (lhs, rhs) match {
-          case (l, intvlS: GpuScalar)
-              if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
-            // Scalar does not support 'CalendarInterval' now, so use
-            // the Scala value instead.
-            // Skip the null check because it wll be detected by the following calls.
-            val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
-            if (intvl.months != 0) {
-              throw new UnsupportedOperationException("Months aren't supported at the moment")
-            }
-            val usToSub = intvl.days * microSecondsInOneDay + intvl.microseconds
-            if (usToSub != 0) {
-              withResource(Scalar.fromLong(usToSub)) { us_s =>
-                withResource(l.getBase.bitCastTo(DType.INT64)) { us =>
-                  withResource(intervalMath(us_s, us)) { longResult =>
-                    GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
-                  }
-                }
-              }
-            } else {
-              l.incRefCount()
-            }
-          case _ =>
-            throw new UnsupportedOperationException("only column and interval arguments " +
-              s"are supported, got left: ${lhs.getClass} right: ${rhs.getClass}")
-        }
-      }
-    }
-  }
-
-  def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
-}
-
-case class GpuDateAddInterval(start: Expression,
-    interval: Expression,
-    timeZoneId: Option[String] = None,
-    ansiEnabled: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuTimeMath(start, interval, timeZoneId) {
-
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
+  def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
     us.add(us_s)
   }
 
