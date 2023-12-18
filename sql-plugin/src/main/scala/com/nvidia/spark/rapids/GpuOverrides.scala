@@ -1686,8 +1686,9 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[DateFormatClass](a, conf, p, r) {
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuDateFormatClass(lhs, rhs, strfFormat)
+          GpuDateFormatClass(lhs, rhs, strfFormat, a.timeZoneId)
       }
     ),
     expr[ToUnixTimestamp](
