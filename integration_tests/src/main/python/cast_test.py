@@ -18,7 +18,7 @@ from asserts import *
 from conftest import is_not_utc
 from data_gen import *
 from spark_session import *
-from marks import allow_non_gpu, approximate_float, datagen_overrides
+from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
@@ -151,6 +151,7 @@ def test_cast_string_date_non_ansi():
                                       StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
                                       ],
                         ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.

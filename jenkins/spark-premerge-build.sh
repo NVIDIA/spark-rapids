@@ -163,7 +163,7 @@ ci_2() {
     source "$(dirname "$0")"/test-timezones.sh
     for tz in "${time_zones_test_cases[@]}"
     do
-        TZ=$tz TEST='test_parquet_read_round_trip or test_read_round_trip or test_basic_csv_read or test_cast_string_ts_valid_format or test_unix_timestamp or test_from_utc_timestamp' ./integration_tests/run_pyspark_from_build.sh
+        TZ=$tz ./integration_tests/run_pyspark_from_build.sh --tz_sensitive_case_only
     done
 
     # enable avro test separately

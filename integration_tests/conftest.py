@@ -62,3 +62,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--pyarrow_test", action='store_true', default=False, help="if enable pyarrow tests"
     )
+    parser.addoption(
+        "--tz_sensitive_test", action='store_true', default=False, help="if true test will be tested against extra timezones"
+    )
