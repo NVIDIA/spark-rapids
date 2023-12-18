@@ -220,21 +220,19 @@ def _prep_func_for_compare(func, mode):
             raise RuntimeError('Local Sort is only supported on a collect')
     return (bring_back, collect_type)
 
-def _sort_locally(from_cpu=None, from_gpu=None):
+# Sort each of the dataframes. If there are array columns to sort, then sort each of those values
+# in each dataframe
+def _sort_locally(*dataframes):
     array_columns = array_columns_to_sort_locally()
-    if array_columns:
-        if from_cpu is not None:
-            for r in from_cpu:
+    def sort_rows(rows):
+        if array_columns:
+            for r in rows:
                 for col in array_columns:
                     r[col].sort(key=_RowCmp)
-        if from_gpu is not None:
-            for r in from_gpu:
-                for col in array_columns:
-                    r[col].sort(key=_RowCmp)
-    if from_cpu is not None:
-        from_cpu.sort(key=_RowCmp)
-    if from_gpu is not None:
-        from_gpu.sort(key=_RowCmp)
+        rows.sort(key=_RowCmp)
+
+    for df in dataframes:
+        sort_rows(df)
 
 def _prep_incompat_conf(conf):
     if is_incompat():
