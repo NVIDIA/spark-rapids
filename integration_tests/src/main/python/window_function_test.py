@@ -1478,18 +1478,34 @@ def test_window_aggs_for_rows_collect_set():
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
+@ignore_order(local=True, arrays=[
+        "cc_struct_array_1",
+        "cc_struct_array_2",
+        "cc_array_struct",
+        "cc_array_array_bool",
+        "cc_array_array_int",
+        "cc_array_array_long",
+        "cc_array_array_short",
+        "cc_array_array_date",
+        "cc_array_array_ts",
+        "cc_array_array_byte",
+        "cc_array_array_str",
+        "cc_array_array_float",
+        "cc_array_array_double",
+        "cc_array_array_decimal_32",
+        "cc_array_array_decimal_64",
+        "cc_array_array_decimal_128"
+])
+@allow_non_gpu("ProjectExec", *non_utc_allow)
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.expression.SortArray": "false"
     })
 
     def do_it(spark):
         df = gen_df(spark, _gen_data_for_collect_set_nested, length=512)
         df.createOrReplaceTempView("window_collect_table")
-        df = spark.sql(
+        return spark.sql(
             """select a, b,
               collect_set(c_struct_array_1) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1,
@@ -1525,30 +1541,6 @@ def test_window_aggs_for_rows_collect_set_nested_array():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_128
         from window_collect_table
         """)
-        df = spark.createDataFrame(df.collect(), schema=df.schema)
-        # pull out the rdd and schema and create a new dataframe to run SortArray
-        # to handle Databricks 10.4+ optimization that moves SortArray from ProjectExec
-        # to ObjectHashAggregateExec
-        df.createOrReplaceTempView("window_collect_table_2")
-        return spark.sql("""select a, b,
-              sort_array(cc_struct_array_1),
-              sort_array(cc_struct_array_2),
-              sort_array(cc_array_struct),
-              sort_array(cc_array_array_bool),
-              sort_array(cc_array_array_int),
-              sort_array(cc_array_array_long),
-              sort_array(cc_array_array_short),
-              sort_array(cc_array_array_date),
-              sort_array(cc_array_array_ts),
-              sort_array(cc_array_array_byte),
-              sort_array(cc_array_array_str),
-              sort_array(cc_array_array_float),
-              sort_array(cc_array_array_double),
-              sort_array(cc_array_array_decimal_32),
-              sort_array(cc_array_array_decimal_64),
-              sort_array(cc_array_array_decimal_128)
-        from window_collect_table_2
-        """)
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
@@ -1564,6 +1556,7 @@ def test_nested_part_fallback(part_gen):
             ('a', RepeatSeqGen(part_gen, length=20)),
             ('b', UniqueLongGen()),
             ('c', int_gen)]
+
     window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
 
     def do_it(spark):
