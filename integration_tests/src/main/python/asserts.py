@@ -220,9 +220,9 @@ def _prep_func_for_compare(func, mode):
             raise RuntimeError('Local Sort is only supported on a collect')
     return (bring_back, collect_type)
 
-# Sort each of the dataframes. If there are array columns to sort, then sort each of those values
-# in each dataframe
-def _sort_locally(*dataframes):
+# Sort each of the result sets. If there are array columns to sort, 
+# then sort each of those values in each row
+def _sort_locally(*results):
     array_columns = array_columns_to_sort_locally()
     def sort_rows(rows):
         if array_columns:
@@ -231,8 +231,8 @@ def _sort_locally(*dataframes):
                     r[col].sort(key=_RowCmp)
         rows.sort(key=_RowCmp)
 
-    for df in dataframes:
-        sort_rows(df)
+    for rows in results:
+        sort_rows(rows)
 
 def _prep_incompat_conf(conf):
     if is_incompat():
