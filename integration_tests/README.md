@@ -343,6 +343,24 @@ integration tests. For example:
 $ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
 ```
 
+### Running with non-UTC time zone
+For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
+The non-UTC nightly CIs are verifing all cases with non-UTC time zone.
+But only a small amout of cases are verifing with non-UTC time zone in pre-merge CI due to limited GPU resources.
+When adding cases, should also check non-UTC is working besides the default UTC time zone.
+To run with non-UTC time zone, set TZ environment variable,
+For example:
+```shell
+$ TZ=Iran ./integration_tests/run_pyspark_from_build.sh
+```
+If the new added cases failed with non-UTC, then should allow the operator(does not support non-UTC) fallback,
+For example, add the following annotation to the case:
+```python
+non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is supported for sequence
+@allow_non_gpu(*non_utc_allow_for_sequence)
+test_my_new_added_case_for_sequence_operator()
+```
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
