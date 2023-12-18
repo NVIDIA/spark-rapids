@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AstUtil.JoinCondSplitStrategy
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -54,6 +55,28 @@ abstract class GpuBroadcastHashJoinMetaBase(
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
+
+  private var taggedForAstCheck = false
+
+  // Avoid checking multiple times
+  private var isAstCond = false
+
+  /**
+   * Check whether condition can be ast-able. It includes two cases: 1) all join conditions are
+   * ast-able; 2) join conditions are ast-able after split and push down to child plans.
+   */
+  def canJoinCondAstAble(): Boolean = {
+    if (!taggedForAstCheck) {
+      val Seq(leftPlan, rightPlan) = childPlans
+      isAstCond = conditionMeta match {
+        case Some(e) => AstUtil.canExtractNonAstConditionIfNeed(
+          e, leftPlan.outputAttributes.map(_.exprId), rightPlan.outputAttributes.map(_.exprId))
+        case None => true
+      }
+      taggedForAstCheck = true
+    }
+    isAstCond
+  }
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
@@ -103,6 +126,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
+    override val joinCondSplitStrategy: JoinCondSplitStrategy,
     left: SparkPlan,
     right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._

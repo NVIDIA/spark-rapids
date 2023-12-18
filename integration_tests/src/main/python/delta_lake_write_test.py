@@ -32,9 +32,6 @@ delta_part_write_gens = [
     short_gen,
     int_gen,
     long_gen,
-    # Avoid NaNs since it falsely triggers switch to new file when checking if partition changed
-    FloatGen(no_nans=True),
-    DoubleGen(no_nans=True),
     # Some file systems have issues with UTF8 strings so to help the test pass even there
     StringGen('(\\w| ){0,50}'),
     boolean_gen,

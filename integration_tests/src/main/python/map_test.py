@@ -189,7 +189,9 @@ def test_basic_scalar_map_get_map_value(key_gen):
 
 
 @allow_non_gpu('WindowLocalExec')
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9683')
+@datagen_overrides(seed=0, condition=is_before_spark_314()
+                             or (not is_before_spark_320() and is_before_spark_323())
+                             or (not is_before_spark_330() and is_before_spark_331()), reason="https://issues.apache.org/jira/browse/SPARK-40089")
 @pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_scalars_supported_key_types(data_gen):
@@ -367,13 +369,27 @@ def test_str_to_map_expr_fixed_delimiters():
 
 
 def test_str_to_map_expr_random_delimiters():
+    class UniqueStringGen(StringGen):
+        """Generate unique strings"""
+        def __init__(self, pattern, nullable):
+            super().__init__(pattern=pattern, nullable=nullable)
+            self.previous_values = set()
+
+        def start(self, rand):
+            super().start(rand)
+            self.previous_values = set()
+
+        def gen(self, force_no_nulls=False):
+            v = super().gen(force_no_nulls=force_no_nulls)
+            while v in self.previous_values:
+                v = super().gen(force_no_nulls=force_no_nulls)
+            self.previous_values.add(v)
+            return v
     data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True)
                  .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
-    delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
-    (pair_delim, keyval_delim) = ('', '')
-    while pair_delim == keyval_delim:
-        (pair_delim, keyval_delim) = with_cpu_session(
-            lambda spark: gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True))
+    delim_gen = UniqueStringGen(pattern='[0-9a-z :,]', nullable=False)
+    (pair_delim, keyval_delim) = with_cpu_session(
+        lambda spark: gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',

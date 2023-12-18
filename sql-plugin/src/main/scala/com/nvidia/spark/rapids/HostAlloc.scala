@@ -144,7 +144,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       logDebug(s"Targeting host store size of $targetSize bytes")
       // We could not make it work so try and spill enough to make it work
       val maybeAmountSpilled =
-        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, allocSize)
+        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
       maybeAmountSpilled.foreach { amountSpilled =>
         logInfo(s"Spilled $amountSpilled bytes from the host store")
       }

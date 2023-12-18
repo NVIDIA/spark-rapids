@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
+import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -117,7 +118,7 @@ object ConfHelper {
   }
 }
 
-abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String, 
+abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String,
     val isInternal: Boolean, val isStartUpOnly: Boolean, val isCommonlyUsed: Boolean) {
 
   def get(conf: Map[String, String]): T
@@ -127,7 +128,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
   override def toString: String = key
 }
 
-class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String, 
+class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false,
     val defaultValue: T)
   extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly, isCommonlyUsed) {
@@ -164,7 +165,7 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, 
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal,
   isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): Option[T] = {
@@ -420,7 +421,7 @@ object RapidsConf {
     .stringConf
     .createOptional
 
-  val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
+val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("The pattern to use to generate the named pipe path. Occurrences of %p in the pattern " +
       "will be replaced with the process ID of the executor.")
     .internal
@@ -666,13 +667,6 @@ object RapidsConf {
       .createWithDefault("MODERATE")
 
   // ENABLE/DISABLE PROCESSING
-
-  val IMPROVED_TIMESTAMP_OPS =
-    conf("spark.rapids.sql.improvedTimeOps.enabled")
-      .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          "directly to seconds without first converting to microseconds")
-      .booleanConf
-      .createWithDefault(false)
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
@@ -1340,6 +1334,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val BATCHED_BOUNDED_ROW_WINDOW_MAX: ConfEntryWithDefault[Integer] =
+    conf("spark.rapids.sql.window.batched.bounded.row.max")
+      .doc("Max value for bounded row window preceding/following extents " +
+      "permissible for the window to be evaluated in batched mode. This value affects " +
+      "both the preceding and following bounds, potentially doubling the window size " +
+      "permitted for batched execution")
+      .integerConf
+      .createWithDefault(value = 100)
+
   val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
     .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
@@ -1378,12 +1381,17 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
-  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
-    .doc("Only to be used in tests. If enabled the retry iterator will inject a GpuRetryOOM " +
-         "or CpuRetryOOM once per invocation.")
+  val TEST_RETRY_OOM_INJECTION_MODE = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If `true` the retry iterator will inject a GpuRetryOOM " +
+         "or CpuRetryOOM once per invocation. Furthermore an extended config " +
+         "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU,split=<bool>` can be provided to " +
+         "specify the number of OOMs to generate; how many to skip before doing so; whether to " +
+         "filter by allocation events by host(CPU), device(GPU), or both (CPU_OR_GPU); " +
+         "whether to inject *SplitAndRetryOOM instead of plain *RetryOOM exceptions." +
+         "Note *SplitAndRetryOOM exceptions are not always handled - use with care.")
     .internal()
-    .booleanConf
-    .createWithDefault(false)
+    .stringConf
+    .createWithDefault(false.toString)
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
@@ -1650,7 +1658,7 @@ object RapidsConf {
     .stringConf
     .createWithDefault("none")
 
-  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
     .startupOnly()
@@ -1845,7 +1853,6 @@ object RapidsConf {
   }
 
   val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
-    .internal()
     .startupOnly()
     .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
       "Spark will take the first one it finds, so the version may not be expected. Possisble " +
@@ -2059,13 +2066,6 @@ object RapidsConf {
       .checkValue(v => v >= 1,
         "The gpu to disk spill bounce buffer must have a positive size")
       .createWithDefault(128L * 1024 * 1024)
-
-  val NON_UTC_TIME_ZONE_ENABLED = 
-    conf("spark.rapids.sql.nonUTC.enabled")
-      .doc("An option to enable/disable non-UTC time zone support.")
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
 
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
@@ -2301,7 +2301,53 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
-  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
+  /**
+   * Convert a string value to the injection configuration OomInjection.
+   *
+   * The new format is a CSV in any order
+   *  "num_ooms=<integer>,skip=<integer>,type=<string value of OomInjectionType>"
+   *
+   * "type" maps to OomInjectionType to run count against oomCount and skipCount
+   * "num_ooms" maps to oomCount (default 1), the number of allocations resulting in an OOM
+   * "skip" maps to skipCount (default 0), the number of matching  allocations to skip before
+   * injecting an OOM at the skip+1st allocation.
+   * *split* maps to withSplit (default false), determining whether to inject
+   * *SplitAndRetryOOM instead of plain *RetryOOM exceptions
+   *
+   * For backwards compatibility support existing binary configuration
+   *   "false", disabled, i.e. oomCount=0, skipCount=0, injectionType=None
+   *   "true" or anything else but "false"  yields the default
+   *      oomCount=1, skipCount=0, injectionType=CPU_OR_GPU, withSplit=false
+   */
+  lazy val testRetryOOMInjectionMode : OomInjectionConf = {
+    get(TEST_RETRY_OOM_INJECTION_MODE).toLowerCase match {
+      case "false" =>
+        OomInjectionConf(numOoms = 0, skipCount = 0,
+        oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case "true" =>
+        OomInjectionConf(numOoms = 1, skipCount = 0,
+          oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case injectConfStr =>
+        val injectConfMap = injectConfStr.split(',').map(_.split('=')).collect {
+          case Array(k, v) => k -> v
+        }.toMap
+        val numOoms = injectConfMap.getOrElse("num_ooms", 1.toString)
+        val skipCount = injectConfMap.getOrElse("skip", 0.toString)
+        val oomFilterStr = injectConfMap
+          .getOrElse("type", OomInjectionType.CPU_OR_GPU.toString)
+          .toUpperCase()
+        val oomFilter = OomInjectionType.valueOf(oomFilterStr)
+        val withSplit = injectConfMap.getOrElse("split", false.toString)
+        val ret = OomInjectionConf(
+          numOoms = numOoms.toInt,
+          skipCount = skipCount.toInt,
+          oomInjectionFilter = oomFilter,
+          withSplit = withSplit.toBoolean
+        )
+        logDebug(s"Parsed ${ret} from ${injectConfStr} via injectConfMap=${injectConfMap}");
+        ret
+    }
+  }
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
@@ -2378,8 +2424,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shouldExplain: Boolean = !explain.equalsIgnoreCase("NONE")
 
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
-
-  lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
@@ -2744,6 +2788,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
 
+  lazy val batchedBoundedRowsWindowMax: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX)
+
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
   lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
@@ -2781,8 +2827,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
-
-  lazy val nonUTCTimeZoneEnabled: Boolean = get(NON_UTC_TIME_ZONE_ENABLED)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
@@ -2848,3 +2892,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     conf.contains(key)
   }
 }
+
+case class OomInjectionConf(
+  numOoms: Int,
+  skipCount: Int,
+  withSplit: Boolean,
+  oomInjectionFilter: OomInjectionType
+)

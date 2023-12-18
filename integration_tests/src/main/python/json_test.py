@@ -20,7 +20,7 @@ from data_gen import *
 from conftest import is_not_utc
 from datetime import timezone
 from conftest import is_databricks_runtime
-from marks import approximate_float, allow_non_gpu, ignore_order
+from marks import approximate_float, allow_non_gpu, ignore_order, datagen_overrides
 from spark_session import *
 
 json_supported_gens = [
@@ -637,7 +637,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     # "yyyy-MM"
     "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
     # "yyyy"
-    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[0-9]{4}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?" + yyyy_start_0002 + "[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
     # "dd/MM/yyyy"
     "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
     # special constant values

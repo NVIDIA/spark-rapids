@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, should_inject_oom
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf
 from pyspark.sql import DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
@@ -47,7 +47,6 @@ _default_conf = {
     'spark.rapids.sql.hasExtendedYearValues': 'true',
     'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
     'spark.rapids.sql.improvedFloatOps.enabled': 'false',
-    'spark.rapids.sql.improvedTimeOps.enabled': 'false',
     'spark.rapids.sql.incompatibleDateFormats.enabled': 'false',
     'spark.rapids.sql.incompatibleOps.enabled': 'false',
     'spark.rapids.sql.mode': 'executeongpu',
@@ -57,10 +56,10 @@ _default_conf = {
 
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
-    if (should_inject_oom()):
-        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
-    else:
-        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
+    inject_oom = get_inject_oom_conf()
+    if inject_oom:
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM",
+                         inject_oom.args[0] if len(inject_oom.args) > 0 else True)
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
@@ -128,11 +127,17 @@ def is_before_spark_312():
 def is_before_spark_313():
     return spark_version() < "3.1.3"
 
+def is_before_spark_314():
+    return spark_version() < "3.1.4"
+
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
 def is_before_spark_322():
     return spark_version() < "3.2.2"
+
+def is_before_spark_323():
+    return spark_version() < "3.2.3"
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
