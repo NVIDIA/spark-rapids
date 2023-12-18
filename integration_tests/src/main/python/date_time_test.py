@@ -81,7 +81,7 @@ def test_timeadd_from_subquery(data_gen):
         spark.sql("select a, ((select max(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where datePlus > current_timestamp")
 
-    assert_gpu_and_cpu_are_equal_collect(fun, conf = {'spark.rapids.sql.nonUTC.enabled': True})
+    assert_gpu_and_cpu_are_equal_collect(fun)
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 @allow_non_gpu(*non_supported_tz_allow)
@@ -93,7 +93,7 @@ def test_timesub_from_subquery(data_gen):
         spark.sql("select a, ((select min(a) from testTime) - interval 1 day) as dateMinus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where dateMinus < current_timestamp")
 
-    assert_gpu_and_cpu_are_equal_collect(fun, conf = {'spark.rapids.sql.nonUTC.enabled': True})
+    assert_gpu_and_cpu_are_equal_collect(fun)
 
 # Should specify `spark.sql.legacy.interval.enabled` to test `DateAddInterval` after Spark 3.2.0,
 # refer to https://issues.apache.org/jira/browse/SPARK-34896
