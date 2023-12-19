@@ -844,7 +844,8 @@
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
-        <cloudera.repo.url>https://repository.cloudera.com/repository/cloudera-repos</cloudera.repo.url>
+        <cloudera.repo.url>https://repository.cloudera.com/artifactory/cloudera-repos</cloudera.repo.url>
+        <cloudera.repo.url.fallback>https://repository.cloudera.com/repository/cloudera-repos</cloudera.repo.url.fallback>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
@@ -1740,6 +1741,16 @@ This will force full Scala code rebuild in downstream modules.
                 <enabled>${cloudera.repo.enabled}</enabled>
             </snapshots>
         </repository>
+        <repository>
+            <id>cloudera-repo-fallback</id>
+            <url>${cloudera.repo.url.fallback}</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </snapshots>
+        </repository>
     </repositories>
     <pluginRepositories>
         <pluginRepository>
@@ -1752,6 +1763,16 @@ This will force full Scala code rebuild in downstream modules.
         <pluginRepository>
             <id>cloudera-repo</id>
             <url>${cloudera.repo.url}</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>cloudera-repo-fallback</id>
+            <url>${cloudera.repo.url.fallback}</url>
             <releases>
                 <enabled>${cloudera.repo.enabled}</enabled>
             </releases>
