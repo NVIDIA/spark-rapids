@@ -22,9 +22,6 @@ from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
     is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors
 
-# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
-pytestmark = pytest.mark.premerge_ci_1
-
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
 @delta_lake
