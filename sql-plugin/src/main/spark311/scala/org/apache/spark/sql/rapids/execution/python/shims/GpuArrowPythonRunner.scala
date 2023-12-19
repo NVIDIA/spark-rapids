@@ -1,14 +1,11 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,9 +15,27 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
 {"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
 {"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
+{"spark": "333"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -30,27 +45,18 @@ import java.net.Socket
 import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python._
+import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonWriter, GpuPythonRunnerCommon}
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
 /**
- * Group Map UDF specific serializer for Databricks because they have a special GroupUDFSerializer.
- * The main difference here from the GpuArrowPythonRunner is that it creates a new Arrow
- * Stream for each grouped data.
- * The overall flow is:
- *   - send a 1 to indicate more data is coming
- *   - create a new Arrow Stream for each grouped data
- *   - send the schema
- *   - send that group of data
- *   - close that Arrow stream
- *   - Repeat starting at sending 1 if more data, otherwise send a 0 to indicate no
- *     more data being sent.
+ * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
-class GpuGroupUDFArrowPythonRunner(
+class GpuArrowPythonRunner(
     funcs: Seq[ChainedPythonFunctions],
     evalType: Int,
     argOffsets: Array[Array[Int]],
@@ -76,27 +82,29 @@ class GpuGroupUDFArrowPythonRunner(
           PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
         }
       }
+      val isInputNonEmpty = inputIterator.nonEmpty
+      lazy val arrowSchema = ArrowUtilsShim.toArrowSchema(pythonInSchema, timeZoneId)
 
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
         arrowWriter.writeCommand(dataOut, conf)
       }
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
-        Utils.tryWithSafeFinally {
-          while(inputIterator.hasNext) {
-            // write 1 out to indicate there is more to read
-            dataOut.writeInt(1)
-            arrowWriter.start(dataOut)
-            arrowWriter.writeAndClose(inputIterator.next())
-            arrowWriter.reset()
+        if (isInputNonEmpty) {
+          arrowWriter.start(dataOut)
+          Utils.tryWithSafeFinally {
+            while (inputIterator.hasNext) {
+              arrowWriter.writeAndClose(inputIterator.next())
+            }
+          } {
+            arrowWriter.close()
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
             dataOut.flush()
           }
-        } {
-          arrowWriter.close()
-          // tell serializer we are done
-          dataOut.writeInt(0)
-          dataOut.flush()
+        } else {
+          // The iterator can grab the semaphore even on an empty batch
           GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          arrowWriter.writeEmptyIteratorOnCpu(dataOut, arrowSchema)
         }
       }
     }

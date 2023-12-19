@@ -490,7 +490,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new StructType(fields);
   }
 
-  private static StructType structFromAttributes(List<Attribute> format) {
+  public static StructType structFromAttributes(List<Attribute> format) {
     StructField[] fields = new StructField[format.size()];
     int i = 0;
     for (Attribute attribute: format) {
@@ -890,6 +890,22 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       for (int i = 0; i < numColumns; i++) {
         columns.add(cb.column(i));
       }
+    }
+    ColumnarBatch ret = new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]), numRows);
+    return incRefCounts(ret);
+  }
+
+  public static ColumnarBatch appendColumns(ColumnarBatch cb, GpuColumnVector ... vectors) {
+    final int numRows = cb.numRows();
+    final int numCbColumns = cb.numCols();
+    ArrayList<ColumnVector> columns = new ArrayList<>(numCbColumns + vectors.length);
+    for (int i = 0; i < numCbColumns; i++) {
+      columns.add(cb.column(i));
+    }
+    for (GpuColumnVector cv: vectors) {
+      assert cv.getBase().getRowCount() == numRows : "Rows do not match expected " + numRows + " found " +
+          cv.getBase().getRowCount();
+      columns.add(cv);
     }
     ColumnarBatch ret = new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]), numRows);
     return incRefCounts(ret);

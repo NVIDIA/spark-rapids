@@ -711,9 +711,7 @@ to `false`.
 
 ### Float to String
 
-The GPU will use different precision than Java's toString method when converting floating-point data
-types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
-`E`. As a result the computed string can differ from the default behavior in Spark.
+The Rapids Accelerator for Apache Spark uses uses a method based on [ryu](https://github.com/ulfjack/ryu) when converting floating point data type to string. As a result the computed string can differ from the output of Spark in some cases: sometimes the output is shorter (which is arguably more accurate) and sometimes the output may differ in the precise digits output.
 
 The `format_number` function will retain 10 digits of precision for the GPU when the input is a floating 
 point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
