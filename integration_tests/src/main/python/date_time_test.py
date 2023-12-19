@@ -382,17 +382,6 @@ def test_string_to_timestamp_functions_ansi_valid(parser_policy):
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @tz_sensitive_test
-@allow_non_gpu(*non_utc_allow)
-def test_unix_timestamp_improved(data_gen, ansi_enabled):
-    conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
-            "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
-        copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
-
-@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@tz_sensitive_test
 @allow_non_gpu(*non_supported_tz_allow)
 def test_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
