@@ -104,94 +104,71 @@ case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitC
     // seg A: 0 <= codePoints < 128, already ASCII
     // seg B: 49792 <= codePoints < 49856, ASCII = codePoints - 49664
     // seg C: 50048 <= codePoints < 50112, ASCII = codePoints - 49856
-
-    // get values of seg B
-    val segBL = withResource(Scalar.fromInt(49792)) { segBLeftEnd =>
+    //
+    // To reduce cuDF API calling, following algorithm will be performed:
+    // 1. For anything above 49792, we subtract 49664, now seg A and B are correct.
+    // 2. seg C: 50048 <= current + 49664 < 50112 => 384 <= current < 448, ASCII = current - 192
+    // So for anything above 384, we subtract 192, now seg C is correct too.
+    val greaterThan49792 = withResource(Scalar.fromInt(49792)) { segBLeftEnd =>
       codePoints.greaterOrEqualTo(segBLeftEnd)
     }
-    val segB = withResource(segBL) { _ =>
-      val segBR = withResource(Scalar.fromInt(49856)) { segBRightEnd =>
-        codePoints.lessThan(segBRightEnd)
+    val segAB = withResource(greaterThan49792) { _ =>
+      val sub1 = withResource(Scalar.fromInt(49664)) { segBValue =>
+        codePoints.sub(segBValue)
       }
-      withResource(segBR) { _ =>
-        segBL.and(segBR)
-      }
-    }
-
-    // combine seg A and seg B
-    val segAB = withResource(segB) { _ =>
-      val segBValue = withResource(Scalar.fromInt(49664)) { subValue =>
-        codePoints.sub(subValue)
-      }
-      withResource(segBValue) { _ =>
-        segB.ifElse(segBValue, codePoints)
+      withResource(sub1) { _ =>
+        greaterThan49792.ifElse(sub1, codePoints)
       }
     }
-
-    // get values of seg C
     withResource(segAB) { _ =>
-      val segCL = withResource(Scalar.fromInt(50048)) { segCLeftEnd =>
-        codePoints.greaterOrEqualTo(segCLeftEnd)
+      val geraterThan384 = withResource(Scalar.fromInt(384)) { segCLeftEnd =>
+        segAB.greaterOrEqualTo(segCLeftEnd)
       }
-      val segC = withResource(segCL) { _ =>
-        val segCR = withResource(Scalar.fromInt(50112)) { segCRightEnd =>
-          codePoints.lessThan(segCRightEnd)
+      withResource(geraterThan384) { _ =>
+        val sub2 = withResource(Scalar.fromInt(192)) { segCValue =>
+          segAB.sub(segCValue)
         }
-        withResource(segCR) { _ =>
-          segCL.and(segCR)
-        }
-      }
-
-      // combine seg AB and seg C, and return
-      withResource(segC) { _ =>
-        val segCValue = withResource(Scalar.fromInt(49856)) { subValue =>
-          codePoints.sub(subValue)
-        }
-        withResource(segCValue) { _ =>
-          segC.ifElse(segCValue, segAB)
+        withResource(sub2) { _ =>
+          geraterThan384.ifElse(sub2, segAB)
         }
       }
     }
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(ArrayBuffer.empty[AutoCloseable]) { resource_array =>
-      // replace nulls with 'n' and save the null mask
-      val nullMask = input.getBase.isNull
-      resource_array += nullMask
-      val nullsReplaced = withResource(Scalar.fromString("n")) { nullScalar =>
-        nullMask.ifElse(nullScalar, input.getBase)
+    // replace empty strings with 'NUL' (which will convert to ascii 0)
+    val emptyMask = withResource(Scalar.fromString("")) { emptyScalar =>
+      input.getBase.equalTo(emptyScalar)
+    }
+    val emptyReplaced = withResource(emptyMask) { _ =>
+      // replace empty strings with 'NUL' (which will convert to ascii 0)
+      withResource(Scalar.fromString('\u0000'.toString)) { zeroScalar =>
+        emptyMask.ifElse(zeroScalar, input.getBase)
       }
-      // replace empty strings with 'e' and save the null mask
-      val emptyMask = closeOnExcept(nullsReplaced) { _ =>
-          withResource(Scalar.fromString("")) { emptyScalar =>
-          nullsReplaced.equalTo(emptyScalar)
+    }
+    // replace nulls with 'n' and save the null mask
+    val nullMask = closeOnExcept(emptyReplaced) { _ =>
+      input.getBase.isNull
+    }
+    withResource(nullMask) { _ =>
+      val nullsReplaced = withResource(emptyReplaced) { _ =>
+        withResource(Scalar.fromString("n")) { nullScalar =>
+          nullMask.ifElse(nullScalar, emptyReplaced)
         }
       }
-      resource_array += emptyMask
-      val emptyReplaced = withResource(nullsReplaced) { _ =>
-        withResource(Scalar.fromString("e")) { eScalar =>
-          emptyMask.ifElse(eScalar, nullsReplaced)
-        }
+      val substr = withResource(nullsReplaced) { _ =>
+        nullsReplaced.substring(0, 1)
       }
-      val substr = withResource(emptyReplaced) { _ =>
-        emptyReplaced.substring(0, 1)
-      }
-      val codePoints = withResource(substr) { substr =>
+      val codePoints = withResource(substr) { _ =>
         substr.codePoints()
       }
-      val segABC = withResource(codePoints) { codePoints =>
+      val segABC = withResource(codePoints) { _ =>
         utf8CodePointsToAscii(codePoints)
       }
-      // replace nulls with null and empty strings with 0
-      val segABCwithNull = withResource(segABC) { _ =>
+      // replace nulls with null
+      withResource(segABC) { _ =>
         withResource(Scalar.fromNull(DType.INT32)) { nullScalar =>
           nullMask.ifElse(nullScalar, segABC)
-        }
-      }
-      withResource(segABCwithNull) { _ =>
-        withResource(Scalar.fromInt(0)) { zeroScalar =>
-          emptyMask.ifElse(zeroScalar, segABCwithNull)
         }
       }
     }
