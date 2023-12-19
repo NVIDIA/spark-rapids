@@ -209,19 +209,16 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     }
   }
 
-  private HostMemoryBuffer[] getHostBuffersWithRetry(SpillableHostBuffer sdb, SpillableHostBuffer sob) {
+  private HostMemoryBuffer[] getHostBuffersWithRetry(
+      SpillableHostBuffer spillableDataBuffer, SpillableHostBuffer spillableOffsetsBuffer) {
     return RmmRapidsRetryIterator.withRetryNoSplit( () -> {
-      HostMemoryBuffer[] hBufs = new HostMemoryBuffer[]{ null, null };
-      try {
-        hBufs[0] = sdb.getHostBuffer();
-        hBufs[1] = sob.getHostBuffer();
-        return hBufs;
-      } finally {
-        // If the second buffer is null, we must have thrown, so close the first one.
-        if ((hBufs[1] == null) && (hBufs[0] != null)) {
-          hBufs[0].close();
-          hBufs[0] = null;
-        }
+      try (HostMemoryBuffer dataBuffer = spillableDataBuffer.getHostBuffer();
+           HostMemoryBuffer offsetsBuffer = spillableOffsetsBuffer.getHostBuffer();
+          ) {
+        // Increment these to keep them.
+        dataBuffer.incRefCount();
+        offsetsBuffer.incRefCount();
+        return new HostMemoryBuffer[] { dataBuffer, offsetsBuffer };
       }
     });
   }
