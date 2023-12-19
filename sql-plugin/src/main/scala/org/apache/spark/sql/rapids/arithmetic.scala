@@ -33,19 +33,17 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-trait AddSubOverflowChecks {
+object AddOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
-      ret: ColumnVector,
-      message: String): Unit = {
+      ret: ColumnVector): Unit = {
     // Check overflow. It is true if the arguments have different signs and
     // the sign of the result is different from the sign of x.
-    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
-
-    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
-      withResource(lhs.bitXor(ret)) { xrXor =>
-        xyXor.bitAnd(xrXor)
+    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
+    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
+      withResource(ret.bitXor(rhs)) { rXor =>
+        lXor.bitAnd(rXor)
       }
     }
     val signDiffCV = withResource(signCV) { sign =>
@@ -56,20 +54,11 @@ trait AddSubOverflowChecks {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(message)
+          throw RapidsErrorUtils.
+            arithmeticOverflowError("One or more rows overflow for Add operation.")
         }
       }
     }
-  }
-}
-
-object AddOverflowChecks extends AddSubOverflowChecks {
-  def basicOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    super.basicOpOverflowCheck(lhs, rhs, ret,
-      "One or more rows overflow for Add operation.")
   }
 
   def didDecimalOverflow(
@@ -120,13 +109,32 @@ object AddOverflowChecks extends AddSubOverflowChecks {
   }
 }
 
-object SubtractOverflowChecks extends AddSubOverflowChecks {
+object SubtractOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
       ret: ColumnVector): Unit = {
-    super.basicOpOverflowCheck(lhs, rhs, ret,
-      "One or more rows overflow for Subtract operation.")
+    // Check overflow. It is true if the arguments have different signs and
+    // the sign of the result is different from the sign of x.
+    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
+    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
+      withResource(lhs.bitXor(ret)) { xrXor =>
+        xyXor.bitAnd(xrXor)
+      }
+    }
+    val signDiffCV = withResource(signCV) { sign =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        sign.lessThan(zero)
+      }
+    }
+    withResource(signDiffCV) { signDiff =>
+      withResource(signDiff.any()) { any =>
+        if (any.isValid && any.getBoolean) {
+          throw RapidsErrorUtils.
+            arithmeticOverflowError("One or more rows overflow for Subtract operation.")
+        }
+      }
+    }
   }
 }
 
