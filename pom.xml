@@ -844,6 +844,7 @@
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
+        <cloudera.repo.url>https://repository.cloudera.com/repository/cloudera-repos</cloudera.repo.url>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
@@ -1731,7 +1732,7 @@ This will force full Scala code rebuild in downstream modules.
         </repository>
         <repository>
             <id>cloudera-repo</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <url>${cloudera.repo.url}</url>
             <releases>
                 <enabled>${cloudera.repo.enabled}</enabled>
             </releases>
@@ -1750,7 +1751,7 @@ This will force full Scala code rebuild in downstream modules.
         </pluginRepository>
         <pluginRepository>
             <id>cloudera-repo</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <url>${cloudera.repo.url}</url>
             <releases>
                 <enabled>${cloudera.repo.enabled}</enabled>
             </releases>
