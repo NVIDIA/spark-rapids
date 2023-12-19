@@ -20,7 +20,8 @@ from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
 import pyspark.sql.utils
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_351
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_334, is_before_spark_351, is_before_spark_342, is_before_spark_340
+from spark_init_internal import spark_version
 from conftest import get_datagen_seed
 from marks import allow_non_gpu
 
@@ -326,7 +327,8 @@ sequence_too_long_length_gens = [
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_sequence_too_long_sequence(stop_gen):
-    msg = "Too long sequence" if is_before_spark_351() else "Unsuccessful try to create array with"
+    msg = "Too long sequence" if is_before_spark_334() or (not is_before_spark_340() and is_before_spark_342()) \
+    or is_spark_350() else "Unsuccessful try to create array with"
     assert_gpu_and_cpu_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
         lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
