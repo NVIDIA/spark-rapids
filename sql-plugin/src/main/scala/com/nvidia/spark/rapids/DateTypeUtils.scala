@@ -21,7 +21,7 @@ import org.apache.spark.sql.types._
 /**
  * Class for helper functions for Date and Timestamp
  */
-object DateTimeUtils {
+object DateTypeUtils {
 
   /**
    * If `t` is date/timestamp type or its children have a date/timestamp type.
