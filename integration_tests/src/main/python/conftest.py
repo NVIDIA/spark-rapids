@@ -275,10 +275,6 @@ def pytest_runtest_setup(item):
         if not item.config.getoption('pyarrow_test'):
             pytest.skip('tests for pyarrow not configured to run')
 
-    if not item.get_closest_marker('tz_sensitive_test'):
-        if item.config.getoption('tz_sensitive_case_only'):
-            pytest.skip('tests unrelated to timezone not configured to run')
-
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
