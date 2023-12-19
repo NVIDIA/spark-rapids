@@ -774,9 +774,11 @@ private case class GpuParquetFileFilterHandler(
           val clipped = GpuParquetUtils.clipBlocksToSchema(clippedSchema, blocks, isCaseSensitive)
           (clipped, clippedSchema)
         }
-
+      val hasDateTimeInReadSchema = DateTimeUtils.hasDateOrTimestampType(readDataSchema)
       val dateRebaseModeForThisFile = DateTimeRebaseUtils.datetimeRebaseMode(
-          footer.getFileMetaData.getKeyValueMetaData.get, datetimeRebaseMode)
+          footer.getFileMetaData.getKeyValueMetaData.get,
+          datetimeRebaseMode,
+          hasDateTimeInReadSchema)
       val hasInt96Timestamps = isParquetTimeInInt96(fileSchema)
       val timestampRebaseModeForThisFile = if (hasInt96Timestamps) {
         DateTimeRebaseUtils.int96RebaseMode(
