@@ -34,7 +34,6 @@
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
-{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
 spark-rapids-shim-json-lines ***/
