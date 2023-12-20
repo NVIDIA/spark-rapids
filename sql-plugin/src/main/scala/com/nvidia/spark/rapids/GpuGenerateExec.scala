@@ -22,8 +22,9 @@ import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Sc
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetry
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
@@ -367,7 +368,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     val inputRows = inputBatch.numRows()
 
     // if the number of input rows is 1 or less, cannot split
-    if (inputRows <= 1) return Array()
+    //if (inputRows <= 1) return Array()
 
     val vectors = GpuColumnVector.extractBases(inputBatch)
 
@@ -826,12 +827,80 @@ class GpuGenerateIterator(
   // Need to ensure these are closed in case of failure.
   inputs.foreach(scb => use(scb))
 
-  // apply generation on each (sub)batch
-  private val retryIter = withRetry(inputs.toIterator, splitSpillableInHalfByRows) { attempt =>
-    withResource(attempt.getColumnarBatch()) { batch =>
-      generator.generate(batch, generatorOffset, outer)
+  def splitSpillableInHalfByRows(
+      generatorOffset: Int): SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
+    (spillable: SpillableColumnarBatch) => {
+      withResource(spillable) { _ =>
+        val toSplitRows = spillable.numRows()
+        if (toSplitRows == 1) {
+          // single row, we need to actually add row duplicates, then split
+          withResource(spillable.getColumnarBatch()) { src =>
+            withResource(GpuColumnVector.from(src)) { tbl =>
+              withResource(new Table(tbl.getColumn(generatorOffset))) { mockTbl =>
+                withResource(mockTbl.explode(0)) { explodedTbl =>
+                  val splitIx = (0 until explodedTbl.getRowCount.toInt by 100).tail
+                  withResource(explodedTbl.contiguousSplit(splitIx:_*)) { twoTbls =>
+                    twoTbls.map{ explodedTblToConvertBack =>
+                      val c0 = explodedTblToConvertBack.getTable.getColumn(0)
+                      val l0 = ColumnVector.makeList(c0)
+                      val cols = new ArrayBuffer[ColumnVector]()
+                      (0 until tbl.getNumberOfColumns).foreach { col =>
+                        if (col == generatorOffset) {
+                          cols.append(l0)
+                        } else {
+                          withResource(tbl.getColumn(col).getScalarElement(0)) {sc =>
+                            cols.append(ColumnVector.fromScalar(sc, c0.getRowCount.toInt))
+                          }
+                        }
+                      }
+                      val cb = GpuColumnVector.from(new Table(cols:_*), spillable.dataTypes)
+                      SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          if (toSplitRows <= 0) {
+            throw new GpuSplitAndRetryOOM(
+              s"GPU OutOfMemory: a batch of $toSplitRows cannot be split!")
+          }
+          val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
+            withResource(GpuColumnVector.from(src)) { tbl =>
+              val splitIx = (tbl.getRowCount / 2).toInt
+              withResource(tbl.contiguousSplit(splitIx)) { cts =>
+                val tables = cts.map(_.getTable)
+                withResource(tables.safeMap(GpuColumnVector.from(_, spillable.dataTypes))) {
+                  batches =>
+                    val spillables = batches.safeMap { b =>
+                      SpillableColumnarBatch(
+                        GpuColumnVector.incRefCounts(b),
+                        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                    }
+                    closeOnExcept(spillables) { _ =>
+                      require(spillables.length == 2,
+                        s"Contiguous split returned ${spillables.length} tables but two were " +
+                            s"expected!")
+                    }
+                    (spillables.head, spillables.last)
+                }
+              }
+            }
+          }
+          Seq(firstHalf, secondHalf)
+        }
+      }
     }
   }
+
+  // apply generation on each (sub)batch
+  private val retryIter =
+    withRetry(inputs.toIterator, splitSpillableInHalfByRows(generatorOffset)) { attempt =>
+      withResource(attempt.getColumnarBatch()) { batch =>
+        generator.generate(batch, generatorOffset, outer)
+      }
+    }
 
   override def hasNext: Boolean = retryIter.hasNext
   override def next(): ColumnarBatch = {
