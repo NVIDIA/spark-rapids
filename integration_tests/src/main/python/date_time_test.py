@@ -48,8 +48,7 @@ def test_timeadd(data_gen):
         # We are starting at year 0005 to make sure we don't go before year 0001
         # and beyond year 10000 while doing TimeAdd
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
-            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)),
-            conf = {'spark.rapids.sql.nonUTC.enabled': True})
+            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
@@ -60,9 +59,7 @@ def test_timeadd_daytime_column():
         # max days is 8000 year, so added result will not be out of range
         ('d', DayTimeIntervalGen(min_value=timedelta(days=1000 * 365), max_value=timedelta(days=1005 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list, length=2048).selectExpr("t + d", "t", "d"),
-        # lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"),
-        conf = {'spark.rapids.sql.nonUTC.enabled': True})
+        lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
 @pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
 def test_interval_seconds_overflow_exception():
