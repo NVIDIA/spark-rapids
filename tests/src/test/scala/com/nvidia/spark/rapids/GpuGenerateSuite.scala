@@ -22,13 +22,16 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, DType, Table}
 import ai.rapids.cudf.HostColumnVector.{BasicType, ListType}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuGenerateSuite
-  extends SparkQueryCompareTestSuite {
+  extends RmmSparkRetrySuiteBase
+    with SparkQueryCompareTestSuite {
   val rapidsConf = new RapidsConf(Map.empty[String, String])
 
   def makeListColumn(
@@ -171,6 +174,92 @@ class GpuGenerateSuite
       splits = e.inputSplitIndices(batch, generatorOffset = 1 , true, 1)
       assertResult(0)(splits.length)
       checkSplits(splits, batch)
+    }
+  }
+
+  test("on splitAndRetry try to split by rows else split the exploding column") {
+    class MyExplode(child: Expression) extends GpuExplode(child) {
+      private var forceNumOOMs: Int = 0
+      override def generate(
+        inputBatch: ColumnarBatch,
+        generatorOffset: Int,
+        outer: Boolean): ColumnarBatch = {
+        if (forceNumOOMs > 0) {
+          forceNumOOMs -= 1
+          throw new GpuSplitAndRetryOOM(s"mock split and retry. ${forceNumOOMs} pending.")
+        }
+        super.generate(inputBatch, generatorOffset, outer)
+      }
+
+      def doForceSplitAndRetry(numOOMs: Int) = {
+        forceNumOOMs = numOOMs
+      }
+    }
+    // numRows = 1: exercises the split code trying to save a 1-row scenario where
+    // we are running OOM.
+    // numRows = 2: is the regular split code
+    (1 until 3).foreach { numRows =>
+      val (expected, _) = makeBatch(numRows)
+      val e = GpuExplode(AttributeReference("foo", ArrayType(IntegerType))())
+      val itNoFailures = new GpuGenerateIterator(
+        Seq(SpillableColumnarBatch(expected, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)),
+        generator = e,
+        generatorOffset = 1,
+        outer = false,
+        NoopMetric,
+        NoopMetric,
+        NoopMetric)
+      val expectedExploded = itNoFailures.next()
+      withResource(expectedExploded) { _ =>
+        assertResult(false)(itNoFailures.hasNext)
+        // with numRows > 1, we follow regular split semantics, else
+        // we split the exploding column.
+        // - numRows = 1, numOOMs = 1:
+        //   2 batches each with 2 rows (4 items in the original array).
+        // - numRows = 1, numOOMs = 2:
+        //   3 batches (two 1-row batches, and the last batch has 2 rows).
+        // - numRows = 2, numOOMs = 1:
+        //   2 batches, each with 4 rows
+        // - numRows = 2, numOOMs = 2:
+        //   3 batches (2-row, 2-row and a 4-row)
+        (1 until 3).foreach { numOOMs =>
+          val (actual, _) = makeBatch(numRows)
+          val actualSpillable =
+            SpillableColumnarBatch(actual, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          val failingGenerator = new MyExplode(AttributeReference("foo", ArrayType(IntegerType))())
+          val it = new GpuGenerateIterator(
+            Seq(actualSpillable),
+            generator = failingGenerator,
+            generatorOffset = 1,
+            outer = false,
+            NoopMetric,
+            NoopMetric,
+            NoopMetric)
+
+          failingGenerator.doForceSplitAndRetry(numOOMs)
+
+          // this should return 2 batches, each with half the output
+          val results = new ArrayBuffer[ColumnarBatch]()
+          closeOnExcept(results) { _ =>
+            while (it.hasNext) {
+              results.append(it.next())
+            }
+          }
+          results.foreach {r =>
+            println(s"numRows: ${numRows} and numOOMs: ${numOOMs} Result numRows=${r.numRows()}")
+          }
+
+          withResource(results) { _ =>
+            withResource(results.map(GpuColumnVector.from)) { resultTbls =>
+              withResource(Table.concatenate(resultTbls: _*)) { res =>
+                withResource(GpuColumnVector.from(expectedExploded)) { expectedTbl =>
+                  TestUtils.compareTables(expectedTbl, res)
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
