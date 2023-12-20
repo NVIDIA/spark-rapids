@@ -422,7 +422,7 @@ def test_string_unix_timestamp_ansi_exception():
         error_message="Exception",
         conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{4}-0[1-9]-[0-2][1-8]')], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @allow_non_gpu(*non_utc_allow)
 def test_gettimestamp(data_gen, ansi_enabled):
@@ -431,7 +431,7 @@ def test_gettimestamp(data_gen, ansi_enabled):
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 
-@pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_gettimestamp_format_MMyyyy(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
