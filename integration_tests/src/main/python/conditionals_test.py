@@ -222,10 +222,11 @@ def test_conditional_with_side_effects_case_when(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(
-                f.when(f.col('a').rlike(r"^[0-9]{1,3}"), f.col('a').substr(0, 1).cast('INT'))\
-                .when(f.col('a').rlike(r"^[0-9]{4,6}"), f.col('a').substr(0, 4).cast('INT') + f.lit(123))\
-                .otherwise(f.lit(-1))),
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'CASE \
+                WHEN a RLIKE "^[0-9]{6}" THEN CAST(SUBSTR(a, 0, 6) AS INT) + 123 \
+                WHEN a RLIKE "^[0-9]{3}" THEN CAST(SUBSTR(a, 0, 3) AS INT) \
+                ELSE -1 END'),
                 conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
