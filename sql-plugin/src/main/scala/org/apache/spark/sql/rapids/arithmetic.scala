@@ -54,8 +54,9 @@ object AddOverflowChecks {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.
-            arithmeticOverflowError("One or more rows overflow for Add operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(
+          "One or more rows overflow for Add operation."
+          )
         }
       }
     }
