@@ -214,7 +214,7 @@ def test_conditional_with_side_effects_cast(data_gen):
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
-                r'IF(a RLIKE "^\\d{5,}", CAST(SUBSTR(a, 0, 5) AS INT), 0)'),
+                'IF(a RLIKE "^[0-9]{5,}", CAST(SUBSTR(a, 0, 5) AS INT), 0)'),
             conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
