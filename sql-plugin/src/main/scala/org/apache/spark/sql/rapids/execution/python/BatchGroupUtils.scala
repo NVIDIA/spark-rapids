@@ -29,8 +29,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.GpuSubPartitionHashJoin
-import org.apache.spark.sql.rapids.execution.python.shims.GpuPythonArrowOutput
+import org.apache.spark.sql.rapids.execution.python.shims.GpuBasePythonRunner
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -197,7 +196,7 @@ private[python] object BatchGroupUtils {
   def executePython[IN](
       pyInputIterator: Iterator[IN],
       output: Seq[Attribute],
-      pyRunner: GpuPythonRunnerBase[IN],
+      pyRunner: GpuBasePythonRunner[IN],
       outputRows: GpuMetric,
       outputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     val context = TaskContext.get()
@@ -396,7 +395,7 @@ private[python] object BatchGroupedIterator {
 class CombiningIterator(
     inputBatchQueue: BatchQueue,
     pythonOutputIter: Iterator[ColumnarBatch],
-    pythonArrowReader: GpuPythonArrowOutput,
+    pythonArrowReader: GpuArrowOutput,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] {
 
@@ -456,7 +455,7 @@ class CombiningIterator(
         pendingInput = Some(second)
       }
 
-      val ret = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(buf.toSeq)
+      val ret = GpuBatchUtils.concatSpillBatchesAndClose(buf.toSeq)
       // "ret" should be non empty because we checked the buf is not empty ahead.
       withResource(ret.get) { concatedScb =>
         concatedScb.getColumnarBatch()
@@ -596,3 +595,4 @@ class CoGroupedIterator(
     keyOrdering.compare(leftKeyRow, rightKeyRow)
   }
 }
+

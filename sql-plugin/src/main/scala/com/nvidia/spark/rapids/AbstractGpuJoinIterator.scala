@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRestoreOnRetry, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
@@ -148,7 +148,7 @@ abstract class AbstractGpuJoinIterator(
         // less from the gatherer, but because the gatherer tracks how much is used, the
         // next call to this function will start in the right place.
         gather.checkpoint()
-        withRetry(targetSizeWrapper, splitTargetSizeInHalf) { attempt =>
+        withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
           withRestoreOnRetry(gather) {
             val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize)
             gather.gatherNext(nextRows)

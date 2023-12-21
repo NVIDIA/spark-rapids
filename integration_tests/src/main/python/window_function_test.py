@@ -1478,18 +1478,34 @@ def test_window_aggs_for_rows_collect_set():
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
+@ignore_order(local=True, arrays=[
+        "cc_struct_array_1",
+        "cc_struct_array_2",
+        "cc_array_struct",
+        "cc_array_array_bool",
+        "cc_array_array_int",
+        "cc_array_array_long",
+        "cc_array_array_short",
+        "cc_array_array_date",
+        "cc_array_array_ts",
+        "cc_array_array_byte",
+        "cc_array_array_str",
+        "cc_array_array_float",
+        "cc_array_array_double",
+        "cc_array_array_decimal_32",
+        "cc_array_array_decimal_64",
+        "cc_array_array_decimal_128"
+])
+@allow_non_gpu("ProjectExec", *non_utc_allow)
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.expression.SortArray": "false"
     })
 
     def do_it(spark):
         df = gen_df(spark, _gen_data_for_collect_set_nested, length=512)
         df.createOrReplaceTempView("window_collect_table")
-        df = spark.sql(
+        return spark.sql(
             """select a, b,
               collect_set(c_struct_array_1) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1,
@@ -1525,30 +1541,6 @@ def test_window_aggs_for_rows_collect_set_nested_array():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_128
         from window_collect_table
         """)
-        df = spark.createDataFrame(df.rdd, schema=df.schema)
-        # pull out the rdd and schema and create a new dataframe to run SortArray
-        # to handle Databricks 10.4+ optimization that moves SortArray from ProjectExec
-        # to ObjectHashAggregateExec
-        df.createOrReplaceTempView("window_collect_table_2")
-        return spark.sql("""select a, b,
-              sort_array(cc_struct_array_1),
-              sort_array(cc_struct_array_2),
-              sort_array(cc_array_struct),
-              sort_array(cc_array_array_bool),
-              sort_array(cc_array_array_int),
-              sort_array(cc_array_array_long),
-              sort_array(cc_array_array_short),
-              sort_array(cc_array_array_date),
-              sort_array(cc_array_array_ts),
-              sort_array(cc_array_array_byte),
-              sort_array(cc_array_array_str),
-              sort_array(cc_array_array_float),
-              sort_array(cc_array_array_double),
-              sort_array(cc_array_array_decimal_32),
-              sort_array(cc_array_array_decimal_64),
-              sort_array(cc_array_array_decimal_128)
-        from window_collect_table_2
-        """)
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
@@ -1564,6 +1556,7 @@ def test_nested_part_fallback(part_gen):
             ('a', RepeatSeqGen(part_gen, length=20)),
             ('b', UniqueLongGen()),
             ('c', int_gen)]
+
     window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
 
     def do_it(spark):
@@ -1822,6 +1815,123 @@ def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
         '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING)) AS set_c '
         'FROM window_agg_table ',
         conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    _grpkey_short_with_nulls,
+    _grpkey_int_with_nulls,
+    _grpkey_long_with_nulls,
+    _grpkey_date_with_nulls,
+], ids=idfn)
+def test_window_aggs_for_batched_finite_row_windows_partitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        'window_agg_table',
+        """
+        SELECT
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC
+                         ROWS BETWEEN CURRENT ROW AND 100 FOLLOWING) AS count_1_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c ASC 
+                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_c_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c ASC 
+                         ROWS BETWEEN -50 PRECEDING AND 100 FOLLOWING) AS count_c_negative,
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC 
+                         ROWS BETWEEN 50 PRECEDING AND -10 FOLLOWING) AS count_1_negative,
+          SUM(c) OVER (PARTITION BY a ORDER BY b,c ASC 
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS sum_c_asc, 
+          AVG(c) OVER (PARTITION BY a ORDER BY b,c ASC
+                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_c_asc,
+          MAX(c) OVER (PARTITION BY a ORDER BY b,c DESC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_c_desc,
+          MIN(c) OVER (PARTITION BY a ORDER BY b,c ASC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_c_asc,
+          LAG(c, 30) OVER (PARTITION BY a ORDER BY b,c ASC) AS lag_c_30_asc,
+          LEAD(c, 40) OVER (PARTITION BY a ORDER BY b,c ASC) AS lead_c_40_asc
+        FROM window_agg_table
+        """,
+        validate_execs_in_gpu_plan=['GpuBatchedBoundedWindowExec'],
+        conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    _grpkey_short_with_nulls,
+    _grpkey_int_with_nulls,
+    _grpkey_long_with_nulls,
+    _grpkey_date_with_nulls,
+], ids=idfn)
+def test_window_aggs_for_batched_finite_row_windows_unpartitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        'window_agg_table',
+        """
+        SELECT
+          COUNT(1) OVER (ORDER BY b,c,a ASC
+                         ROWS BETWEEN CURRENT ROW AND 100 FOLLOWING) AS count_1_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_c_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                         ROWS BETWEEN -50 PRECEDING AND 100 FOLLOWING) AS count_c_negative,
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                         ROWS BETWEEN 50 PRECEDING AND -10 FOLLOWING) AS count_1_negative,
+          SUM(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS sum_c_asc, 
+          AVG(c) OVER (PARTITION BY a ORDER BY b,c,a ASC
+                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_c_asc,
+          MAX(c) OVER (PARTITION BY a ORDER BY b,c,a DESC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_c_desc,
+          MIN(c) OVER (PARTITION BY a ORDER BY b,c,a ASC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_c_asc,
+          LAG(c, 6)  OVER (PARTITION BY a ORDER BY b,c,a ASC) AS lag_c_6,
+          LEAD(c,4)  OVER (PARTITION BY a ORDER BY b,c,a ASC) AS lead_c_4
+        FROM window_agg_table
+        """,
+        validate_execs_in_gpu_plan=['GpuBatchedBoundedWindowExec'],
+        conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [_grpkey_int_with_nulls,], ids=idfn)
+def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
+    """
+    This test is to verify that batching is disabled for bounded windows if
+    the window extents exceed the window-extents specified in the RAPIDS conf.
+    """
+
+    # Query with window extent = { 200 PRECEDING, 200 FOLLOWING }.
+    query = """
+        SELECT
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC
+                         ROWS BETWEEN 200 PRECEDING AND 200 FOLLOWING) AS count_1_asc    
+        FROM window_agg_table                 
+    """
+
+    def get_conf_with_extent(extent):
+      return {'spark.rapids.sql.batchSizeBytes': '1000',
+              'spark.rapids.sql.window.batched.bounded.row.max': extent}
+
+    def assert_query_runs_on(exec, conf):
+        assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: gen_df(spark, data_gen, length=2048),
+            'window_agg_table',
+            query,
+            validate_execs_in_gpu_plan=[exec],
+            conf=conf)
+
+    # Check that with max window extent set to 100,
+    # query runs without batching, i.e. `GpuWindowExec`.
+    conf_100 = get_conf_with_extent(100)
+    assert_query_runs_on(exec='GpuWindowExec', conf=conf_100)
+
+    # Check that with max window extent set to 200,
+    # query runs *with* batching, i.e. `GpuBatchedBoundedWindowExec`.
+    conf_200 = get_conf_with_extent(200)
+    assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
 
 
 def test_lru_cache_datagen():

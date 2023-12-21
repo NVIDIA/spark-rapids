@@ -244,7 +244,8 @@ class IntegerGen(DataGen):
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False):
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False, full_precision=False):
+        """full_precision: If True, generate decimals with full precision without leading and trailing zeros."""
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
@@ -259,12 +260,14 @@ class DecimalGen(DataGen):
         self.scale = scale
         self.precision = precision
         self.avoid_positive_values = avoid_positive_values
+        self.full_precision = full_precision
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self.precision) + ',' + str(self.scale) + ',' + str(self.avoid_positive_values) + ')'
+        return super()._cache_repr() + '(' + str(self.precision) + ',' + str(self.scale) + ',' +\
+              str(self.avoid_positive_values) + ',' + str(self.full_precision) + ')'
 
     def start(self, rand):
         def random_decimal(rand):
@@ -272,7 +275,15 @@ class DecimalGen(DataGen):
                 sign = "-"
             else:
                 sign = rand.choice(["-", ""])
-            int_part = "".join([rand.choice("0123456789") for _ in range(self.precision)]) 
+            if self.full_precision:
+                if self.precision == 1:
+                    int_part = rand.choice("123456789")
+                else:
+                    int_part = rand.choice("123456789") + \
+                        "".join([rand.choice("0123456789") for _ in range(self.precision - 2)]) + \
+                        rand.choice("123456789")
+            else:
+                int_part = "".join([rand.choice("0123456789") for _ in range(self.precision)]) 
             result = f"{sign}{int_part}e{str(-self.scale)}" 
             return Decimal(result)
 
@@ -280,10 +291,13 @@ class DecimalGen(DataGen):
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
+_MISSING_ARG = object()
+
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = []):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
+    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX,
+                 special_cases = _MISSING_ARG):
+        _special_cases = [min_val, max_val, 0, 1, -1] if special_cases is _MISSING_ARG else special_cases
         super().__init__(LongType(), nullable=nullable, special_cases=_special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -570,19 +584,11 @@ class TimestampGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         if start is None:
-            # Spark supports times starting at
-            # "0001-01-01 00:00:00.000000"
-            # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days, even a month,
-            # just to be sure
-            start = datetime(1, 2, 1, tzinfo=tzinfo)
+            start = datetime(1, 1, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
-        # Spark supports time through: "9999-12-31 23:59:59.999999"
-        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
-        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
-        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
+        max_end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
             end = max_end
         elif isinstance(end, timedelta):
@@ -598,6 +604,10 @@ class TimestampGen(DataGen):
         self._start_time = self._to_us_since_epoch(start)
         self._end_time = self._to_us_since_epoch(end)
         self._tzinfo = tzinfo
+
+        self.with_special_case(start)
+        self.with_special_case(end)
+
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
@@ -1201,3 +1211,11 @@ def get_25_partitions_df(spark):
 non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
                  'ExecutedCommandExec'] if is_not_utc() else []
+
+# date related regexps for generating date strings within python's range limits
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{0,2}[01])-[0-3]?[0-9])-[0-5]?[0-9]'
+
+# regexp to generate year from 0002, format is yyyy
+yyyy_start_0002 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
