@@ -140,7 +140,6 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       meta: TableMeta,
       spillPriority: Long)
       extends RapidsBufferBase(id, meta, spillPriority) {
-    private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     // FIXME: Need to be clean up. Tracked in https://github.com/NVIDIA/spark-rapids/issues/9496
     override val memoryUsedBytes: Long = uncompressedSize
@@ -148,54 +147,40 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     override val storageTier: StorageTier = StorageTier.DISK
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
-      if (hostBuffer.isEmpty) {
-        require(onDiskSizeInBytes > 0,
-          s"$this attempted an invalid 0-byte mmap of a file")
-        val path = id.getDiskPath(diskBlockManager)
-        val serializerManager = diskBlockManager.getSerializerManager()
-        val memBuffer = if (serializerManager.isRapidsSpill(id)) {
-          // Only go through serializerManager's stream wrapper for spill case
-          closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
-            GpuTaskMetrics.get.readSpillFromDiskTime {
-              withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
-                c.position(fileOffset)
-                withResource(Channels.newInputStream(c)) { compressed =>
-                  withResource(serializerManager.wrapStream(id, compressed)) { in =>
-                    withResource(new HostMemoryOutputStream(decompressed)) { out =>
-                      IOUtils.copy(in, out)
-                    }
-                    decompressed
+      require(onDiskSizeInBytes > 0,
+        s"$this attempted an invalid 0-byte mmap of a file")
+      val path = id.getDiskPath(diskBlockManager)
+      val serializerManager = diskBlockManager.getSerializerManager()
+      val memBuffer = if (serializerManager.isRapidsSpill(id)) {
+        // Only go through serializerManager's stream wrapper for spill case
+          closeOnExcept(HostAlloc.alloc(uncompressedSize)) {
+            decompressed => GpuTaskMetrics.get.readSpillFromDiskTime {
+            withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
+              c.position(fileOffset)
+              withResource(Channels.newInputStream(c)) { compressed =>
+                withResource(serializerManager.wrapStream(id, compressed)) { in =>
+                  withResource(new HostMemoryOutputStream(decompressed)) { out =>
+                    IOUtils.copy(in, out)
                   }
+                  decompressed
                 }
               }
             }
           }
-        } else {
-          // Reserved mmap read fashion for UCX shuffle path. Also it's skipping encryption and
-          // compression.
-          HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset, onDiskSizeInBytes)
         }
-        hostBuffer = Some(memBuffer)
+      } else {
+        // Reserved mmap read fashion for UCX shuffle path. Also it's skipping encryption and
+        // compression.
+        HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset, onDiskSizeInBytes)
       }
-      hostBuffer.foreach(_.incRefCount())
-      hostBuffer.get
+      memBuffer
     }
 
     override def close(): Unit = synchronized {
-      if (refcount == 1) {
-        // free the memory mapping since this is the last active reader
-        hostBuffer.foreach { b =>
-          logDebug(s"closing mmap buffer $b")
-          b.close()
-        }
-        hostBuffer = None
-      }
       super.close()
     }
 
     override protected def releaseResources(): Unit = {
-      require(hostBuffer.isEmpty,
-        "Releasing a disk buffer with non-empty host buffer")
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {
         sharedBufferFiles.remove(id)

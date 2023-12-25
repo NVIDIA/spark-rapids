@@ -422,7 +422,7 @@ def test_string_unix_timestamp_ansi_exception():
         error_message="Exception",
         conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{4}-0[1-9]-[0-2][1-8]')], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @allow_non_gpu(*non_utc_allow)
 def test_gettimestamp(data_gen, ansi_enabled):
@@ -431,7 +431,7 @@ def test_gettimestamp(data_gen, ansi_enabled):
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 
-@pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_gettimestamp_format_MMyyyy(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -456,21 +456,17 @@ def test_date_format_for_date(data_gen, date_format):
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 def test_date_format_for_time(data_gen, date_format):
-    conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
-        conf)
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @allow_non_gpu('ProjectExec')
 def test_date_format_for_time_fall_back(data_gen, date_format):
-    conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
-        'ProjectExec',
-        conf)
+        'ProjectExec')
 
 @pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
