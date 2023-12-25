@@ -30,7 +30,7 @@ else:
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
-    return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
+    return StringGen(pattern).with_special_case('').with_special_pattern('[^\\$]{0,10}')
 
 def test_split_re_negative_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
