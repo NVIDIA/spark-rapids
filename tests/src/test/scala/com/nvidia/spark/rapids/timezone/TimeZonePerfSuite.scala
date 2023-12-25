@@ -33,7 +33,19 @@ import org.apache.spark.sql.types._
 /**
  * A simple test performance framework for non-UTC features.
  * Usage:
- * update enablePerfTest = true in this code
+ *   update enablePerfTest = true in this code
+ *   mvn test -Dbuildver=311 -DwildcardSuites=com.nvidia.spark.rapids.timezone.TimeZonePerfSuite
+ * Note:
+ *   Generate a Parquet file with 6 columns:
+ *     - c_ts: timestamp column
+ *     - c_long_of_ts: long value which is microseconds
+ *     - c_date: date column
+ *     - c_int_of_date:int value which is days from 1970-01-01
+ *     - c_str_for_cast: strings for cast to timestamp, formats are yyyy, yyyy-mm, ...
+ *     - c_str_of_ts: strings with format: yyyy-MM-dd HH:mm:ss
+ *    Each column is high duplicated.
+ *    The generated file is highly compressed since we expect both CPU and GPU can scan quickly.
+ *    When testing operators, we need to add in a max/count aggregator to reduce the result data.
  */
 class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   // perf test is disabled by default since it's a long running time in UT.
@@ -145,11 +157,12 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
   }
 
   test("test from_utc_timestamp") {
+    // cache time zone DB in advance
     GpuTimeZoneDB.cacheDatabase()
     Thread.sleep(5L)
 
     def perfTest(spark: SparkSession, zone: String): DataFrame = {
-      spark.read.parquet(path).select(functions.max( // max
+      spark.read.parquet(path).select(functions.max( // use max to reduce the result data
         functions.from_utc_timestamp(functions.col("c_ts"), zone)
       ))
     }
