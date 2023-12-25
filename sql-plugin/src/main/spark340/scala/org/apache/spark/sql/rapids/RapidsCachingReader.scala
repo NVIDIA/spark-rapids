@@ -19,8 +19,8 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.rapids
 
 import scala.collection
