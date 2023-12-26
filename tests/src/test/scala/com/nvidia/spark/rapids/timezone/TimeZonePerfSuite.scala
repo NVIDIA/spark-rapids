@@ -33,7 +33,8 @@ import org.apache.spark.sql.types._
 /**
  * A simple test performance framework for non-UTC features.
  * Usage:
- *   update enablePerfTest = true in this code
+ *
+ *   argLine="-DTZs=Iran,Asia/Shanghai -DenableTimeZonePerf=true" \
  *   mvn test -Dbuildver=311 -DwildcardSuites=com.nvidia.spark.rapids.timezone.TimeZonePerfSuite
  * Note:
  *   Generate a Parquet file with 6 columns:
@@ -49,15 +50,13 @@ import org.apache.spark.sql.types._
  */
 class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   // perf test is disabled by default since it's a long running time in UT.
-  private val enablePerfTest = false 
+  private val enablePerfTest = java.lang.Boolean.getBoolean("enableTimeZonePerf")
+  private val timeZoneStrings = System.getProperty("TZs", "Iran")
 
   // rows for perf test
   private val numRows: Long = 1024L * 1024L * 10L
 
-  private val zones = Seq(
-    "Iran"
-    // "America/Los_Angeles" // DST is not supported now
-  )
+  private val zones = timeZoneStrings.split(",")
 
   private val path = "/tmp/tmp_TimeZonePerfSuite"
 
@@ -106,9 +105,12 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
       TimeZonePerfUtils.createColumn(id, TimestampType, TsGenFunc(tsArray)).alias("c_ts"),
       TimeZonePerfUtils.createColumn(id, LongType, TsGenFunc(tsArray)).alias("c_long_of_ts"),
       TimeZonePerfUtils.createColumn(id, DateType, DateGenFunc(dateArray)).alias("c_date"),
-      TimeZonePerfUtils.createColumn(id, IntegerType, DateGenFunc(dateArray)).alias("c_int_of_date"),
-      TimeZonePerfUtils.createColumn(id, StringType, StringGenFunc(stringsForCast)).alias("c_str_for_cast"),
-      TimeZonePerfUtils.createColumn(id, StringType, StringGenFunc(regularStrings)).alias("c_str_of_ts")
+      TimeZonePerfUtils.createColumn(id, IntegerType, DateGenFunc(dateArray))
+          .alias("c_int_of_date"),
+      TimeZonePerfUtils.createColumn(id, StringType, StringGenFunc(stringsForCast))
+          .alias("c_str_for_cast"),
+      TimeZonePerfUtils.createColumn(id, StringType, StringGenFunc(regularStrings))
+          .alias("c_str_of_ts")
     )
     val range = spark.range(numRows)
     range.select(columns: _*)
@@ -129,7 +131,7 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     }
     println(s"test,type,zone,used MS")
     for (zoneStr <- zones) {
-      // run 6 rounds, but ignore the 1 round.
+      // run 6 rounds, but ignore the first round.
       for (i <- 1 to 6) {
         // run on Cpu
         val startOnCpu = System.nanoTime()
