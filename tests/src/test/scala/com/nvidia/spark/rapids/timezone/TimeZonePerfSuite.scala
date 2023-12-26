@@ -159,6 +159,8 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
   }
 
   test("test from_utc_timestamp") {
+    assume(enablePerfTest)
+
     // cache time zone DB in advance
     GpuTimeZoneDB.cacheDatabase()
     Thread.sleep(5L)
