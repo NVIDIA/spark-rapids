@@ -49,7 +49,7 @@ import org.apache.spark.sql.types._
  */
 class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   // perf test is disabled by default since it's a long running time in UT.
-  private val enablePerfTest = true
+  private val enablePerfTest = false 
 
   // rows for perf test
   private val numRows: Long = 1024L * 1024L * 10L
