@@ -209,7 +209,7 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
                                           reason="fastparquet interprets timestamps in UTC timezone, regardless "
                                                  "of timezone settings")),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
-                              start=datetime(1, 2, 1, tzinfo=timezone.utc),
+                              start=datetime(1, 1, 1, tzinfo=timezone.utc),
                               end=pandas_min_datetime),
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
 ], ids=idfn)

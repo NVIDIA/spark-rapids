@@ -164,6 +164,7 @@ def test_parquet_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabl
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -204,6 +205,7 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('binary_as_string', [True, False])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@tz_sensitive_test
 def test_parquet_read_round_trip_binary(std_input_path, read_func, binary_as_string, reader_confs):
     data_path = std_input_path + '/binary_as_string.parquet'
 
@@ -254,6 +256,7 @@ def test_parquet_read_forced_binary_schema(std_input_path, v1_enabled_list):
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@tz_sensitive_test
 def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, reader_confs, v1_enabled_list):
     data_path = std_input_path + '/binary_as_string.parquet'
 

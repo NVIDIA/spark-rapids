@@ -23,7 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -54,8 +54,9 @@ object AddOverflowChecks {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.
-            arithmeticOverflowError("One or more rows overflow for Add operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(
+          "One or more rows overflow for Add operation."
+          )
         }
       }
     }
@@ -452,7 +453,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
         rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
       }
       withResource(castRhs) { castRhs =>
-        com.nvidia.spark.rapids.jni.DecimalUtils.multiply128(castLhs, castRhs, -dataType.scale)
+        DecimalMultiply128(castLhs, castRhs, -dataType.scale)
       }
     }
     val retCol = withResource(retTab) { retTab =>

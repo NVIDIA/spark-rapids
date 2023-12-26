@@ -21,7 +21,7 @@ import java.nio.channels.WritableByteChannel
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
@@ -321,6 +321,15 @@ trait RapidsBuffer extends AutoCloseable {
   def getDeviceMemoryBuffer: DeviceMemoryBuffer
 
   /**
+   * Get the host memory buffer from the underlying storage. If the buffer currently resides
+   * outside of host memory, a new HostMemoryBuffer is created with the data copied over.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
+   */
+  def getHostMemoryBuffer: HostMemoryBuffer
+
+  /**
    * Try to add a reference to this buffer to acquire it.
    * @note The close method must be called for every successfully obtained reference.
    * @return true if the reference was added or false if this buffer is no longer valid
@@ -424,6 +433,9 @@ sealed class DegenerateRapidsBuffer(
 
   override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
+
+  override def getHostMemoryBuffer: HostMemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer has no host memory buffer")
 
   override def addReference(): Boolean = true
 
