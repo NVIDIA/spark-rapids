@@ -97,6 +97,9 @@ New functionality and performance improvements for this release include:
 * Kernel optimizations have been implemented to improve Parquet read performance.
 * RAPIDS Accelerator also built and tested with Scala 2.13.
 * Last version to support Pascal-based Nvidia GPUs; discontinued in the next release.
+* Introduced support for parquet Legacy rebase mode (spark.sql.parquet.datetimeRebaseModeInRead=LEGACY and spark.sql.parquet.int96RebaseModeInRead=LEGACY)
+* Introduced support for Percentile function.
+* Delta lake 2.3 support.
 * Qualification and Profiling tool:
 	* Profiling Tool now processes Spark Driver log for GPU runs, enhancing feature analysis.
 	* Auto-tuner recommendations include AQE settings for optimized performance.
