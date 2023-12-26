@@ -21,7 +21,6 @@ from string_test import mk_str_gen
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_334, is_before_spark_351, is_before_spark_342, is_before_spark_340, is_spark_350
-from spark_init_internal import spark_version
 from conftest import get_datagen_seed
 from marks import allow_non_gpu
 

@@ -576,6 +576,26 @@
             </modules>
         </profile>
         <profile>
+            <id>release351</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>351</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>351</buildver>
+                <spark.version>${spark351.version}</spark.version>
+                <spark.test.version>${spark351.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>source-javadoc</id>
             <build>
                 <plugins>
@@ -740,6 +760,7 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
+        <spark351.version>3.5.1-SNAPSHOT</spark351.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
@@ -789,6 +810,7 @@
             350
         </noSnapshot.buildvers>
         <snapshot.buildvers>
+            351
         </snapshot.buildvers>
         <databricks.buildvers>
             321db,
@@ -866,6 +888,8 @@
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
+        <cloudera.repo.url>https://repository.cloudera.com/artifactory/cloudera-repos</cloudera.repo.url>
+        <cloudera.repo.url.fallback>https://repository.cloudera.com/repository/cloudera-repos</cloudera.repo.url.fallback>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
@@ -1753,7 +1777,17 @@ This will force full Scala code rebuild in downstream modules.
         </repository>
         <repository>
             <id>cloudera-repo</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <url>${cloudera.repo.url}</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>cloudera-repo-fallback</id>
+            <url>${cloudera.repo.url.fallback}</url>
             <releases>
                 <enabled>${cloudera.repo.enabled}</enabled>
             </releases>
@@ -1772,7 +1806,17 @@ This will force full Scala code rebuild in downstream modules.
         </pluginRepository>
         <pluginRepository>
             <id>cloudera-repo</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <url>${cloudera.repo.url}</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>cloudera-repo-fallback</id>
+            <url>${cloudera.repo.url.fallback}</url>
             <releases>
                 <enabled>${cloudera.repo.enabled}</enabled>
             </releases>

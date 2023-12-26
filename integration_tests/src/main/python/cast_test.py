@@ -18,7 +18,7 @@ from asserts import *
 from conftest import is_not_utc
 from data_gen import *
 from spark_session import *
-from marks import allow_non_gpu, approximate_float, datagen_overrides
+from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
@@ -65,7 +65,7 @@ def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen(date_start_1_2_1)).select(f.col('a').cast(DateType())),
+            lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
@@ -146,11 +146,12 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_2_1),
-                                      StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
-                                      StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
+@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
+                                      StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
                                       ],
                         ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
