@@ -1682,7 +1682,6 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
 
 
 @ignore_order(local=True)
-@allow_non_gpu(*non_utc_allow)
 def test_to_date_with_window_functions():
     """
     This test ensures that date expressions participating alongside window aggregations

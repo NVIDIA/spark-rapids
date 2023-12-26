@@ -1126,8 +1126,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (!isTimeZoneSupported) return checkUTCTimezone(this)
 
     // Level 3 check
-    if (!GpuTimeZoneDB.isSupportedTimeZone(getZoneId())) {
-      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
+    val zoneId = getZoneId()
+    if (!GpuTimeZoneDB.isSupportedTimeZone(zoneId)) {
+      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(zoneId.toString))
     }
   }
 

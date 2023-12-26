@@ -86,6 +86,13 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   val fromType: DataType = cast.child.dataType
   val toType: DataType = cast.dataType
 
+  override def isTimeZoneSupported: Boolean = {
+    (fromType, toType) match {
+      case (TimestampType, DateType) => true // this is for to_date(...)
+      case _ => false
+    }
+  }
+
   override def tagExprForGpu(): Unit = {
     recursiveTagExprForGpuCheck()
   }
