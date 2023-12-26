@@ -21,6 +21,9 @@ from pyspark.sql.types import *
 from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = pytest.mark.premerge_ci_1
+
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
