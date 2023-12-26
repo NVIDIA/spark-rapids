@@ -137,7 +137,7 @@ def test_coalesce(data_gen):
     s1 = with_cpu_session(
         lambda spark: gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen)))
     # we want lots of nulls
-    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0)) 
+    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0))
         for x in range(0, num_cols)], nullable=False)
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
     command_args.append(s1)
@@ -214,7 +214,7 @@ def test_conditional_with_side_effects_cast(data_gen):
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
-                'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
+                'IF(a RLIKE "^[0-9]{5,}", CAST(SUBSTR(a, 0, 5) AS INT), 0)'),
             conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
@@ -225,8 +225,8 @@ def test_conditional_with_side_effects_case_when(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'CASE \
-                WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
-                WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
+                WHEN a RLIKE "^[0-9]{6}" THEN CAST(SUBSTR(a, 0, 6) AS INT) + 123 \
+                WHEN a RLIKE "^[0-9]{3}" THEN CAST(SUBSTR(a, 0, 3) AS INT) \
                 ELSE -1 END'),
                 conf = test_conf)
 
