@@ -273,13 +273,13 @@ run_pyarrow_tests() {
 
 run_non_utc_time_zone_tests() {
   # select one time zone according to current day of week
-  non_utc_time_zones=("Asia/Shanghai" "Iran")
-  time_zones_length=${#non_utc_time_zones[@]}
+  source "$(dirname "$0")"/test-timezones.sh
+  time_zones_length=${#time_zones_test_cases[@]}
   # get day of week, Sunday is represented by 0 and Saturday by 6
   current_date=$(date +%w)
   echo "Current day of week is: ${current_date}"
   time_zone_index=$((current_date % time_zones_length))
-  time_zone="${non_utc_time_zones[${time_zone_index}]}"
+  time_zone="${time_zones_test_cases[${time_zone_index}]}"
   echo "Run Non-UTC tests, time zone is ${time_zone}"
 
   # run tests

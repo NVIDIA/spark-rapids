@@ -34,7 +34,6 @@
 {"spark": "332db"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shuffle
 
 import java.nio.ByteBuffer
