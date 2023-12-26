@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
@@ -1407,6 +1408,8 @@ object GpuSequenceUtil {
 case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expression],
     timeZoneId: Option[String] = None) extends TimeZoneAwareExpression with GpuExpression
     with ShimExpression {
+
+  import GpuSequenceUtil._
 
   override def dataType: ArrayType = ArrayType(start.dataType, containsNull = false)
 
