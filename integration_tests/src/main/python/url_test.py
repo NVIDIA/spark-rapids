@@ -29,6 +29,7 @@ url_pattern_with_key = r'((http|https|ftp|file)://)(([a-z]{1,3}\.){0,3}([a-z]{1,
             r'(:[0-9]{1,3}){0,1}(/[a-z]{1,3}){0,3}(\?key=[a-z]{1,3}){0,1}(#([a-z]{1,3})){0,1}'
 
 edge_cases = [
+    "userinfo@spark.apache.org/path?query=1#Ref",
     "http://foo.com/blah_blah",
     "http://foo.com/blah_blah/",
     "http://foo.com/blah_blah_(wikipedia)",
@@ -103,6 +104,7 @@ edge_cases = [
     "http://10.1.1.254",
     "http://userinfo@spark.apache.org/path?query=1#Ref",
     r"https://use%20r:pas%20s@example.com/dir%20/pa%20th.HTML?query=x%20y&q2=2#Ref%20two",
+    r"https://use%20r:pas%20s@example.com/dir%20/pa%20th.HTML?query=x%9Fy&q2=2#Ref%20two",
     "http://user:pass@host",
     "http://user:pass@host/",
     "http://user:pass@host/?#",
@@ -146,8 +148,10 @@ edge_cases_gen = SetValuesGen(StringType(), edge_cases)
 
 url_gen = StringGen(url_pattern)
 
-supported_parts = ['PROTOCOL', 'HOST']
-unsupported_parts = ['PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+supported_parts = ['PROTOCOL', 'HOST', 'QUERY']
+unsupported_parts = ['PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+supported_with_key_parts = ['PROTOCOL', 'HOST']
+unsupported_with_key_parts = ['QUERY', 'PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
@@ -160,4 +164,18 @@ def test_parse_url_supported(data_gen, part):
 def test_parse_url_unsupported_fallback(part):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("a", "parse_url(a, '" + part + "')"),
+        'ParseUrl')
+
+@pytest.mark.parametrize('part', supported_with_key_parts, ids=idfn)
+def test_parse_url_with_key(part):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"))
+
+
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+@pytest.mark.parametrize('part', unsupported_with_key_parts, ids=idfn)
+def test_parse_url_query_with_key_fallback(part):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),
         'ParseUrl')
