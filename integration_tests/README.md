@@ -350,10 +350,10 @@ But only a small amout of cases are verifing with non-UTC time zone in the pre-m
 When adding cases, should also check non-UTC is working besides the default UTC time zone.
 Please test the following time zones:
 ```shell
-$ TZ=Iran ./integration_tests/run_pyspark_from_build.sh
+$ TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh
 $ TZ=America/Los_Angeles ./integration_tests/run_pyspark_from_build.sh
 ```
-`Iran` is non-DST(Daylight Savings Time) time zone and `America/Los_Angeles` is DST time zone.
+`Asia/Shanghai` is non-DST(Daylight Savings Time) time zone and `America/Los_Angeles` is DST time zone.
 
 If the new added cases failed with non-UTC, then should allow the operator(does not support non-UTC) fallback,
 For example, add the following annotation to the case:
