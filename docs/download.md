@@ -100,7 +100,6 @@ New functionality and performance improvements for this release include:
 * Introduced support for parquet Legacy rebase mode (spark.sql.parquet.datetimeRebaseModeInRead=LEGACY and spark.sql.parquet.int96RebaseModeInRead=LEGACY)
 * Introduced support for Percentile function.
 * Delta lake 2.3 support.
-* Fixes a potential data corruption issue.
 * Qualification and Profiling tool:
 	* Profiling Tool now processes Spark Driver log for GPU runs, enhancing feature analysis.
 	* Auto-tuner recommendations include AQE settings for optimized performance.
