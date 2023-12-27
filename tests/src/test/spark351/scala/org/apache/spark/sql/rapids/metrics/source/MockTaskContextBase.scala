@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
+/*** spark-rapids-shim-json-lines
+{"spark": "351"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids.metrics.source
 
-import java.io.File
+import org.apache.spark.TaskContext
 
-import org.apache.spark.util.Utils
-
-object FileUtils {
-
-  /** Generate temp file path and delete it after using */
-  def withTempPath(f: File => Unit): Unit = {
-    val path = Utils.createTempDir()
-    path.delete()
-    try f(path) finally Utils.deleteRecursively(path)
-  }
-
-  def deleteRecursively(path: File): Unit = {
-    Utils.deleteRecursively(path)
-  }
+abstract class MockTaskContextBase extends TaskContext {
+  override def isFailed(): Boolean = false
 }
