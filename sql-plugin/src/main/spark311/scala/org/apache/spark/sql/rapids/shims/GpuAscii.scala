@@ -44,8 +44,20 @@ case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitC
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val emptyMask = withResource(Scalar.fromString("")) { emptyScalar =>
+      input.getBase.equalTo(emptyScalar)
+    }
+    val emptyReplaced = withResource(emptyMask) { _ =>
+      // replace empty strings with 'NUL' (which will convert to ascii 0)
+      withResource(Scalar.fromString('\u0000'.toString)) { zeroScalar =>
+        emptyMask.ifElse(zeroScalar, input.getBase)
+      }
+    }
     // convert to byte lists
-    val firstBytes = withResource(input.getBase.asByteList) { bytes =>
+    val byteLists = withResource(emptyReplaced) { _ =>
+      emptyReplaced.asByteList()
+    }
+    val firstBytes = withResource(byteLists) { bytes =>
       bytes.extractListElement(0)
     }
     val firstBytesInt = withResource(firstBytes) { _ =>
