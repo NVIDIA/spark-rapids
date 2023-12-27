@@ -65,7 +65,7 @@ import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
-import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuTimeAdd}
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -3722,8 +3722,8 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[Ascii](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAscii(child)
-      }).disabledByDefault("it only supports strings starting with ASCII or Latin-1 characters." +
-          " Otherwise the results will not match the CPU."),
+      }).disabledByDefault("it only supports strings starting with ASCII or Latin-1 characters " +
+        "after Spark 3.2.3, 3.3.1 and 3.4.0. Otherwise the results will not match the CPU."),
     expr[GetArrayStructFields](
       "Extracts the `ordinal`-th fields of all array elements for the data with the type of" +
         " array of struct",
