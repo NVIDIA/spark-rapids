@@ -150,6 +150,8 @@ url_gen = StringGen(url_pattern)
 
 supported_parts = ['PROTOCOL', 'HOST', 'QUERY']
 unsupported_parts = ['PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+supported_with_key_parts = ['PROTOCOL', 'HOST']
+unsupported_with_key_parts = ['QUERY', 'PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
@@ -162,4 +164,18 @@ def test_parse_url_supported(data_gen, part):
 def test_parse_url_unsupported_fallback(part):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("a", "parse_url(a, '" + part + "')"),
+        'ParseUrl')
+
+@pytest.mark.parametrize('part', supported_with_key_parts, ids=idfn)
+def test_parse_url_with_key(part):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"))
+
+
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+@pytest.mark.parametrize('part', unsupported_with_key_parts, ids=idfn)
+def test_parse_url_query_with_key_fallback(part):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),
         'ParseUrl')

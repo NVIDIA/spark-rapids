@@ -3263,6 +3263,8 @@ object GpuOverrides extends Logging {
           }
 
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            case Some("QUERY") if (a.children.size == 3) =>
+              willNotWorkOnGpu("Part to extract QUERY with key is not supported on GPU")
             case Some(part) if GpuParseUrl.isSupportedPart(part) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
