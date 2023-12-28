@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import ignore_order, incompat, allow_non_gpu, datagen_overrides
+from marks import ignore_order, incompat, allow_non_gpu, datagen_overrides, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -253,6 +253,7 @@ def test_dayofyear(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_supported_tz_allow)
 def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -287,6 +288,7 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
 
 @pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "Iran", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_from_utc_timestamp(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
@@ -295,6 +297,7 @@ def test_from_utc_timestamp(data_gen, time_zone):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('time_zone', ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@tz_sensitive_test
 def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
@@ -302,6 +305,7 @@ def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
 
 @pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai", "EST", "MST", "VST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_from_utc_timestamp_supported_timezones(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
@@ -376,6 +380,7 @@ def test_string_to_timestamp_functions_ansi_valid(parser_policy):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_supported_tz_allow)
 def test_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
@@ -421,7 +426,7 @@ def test_string_unix_timestamp_ansi_exception():
         error_message="Exception",
         conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{4}-0[1-9]-[0-2][1-8]')], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @allow_non_gpu(*non_utc_allow)
 def test_gettimestamp(data_gen, ansi_enabled):
@@ -430,7 +435,7 @@ def test_gettimestamp(data_gen, ansi_enabled):
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 
-@pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
+@pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_gettimestamp_format_MMyyyy(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -452,24 +457,21 @@ def test_date_format_for_date(data_gen, date_format):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+# use 9999-12-30 instead of 9999-12-31 to avoid the issue: https://github.com/NVIDIA/spark-rapids/issues/10083
+@pytest.mark.parametrize('data_gen', [TimestampGen(end=datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))], ids=idfn)
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 def test_date_format_for_time(data_gen, date_format):
-    conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
-        conf)
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @allow_non_gpu('ProjectExec')
 def test_date_format_for_time_fall_back(data_gen, date_format):
-    conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
-        'ProjectExec',
-        conf)
+        'ProjectExec')
 
 @pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
@@ -517,7 +519,11 @@ def test_date_format_maybe(data_gen, date_format):
         'DateFormatClass')
 
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+
+@pytest.mark.parametrize('data_gen', [date_gen,
+                                      # use 9999-12-30 instead of 9999-12-31 to avoid the issue: https://github.com/NVIDIA/spark-rapids/issues/10083
+                                      TimestampGen(end=datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))
+                                      ], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_date_format_maybe_incompat(data_gen, date_format):
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
@@ -572,8 +578,7 @@ def test_unsupported_fallback_to_date():
 # (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds 
 # considering the influence of time zone.
 ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, 16777215.0, float('inf'), float('-inf'), float('nan')])
-# FIXME: min_val is changed to -62135410400 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
-seconds_gens = [LongGen(min_val=-62135410400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(),
+seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(),
                 DoubleGen(min_exp=0, max_exp=32), ts_float_gen, DecimalGen(16, 6), DecimalGen(13, 3), DecimalGen(10, 0), DecimalGen(7, -3), DecimalGen(6, 6)]
 @pytest.mark.parametrize('data_gen', seconds_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -608,7 +613,6 @@ def test_timestamp_seconds_decimal_overflow(data_gen):
         conf={},
         error_message='Overflow')
 
-# FIXME: min_val is changed to -62135410400000 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
 millis_gens = [LongGen(min_val=-62135410400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
 @pytest.mark.parametrize('data_gen', millis_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -623,8 +627,7 @@ def test_timestamp_millis_long_overflow():
         conf={},
         error_message='long overflow')
 
-# FIXME: min_val is changed to -62135410400 bypassing "ValueError: year 0 is out of range" from pySpark. It can be fixed after https://github.com/NVIDIA/spark-rapids/issues/9747
-micros_gens = [LongGen(min_val=-62135410400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
+micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
 @pytest.mark.parametrize('data_gen', micros_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_micros(data_gen):

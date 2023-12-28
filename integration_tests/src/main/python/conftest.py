@@ -41,12 +41,16 @@ def is_incompat():
 
 _sort_on_spark = False
 _sort_locally = False
+_sort_array_columns_locally = []
 
 def should_sort_on_spark():
     return _sort_on_spark
 
 def should_sort_locally():
     return _sort_locally
+
+def array_columns_to_sort_locally():
+    return _sort_array_columns_locally
 
 _allow_any_non_gpu = False
 _non_gpu_allowed = []
@@ -169,6 +173,7 @@ def get_std_input_path():
 def pytest_runtest_setup(item):
     global _sort_on_spark
     global _sort_locally
+    global _sort_array_columns_locally
     global _inject_oom
     global _test_datagen_random_seed
     _inject_oom = item.get_closest_marker('inject_oom')
@@ -188,6 +193,7 @@ def pytest_runtest_setup(item):
         if order.kwargs.get('local', False):
             _sort_on_spark = False
             _sort_locally = True
+            _sort_array_columns_locally = order.kwargs.get('arrays', [])
         else:
             _sort_on_spark = True
             _sort_locally = False

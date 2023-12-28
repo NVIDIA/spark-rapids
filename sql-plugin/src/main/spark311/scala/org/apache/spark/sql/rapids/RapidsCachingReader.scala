@@ -34,7 +34,6 @@
 {"spark": "332db"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
