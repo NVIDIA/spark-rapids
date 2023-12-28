@@ -41,12 +41,16 @@ def is_incompat():
 
 _sort_on_spark = False
 _sort_locally = False
+_sort_array_columns_locally = []
 
 def should_sort_on_spark():
     return _sort_on_spark
 
 def should_sort_locally():
     return _sort_locally
+
+def array_columns_to_sort_locally():
+    return _sort_array_columns_locally
 
 _allow_any_non_gpu = False
 _non_gpu_allowed = []
@@ -139,13 +143,15 @@ _limit = -1
 
 _inject_oom = None
 
-def should_inject_oom():
-    return _inject_oom != None
+
+def get_inject_oom_conf():
+    return _inject_oom
+
 
 # For datagen: we expect a seed to be provided by the environment, or default to 0.
 # Note that tests can override their seed when calling into datagen by setting seed= in their tests.
 _test_datagen_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_DATAGEN_SEED", 0))
-print(f"Starting with datagen test seed: {_test_datagen_random_seed}. " 
+print(f"Starting with datagen test seed: {_test_datagen_random_seed}. "
       "Set env variable SPARK_RAPIDS_TEST_DATAGEN_SEED to override.")
 
 def get_datagen_seed():
@@ -167,6 +173,7 @@ def get_std_input_path():
 def pytest_runtest_setup(item):
     global _sort_on_spark
     global _sort_locally
+    global _sort_array_columns_locally
     global _inject_oom
     global _test_datagen_random_seed
     _inject_oom = item.get_closest_marker('inject_oom')
@@ -186,6 +193,7 @@ def pytest_runtest_setup(item):
         if order.kwargs.get('local', False):
             _sort_on_spark = False
             _sort_locally = True
+            _sort_array_columns_locally = order.kwargs.get('arrays', [])
         else:
             _sort_on_spark = True
             _sort_locally = False
@@ -296,7 +304,7 @@ def pytest_configure(config):
 # pytest expects this starting list to match for all workers, it is important that the same seed
 # is set for all, either from the environment or as a constant.
 oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1))
-print(f"Starting with OOM injection seed: {oom_random_injection_seed}. " 
+print(f"Starting with OOM injection seed: {oom_random_injection_seed}. "
       "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
 
 def pytest_collection_modifyitems(config, items):
@@ -305,7 +313,9 @@ def pytest_collection_modifyitems(config, items):
         extras = []
         order = item.get_closest_marker('ignore_order')
         # decide if OOMs should be injected, and when
-        injection_mode = config.getoption('test_oom_injection_mode').lower()
+        injection_mode_and_conf = config.getoption('test_oom_injection_mode').split(":")
+        injection_mode = injection_mode_and_conf[0].lower()
+        injection_conf = injection_mode_and_conf[1] if len(injection_mode_and_conf) == 2 else None
         inject_choice = False
         datagen_overrides = item.get_closest_marker('datagen_overrides')
         if datagen_overrides:
@@ -322,8 +332,10 @@ def pytest_collection_modifyitems(config, items):
         elif injection_mode == 'always':
             inject_choice = True
         if inject_choice:
-            extras.append('INJECT_OOM')
-            item.add_marker('inject_oom', append=True)
+            extras.append('INJECT_OOM_%s' % injection_conf if injection_conf else 'INJECT_OOM')
+            item.add_marker(
+                pytest.mark.inject_oom(injection_conf) if injection_conf else 'inject_oom',
+                append=True)
         if order:
             if order.kwargs:
                 extras.append('IGNORE_ORDER(' + str(order.kwargs) + ')')

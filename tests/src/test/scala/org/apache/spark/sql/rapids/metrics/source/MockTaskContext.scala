@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import org.apache.spark.scheduler.TaskLocality
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
-class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext {
+class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends MockTaskContextBase {
 
   val listeners = new ListBuffer[TaskCompletionListener]
 
@@ -66,7 +66,7 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
 
   override private[spark] def killTaskIfInterrupted(): Unit = {}
 
-  override private[spark] def getKillReason() = None
+  override def getKillReason() = None
 
   override def taskMemoryManager() = null
 

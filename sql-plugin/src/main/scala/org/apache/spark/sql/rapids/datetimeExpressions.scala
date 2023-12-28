@@ -1081,7 +1081,6 @@ class FromUTCTimestampExprMeta(
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   private[this] var timezoneId: ZoneId = null
-  private[this] val nonUTCEnabled: Boolean = conf.nonUTCTimeZoneEnabled
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
@@ -1090,27 +1089,19 @@ class FromUTCTimestampExprMeta(
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
           timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
-          // Always pass for UTC timezone since it's no-op.
-          if (!GpuOverrides.isUTCTimezone(timezoneId)) {
-            if (nonUTCEnabled) {
-              if(!GpuTimeZoneDB.isSupportedTimeZone(timezoneShortID)) {
-                willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-              }
-            } else {
-              // TODO: remove this once GPU backend was supported.
-              willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-            }
+          if (!GpuTimeZoneDB.isSupportedTimeZone(timezoneId)) {
+            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
           }
         }
     }
   }
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone, timezoneId, nonUTCEnabled)
+    GpuFromUTCTimestamp(timestamp, timezone, timezoneId)
 }
 
 case class GpuFromUTCTimestamp(
-    timestamp: Expression, timezone: Expression, zoneId: ZoneId, nonUTCEnabled: Boolean)
+    timestamp: Expression, timezone: Expression, zoneId: ZoneId)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
       with NullIntolerant {
@@ -1126,13 +1117,7 @@ case class GpuFromUTCTimestamp(
         // For UTC timezone, just a no-op bypassing GPU computation.
         lhs.getBase.incRefCount()
       } else {
-        if (nonUTCEnabled){
-          GpuTimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
-        } else {
-          // TODO: remove this until GPU backend supported.
-          throw new UnsupportedOperationException(
-            s"Not supported timezone type ${zoneId.normalized()}")
-        }
+        GpuTimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
       }
     } else {
       // All-null output column.

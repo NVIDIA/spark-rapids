@@ -163,6 +163,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ['', 'orc'])
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow_orc_scan)
 def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
@@ -780,6 +781,7 @@ def test_orc_read_varchar_as_string(std_input_path):
 
 @pytest.mark.parametrize('gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow_orc_scan)
 def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_order):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]

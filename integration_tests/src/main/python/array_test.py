@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from conftest import is_databricks_runtime
-from marks import incompat
+from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
@@ -332,11 +332,14 @@ def test_array_transform(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is supported for sequence
+@allow_non_gpu(*non_utc_allow_for_sequence)
 def test_array_transform_non_deterministic():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(1).selectExpr("transform(sequence(0, cast(rand(5)*10 as int) + 1), x -> x * 22) as t"),
             conf={'spark.rapids.sql.castFloatToIntegralTypes.enabled': True})
 
+@allow_non_gpu(*non_utc_allow_for_sequence)
 def test_array_transform_non_deterministic_second_param():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : debug_df(spark.range(1).selectExpr("transform(sequence(0, cast(rand(5)*10 as int) + 1), (x, i) -> x + i) as t")),
