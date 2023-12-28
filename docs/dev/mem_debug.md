@@ -133,7 +133,7 @@ allocation. Meaning round it up to a multiple of a set number of bytes. We try t
 close to the actual allocator as possible. But just be careful.
 
 Also know that the address here should correspond to the address in the leak debugging if and only
-if it was a DeviceMemoryBuffer that was allocated. In this case, where it is a `cudf::column` the
+if it was a `DeviceMemoryBuffer` that was allocated. In this case, where it is a `cudf::column` the
 pointers will not line up.
 
 Also be aware that it is possible for us to logically slice a buffer. So you might see a large
@@ -165,9 +165,8 @@ We don't have a good way to [track spill](https://github.com/NVIDIA/spark-rapids
 what is or is not spillable. The spill framework typically will use reference counting to know
 when it is the only one holding a reference to memory and then make the data spillable at that
 point.  This means that if we don't get the reference counting right we end up never spilling
-memory, and it may mask the leak for quite a while.
 
 We also don't have a way to 
 [log exactly what was spilled](https://github.com/NVIDIA/spark-rapids/issues/10103)
-and what was read back it. We can probably guess that this is happening from other logs, but it
+and what was read back. We can probably guess that this is happening from other logs, but it
 would be really nice to have a way to actually capture it.

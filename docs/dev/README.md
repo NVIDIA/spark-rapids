@@ -244,7 +244,7 @@ You can also use [Compute Sanitizer](compute_sanitizer.md) to debug CUDA memory 
 
 ### Memory Debugging
 Java's garbage collector does not play nicely with CUDA memory allocations or with off heap memory.
-There are a number of tools that we have developed that can help do
+There are a number of tools that we have developed that can help to
 [Debug Memory Issues](mem_debug.md)
 
 ## Profiling Tips
