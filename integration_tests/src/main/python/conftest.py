@@ -306,13 +306,9 @@ print(f"Starting with OOM injection seed: {oom_random_injection_seed}. "
 # whether that override is marked as `permanent`
 def get_effective_seed(item, datagen_overrides):
     if datagen_overrides:
-        is_permanent = False 
         # if the override is marked as permanent it will always override its seed
         # else, if the user provides a seed via DATAGEN_SEED, we will override.
-        try:
-            is_permanent = datagen_overrides.kwargs["permanent"]
-        except KeyError:
-            pass
+        is_permanent = datagen_overrides.kwargs.get("permanent", False)
 
         override_condition = datagen_overrides.kwargs.get('condition', True)
         do_override = (
