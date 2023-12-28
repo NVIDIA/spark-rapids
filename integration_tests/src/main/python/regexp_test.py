@@ -30,7 +30,7 @@ else:
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
-    return StringGen(pattern).with_special_case('').with_special_pattern(r'[^\\$]{0,10}')
+    return StringGen(pattern).with_special_case('')
 
 def test_split_re_negative_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
@@ -939,7 +939,7 @@ def test_unsupported_fallback_regexp_extract_all():
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_unsupported_fallback_regexp_replace():
-    gen = mk_str_gen('[abcdef]{0,2}')
+    gen = StringGen('[abcdef]{0,2}').with_special_case('').with_special_pattern(r'[^\\$]{0,10}')
     regex_gen = StringGen(r'\[a-z\]\+')
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
