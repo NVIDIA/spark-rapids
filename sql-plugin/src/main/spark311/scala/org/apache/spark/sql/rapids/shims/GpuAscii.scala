@@ -21,11 +21,9 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "330"}
 {"spark": "330cdh"}
-{"spark": "330db"}
 spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
