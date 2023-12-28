@@ -1219,3 +1219,9 @@ date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{
 
 # regexp to generate year from 0002, format is yyyy
 yyyy_start_0002 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
+
+# regexp to generate year from 0001, format is yyyy
+yyyy_start_0001 = '([0-9]{3}[1-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_1_1 = yyyy_start_0001 + '-[0-9]{1,2}-[0-9]{1,2}'

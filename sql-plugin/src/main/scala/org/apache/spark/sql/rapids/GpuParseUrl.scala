@@ -40,7 +40,7 @@ object GpuParseUrl {
 
   def isSupportedPart(part: String): Boolean = {
     part match {
-      case PROTOCOL | HOST =>
+      case PROTOCOL | HOST | QUERY =>
         true
       case _ =>
         false
@@ -65,22 +65,24 @@ case class GpuParseUrl(children: Seq[Expression])
         ParseURI.parseURIProtocol(url.getBase)
       case HOST =>
         ParseURI.parseURIHost(url.getBase)
-      case PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
+      case QUERY =>
+        ParseURI.parseURIQuery(url.getBase)
+      case PATH | REF | FILE | AUTHORITY | USERINFO =>
         throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
-            s"Only PROTOCOL and HOST are supported")
+            s"Only PROTOCOL, HOST and QUERY without a key are supported")
       case _ =>
         throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
     }
   }
 
-  def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar, key: GpuScalar): ColumnVector = {
+  def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, key: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
     if (part != QUERY) {
       // return a null columnvector
-      return ColumnVector.fromStrings(null, null)
+      return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
     }
     throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
-        s"Only PROTOCOL and HOST are supported")
+        s"Only PROTOCOL, HOST and QUERY without a key are supported")
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
