@@ -62,3 +62,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--pyarrow_test", action='store_true', default=False, help="if enable pyarrow tests"
     )
+    parser.addoption(
+        "--datagen_seed_override_disabled", action='store_true', default=False, help="if passed the @datagen_overrides marker will be ignored."
+    )

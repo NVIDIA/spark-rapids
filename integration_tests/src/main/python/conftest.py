@@ -151,7 +151,8 @@ def get_inject_oom_conf():
 # For datagen: we expect a seed to be provided by the environment, or default to 0.
 # Note that tests can override their seed when calling into datagen by setting seed= in their tests.
 _test_datagen_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_DATAGEN_SEED", 0))
-print(f"Starting with datagen test seed: {_test_datagen_random_seed}. "
+_test_datagen_random_seed_init = _test_datagen_random_seed
+print(f"Starting with datagen test seed: {_test_datagen_random_seed_init}. "
       "Set env variable SPARK_RAPIDS_TEST_DATAGEN_SEED to override.")
 
 def get_datagen_seed():
@@ -176,9 +177,13 @@ def pytest_runtest_setup(item):
     global _sort_array_columns_locally
     global _inject_oom
     global _test_datagen_random_seed
+    # remember to reset to the initial seed each time!
+    _test_datagen_random_seed = _test_datagen_random_seed_init
     _inject_oom = item.get_closest_marker('inject_oom')
     datagen_overrides = item.get_closest_marker('datagen_overrides')
-    if datagen_overrides:
+    # skip if the user specified --datagen_seed_override_disabled (this test shoulduse
+    # the seed from DATAGEN_SEED)
+    if not item.config.getoption("datagen_seed_override_disabled") and datagen_overrides:
         try:
             seed = datagen_overrides.kwargs["seed"]
         except KeyError:
@@ -320,7 +325,7 @@ def pytest_collection_modifyitems(config, items):
         datagen_overrides = item.get_closest_marker('datagen_overrides')
         if datagen_overrides:
             test_datagen_random_seed_choice = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
-            if test_datagen_random_seed_choice != _test_datagen_random_seed:
+            if test_datagen_random_seed_choice != _test_datagen_random_seed_init:
                 extras.append('DATAGEN_SEED_OVERRIDE=%s' % str(test_datagen_random_seed_choice))
             else:
                 extras.append('DATAGEN_SEED=%s' % str(test_datagen_random_seed_choice))
