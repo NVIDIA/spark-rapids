@@ -151,9 +151,11 @@ def get_inject_oom_conf():
 # For datagen: we expect a seed to be provided by the environment, or default to 0.
 # Note that tests can override their seed when calling into datagen by setting seed= in their tests.
 _test_datagen_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_DATAGEN_SEED", 0))
+_test_datagen_random_seed_user_provided = os.getenv("DATAGEN_SEED") is not None
+provided_by_msg = "Provided by user with DATAGEN_SEED" if _test_datagen_random_seed_user_provided else "Automatically set"
 _test_datagen_random_seed_init = _test_datagen_random_seed
-print(f"Starting with datagen test seed: {_test_datagen_random_seed_init}. "
-      "Set env variable SPARK_RAPIDS_TEST_DATAGEN_SEED to override.")
+print(f"Starting with datagen test seed: {_test_datagen_random_seed_init} ({provided_by_msg}). "
+      "Set env variable DATAGEN_SEED to override.")
 
 def get_datagen_seed():
     return _test_datagen_random_seed
@@ -304,23 +306,30 @@ print(f"Starting with OOM injection seed: {oom_random_injection_seed}. "
 # whether that override is marked as `permanent`
 def get_effective_seed(item, datagen_overrides):
     if datagen_overrides:
-        permanent_override = False 
-        # if the override is marked as permanent (cannot be disabled) or the marker is temporary
-        # and we haven't disabled markers
+        is_permanent = False 
+        # if the override is marked as permanent it will always override its seed
+        # else, if the user provides a seed via DATAGEN_SEED, we will override.
         try:
-            permanent_override = datagen_overrides.kwargs["permanent"]
+            is_permanent = datagen_overrides.kwargs["permanent"]
         except KeyError:
             pass
 
-        if permanent_override or not item.config.getoption("datagen_seed_override_disabled"):
+        override_condition = datagen_overrides.kwargs.get('condition', True)
+        do_override = (
+            # if the override condition is satisfied, we consider it
+            override_condition and (
+                # if the override is permanent, we always override
+                # if it is not permanent, we consider it only if the user didn't
+                #   set DATAGEN_SEED
+                is_permanent or not _test_datagen_random_seed_user_provided))
+
+        if do_override:
             try:
                 seed = datagen_overrides.kwargs["seed"]
             except KeyError:
                 raise Exception("datagen_overrides requires an override seed value")
+            return (seed, is_permanent)
 
-            override_seed = datagen_overrides.kwargs.get('condition', True)
-            if override_seed:
-                return (seed, permanent_override)
     return (_test_datagen_random_seed_init, False)
 
 def pytest_collection_modifyitems(config, items):

@@ -343,14 +343,14 @@ integration tests. For example:
 $ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
 ```
 
-Tests can override the seed used using the test marker `@datagen_overrides(seed=<new seed here>)`. This marker
-forces a test to ignore `DATAGEN_SEED`. In order to disable the override behavior, ensuring that tests use `DATAGEN_SEED`
-even if the `@datagen_overrides` marker is provided, pass the option `--datagen_seed_override_disabled`.
-For example:
+Tests can override the seed used using the test marker: 
 
-```shell
-$ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh --datagen_seed_override_disabled
 ```
+@datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`. 
+```
+
+This marker forces a test to ignore `DATAGEN_SEED` if `permanent=True` above, if `permanent=False` or is not provided,
+the `DATAGEN_SEED` value always wins.
 
 ### Running with non-UTC time zone
 For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
