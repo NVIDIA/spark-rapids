@@ -61,6 +61,15 @@ def test_timeadd_daytime_column():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@allow_non_gpu(*non_supported_tz_allow)
+def test_timeadd_daytime_column_long_overflow():
+    gen_list = [('t', TimestampGen()),('d', DayTimeIntervalGen())]
+    assert_gpu_and_cpu_error(
+        lambda spark : gen_df(spark, gen_list).selectExpr("t + d").collect(),
+        conf={},
+        error_message='long overflow')
+
 @pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
 def test_interval_seconds_overflow_exception():
     assert_gpu_and_cpu_error(

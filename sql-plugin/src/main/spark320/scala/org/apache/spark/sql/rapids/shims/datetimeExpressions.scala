@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
-import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.GpuOverrides
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
@@ -164,10 +164,56 @@ case class GpuTimeAdd(start: Expression,
     }
   }
 
+  // A tricky way to check overflow. The result is overflow when positive + positive = negative
+  // or negative + negative = positive, so we can check the sign of the result is the same as
+  // the sign of the operands.
   private def timestampAddDuration(cv: ColumnView, duration: BinaryOperable): ColumnVector = {
     // Not use cv.add(duration), because of it invoke BinaryOperable.implicitConversion,
     // and currently BinaryOperable.implicitConversion return Long
     // Directly specify the return type is TIMESTAMP_MICROSECONDS
-    cv.binaryOp(BinaryOp.ADD, duration, DType.TIMESTAMP_MICROSECONDS)
+    val resWithOverflow = cv.binaryOp(BinaryOp.ADD, duration, DType.TIMESTAMP_MICROSECONDS)
+    closeOnExcept(resWithOverflow) { _ =>
+      val isCvPos = withResource(
+          Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, 0)) { zero =>
+        cv.greaterOrEqualTo(zero)
+      }
+      val sameSignal = closeOnExcept(isCvPos) { isCvPos =>
+        val isDurationPos = duration match {
+          case durScalar: Scalar =>
+            val isPosBool = durScalar.isValid && durScalar.getLong >= 0
+            Scalar.fromBool(isPosBool)
+          case dur : AutoCloseable =>
+            withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 0)) { zero =>
+              dur.greaterOrEqualTo(zero)
+            }
+        }
+        withResource(isDurationPos) { _ =>
+          isCvPos.equalTo(isDurationPos)
+        }
+      }
+      val isOverflow = withResource(sameSignal) { _ =>
+        val sameSignalWithRes = withResource(isCvPos) { _ =>
+          val isResNeg = withResource(
+              Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, 0)) { zero =>
+            resWithOverflow.lessThan(zero)
+          }
+          withResource(isResNeg) { _ =>
+            isCvPos.equalTo(isResNeg)
+          }
+        }
+        withResource(sameSignalWithRes) { _ =>
+          sameSignal.and(sameSignalWithRes)
+        }
+      }
+      val anyOverflow = withResource(isOverflow) { _ =>
+        isOverflow.any()
+      }
+      withResource(anyOverflow) { _ =>
+        if (anyOverflow.isValid && anyOverflow.getBoolean) {
+          throw new ArithmeticException("long overflow")
+        }
+      }
+    }
+    resWithOverflow
   }
 }
