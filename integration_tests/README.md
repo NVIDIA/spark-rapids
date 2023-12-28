@@ -349,8 +349,11 @@ Tests can override the seed used using the test marker:
 @datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`. 
 ```
 
-This marker forces a test to ignore `DATAGEN_SEED` if `permanent=True` above, if `permanent=False` or is not provided,
-the `DATAGEN_SEED` value always wins.
+This marker has the following arguments: 
+- `seed`: a hard coded datagen seed to use. 
+- `condition`: is used to gate when the override is appropriate, usually used to say that specific shims
+               need the special override.
+- `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
 
 ### Running with non-UTC time zone
 For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
