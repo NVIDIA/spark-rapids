@@ -177,22 +177,9 @@ def pytest_runtest_setup(item):
     global _sort_array_columns_locally
     global _inject_oom
     global _test_datagen_random_seed
-    # remember to reset to the initial seed each time!
-    _test_datagen_random_seed = _test_datagen_random_seed_init
     _inject_oom = item.get_closest_marker('inject_oom')
     datagen_overrides = item.get_closest_marker('datagen_overrides')
-    # skip if the user specified --datagen_seed_override_disabled (this test shoulduse
-    # the seed from DATAGEN_SEED)
-    if not item.config.getoption("datagen_seed_override_disabled") and datagen_overrides:
-        try:
-            seed = datagen_overrides.kwargs["seed"]
-        except KeyError:
-            raise Exception("datagen_overrides requires an override seed value")
-
-        override_seed = datagen_overrides.kwargs.get('condition', True)
-        if override_seed:
-            _test_datagen_random_seed = seed
-
+    _test_datagen_random_seed, _ = get_effective_seed(item, datagen_overrides)
     order = item.get_closest_marker('ignore_order')
     if order:
         if order.kwargs.get('local', False):
@@ -312,6 +299,30 @@ oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1
 print(f"Starting with OOM injection seed: {oom_random_injection_seed}. "
       "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
 
+# Returns a tuple (seed, permanent) with the seed that test `item` should use given a 
+# possibly defined `datagen_overrides`, and if the seed choice is due to an override, 
+# whether that override is marked as `permanent`
+def get_effective_seed(item, datagen_overrides):
+    if datagen_overrides:
+        permanent_override = False 
+        # if the override is marked as permanent (cannot be disabled) or the marker is temporary
+        # and we haven't disabled markers
+        try:
+            permanent_override = datagen_overrides.kwargs["permanent"]
+        except KeyError:
+            pass
+
+        if permanent_override or not item.config.getoption("datagen_seed_override_disabled"):
+            try:
+                seed = datagen_overrides.kwargs["seed"]
+            except KeyError:
+                raise Exception("datagen_overrides requires an override seed value")
+
+            override_seed = datagen_overrides.kwargs.get('condition', True)
+            if override_seed:
+                return (seed, permanent_override)
+    return (_test_datagen_random_seed_init, False)
+
 def pytest_collection_modifyitems(config, items):
     r = random.Random(oom_random_injection_seed)
     for item in items:
@@ -323,14 +334,22 @@ def pytest_collection_modifyitems(config, items):
         injection_conf = injection_mode_and_conf[1] if len(injection_mode_and_conf) == 2 else None
         inject_choice = False
         datagen_overrides = item.get_closest_marker('datagen_overrides')
+        test_datagen_random_seed_choice, is_permanent = get_effective_seed(item, datagen_overrides)
+        qualifier = ""
         if datagen_overrides:
-            test_datagen_random_seed_choice = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
-            if test_datagen_random_seed_choice != _test_datagen_random_seed_init:
-                extras.append('DATAGEN_SEED_OVERRIDE=%s' % str(test_datagen_random_seed_choice))
-            else:
-                extras.append('DATAGEN_SEED=%s' % str(test_datagen_random_seed_choice))
-        else:
-            extras.append('DATAGEN_SEED=%s' % str(_test_datagen_random_seed))
+            is_override = test_datagen_random_seed_choice != _test_datagen_random_seed_init
+            qual_list = []
+            # i.e. a @datagen_overrides(seed=x, permanent=True) would see:
+            # DATAGEN_SEED_OVERRIDE_PERMANENT=x, and if it's not permanent
+            # it would just be tagged as DATAGEN_SEED_OVERRIDE=x
+            if is_override:
+                qual_list += ["OVERRIDE"]
+            if is_permanent:
+                qual_list += ["PERMANENT"]
+            qualifier = "_".join(qual_list)
+            if len(qualifier) != 0:
+                qualifier = "_" + qualifier # prefix separator for formatting purposes
+        extras.append('DATAGEN_SEED%s=%s' % (qualifier, str(test_datagen_random_seed_choice)))
 
         if injection_mode == 'random':
             inject_choice = r.randrange(0, 2) == 1
