@@ -118,6 +118,8 @@ Generated on 2023-12-29
 ### PRs
 |||
 |:---|:---|
+|[#10123](https://github.com/NVIDIA/spark-rapids/pull/10123)|Change version to v23.12.1 [skip ci]|
+|[#10122](https://github.com/NVIDIA/spark-rapids/pull/10122)|Init changelog for v23.12.1 [skip ci]|
 |[#10121](https://github.com/NVIDIA/spark-rapids/pull/10121)|[DOC] update download page for db hot fix  [skip ci]|
 |[#10116](https://github.com/NVIDIA/spark-rapids/pull/10116)|Upgrade to 23.12.1|
 |[#9935](https://github.com/NVIDIA/spark-rapids/pull/9935)|Init 23.12 changelog [skip ci]|
