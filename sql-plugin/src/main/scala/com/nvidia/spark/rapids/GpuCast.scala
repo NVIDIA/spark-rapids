@@ -26,12 +26,13 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, Decima
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.{CastStrings, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
@@ -216,13 +217,16 @@ object CastOptions {
  * @param ansiMode                       Whether the cast should be ANSI compliant
  * @param stringToDateAnsiMode           Whether to cast String to Date using ANSI compliance
  * @param castToJsonString               Whether to use JSON format when casting to String
+ * @param ignoreNullFieldsInStructs      Whether to omit null values when converting to JSON
+ * @param timeZoneId                     If cast is timezone aware, the timezone needed
  */
 class CastOptions(
     legacyCastComplexTypesToString: Boolean,
     ansiMode: Boolean,
     stringToDateAnsiMode: Boolean,
     val castToJsonString: Boolean = false,
-    val ignoreNullFieldsInStructs: Boolean = true) extends Serializable {
+    val ignoreNullFieldsInStructs: Boolean = true,
+    val timeZoneId: Option[String] = Option.empty[String]) extends Serializable {
 
   /**
    * Retuns the left bracket to use when surrounding brackets when converting
@@ -621,6 +625,12 @@ object GpuCast {
       case (_: IntegerType | ShortType | ByteType, ym: DataType)
         if GpuTypeShims.isSupportedYearMonthType(ym) =>
         GpuIntervalUtils.intToYearMonthInterval(input, ym)
+      case (TimestampType, DateType) if options.timeZoneId.isDefined =>
+        val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
+        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp( input.asInstanceOf[ColumnVector],
+            zoneId.normalized())) { 
+          shifted => shifted.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -1814,7 +1824,8 @@ case class GpuCast(
   import GpuCast._
 
   private val options: CastOptions =
-    new CastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled)
+    new CastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled,
+        timeZoneId = timeZoneId)
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
   override def hasSideEffects: Boolean = super.hasSideEffects || {

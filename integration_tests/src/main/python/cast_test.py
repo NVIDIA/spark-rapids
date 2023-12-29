@@ -540,6 +540,13 @@ def test_cast_timestamp_to_string():
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as string)"))
 
+def test_cast_timestamp_to_date():
+    # need to start about 1 day earlier than the max to avoid overflow in cuDF
+    gen = TimestampGen(end=datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen)
+            .selectExpr("cast(a as date)"))
+
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():
     _assert_cast_to_string_equal(DayTimeIntervalGen(start_field='day', end_field='day', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)]), {})
@@ -692,9 +699,9 @@ def test_cast_int_to_string_not_UTC():
         lambda spark: unary_op_df(spark, int_gen, 100).selectExpr("a", "CAST(a AS STRING) as str"),
         {"spark.sql.session.timeZone": "+08"})
 
-not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (timestamp_gen, 'DATE'),
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING'),
         # python does not like year 0, and with time zones the default start date can become year 0 :(
-        (DateGen(start=date(1, 1, 3)), 'TIMESTAMP'),
+        (DateGen(start=date(1, 1, 1)), 'TIMESTAMP'),
         (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
 
 @allow_non_gpu('ProjectExec')
