@@ -132,7 +132,7 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     println(s"test,type,zone,used MS")
     for (zoneStr <- zones) {
       // run 6 rounds, but ignore the first round.
-      for (i <- 1 to 6) {
+      val elapses = (1 to 6).map { i =>
         // run on Cpu
         val startOnCpu = System.nanoTime()
         withCpuSparkSession(
@@ -153,8 +153,16 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
         val elapseOnGpuMS = (endOnGpu - startOnGpu) / 1000000L
         if (i != 1) {
           println(s"$testName,Gpu,$zoneStr,$elapseOnGpuMS")
+          (elapseOnCpuMS, elapseOnGpuMS)
+        } else {
+          (0L, 0L) // skip the first round
         }
       }
+      val meanCpu = elapses.map(_._1).sum / 5.0
+      val meanGpu = elapses.map(_._2).sum / 5.0
+      val speedup = meanCpu.toDouble / meanGpu.toDouble
+      println(f"$testName, $zoneStr: mean cpu time: $meanCpu%.2f ms, " +
+          f"mean gpu time: $meanGpu%.2f ms, speedup: $speedup%.2f x")
     }
   }
 
@@ -172,5 +180,30 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     }
 
     runAndRecordTime("from_utc_timestamp", perfTest)
+  }
+
+  test("test timeadd") {
+    assume(enablePerfTest)
+
+    // cache time zone DB in advance
+    GpuTimeZoneDB.cacheDatabase()
+    Thread.sleep(5L)
+
+    def perfTest(spark: SparkSession, zone: String): DataFrame = {
+      spark.read.parquet(path).selectExpr(
+          "count(c_ts - (interval -584 days 1563 seconds))",
+          "count(c_ts - (interval 1943 days 1101 seconds))",
+          "count(c_ts - (interval 2693 days 2167 seconds))",
+          "count(c_ts - (interval 2729 days 0 seconds))",
+          "count(c_ts - (interval 44 days 1534 seconds))",
+          "count(c_ts - (interval 2635 days 3319 seconds))",
+          "count(c_ts - (interval 1885 days -2828 seconds))",
+          "count(c_ts - (interval 0 days 2463 seconds))",
+          "count(c_ts - (interval 932 days 2286 seconds))",
+          "count(c_ts - (interval 0 days 0 seconds))"
+        )
+    }
+
+    runAndRecordTime("time_add", perfTest)
   }
 }
