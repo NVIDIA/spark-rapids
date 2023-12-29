@@ -541,10 +541,8 @@ def test_cast_timestamp_to_string():
             .selectExpr("cast(a as string)"))
 
 def test_cast_timestamp_to_date():
-    # need to start about 1 day earlier than the max to avoid overflow in cuDF
-    gen = TimestampGen(end=datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen)
+        lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as date)"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
