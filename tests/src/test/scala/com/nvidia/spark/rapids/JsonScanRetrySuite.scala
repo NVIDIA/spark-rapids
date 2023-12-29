@@ -30,7 +30,8 @@ class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
     val cudfSchema = GpuColumnVector.from(StructType(Seq(StructField("a", IntegerType),
       StructField("b", IntegerType))))
     val opts = JSONOptions.builder().withLines(true).build()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val table = JsonPartitionReader.readToTable(bufferer, cudfSchema, NoopMetric,
       opts, "JSON", null)
     table.close()

@@ -60,7 +60,8 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
       closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
         val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
           Array(1), partValues.take(1), partSchema, maxGpuColumnSizeBytes)
-        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
         withResource(resultBatchIter) { _ =>
           assertThrows[GpuSplitAndRetryOOM] {
             resultBatchIter.next()
@@ -85,7 +86,8 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
             val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
               partRows, partValues, partSchema, maxGpuColumnSizeBytes)
             withResource(resultBatchIter) { _ =>
-              RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+              RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+                RmmSpark.OomInjectionType.GPU.ordinal, 0)
               // Assert that the final count of rows matches expected batch
               // We also need to close each batch coming from `resultBatchIter`.
               val rowCounts = resultBatchIter.map(withResource(_){_.numRows()}).sum

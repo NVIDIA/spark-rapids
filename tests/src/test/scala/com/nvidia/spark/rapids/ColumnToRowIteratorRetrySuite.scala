@@ -40,7 +40,8 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       attrs,
       Iterator(buildBatch),
       NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
       numRows += 1
@@ -53,7 +54,8 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       attrs,
       Iterator(buildBatch),
       NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
       numRows += 1

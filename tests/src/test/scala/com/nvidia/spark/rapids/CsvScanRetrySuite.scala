@@ -29,7 +29,8 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase {
     val cudfSchema = GpuColumnVector.from(StructType(Seq(StructField("a", IntegerType),
       StructField("b", IntegerType))))
     val opts = CSVOptions.builder().hasHeader(false)
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val table = CSVPartitionReader.readToTable(bufferer, cudfSchema, NoopMetric,
       opts, "CSV", null)
     table.close()
