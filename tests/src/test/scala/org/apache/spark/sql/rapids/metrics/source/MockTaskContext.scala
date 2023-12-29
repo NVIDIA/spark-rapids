@@ -29,7 +29,7 @@ import org.apache.spark.scheduler.TaskLocality
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
-class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends MockTaskContextBase {
+class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext {
 
   val listeners = new ListBuffer[TaskCompletionListener]
 
@@ -96,4 +96,10 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends MockTaskCon
   def markTaskComplete(): Unit = {
     listeners.foreach(_.onTaskCompletion(this))
   }
+
+  /**
+   * This method was introduced in Spark-3.5.1. It's not shimmed and added to the common class by
+   * removing the override keyword.
+   */
+  def isFailed(): Boolean = false
 }
