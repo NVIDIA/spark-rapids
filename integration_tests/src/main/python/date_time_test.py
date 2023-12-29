@@ -36,8 +36,7 @@ vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 
 def test_timesub(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        # We are starting at year 0015 to make sure we don't go before year 0001 while doing TimeSub
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
@@ -45,10 +44,17 @@ def test_timesub(data_gen):
 def test_timeadd(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        # We are starting at year 0005 to make sure we don't go before year 0001
-        # and beyond year 10000 while doing TimeAdd
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
+
+@pytest.mark.parametrize('data_gen', [-pow(2, 63), pow(2, 63)], ids=idfn)
+@allow_non_gpu(*non_supported_tz_allow)
+def test_timeadd_long_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, TimestampGen())
+            .selectExpr("a + (interval {} microseconds)".format(data_gen)),
+        conf={},
+        error_message='long overflow')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
