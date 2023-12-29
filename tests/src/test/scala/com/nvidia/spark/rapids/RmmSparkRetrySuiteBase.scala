@@ -48,6 +48,7 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
     RmmSpark.currentThreadIsDedicatedToTask(1)
+    HostAlloc.initialize(-1)
   }
 
   override def afterEach(): Unit = {
@@ -61,6 +62,7 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     if (rmmWasInitialized) {
       Rmm.shutdown()
     }
+    HostAlloc.initialize(-1)
   }
 
   private class BaseRmmEventHandler extends RmmEventHandler {

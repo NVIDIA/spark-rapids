@@ -186,6 +186,9 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       val myIter = GeneratedInternalRowToCudfRowIterator(
         ctriter, schema, TargetSize(Int.MaxValue),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+      // Do this so we can avoid forcing failures in any host allocations
+      // in ColumnarToRowIterator.hasNext()
+      assert(ctriter.hasNext)
       // this forces a retry on the allocation of the dataBuffer
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.CPU.ordinal, 0)
@@ -209,7 +212,10 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       val myIter = GeneratedInternalRowToCudfRowIterator(
         ctriter, schema, TargetSize(Int.MaxValue),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-      // this forces a retry on the allocation of the dataBuffer
+      // Do this so we can avoid forcing failures in any host allocations
+      // in ColumnarToRowIterator.hasNext()
+      assert(ctriter.hasNext)
+      // this forces a retry on the allocation of the offsetBuffer
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.CPU.ordinal, 1)
       withResource(myIter.next()) { devBatch =>
@@ -232,7 +238,10 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       val myIter = GeneratedInternalRowToCudfRowIterator(
         ctriter, schema, TargetSize(Int.MaxValue),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-      // this forces a retry on the allocation of the dataBuffer
+      // Do this so we can avoid forcing failures in any host allocations
+      // in ColumnarToRowIterator.hasNext()
+      assert(ctriter.hasNext)
+      // this forces a split retry on the allocation of the dataBuffer
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.CPU.ordinal, 0)
       withResource(myIter.next()) { devBatch =>
@@ -254,7 +263,10 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       val myIter = GeneratedInternalRowToCudfRowIterator(
         ctriter, schema, TargetSize(Int.MaxValue),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-      // this forces a retry on the allocation of the offsetsBuffer
+      // Do this so we can avoid forcing failures in any host allocations
+      // in ColumnarToRowIterator.hasNext()
+      assert(ctriter.hasNext)
+      // this forces a split retry on the allocation of the offsetsBuffer
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.CPU.ordinal, 1)
       withResource(myIter.next()) { devBatch =>
