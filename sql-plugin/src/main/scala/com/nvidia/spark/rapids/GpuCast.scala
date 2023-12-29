@@ -627,7 +627,7 @@ object GpuCast {
         GpuIntervalUtils.intToYearMonthInterval(input, ym)
       case (TimestampType, DateType) if options.timeZoneId.isDefined =>
         val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
-        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp( input.asInstanceOf[ColumnVector],
+        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.asInstanceOf[ColumnVector],
             zoneId.normalized())) { 
           shifted => shifted.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
