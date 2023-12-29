@@ -245,9 +245,6 @@ class GpuGenerateSuite
               results.append(it.next())
             }
           }
-          results.foreach {r =>
-            println(s"numRows: ${numRows} and numOOMs: ${numOOMs} Result numRows=${r.numRows()}")
-          }
 
           withResource(results) { _ =>
             withResource(results.map(GpuColumnVector.from)) { resultTbls =>
