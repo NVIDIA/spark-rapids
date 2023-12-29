@@ -428,14 +428,13 @@ def test_string_unix_timestamp_ansi_exception():
         error_message="Exception",
         conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{4}-0[1-9]-[0-2][1-8]')], ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
+@pytest.mark.parametrize("ansi_enabled", [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @tz_sensitive_test
-def test_to_date(data_gen, ansi_enabled):
+def test_to_date(ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
+        lambda spark : unary_op_df(spark, date_gen)
+            .select(f.to_date(f.col("a").cast('string'), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
-
 
 @pytest.mark.parametrize('data_gen', [StringGen('0[1-9][0-9]{4}')], ids=idfn)
 @tz_sensitive_test
