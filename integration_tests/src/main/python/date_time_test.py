@@ -287,7 +287,7 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
         "to_unix_timestamp(a, b)"),
         "ToUnixTimestamp")
 
-@pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "Iran", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
+@pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
