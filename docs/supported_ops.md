@@ -2863,6 +2863,53 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">Ascii</td>
+<td rowSpan="2">`ascii`</td>
+<td rowSpan="2">The numeric value of the first character of string data.</td>
+<td rowSpan="2">This is disabled by default because it only supports strings starting with ASCII or Latin-1 characters after Spark 3.2.3, 3.3.1 and 3.4.0. Otherwise the results will not match the CPU.</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="4">Asin</td>
 <td rowSpan="4">`asin`</td>
 <td rowSpan="4">Inverse sine</td>
