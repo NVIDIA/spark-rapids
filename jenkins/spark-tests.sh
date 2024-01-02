@@ -20,6 +20,8 @@ set -ex
 nvidia-smi
 
 . jenkins/version-def.sh
+# if run in jenkins WORKSPACE refers to rapids root path; if not run in jenkins just use current pwd(contains jenkins dirs)
+WORKSPACE=${WORKSPACE:-`pwd`}
 
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
@@ -273,7 +275,7 @@ run_pyarrow_tests() {
 
 run_non_utc_time_zone_tests() {
   # select one time zone according to current day of week
-  source "$(dirname "$0")"/test-timezones.sh
+  source "${WORKSPACE}/jenkins/test-timezones.sh"
   time_zones_length=${#time_zones_test_cases[@]}
   # get day of week, Sunday is represented by 0 and Saturday by 6
   current_date=$(date +%w)
