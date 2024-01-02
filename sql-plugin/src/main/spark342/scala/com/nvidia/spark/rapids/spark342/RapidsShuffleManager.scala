@@ -15,32 +15,15 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "350"}
+{"spark": "342"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.metrics.source
+package com.nvidia.spark.rapids.spark342
 
-import org.apache.spark.TaskContext
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
 
-abstract class MockTaskContextBase extends TaskContext {
-}
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean
+) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)

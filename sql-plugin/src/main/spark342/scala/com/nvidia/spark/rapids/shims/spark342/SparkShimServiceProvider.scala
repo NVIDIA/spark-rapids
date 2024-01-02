@@ -15,12 +15,22 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "351"}
+{"spark": "342"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.metrics.source
+package com.nvidia.spark.rapids.shims.spark342
 
-import org.apache.spark.TaskContext
+import com.nvidia.spark.rapids.SparkShimVersion
 
-abstract class MockTaskContextBase extends TaskContext {
-  override def isFailed(): Boolean = false
+object SparkShimServiceProvider {
+  val VERSION = SparkShimVersion(3, 4, 2)
+  val VERSIONNAMES = Seq(s"$VERSION")
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+
+  override def matchesVersion(version: String): Boolean = {
+    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+  }
 }

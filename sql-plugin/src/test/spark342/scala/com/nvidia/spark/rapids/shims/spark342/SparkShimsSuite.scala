@@ -15,21 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "351"}
+{"spark": "342"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark342
 
-import ai.rapids.cudf.{ColumnView, Table}
-import com.nvidia.spark.rapids.jni.DecimalUtils._
+import com.nvidia.spark.rapids._
+import org.scalatest.funsuite.AnyFunSuite
 
-object DecimalMultiply128{
-  def apply(castLhs: ColumnView, castRhs: ColumnView, scale: Int): Table = {
-    /**
-     * Calling the version of multiplying 128-bit decimal numbers that casts the result only once
-     * to the final precision and scale.
-     * This version of multiplying 128-bit decimal numbers should only be used with Spark versions
-     * greater than or equal to 3.4.2, 4.0.0, 3.5.1
-     */
-    multiply128(castLhs, castRhs, scale, false)
+class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
+  test("spark shims version") {
+    assert(ShimLoader.getShimVersion === SparkShimVersion(3, 4, 2))
   }
+
+  test("shuffle manager class") {
+    assert(ShimLoader.getRapidsShuffleManagerClass ===
+      classOf[com.nvidia.spark.rapids.spark342.RapidsShuffleManager].getCanonicalName)
+  }
+
 }

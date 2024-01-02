@@ -34,7 +34,7 @@ import org.apache.spark.sql.types._
  * A simple test performance framework for non-UTC features.
  * Usage:
  *
- *   argLine="-DTZs=Iran,Asia/Shanghai -DenableTimeZonePerf=true" \
+ *   argLine="-DTZs=Asia/Shanghai,Japan -DenableTimeZonePerf=true" \
  *   mvn test -Dbuildver=311 -DwildcardSuites=com.nvidia.spark.rapids.timezone.TimeZonePerfSuite
  * Note:
  *   Generate a Parquet file with 6 columns:
@@ -51,7 +51,7 @@ import org.apache.spark.sql.types._
 class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   // perf test is disabled by default since it's a long running time in UT.
   private val enablePerfTest = java.lang.Boolean.getBoolean("enableTimeZonePerf")
-  private val timeZoneStrings = System.getProperty("TZs", "Iran")
+  private val timeZoneStrings = System.getProperty("TZs", "Asia/Shanghai")
 
   // rows for perf test
   private val numRows: Long = 1024L * 1024L * 10L

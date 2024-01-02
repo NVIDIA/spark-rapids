@@ -19,6 +19,7 @@ following topics:
   * [Expressions](#expressions)
   * [The GPU Semaphore](#the-gpu-semaphore)
 * [Debugging Tips](#debugging-tips)
+  * [Memory Debugging](#memory-debugging) 
 * [Profiling Tips](#profiling-tips)
 * [Hard To Debug Errors](#hard-to-debug-errors)
 
@@ -240,6 +241,11 @@ The Spark process will wait upon launch for a remote debugger to attach via
 port 5005.
 
 You can also use [Compute Sanitizer](compute_sanitizer.md) to debug CUDA memory errors.
+
+### Memory Debugging
+Java's garbage collector does not play nicely with CUDA memory allocations or with off heap memory.
+There are a number of tools that we have developed that can help to
+[Debug Memory Issues](mem_debug.md)
 
 ## Profiling Tips
 [NVIDIA Nsight Systems](https://developer.nvidia.com/nsight-systems) makes
