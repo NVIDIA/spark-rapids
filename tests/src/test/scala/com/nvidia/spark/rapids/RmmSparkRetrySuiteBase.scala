@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
     RmmSpark.currentThreadIsDedicatedToTask(1)
+    HostAlloc.initialize(-1)
   }
 
   override def afterEach(): Unit = {
@@ -61,6 +62,7 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     if (rmmWasInitialized) {
       Rmm.shutdown()
     }
+    HostAlloc.initialize(-1)
   }
 
   private class BaseRmmEventHandler extends RmmEventHandler {
