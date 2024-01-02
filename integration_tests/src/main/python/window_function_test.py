@@ -1302,7 +1302,8 @@ def test_window_aggs_for_rows_collect_list():
           collect_list(c_map) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_map
         from window_collect_table
-        ''')
+        ''',
+        conf={'spark.rapids.sql.window.collectList.enabled': True})
 
 
 # SortExec does not support array type, so sort the result locally.
@@ -1343,7 +1344,8 @@ def test_running_window_function_exec_for_all_aggs():
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_struct
         from window_collect_table
-        ''')
+        ''',
+        conf={'spark.rapids.sql.window.collectList.enabled': True})
 
 # Test the Databricks WindowExec which combines a WindowExec with a ProjectExec and provides the output
 # fields that we need to handle with an extra GpuProjectExec and we need the input expressions to compute
@@ -1471,7 +1473,8 @@ def test_window_aggs_for_rows_collect_set():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_fp_nan
             from window_collect_table
         ) t
-        ''')
+        ''',
+        conf={'spark.rapids.sql.window.collectSet.enabled': True})
 
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
@@ -1500,6 +1503,7 @@ def test_window_aggs_for_rows_collect_set():
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
+        'spark.rapids.sql.window.collectSet.enabled': "true"
     })
 
     def do_it(spark):
@@ -1740,7 +1744,9 @@ def test_to_date_with_window_functions():
                                          "5 PRECEDING AND -2 FOLLOWING"], ids=idfn)
 def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size, window_spec):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+            'spark.rapids.sql.castFloatToDecimal.enabled': True,
+            'spark.rapids.sql.window.collectSet.enabled': True,
+            'spark.rapids.sql.window.collectList.enabled': True}
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
         "window_agg_table",
@@ -1791,7 +1797,9 @@ def spark_bugs_in_decimal_sorting():
                          ids=idfn)
 def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+            'spark.rapids.sql.castFloatToDecimal.enabled': True,
+            'spark.rapids.sql.window.collectSet.enabled': True,
+            'spark.rapids.sql.window.collectList.enabled': True}
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),

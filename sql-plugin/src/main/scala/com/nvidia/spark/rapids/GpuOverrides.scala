@@ -3382,13 +3382,24 @@ object GpuOverrides extends Logging {
       "Collect a list of non-unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP)
+            .withPsNote(TypeEnum.ARRAY, "window operations are disabled by default due " +
+                "to extreme memory usage"),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
               TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          if (context == WindowAggExprContext && !conf.isWindowCollectListEnabled) {
+            willNotWorkOnGpu("collect_list is disabled for window operations because " +
+                "the output explodes in size proportional to the window size squared. If " +
+                "you know the window is small you can try it by setting " +
+                s"${RapidsConf.ENABLE_WINDOW_COLLECT_LIST} to true")
+          }
+        }
+
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectList(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
 
@@ -3412,7 +3423,9 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY)
+            .withPsNote(TypeEnum.ARRAY, "window operations are disabled by default due " +
+                "to extreme memory usage"),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3421,6 +3434,14 @@ object GpuOverrides extends Logging {
             TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          if (context == WindowAggExprContext && !conf.isWindowCollectSetEnabled) {
+            willNotWorkOnGpu("collect_set is disabled for window operations because " +
+                "the output can explode in size proportional to the window size squared. If " +
+                "you know the window is small you can try it by setting " +
+                s"${RapidsConf.ENABLE_WINDOW_COLLECT_SET} to true")
+          }
+        }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)

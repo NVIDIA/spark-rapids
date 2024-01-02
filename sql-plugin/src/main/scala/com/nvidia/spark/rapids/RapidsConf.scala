@@ -726,6 +726,22 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_WINDOW_COLLECT_LIST = conf("spark.rapids.sql.window.collectList.enabled")
+      .doc("The output size of collect list for a window operation is proportional to " +
+          "the window size squared. The current GPU implementation does not handle this well " +
+          "and is disabled by default. If you know that your window size is very small you " +
+          "can try to enable it.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_WINDOW_COLLECT_SET = conf("spark.rapids.sql.window.collectSet.enabled")
+      .doc("The output size of collect set for a window operation can be proportional to " +
+          "the window size squared. The current GPU implementation does not handle this well " +
+          "and is disabled by default. If you know that your window size is very small you " +
+          "can try to enable it.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -2416,6 +2432,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
+
+  lazy val isWindowCollectListEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_LIST)
+
+  lazy val isWindowCollectSetEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_SET)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
