@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -203,7 +203,7 @@ run_delta_lake_tests() {
   fi
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
-    DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
+    DELTA_LAKE_VERSIONS="2.1.1 2.2.0 2.3.0"
   fi
 
   if [[ $SPARK_VER =~ $SPARK_34X_PATTERN ]]; then
