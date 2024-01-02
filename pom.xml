@@ -372,6 +372,27 @@
             </modules>
         </profile>
         <profile>
+            <id>release334</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>334</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>334</buildver>
+                <spark.version>${spark334.version}</spark.version>
+                <spark.test.version>${spark334.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release340</id>
             <activation>
                 <property>
@@ -751,6 +772,7 @@
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
         <spark333.version>3.3.3</spark333.version>
+        <spark334.version>3.3.4</spark334.version>
         <spark340.version>3.4.0</spark340.version>
         <spark341.version>3.4.1</spark341.version>
         <spark342.version>3.4.2</spark342.version>
