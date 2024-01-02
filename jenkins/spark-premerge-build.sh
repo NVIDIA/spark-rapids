@@ -62,8 +62,9 @@ mvn_verify() {
         # elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
         #     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
         fi
-        $MVN_INSTALL_CMD -DskipTests -Dbuildver=$SPARK_BASE_SHIM_VERSION
     done
+    # build base shim version for following test step with PREMERGE_PROFILES
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=$SPARK_BASE_SHIM_VERSION
 
     # enable UTF-8 for regular expression tests
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
