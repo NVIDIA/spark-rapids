@@ -343,6 +343,18 @@ integration tests. For example:
 $ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
 ```
 
+Tests can override the seed used using the test marker: 
+
+```
+@datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`. 
+```
+
+This marker has the following arguments: 
+- `seed`: a hard coded datagen seed to use. 
+- `condition`: is used to gate when the override is appropriate, usually used to say that specific shims
+               need the special override.
+- `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
+
 ### Running with non-UTC time zone
 For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
 The non-UTC nightly CIs are verifing all cases with non-UTC time zone.
@@ -350,10 +362,10 @@ But only a small amout of cases are verifing with non-UTC time zone in the pre-m
 When adding cases, should also check non-UTC is working besides the default UTC time zone.
 Please test the following time zones:
 ```shell
-$ TZ=Iran ./integration_tests/run_pyspark_from_build.sh
+$ TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh
 $ TZ=America/Los_Angeles ./integration_tests/run_pyspark_from_build.sh
 ```
-`Iran` is non-DST(Daylight Savings Time) time zone and `America/Los_Angeles` is DST time zone.
+`Asia/Shanghai` is non-DST(Daylight Savings Time) time zone and `America/Los_Angeles` is DST time zone.
 
 If the new added cases failed with non-UTC, then should allow the operator(does not support non-UTC) fallback,
 For example, add the following annotation to the case:

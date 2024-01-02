@@ -650,6 +650,14 @@ def test_byte_length():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'BIT_LENGTH(a)', 'OCTET_LENGTH(a)'))
 
+def test_ascii():
+    # StringGen will generate ascii and latin1 characters by default, which is the same as the supported
+    # range of ascii in plugin. Characters outside of this range will return mismatched results.
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(f.ascii(f.col('a'))),
+            conf={'spark.rapids.sql.expression.Ascii': True})
+
 @incompat
 def test_initcap():
     # Because we don't use the same unicode version we need to limit
