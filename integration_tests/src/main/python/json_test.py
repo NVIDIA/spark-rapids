@@ -715,7 +715,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     # "yyyy-MM"
     "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}" + optional_whitespace_regex + "\"",
     # "yyyy"
-    "\"" + optional_whitespace_regex + yyyy_start_0002 + optional_whitespace_regex + "\"",
+    "\"" + optional_whitespace_regex + yyyy_start_0001 + optional_whitespace_regex + "\"",
     # "dd/MM/yyyy"
     "\"" + optional_whitespace_regex + "[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}" + optional_whitespace_regex + "\"",
     # special constant values

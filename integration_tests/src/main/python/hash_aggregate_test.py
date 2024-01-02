@@ -16,10 +16,11 @@ import math
 import pytest
 
 from asserts import *
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, spark_jvm
 from conftest import is_not_utc
 from data_gen import *
 from functools import reduce
+from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
@@ -483,6 +484,7 @@ def test_hash_grpby_pivot(data_gen, conf):
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10062')
 def test_hash_multiple_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -624,23 +626,19 @@ def test_min_max_group_by(data_gen):
             .agg(f.min('b'), f.max('b')))
 
 # To avoid ordering issues with collect_list, sorting the arrays that are returned.
-# Note, using sort_array() on the CPU, because sort_array() does not yet
+# NOTE: sorting the arrays locally, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
-@ignore_order(local=True)
+@allow_non_gpu("ProjectExec", *non_utc_allow)
+@ignore_order(local=True, arrays=["blist"])
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     def doit(spark):
-        df = gen_df(spark, data_gen, length=100)\
+        return gen_df(spark, data_gen, length=100)\
             .groupby('a')\
             .agg(f.collect_list('b').alias("blist"))
-        # pull out the rdd and schema and create a new dataframe to run SortArray
-        # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
-        # to ObjectHashAggregateExec
-        return spark.createDataFrame(df.rdd, schema=df.schema).select("a", f.sort_array("blist"))
     assert_gpu_and_cpu_are_equal_collect(
         doit,
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
@@ -680,28 +678,22 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
             .agg(f.sort_array(f.collect_set('b'))))
 
 
-# Note, using sort_array() on the CPU, because sort_array() does not yet
+# NOTE: sorting the arrays locally, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
+@ignore_order(local=True, arrays=["collect_set"])
+@allow_non_gpu("ProjectExec", *non_utc_allow)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.expression.SortArray": "false"
     })
 
     def do_it(spark):
-        df = gen_df(spark, data_gen, length=100)\
+        return gen_df(spark, data_gen, length=100)\
             .groupby('a')\
             .agg(f.collect_set('b').alias("collect_set"))
-        # pull out the rdd and schema and create a new dataframe to run SortArray
-        # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
-        # to ObjectHashAggregateExec
-        return spark.createDataFrame(df.rdd, schema=df.schema)\
-            .selectExpr("sort_array(collect_set)")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
@@ -723,27 +715,21 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
             .agg(f.sort_array(f.collect_set('b'))))
 
 
-# Note, using sort_array() on the CPU, because sort_array() does not yet
+# NOTE: sorting the arrays locally, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
+@ignore_order(local=True, arrays=["collect_set"])
+@allow_non_gpu("ProjectExec", *non_utc_allow)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.expression.SortArray": "false"
     })
 
     def do_it(spark):
-        df = gen_df(spark, data_gen, length=100)\
+        return gen_df(spark, data_gen, length=100)\
             .agg(f.collect_set('b').alias("collect_set"))
-        # pull out the rdd and schema and create a new dataframe to run SortArray
-        # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
-        # to ObjectHashAggregateExec
-        return spark.createDataFrame(df.rdd, schema=df.schema)\
-            .selectExpr("sort_array(collect_set)")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 

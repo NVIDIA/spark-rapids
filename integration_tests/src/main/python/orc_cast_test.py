@@ -102,8 +102,6 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
         lambda spark: spark.read.schema(schema_str).orc(orc_path)
     )
 
-
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10017')
 @pytest.mark.parametrize('data_gen', [DoubleGen(max_exp=32, special_cases=None),
                                       DoubleGen(max_exp=32, special_cases=[8.88e9, 9.99e10, 1.314e11])])
 @allow_non_gpu(*non_utc_allow_orc_scan)
