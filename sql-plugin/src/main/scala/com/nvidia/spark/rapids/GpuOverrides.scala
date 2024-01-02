@@ -3394,8 +3394,8 @@ object GpuOverrides extends Logging {
         override def tagAggForGpu(): Unit = {
           if (context == WindowAggExprContext && !conf.isWindowCollectListEnabled) {
             willNotWorkOnGpu("collect_list is disabled for window operations because " +
-                "the output explodes in size proportional to the window size. If you know " +
-                "the window is small you can try it by setting " +
+                "the output explodes in size proportional to the window size squared. If " +
+                "you know the window is small you can try it by setting " +
                 s"${RapidsConf.ENABLE_WINDOW_COLLECT_LIST} to true")
           }
         }
@@ -3437,8 +3437,8 @@ object GpuOverrides extends Logging {
         override def tagAggForGpu(): Unit = {
           if (context == WindowAggExprContext && !conf.isWindowCollectSetEnabled) {
             willNotWorkOnGpu("collect_set is disabled for window operations because " +
-                "the output can explode in size proportional to the window size. If you know " +
-                "the window is small you can try it by setting " +
+                "the output can explode in size proportional to the window size squared. If " +
+                "you know the window is small you can try it by setting " +
                 s"${RapidsConf.ENABLE_WINDOW_COLLECT_SET} to true")
           }
         }

@@ -730,7 +730,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("The output size of collect list for a window operation is proportional to " +
           "the window size squared. The current GPU implementation does not handle this well " +
           "and is disabled by default. If you know that your window size is very small you " +
-          "can try to enable it")
+          "can try to enable it.")
       .booleanConf
       .createWithDefault(false)
 
@@ -738,7 +738,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("The output size of collect set for a window operation can be proportional to " +
           "the window size squared. The current GPU implementation does not handle this well " +
           "and is disabled by default. If you know that your window size is very small you " +
-          "can try to enable it")
+          "can try to enable it.")
       .booleanConf
       .createWithDefault(false)
 
