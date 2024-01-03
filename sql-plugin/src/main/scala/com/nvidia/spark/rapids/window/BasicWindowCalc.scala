@@ -363,7 +363,7 @@ class GroupedAggregations {
   // window frame because the frame is the same for all of them unbounded rows preceding to
   // the current row.
   private val runningWindowOptimizedData =
-  mutable.HashMap[BoundGpuWindowFunction, ArrayBuffer[Int]]()
+    mutable.HashMap[BoundGpuWindowFunction, ArrayBuffer[Int]]()
 
   /**
    * Add an aggregation.

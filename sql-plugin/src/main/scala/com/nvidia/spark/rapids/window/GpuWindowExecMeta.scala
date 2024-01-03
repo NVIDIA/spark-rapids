@@ -534,7 +534,7 @@ object GpuWindowExecMeta {
    * see all of these in just the input window expressions of the WindowExec, so we process
    * both the input fields and input window expressions, and handle whether we *only* want result
    * columns using the Post Project stage.
- *
+   *
    * @param inputFieldExprs the input fields converted to input expressions
    * @param windowExprs the input window expressions to a GpuWindowExec
    * @param resultColumnsOnly whether the output of the window operation only desires result

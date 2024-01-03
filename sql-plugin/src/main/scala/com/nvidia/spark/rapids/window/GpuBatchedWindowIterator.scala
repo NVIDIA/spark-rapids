@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.window
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 
 object GpuBatchedWindowIterator {
   def cudfAnd(lhs: cudf.ColumnVector,
@@ -113,5 +114,5 @@ object GpuBatchedWindowIterator {
   }
 
   def getScalarRow(index: Int, columns: Seq[cudf.ColumnVector]): Array[Scalar] =
-    columns.map(_.getScalarElement(index)).toArray
+    columns.safeMap(_.getScalarElement(index)).toArray
 }
