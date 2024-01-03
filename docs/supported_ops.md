@@ -6638,7 +6638,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>Only non-DST(Daylight Savings Time) timezones are supported</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15477,7 +15477,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>Only non-DST(Daylight Savings Time) timezones are supported</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
