@@ -21,7 +21,7 @@ import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 
-object GpuBatchedWindowIterator {
+object GpuBatchedWindowIteratorUtils {
   def cudfAnd(lhs: cudf.ColumnVector,
       rhs: cudf.ColumnVector): cudf.ColumnVector = {
     withResource(lhs) { lhs =>

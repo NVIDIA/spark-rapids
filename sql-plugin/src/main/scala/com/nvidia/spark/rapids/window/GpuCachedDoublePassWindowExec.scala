@@ -76,7 +76,7 @@ class GpuCachedDoublePassWindowIterator(
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
-  import GpuBatchedWindowIterator._
+  import GpuBatchedWindowIteratorUtils._
 
   override def isRunningBatched: Boolean = true
 
