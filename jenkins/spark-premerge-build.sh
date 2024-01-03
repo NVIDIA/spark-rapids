@@ -97,6 +97,15 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
+
+    # Test a portion of cases for non-UTC time zone because of limited GPU resources.
+    # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
+    # Nightly CIs will cover all the cases.
+    source "$(dirname "$0")"/test-timezones.sh
+    for tz in "${time_zones_test_cases[@]}"
+    do
+        TZ=$tz ./integration_tests/run_pyspark_from_build.sh -m tz_sensitive_test
+    done
 }
 
 rapids_shuffle_smoke_test() {
@@ -158,15 +167,6 @@ ci_2() {
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
     ./integration_tests/run_pyspark_from_build.sh
-
-    # Test a portion of cases for non-UTC time zone because of limited GPU resources.
-    # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
-    # Nightly CIs will cover all the cases.
-    source "$(dirname "$0")"/test-timezones.sh
-    for tz in "${time_zones_test_cases[@]}"
-    do
-        TZ=$tz ./integration_tests/run_pyspark_from_build.sh -m tz_sensitive_test
-    done
 
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
