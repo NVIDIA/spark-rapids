@@ -394,7 +394,7 @@ str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
         (StringGen('[01][12]/[0-2][1-8]'), 'MM/dd'),
         (StringGen('[0-2][1-8]/[01][12]'), 'dd/MM'),
-        (ConvertGen(DateGen(nullable=False), lambda d: d.strfte('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
+        (ConvertGen(DateGen(nullable=False), lambda d: d.strftime('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
 
 # get invalid date string df
 def invalid_date_string_df(spark):
