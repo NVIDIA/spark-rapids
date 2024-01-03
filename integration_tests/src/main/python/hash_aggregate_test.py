@@ -159,7 +159,7 @@ _nan_zero_double_special_cases = [
 
 _grpkey_doubles_with_nan_zero_grouping_keys = [
     ('a', RepeatSeqGen(DoubleGen(nullable=(True, 10.0), special_cases=_nan_zero_double_special_cases), length=50)),
-    ('b', FloatGen(nullable=(True, 10.0))),
+    ('b', IntegerGen(nullable=(True, 10.0))),
     ('c', LongGen())]
 
 # Schema for xfail cases
@@ -1154,7 +1154,6 @@ def test_hash_multiple_filters(data_gen, conf):
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10026')
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
@@ -1222,7 +1221,7 @@ def test_hash_agg_with_struct_of_array_fallback(data_gen):
 
 @approximate_float
 @ignore_order
-@pytest.mark.parametrize('data_gen', [ _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ _grpkey_floats_with_nulls_and_nans ], ids=idfn)
 def test_count_distinct_with_nan_floats(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1024),
