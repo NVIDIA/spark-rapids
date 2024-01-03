@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,15 +42,16 @@ package org.apache.spark.sql.rapids.shims
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.GpuOverrides
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, TimeZoneAwareExpression}
+import org.apache.spark.sql.rapids.datetimeExpressionsUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -112,13 +113,13 @@ case class GpuTimeAdd(start: Expression,
               val zoneID = ZoneId.of(timeZoneId.getOrElse("UTC"))
               val resCv = if (GpuOverrides.isUTCTimezone(zoneId)) {
                 withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { d =>
-                  timestampAddDuration(l.getBase, d)
+                  datetimeExpressionsUtils.timestampAddDuration(l.getBase, d)
                 }
               } else {
                 val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
                   zoneID)) { utcTimestamp =>
                   withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { 
-                    d => timestampAddDuration(utcTimestamp, d)
+                    d => datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, d)
                   }
                 }
                 withResource(utcRes) { _ =>
@@ -137,13 +138,13 @@ case class GpuTimeAdd(start: Expression,
                 val zoneID = ZoneId.of(timeZoneId.getOrElse("UTC"))
                 val resCv = if (GpuOverrides.isUTCTimezone(zoneId)) {
                   withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
-                    timestampAddDuration(l.getBase, duration)
+                    datetimeExpressionsUtils.timestampAddDuration(l.getBase, duration)
                   }
                 } else {
                   val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
                     zoneID)) { utcTimestamp =>
                     withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
-                      timestampAddDuration(utcTimestamp, duration)
+                      datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, duration)
                     }
                   }
                   withResource(utcRes) { utc =>
@@ -162,58 +163,5 @@ case class GpuTimeAdd(start: Expression,
         }
       }
     }
-  }
-
-  // A tricky way to check overflow. The result is overflow when positive + positive = negative
-  // or negative + negative = positive, so we can check the sign of the result is the same as
-  // the sign of the operands.
-  private def timestampAddDuration(cv: ColumnView, duration: BinaryOperable): ColumnVector = {
-    // Not use cv.add(duration), because of it invoke BinaryOperable.implicitConversion,
-    // and currently BinaryOperable.implicitConversion return Long
-    // Directly specify the return type is TIMESTAMP_MICROSECONDS
-    val resWithOverflow = cv.binaryOp(BinaryOp.ADD, duration, DType.TIMESTAMP_MICROSECONDS)
-    closeOnExcept(resWithOverflow) { _ =>
-      val isCvPos = withResource(
-          Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, 0)) { zero =>
-        cv.greaterOrEqualTo(zero)
-      }
-      val sameSignal = closeOnExcept(isCvPos) { isCvPos =>
-        val isDurationPos = duration match {
-          case durScalar: Scalar =>
-            val isPosBool = durScalar.isValid && durScalar.getLong >= 0
-            Scalar.fromBool(isPosBool)
-          case dur : AutoCloseable =>
-            withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 0)) { zero =>
-              dur.greaterOrEqualTo(zero)
-            }
-        }
-        withResource(isDurationPos) { _ =>
-          isCvPos.equalTo(isDurationPos)
-        }
-      }
-      val isOverflow = withResource(sameSignal) { _ =>
-        val sameSignalWithRes = withResource(isCvPos) { _ =>
-          val isResNeg = withResource(
-              Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, 0)) { zero =>
-            resWithOverflow.lessThan(zero)
-          }
-          withResource(isResNeg) { _ =>
-            isCvPos.equalTo(isResNeg)
-          }
-        }
-        withResource(sameSignalWithRes) { _ =>
-          sameSignal.and(sameSignalWithRes)
-        }
-      }
-      val anyOverflow = withResource(isOverflow) { _ =>
-        isOverflow.any()
-      }
-      withResource(anyOverflow) { _ =>
-        if (anyOverflow.isValid && anyOverflow.getBoolean) {
-          throw new ArithmeticException("long overflow")
-        }
-      }
-    }
-    resWithOverflow
   }
 }
