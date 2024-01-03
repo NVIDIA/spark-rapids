@@ -205,7 +205,7 @@ run_delta_lake_tests() {
   fi
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
-    DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
+    DELTA_LAKE_VERSIONS="2.1.1 2.2.0 2.3.0"
   fi
 
   if [[ $SPARK_VER =~ $SPARK_34X_PATTERN ]]; then
