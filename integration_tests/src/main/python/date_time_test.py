@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -59,6 +59,22 @@ def test_timeadd_daytime_column():
         ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
+
+def test_to_utc_timestamp():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, TimestampGen(), length=200000)
+            .selectExpr("to_utc_timestamp(a, 'Asia/Shanghai')"))
+    
+def test_to_utc_timestamp_and_from_utc_timestamp_cpu():
+    aaa = with_cpu_session(lambda spark: unary_op_df(spark, TimestampGen(start=datetime(1900, 12, 31, 15, 55, tzinfo=timezone.utc), end=datetime(1900, 12, 31, 16, tzinfo=timezone.utc))).collect())
+    bbb = with_cpu_session(lambda spark: unary_op_df(spark, TimestampGen(start=datetime(1900, 12, 31, 15, 55, tzinfo=timezone.utc), end=datetime(1900, 12, 31, 16, tzinfo=timezone.utc))).selectExpr("from_utc_timestamp(to_utc_timestamp(a, 'Asia/Shanghai'), 'Asia/Shanghai')").collect())
+    assert aaa == bbb
+
+def test_to_utc_timestamp_and_from_utc_timestamp_gpu():
+    from spark_session import with_gpu_session
+    aaa = with_gpu_session(lambda spark: unary_op_df(spark, TimestampGen(start=datetime(1900, 12, 31, 15, 55, tzinfo=timezone.utc), end=datetime(1900, 12, 31, 16, tzinfo=timezone.utc))).collect())
+    bbb = with_gpu_session(lambda spark: unary_op_df(spark, TimestampGen(start=datetime(1900, 12, 31, 15, 55, tzinfo=timezone.utc), end=datetime(1900, 12, 31, 16, tzinfo=timezone.utc))).selectExpr("from_utc_timestamp(to_utc_timestamp(a, 'Asia/Shanghai'), 'Asia/Shanghai')").collect())
+    assert aaa == bbb
 
 @pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
 def test_interval_seconds_overflow_exception():
