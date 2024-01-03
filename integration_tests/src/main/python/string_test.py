@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -832,15 +832,10 @@ format_number_float_gens = [(DoubleGen(), 0.05), (FloatGen(), 0.5),
 @pytest.mark.parametrize('data_gen,max_err', format_number_float_gens, ids=idfn)
 def test_format_number_float_limited(data_gen, max_err):
     gen = data_gen
-    cpu = with_cpu_session(lambda spark: unary_op_df(spark, gen, length=20480).selectExpr('*',
+    cpu = with_cpu_session(lambda spark: unary_op_df(spark, gen).selectExpr('*',
             'format_number(a, 5)').collect(), conf = float_format_number_conf)
-    gpu = with_gpu_session(lambda spark: unary_op_df(spark, gen, length=20480).selectExpr('*',
+    gpu = with_gpu_session(lambda spark: unary_op_df(spark, gen).selectExpr('*',
             'format_number(a, 5)').collect(), conf = float_format_number_conf)
     mismatched = sum(x[0] != x[1] for x in zip(cpu, gpu))
     all_values = len(cpu)
     assert mismatched / all_values <= max_err
-
-# limited_float_gen = [
-#     SetValuesGen(FloatGen(), [float('nan'), float('inf'), float('-inf')]),
-# ]
-
