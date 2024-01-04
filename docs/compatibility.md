@@ -716,7 +716,7 @@ The Rapids Accelerator for Apache Spark uses uses a method based on [ryu](https:
 This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
 
-The `format_number` function also use ryu as the solution when formatting floating-point data types to 
+The `format_number` function also uses [ryu](https://github.com/ulfjack/ryu) as the solution when formatting floating-point data types to 
 strings, so results may differ from Spark in the same way. To disable this on the GPU, set 
 [`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `false`.
 
