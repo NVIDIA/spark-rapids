@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
+from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc
 import time
 import os
 from functools import lru_cache

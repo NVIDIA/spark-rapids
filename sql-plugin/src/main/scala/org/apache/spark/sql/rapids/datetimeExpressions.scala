@@ -856,7 +856,7 @@ abstract class GpuToTimestamp
     val tmp = lhs.dataType match {
       case _: StringType =>
         // rhs is ignored we already parsed the format
-        if (getTimeParserPolicy == LegacyTimeParserPolicy) {
+        val res = if (getTimeParserPolicy == LegacyTimeParserPolicy) {
           parseStringAsTimestampWithLegacyParserPolicy(
             lhs,
             sparkFormat,
@@ -870,6 +870,11 @@ abstract class GpuToTimestamp
             strfFormat,
             DType.TIMESTAMP_MICROSECONDS,
             failOnError)
+        }
+        if (GpuOverrides.isUTCTimezone(zoneId)) {
+          res
+        } else {
+          GpuTimeZoneDB.fromTimestampToUtcTimestamp(res, zoneId)
         }
       case _: DateType =>
         timeZoneId match {
