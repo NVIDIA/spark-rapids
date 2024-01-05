@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.window._
 import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
