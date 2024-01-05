@@ -1072,15 +1072,14 @@ case class GpuFromUnixTime(
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-
-class FromUTCTimestampExprMeta(
-    expr: FromUTCTimestamp,
+abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
+    expr: INPUT,
     override val conf: RapidsConf,
     override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
+  extends BinaryExprMeta[INPUT](expr, conf, parent, rule) {
 
-  private[this] var timezoneId: ZoneId = null
+  protected[this] var timezoneId: ZoneId = null  
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
@@ -1095,6 +1094,14 @@ class FromUTCTimestampExprMeta(
         }
     }
   }
+}
+
+class FromUTCTimestampExprMeta(
+    expr: FromUTCTimestamp,
+    override val conf: RapidsConf,
+    override val parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends ConvertUTCTimestampExprMetaBase[FromUTCTimestamp](expr, conf, parent, rule) {
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
     GpuFromUTCTimestamp(timestamp, timezone, timezoneId)
@@ -1137,23 +1144,7 @@ class ToUTCTimestampExprMeta(
     override val conf: RapidsConf,
     override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends BinaryExprMeta[ToUTCTimestamp](expr, conf, parent, rule) {
-
-  private[this] var timezoneId: ZoneId = null
-
-  override def tagExprForGpu(): Unit = {
-    extractStringLit(expr.right) match {
-      case None =>
-        willNotWorkOnGpu("timezone input must be a literal string")
-      case Some(timezoneShortID) =>
-        if (timezoneShortID != null) {
-          timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
-          if (!GpuTimeZoneDB.isSupportedTimeZone(timezoneId)) {
-            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-          }
-        }
-    }
-  }
+  extends ConvertUTCTimestampExprMetaBase[ToUTCTimestamp](expr, conf, parent, rule) {
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
     GpuToUTCTimestamp(timestamp, timezone, timezoneId)
