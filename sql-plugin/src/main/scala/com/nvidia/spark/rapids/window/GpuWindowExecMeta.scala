@@ -325,7 +325,7 @@ case class BatchedOps(running: Seq[NamedExpression],
     }
 
     if (hasBounded) {
-      getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+      currentPlan = getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
         cpuPartitionSpec, cpuOrderSpec)
     }
     currentPlan.asInstanceOf[GpuExec]

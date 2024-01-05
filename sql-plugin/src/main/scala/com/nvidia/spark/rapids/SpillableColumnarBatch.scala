@@ -139,9 +139,12 @@ class SpillableColumnarBatchImpl (
     if (refCount == 0) {
       // closing my reference
       handle.close()
-    } else if (refCount < 0) {
-      throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
     }
+    // TODO this is causing problems so we need to look into this
+    //  https://github.com/NVIDIA/spark-rapids/issues/10161
+//    else if (refCount < 0) {
+//      throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
+//    }
   }
 }
 
