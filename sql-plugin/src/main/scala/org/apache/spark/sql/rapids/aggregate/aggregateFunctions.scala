@@ -1758,7 +1758,7 @@ case class GpuCollectSet(
     child: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
-    extends GpuCollectBase {
+    extends GpuCollectBase with GpuUnboundedToUnboundedWindowAgg {
 
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfCollectSet(dataType))
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMergeSets(dataType))

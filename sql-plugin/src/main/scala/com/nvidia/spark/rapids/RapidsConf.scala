@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -739,6 +739,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
           "the window size squared. The current GPU implementation does not handle this well " +
           "and is disabled by default. If you know that your window size is very small you " +
           "can try to enable it.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_WINDOW_UNBOUNDED_AGG = conf("spark.rapids.sql.window.unboundedAgg.enabled")
+      .doc("This is a temporary internal config to turn on an unbounded to unbounded " +
+          "window optimization that is still a work in progress. It should eventually replace " +
+          "the double pass window exec.")
+      .internal()
       .booleanConf
       .createWithDefault(false)
 
@@ -2436,6 +2444,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isWindowCollectListEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_LIST)
 
   lazy val isWindowCollectSetEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_SET)
+
+  lazy val isWindowUnboundedAggEnabled: Boolean = get(ENABLE_WINDOW_UNBOUNDED_AGG)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
