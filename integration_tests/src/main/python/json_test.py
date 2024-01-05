@@ -84,7 +84,7 @@ _string_schema = StructType([
     StructField('a', StringType())])
 
 json_supported_date_formats = [
-    '', # represents not specifying a format (which is different from explicitly specifying the default format in some Spark versions)
+    None, # represents not specifying a format (which is different from explicitly specifying the default format in some Spark versions)
     'yyyy-MM-dd', 'yyyy/MM/dd',
     'yyyy-MM', 'yyyy/MM',
     'MM-yyyy', 'MM/yyyy',
@@ -101,10 +101,10 @@ json_supported_ts_parts = [
     "'T'HH:mm"]
 
 json_supported_timestamp_formats = [
-    '', # represents not specifying a format (which is different from explicitly specifying the default format in some Spark versions)
+    None, # represents not specifying a format (which is different from explicitly specifying the default format in some Spark versions)
 ]
 for date_part in json_supported_date_formats:
-    if len(date_part) > 0:
+    if date_part:
         # use date format without time component
         json_supported_timestamp_formats.append(date_part)
         # use date format and each supported time format
@@ -195,7 +195,7 @@ def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_li
 
     def create_test_data(spark):
         write = gen_df(spark, gen).write
-        if len(date_format) > 0:
+        if date_format:
             write = write.option('dateFormat', date_format)
         return write.json(data_path)
 
@@ -203,7 +203,7 @@ def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_li
 
     def do_read(spark):
         read = spark.read.schema(schema)
-        if len(date_format) > 0:
+        if date_format:
             read = read.option('dateFormat', date_format)
         return read.json(data_path)
 
@@ -225,7 +225,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, timestamp_format, v1_enabled
 
     def create_test_data(spark):
         write = gen_df(spark, gen).write
-        if len(timestamp_format) > 0:
+        if timestamp_format:
             write = write.option('timestampFormat', timestamp_format)
         write.json(data_path)
 
@@ -234,7 +234,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, timestamp_format, v1_enabled
 
     def do_read(spark):
         read = spark.read.schema(schema)
-        if len(timestamp_format) > 0:
+        if timestamp_format:
             read = read.option('timestampFormat', timestamp_format)
         return read.json(data_path)
 
@@ -342,7 +342,7 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
            "allowNumericLeadingZeros": allow_numeric_leading_zeros,
            }
 
-    if len(date_format) > 0:
+    if date_format:
         options['dateFormat'] = date_format
 
     assert_gpu_and_cpu_are_equal_collect(
@@ -445,7 +445,7 @@ def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date
         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
 
     options = { 'allowNumericLeadingZeros': allow_numeric_leading_zeros }
-    if len(date_format) > 0:
+    if date_format:
         options['dateFormat'] = date_format
 
     f = read_json_df(path, schema, spark_tmp_table_factory, options)
