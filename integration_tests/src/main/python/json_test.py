@@ -216,7 +216,6 @@ not_utc_allow_for_test_json_scan = ['BatchScanExec', 'FileSourceScanExec'] if is
 @allow_non_gpu(*not_utc_allow_for_test_json_scan)
 @pytest.mark.parametrize('timestamp_format', json_supported_timestamp_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_ts_formats_round_trip(spark_tmp_path, timestamp_format, v1_enabled_list):
     data_gen = TimestampGen()
     gen = StructGen([('a', data_gen)], nullable=False)
@@ -246,7 +245,6 @@ def test_json_ts_formats_round_trip(spark_tmp_path, timestamp_format, v1_enabled
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('timestamp_format', json_supported_timestamp_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, timestamp_format, timestamp_type):
     json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_type, 'json', 'FileSourceScanExec')
 
@@ -254,7 +252,6 @@ def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, timestamp_format, tim
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('timestamp_format', json_supported_timestamp_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_ts_formats_round_trip_ntz_v2(spark_tmp_path, timestamp_format, timestamp_type):
     json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_type, '', 'BatchScanExec')
 
