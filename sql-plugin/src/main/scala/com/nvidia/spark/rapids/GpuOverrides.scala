@@ -1798,9 +1798,20 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          .withPsNote(TypeEnum.STRING, 
+            "Only non-DST(Daylight Savings Time) timezones are supported"),
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
+    expr[ToUTCTimestamp](
+      "Render the input timestamp in UTC",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, 
+            "Only non-DST(Daylight Savings Time) timezones are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new ToUTCTimestampExprMeta(a, conf, p, r)
     ),
     expr[Pmod](
       "Pmod",

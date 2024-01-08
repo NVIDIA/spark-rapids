@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -132,7 +132,7 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     println(s"test,type,zone,used MS")
     for (zoneStr <- zones) {
       // run 6 rounds, but ignore the first round.
-      for (i <- 1 to 6) {
+      val elapses = (1 to 6).map { i =>
         // run on Cpu
         val startOnCpu = System.nanoTime()
         withCpuSparkSession(
@@ -153,8 +153,16 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
         val elapseOnGpuMS = (endOnGpu - startOnGpu) / 1000000L
         if (i != 1) {
           println(s"$testName,Gpu,$zoneStr,$elapseOnGpuMS")
+          (elapseOnCpuMS, elapseOnGpuMS)
+        } else {
+          (0L, 0L) // skip the first round
         }
       }
+      val meanCpu = elapses.map(_._1).sum / 5.0
+      val meanGpu = elapses.map(_._2).sum / 5.0
+      val speedup = meanCpu.toDouble / meanGpu.toDouble
+      println(f"$testName, $zoneStr: mean cpu time: $meanCpu%.2f ms, " +
+          f"mean gpu time: $meanGpu%.2f ms, speedup: $speedup%.2f x")
     }
   }
 
@@ -172,5 +180,21 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     }
 
     runAndRecordTime("from_utc_timestamp", perfTest)
+  }
+
+  test("test to_utc_timestamp") {
+    assume(enablePerfTest)
+
+    // cache time zone DB in advance
+    GpuTimeZoneDB.cacheDatabase()
+    Thread.sleep(5L)
+
+    def perfTest(spark: SparkSession, zone: String): DataFrame = {
+      spark.read.parquet(path).select(functions.count(
+        functions.to_utc_timestamp(functions.col("c_ts"), zone)
+      ))
+    }
+
+    runAndRecordTime("to_utc_timestamp", perfTest)
   }
 }
