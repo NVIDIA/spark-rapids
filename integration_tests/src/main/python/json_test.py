@@ -263,7 +263,7 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
 
     def create_test_data(spark):
         write = gen_df(spark, gen).write
-        if len(timestamp_format) > 0:
+        if timestamp_format:
             write = write.option('timestampFormat', timestamp_format)
         write.json(data_path)
 
@@ -276,7 +276,7 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
 
     def do_read(spark):
         read = spark.read.schema(schema)
-        if len(timestamp_format) > 0:
+        if timestamp_format:
             read = read.option('timestampFormat', timestamp_format)
         return read.json(data_path)
 
