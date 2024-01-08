@@ -427,6 +427,7 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
 @pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @pytest.mark.parametrize('ansi_enabled', [True, False])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', [True, False])
+@allow_non_gpu(*allow_non_gpu_for_json_scan)
 def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date_gen_pattern, schema, date_format, \
         ansi_enabled, allow_numeric_leading_zeros):
     # create test data with json strings where a subset are valid dates
