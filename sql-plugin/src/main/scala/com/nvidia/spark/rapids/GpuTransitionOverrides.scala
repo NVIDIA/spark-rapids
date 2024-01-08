@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
@@ -178,9 +178,15 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      logWarning("columnar to row with ShuffleQueryStageExec - here we want to replace with row one")
+      logWarning("columnar to row with ShuffleQueryStageExec - here we want " +
+        "to replace with row one")
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
+
+    case c2re @ ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+      logWarning("columnar to row with AQEShuffleReadExec " + c2re)
+      val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(s, Some(plan)))
+      SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       logWarning("columnar to row with BroadcastQueryStageExec")
