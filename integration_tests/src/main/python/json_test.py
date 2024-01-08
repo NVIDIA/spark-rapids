@@ -184,7 +184,7 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
             conf=updated_conf)
 
 allow_non_gpu_for_json_scan = ['FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 @allow_non_gpu(*allow_non_gpu_for_json_scan)
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
@@ -329,7 +329,7 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
 ])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @allow_non_gpu(*not_utc_allow_for_test_json_scan)
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'])
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'])
 def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, \
         allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory, date_format):
     updated_conf = copy_and_update(_enable_all_types_conf,
@@ -424,7 +424,7 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
     '[1-3]{1,2}/[1-3]{1,2}/[1-9]{4}',
 ])
 @pytest.mark.parametrize('schema', [StructType([StructField('value', DateType())])])
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @pytest.mark.parametrize('ansi_enabled', [True, False])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', [True, False])
 def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date_gen_pattern, schema, date_format, \
@@ -455,7 +455,7 @@ def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date
 @pytest.mark.parametrize('schema', [_date_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
     pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow)),
@@ -651,7 +651,7 @@ def test_from_json_struct_decimal():
     # boolean
     "(true|false)"
 ])
-@pytest.mark.parametrize('date_format', ['', 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @allow_non_gpu(*non_utc_project_allow)
 def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
