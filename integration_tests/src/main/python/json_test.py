@@ -466,7 +466,7 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy })
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else {}
+    options = { 'dateFormat': date_format } if date_format else {}
     f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, options)
     if time_parser_policy == 'EXCEPTION':
         assert_gpu_and_cpu_error(
