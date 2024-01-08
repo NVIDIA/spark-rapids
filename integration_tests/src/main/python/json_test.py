@@ -674,7 +674,7 @@ def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format } if date_format else { }
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
@@ -693,7 +693,7 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format } if date_format else { }
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
