@@ -216,6 +216,9 @@
         </profile>
         <profile>
             <id>pre-merge</id>
+            <properties>
+                <included_buildvers>${buildver}</included_buildvers>
+            </properties>
             <build>
                 <plugins>
                     <plugin>

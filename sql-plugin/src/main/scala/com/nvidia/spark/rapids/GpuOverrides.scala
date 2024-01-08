@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims._
+import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -1797,9 +1798,20 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          .withPsNote(TypeEnum.STRING, 
+            "Only non-DST(Daylight Savings Time) timezones are supported"),
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
+    expr[ToUTCTimestamp](
+      "Render the input timestamp in UTC",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, 
+            "Only non-DST(Daylight Savings Time) timezones are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new ToUTCTimestampExprMeta(a, conf, p, r)
     ),
     expr[Pmod](
       "Pmod",

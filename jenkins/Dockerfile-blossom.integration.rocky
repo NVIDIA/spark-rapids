@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ ARG URM_URL
 # Install jdk-8, jdk-11, maven, docker image
 RUN yum update -y && \
     yum install epel-release -y && \
-    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect rsync zip unzip
+    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect rsync zip unzip procps
 
 # The plugin: net.alchim31.maven requires a higher mvn version.
 ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,8 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       val rrp = GpuRoundRobinPartitioning(partNum)
       // batch will be closed within columnarEvalAny
       val batch = buildBatch
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       var ret: Array[(ColumnarBatch, Int)] = null
       try {
         ret = rrp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
@@ -68,7 +69,8 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       val rp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
       // batch will be closed within columnarEvalAny
       val batch = buildBatch
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       var ret: Array[(ColumnarBatch, Int)] = null
       try {
         ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
