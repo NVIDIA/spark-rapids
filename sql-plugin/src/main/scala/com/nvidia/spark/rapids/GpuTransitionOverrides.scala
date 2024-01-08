@@ -123,6 +123,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // individual query with no parent and we need to remove these operators in this case
         // because we need to return an operator that implements `BroadcastExchangeLike` or
         // `ShuffleExchangeLike`.
+        logWarning("handling columnar to row in optimizeAdaptiveTransitions")
         bb.child match {
           case GpuShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
             // The coalesce step gets added back into the plan later on, in a
@@ -152,6 +153,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
+            logWarning("shuffle query stage exec supports columnar and is custom reader "
+              + s + " x is: " + x)
             s
           case (ex: ShuffleExchangeLike, Some(x))
               if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
@@ -175,10 +178,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
+      logWarning("columnar to row with ShuffleQueryStageExec - here we want to replace with row one")
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
+      logWarning("columnar to row with BroadcastQueryStageExec")
       e.plan match {
         case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
@@ -701,6 +706,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+
+
   private def insertStageLevelMetrics(plan: SparkPlan): Unit = {
     val sc = SparkSession.active.sparkContext
     val gen = new AtomicInteger(0)
@@ -788,6 +795,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
           updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
         }
+
 
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
