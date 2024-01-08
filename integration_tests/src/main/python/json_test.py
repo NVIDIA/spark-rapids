@@ -668,14 +668,14 @@ def test_from_json_struct_date(date_gen, date_format):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
 @pytest.mark.parametrize('date_format', [
-    "",
+    None,
     "yyyy-MM-dd",
 ])
 def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format } if date_format else { }
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
@@ -694,7 +694,7 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format }
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
@@ -730,7 +730,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
 ])
 @pytest.mark.parametrize('timestamp_format', [
     # Even valid timestamp format, CPU fallback happens still since non UTC is not supported for json.
-    pytest.param("", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
+    pytest.param(None, marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
     # https://github.com/NVIDIA/spark-rapids/issues/9723
     pytest.param("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     pytest.param("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", marks=pytest.mark.allow_non_gpu('ProjectExec')),
@@ -746,7 +746,7 @@ def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser
         .with_special_case('{ "a": null }') \
         .with_special_case('{ "a": "6395-12-21T56:86:40.205705Z" }') \
         .with_special_case('null')
-    options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
+    options = { 'timestampFormat': timestamp_format } if timestamp_format else { }
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
@@ -757,14 +757,14 @@ def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('timestamp_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?\""])
 @pytest.mark.parametrize('timestamp_format', [
-    "",
+    None,
     "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]",
 ])
 def test_from_json_struct_timestamp_fallback_legacy(timestamp_gen, timestamp_format):
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
+    options = { 'timestampFormat': timestamp_format } if timestamp_format else { }
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
@@ -782,7 +782,7 @@ def test_from_json_struct_timestamp_fallback_non_default_format(timestamp_gen, t
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
+    options = { 'timestampFormat': timestamp_format } if timestamp_format else { }
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
