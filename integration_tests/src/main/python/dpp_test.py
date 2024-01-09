@@ -24,7 +24,7 @@ from spark_session import is_before_spark_320, with_cpu_session, is_before_spark
 
 # non-positive values here can produce a degenerative join, so here we ensure that most values are
 # positive to ensure the join will produce rows. See https://github.com/NVIDIA/spark-rapids/issues/10147
-value_gen = RepeatSeqGen([None, INT_MIN, -1, 0, 1, INT_MAX], data_type=IntegerType(), nullable=False)
+value_gen = RepeatSeqGen([None, INT_MIN, -1, 0, 1, INT_MAX], data_type=IntegerType())
 
 def create_dim_table(table_name, table_format, length=500):
     def fn(spark):

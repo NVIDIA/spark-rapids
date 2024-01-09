@@ -335,16 +335,14 @@ class RepeatSeqGen(DataGen):
     When child is a list:
         data_type must be specified
         length must be <= length of child
-        nullable is honored
     When child is a DataGen:
         length must be specified
         data_type must be None or match child's
-        nullable is set child's nullable attribute
     """
-    def __init__(self, child, length=None, data_type=None, nullable=False):
+    def __init__(self, child, length=None, data_type=None):
         if isinstance(child, list):
             super().__init__(data_type, nullable=False)
-            self.nullable = nullable
+            self.nullable = None in child
             assert (length is None or length < len(child))
             self._length = length if length is not None else len(child)
             self._child = child[:length] if length is not None else child
