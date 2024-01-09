@@ -20,9 +20,9 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later
 
-# non-positive values here can produce a degenerative join, so we want a filter value associated
-# with only positive values. See https://github.com/NVIDIA/spark-rapids/issues/10147
-value_gen = RepeatSeqGen(int_gen, length=100) 
+# non-positive values here can produce a degenerative join, so here we ensure that most values are
+# positive to ensure the join will produce rows. See https://github.com/NVIDIA/spark-rapids/issues/10147
+value_gen = RepeatSeqGen(IntegerGen(nullable=True, min_val=1, max_val=100, special_cases=[0,-1]), length=100)
 
 def create_dim_table(table_name, table_format, length=500):
     def fn(spark):
