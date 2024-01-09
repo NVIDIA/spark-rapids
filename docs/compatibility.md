@@ -722,9 +722,16 @@ This configuration is enabled by default. To disable this operation on the GPU s
 
 ### String to Float
 
-Casting from string to double on the GPU could sometimes return incorrect results if the string 
-contains high precision values. In Apache Spark, the values are rounded to the nearest double, 
-whereas the Rapids accelerator truncates the values directly.
+Casting from string to double on the GPU returns incorrect results when the string represents any 
+number in the following ranges. In both cases the GPU returns `Double.MaxValue`. The default behavior 
+in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
+
+- `1.7976931348623158E308 <= x < 1.7976931348623159E308`
+- `-1.7976931348623159E308 < x <= -1.7976931348623158E308`
+
+Casting from string to double on the GPU could also sometimes return incorrect results if the string 
+contains high precision values. Apache Spark rounds the values to the nearest double, while the GPU 
+truncates the values directly.
 
 Also, the GPU does not support casting from strings containing hex values to floating-point types.
 
