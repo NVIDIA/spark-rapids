@@ -27,7 +27,9 @@ def create_dim_table(table_name, table_format, length=500):
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
             ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
             ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=3, special_cases=[])),
-            ('value', int_gen),
+            # non-positive values here can produce a degenerative join, so we want a filter value associated
+            # with only positive values. See https://github.com/NVIDIA/spark-rapids/issues/10147
+            ('value', IntegerGen(min_val=1, special_cases=[1, INT_MAX])),
             # specify nullable=False for `filter` to avoid generating invalid SQL with
             # expression `filter = None` (https://github.com/NVIDIA/spark-rapids/issues/9817)
             ('filter', RepeatSeqGen(
