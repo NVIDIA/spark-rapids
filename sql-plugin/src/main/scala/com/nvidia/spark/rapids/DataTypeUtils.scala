@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.types._
 
 object DataTypeUtils {
   def isNestedType(dataType: DataType): Boolean = dataType match {
@@ -26,4 +26,32 @@ object DataTypeUtils {
 
   def hasNestedTypes(schema: StructType): Boolean =
     schema.exists(f => isNestedType(f.dataType))
+
+  /**
+   * If `t` is date/timestamp type or its children have a date/timestamp type.
+   *
+   * @param t input date type.
+   * @return if contains date type.
+   */
+  def hasDateOrTimestampType(t: DataType): Boolean = {
+    hasType(t, t => t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType])
+  }
+
+  /**
+   * If the specified date type or its children have a true predicate
+   *
+   * @param t         input data type.
+   * @param predicate predicate for a date type.
+   * @return true if date type or its children have a true predicate.
+   */
+  private def hasType(t: DataType, predicate: DataType => Boolean): Boolean = {
+    t match {
+      case _ if predicate(t) => true
+      case MapType(keyType, valueType, _) =>
+        hasType(keyType, predicate) || hasType(valueType, predicate)
+      case ArrayType(elementType, _) => hasType(elementType, predicate)
+      case StructType(fields) => fields.exists(f => hasType(f.dataType, predicate))
+      case _ => false
+    }
+  }
 }
