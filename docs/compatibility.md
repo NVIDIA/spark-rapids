@@ -349,7 +349,7 @@ with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStr
 
 Dates are partially supported but there are some known issues:
 
-- Only the default `dateFormat` of `yyyy-MM-dd` is supported. The query will fall back to CPU if any other format
+- Only the default `dateFormat` of `yyyy-MM-dd` is supported in Spark 3.1.x. The query will fall back to CPU if any other format
   is specified ([#9667](https://github.com/NVIDIA/spark-rapids/issues/9667))
 - Strings containing integers with more than four digits will be 
   parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4 
