@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import is_not_utc
+from conftest import is_not_utc, is_supported_time_zone
 from data_gen import *
 from spark_session import *
 from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
@@ -540,6 +540,8 @@ def test_cast_timestamp_to_string():
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as string)"))
 
+@tz_sensitive_test
+@allow_non_gpu(*non_supported_tz_allow)
 def test_cast_timestamp_to_date():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)

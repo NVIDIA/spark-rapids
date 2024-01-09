@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc
+from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc, is_supported_time_zone
 import time
 import os
 from functools import lru_cache
@@ -1211,6 +1211,11 @@ def get_25_partitions_df(spark):
 non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
                  'ExecutedCommandExec'] if is_not_utc() else []
+
+non_supported_tz_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if not is_supported_time_zone() else []
+
 
 # date related regexps for generating date strings within python's range limits
 
