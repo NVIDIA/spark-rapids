@@ -392,6 +392,11 @@ def __traverse_source_tree_of_all_shims(src_type, func):
                     "orphan shim files should be deleted"
                 build_ver_arr = map(lambda s: str(json.loads(s).get('spark')), shim_arr)
                 __log.debug("extracted shims %s", build_ver_arr)
+                for ver in build_ver_arr:
+                    try:
+                        __all_shims_arr.index(ver)
+                    except:
+                        raise Exception("shim for " + ver + " not defined in pom")
                 assert build_ver_arr == sorted(build_ver_arr),\
                     "%s shim list is not properly sorted" % shim_file_path
                 func(src_type, shim_file_path, build_ver_arr)
