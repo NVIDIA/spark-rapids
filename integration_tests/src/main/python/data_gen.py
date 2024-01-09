@@ -330,18 +330,26 @@ class UniqueLongGen(DataGen):
 
 class RepeatSeqGen(DataGen):
     """Generate Repeated seq of `length` random items"""
-    def __init__(self, child, length):
-        super().__init__(child.data_type, nullable=False)
-        self.nullable = child.nullable
+    def __init__(self, child, length=None, data_type=None, nullable=False):
+        if isinstance(child, list):
+            super().__init__(data_type, nullable=False)
+            self.nullable = nullable
+            self._length = len(child)
+        else:
+            super().__init__(child.data_type, nullable=False)
+            self.nullable = child.nullable
+            assert(length is not None)
+            self._length = length
         self._child = child
         self._vals = []
-        self._length = length
         self._index = 0
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child) + ')'
 
     def _cache_repr(self):
+        if isinstance(self._child, list):
+            return super()._cache_repr() + '(' + str(self._child) + ',' + str(self._length) + ')'
         return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + ')'
 
     def _loop_values(self):
@@ -351,9 +359,12 @@ class RepeatSeqGen(DataGen):
 
     def start(self, rand):
         self._index = 0
-        self._child.start(rand)
         self._start(rand, self._loop_values)
-        self._vals = [self._child.gen() for _ in range(0, self._length)]
+        if isinstance(self._child, list):
+            self._vals = self._child
+        else:
+            self._child.start(rand)
+            self._vals = [self._child.gen() for _ in range(0, self._length)]
 
 class SetValuesGen(DataGen):
     """A set of values that are randomly selected"""

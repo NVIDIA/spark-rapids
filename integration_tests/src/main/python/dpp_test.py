@@ -14,6 +14,8 @@
 
 import pytest
 
+from pyspark.sql.types import IntegerType
+
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from conftest import spark_tmp_table_factory
 from data_gen import *
@@ -22,7 +24,7 @@ from spark_session import is_before_spark_320, with_cpu_session, is_before_spark
 
 # non-positive values here can produce a degenerative join, so here we ensure that most values are
 # positive to ensure the join will produce rows. See https://github.com/NVIDIA/spark-rapids/issues/10147
-value_gen = RepeatSeqGen(IntegerGen(nullable=True, min_val=1, max_val=100, special_cases=[0,-1]), length=100)
+value_gen = RepeatSeqGen([None, INT_MIN, -1, 0, 1, INT_MAX], data_type=IntegerType(), nullable=True)
 
 def create_dim_table(table_name, table_format, length=500):
     def fn(spark):
