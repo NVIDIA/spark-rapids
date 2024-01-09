@@ -370,6 +370,9 @@ def __generate_symlinks():
                                                                              path,
                                                                              build_ver_arr))
 
+def __map_version_array(shim_json_string):
+    shim_ver = str(json.loads(shim_json_string).get('spark'))
+    assert shim_ver in __all_shims_arr, "all.buildvers in pom.xml does not contain %s" % shim_ver
 
 def __traverse_source_tree_of_all_shims(src_type, func):
     """Walks src/<src_type>/sparkXYZ"""
@@ -390,13 +393,8 @@ def __traverse_source_tree_of_all_shims(src_type, func):
                 shim_arr = shim_match.group(1).split(os.linesep)
                 assert len(shim_arr) > 0, "invalid empty shim comment,"\
                     "orphan shim files should be deleted"
-                build_ver_arr = map(lambda s: str(json.loads(s).get('spark')), shim_arr)
+                build_ver_arr = map(__map_version_array, shim_arr)
                 __log.debug("extracted shims %s", build_ver_arr)
-                for ver in build_ver_arr:
-                    try:
-                        __all_shims_arr.index(ver)
-                    except:
-                        raise Exception("shim for " + ver + " not defined in pom")
                 assert build_ver_arr == sorted(build_ver_arr),\
                     "%s shim list is not properly sorted" % shim_file_path
                 func(src_type, shim_file_path, build_ver_arr)
