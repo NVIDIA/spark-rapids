@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object DataTypeUtils {
@@ -34,24 +35,7 @@ object DataTypeUtils {
    * @return if contains date type.
    */
   def hasDateOrTimestampType(t: DataType): Boolean = {
-    hasType(t, t => t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType])
-  }
-
-  /**
-   * If the specified date type or its children have a true predicate
-   *
-   * @param t         input data type.
-   * @param predicate predicate for a date type.
-   * @return true if date type or its children have a true predicate.
-   */
-  private def hasType(t: DataType, predicate: DataType => Boolean): Boolean = {
-    t match {
-      case _ if predicate(t) => true
-      case MapType(keyType, valueType, _) =>
-        hasType(keyType, predicate) || hasType(valueType, predicate)
-      case ArrayType(elementType, _) => hasType(elementType, predicate)
-      case StructType(fields) => fields.exists(f => hasType(f.dataType, predicate))
-      case _ => false
-    }
+    TrampolineUtil.dataTypeExistsRecursively(t, e =>
+      e.isInstanceOf[DateType] || e.isInstanceOf[TimestampType])
   }
 }
