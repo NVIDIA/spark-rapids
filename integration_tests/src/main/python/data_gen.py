@@ -329,15 +329,28 @@ class UniqueLongGen(DataGen):
         self._start(rand, lambda: self.next_val())
 
 class RepeatSeqGen(DataGen):
-    """Generate Repeated seq of `length` random items"""
+    """Generate Repeated seq of `length` random items if child is a DataGen,
+    otherwise repeat the provided seq when child is a list.
+
+    When child is a list:
+        data_type must be specified
+        length must be <= length of child
+        nullable is honored
+    When child is a DataGen:
+        length must be specified
+        data_type must be None or match child's
+        nullable is set child's nullable attribute
+    """
     def __init__(self, child, length=None, data_type=None, nullable=False):
         if isinstance(child, list):
             super().__init__(data_type, nullable=False)
             self.nullable = nullable
-            self._length = len(child)
+            assert (length is None or length < len(child))
+            self._length = length if length is not None else len(child)
         else:
             super().__init__(child.data_type, nullable=False)
             self.nullable = child.nullable
+            assert(data_type is None or data_type != child.data_type)
             assert(length is not None)
             self._length = length
         self._child = child
