@@ -347,13 +347,14 @@ class RepeatSeqGen(DataGen):
             self.nullable = nullable
             assert (length is None or length < len(child))
             self._length = length if length is not None else len(child)
+            self._child = child[:length] if length is not None else child
         else:
             super().__init__(child.data_type, nullable=False)
             self.nullable = child.nullable
             assert(data_type is None or data_type != child.data_type)
             assert(length is not None)
             self._length = length
-        self._child = child
+            self._child = child
         self._vals = []
         self._index = 0
 
