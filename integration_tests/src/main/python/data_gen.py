@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
+from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc
 import time
 import os
 from functools import lru_cache
@@ -584,19 +584,11 @@ class TimestampGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         if start is None:
-            # Spark supports times starting at
-            # "0001-01-01 00:00:00.000000"
-            # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days, even a month,
-            # just to be sure
-            start = datetime(1, 2, 1, tzinfo=tzinfo)
+            start = datetime(1, 1, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
-        # Spark supports time through: "9999-12-31 23:59:59.999999"
-        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
-        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
-        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
+        max_end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
             end = max_end
         elif isinstance(end, timedelta):
@@ -612,6 +604,10 @@ class TimestampGen(DataGen):
         self._start_time = self._to_us_since_epoch(start)
         self._end_time = self._to_us_since_epoch(end)
         self._tzinfo = tzinfo
+
+        self.with_special_case(start)
+        self.with_special_case(end)
+
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
@@ -1223,3 +1219,9 @@ date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{
 
 # regexp to generate year from 0002, format is yyyy
 yyyy_start_0002 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
+
+# regexp to generate year from 0001, format is yyyy
+yyyy_start_0001 = '([0-9]{3}[1-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_1_1 = yyyy_start_0001 + '-[0-9]{1,2}-[0-9]{1,2}'

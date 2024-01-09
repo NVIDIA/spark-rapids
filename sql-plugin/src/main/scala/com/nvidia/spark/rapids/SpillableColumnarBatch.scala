@@ -371,41 +371,9 @@ class SpillableHostBuffer(handle: RapidsBufferHandle,
     handle.close()
   }
 
-  /**
-   * Acquires the underlying `RapidsBuffer` and uses
-   * `RapidsBuffer.withMemoryBufferReadLock` to obtain a read lock
-   * that will held while invoking `body` with a `HostMemoryBuffer`.
-   * @param body function that takes a `HostMemoryBuffer` and produces `K`
-   * @tparam K any return type specified by `body`
-   * @return the result of body(hostMemoryBuffer)
-   */
-  def withHostBufferReadOnly[K](body: HostMemoryBuffer => K): K = {
+  def getHostBuffer(): HostMemoryBuffer = {
     withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.withMemoryBufferReadLock {
-        case hmb: HostMemoryBuffer => body(hmb)
-        case memoryBuffer =>
-          throw new IllegalStateException(
-            s"Expected a HostMemoryBuffer but instead got ${memoryBuffer}")
-      }
-    }
-  }
-
-  /**
-   * Acquires the underlying `RapidsBuffer` and uses
-   * `RapidsBuffer.withMemoryBufferWriteLock` to obtain a write lock
-   * that will held while invoking `body` with a `HostMemoryBuffer`.
-   * @param body function that takes a `HostMemoryBuffer` and produces `K`
-   * @tparam K any return type specified by `body`
-   * @return the result of body(hostMemoryBuffer)
-   */
-  def withHostBufferWriteLock[K](body: HostMemoryBuffer => K): K = {
-    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.withMemoryBufferWriteLock {
-        case hmb: HostMemoryBuffer => body(hmb)
-        case memoryBuffer =>
-          throw new IllegalStateException(
-            s"Expected a HostMemoryBuffer but instead got ${memoryBuffer}")
-      }
+      rapidsBuffer.getHostMemoryBuffer
     }
   }
 }

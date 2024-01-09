@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims._
+import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -66,7 +67,7 @@ import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
-import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuTimeAdd}
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -1797,9 +1798,20 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          .withPsNote(TypeEnum.STRING, 
+            "Only non-DST(Daylight Savings Time) timezones are supported"),
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
+    expr[ToUTCTimestamp](
+      "Render the input timestamp in UTC",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, 
+            "Only non-DST(Daylight Savings Time) timezones are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new ToUTCTimestampExprMeta(a, conf, p, r)
     ),
     expr[Pmod](
       "Pmod",
@@ -3263,6 +3275,8 @@ object GpuOverrides extends Logging {
           }
 
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            case Some("QUERY") if (a.children.size == 3) =>
+              willNotWorkOnGpu("Part to extract QUERY with key is not supported on GPU")
             case Some(part) if GpuParseUrl.isSupportedPart(part) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
@@ -3380,13 +3394,24 @@ object GpuOverrides extends Logging {
       "Collect a list of non-unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP)
+            .withPsNote(TypeEnum.ARRAY, "window operations are disabled by default due " +
+                "to extreme memory usage"),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
               TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          if (context == WindowAggExprContext && !conf.isWindowCollectListEnabled) {
+            willNotWorkOnGpu("collect_list is disabled for window operations because " +
+                "the output explodes in size proportional to the window size squared. If " +
+                "you know the window is small you can try it by setting " +
+                s"${RapidsConf.ENABLE_WINDOW_COLLECT_LIST} to true")
+          }
+        }
+
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectList(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
 
@@ -3410,7 +3435,9 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY)
+            .withPsNote(TypeEnum.ARRAY, "window operations are disabled by default due " +
+                "to extreme memory usage"),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3419,6 +3446,14 @@ object GpuOverrides extends Logging {
             TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          if (context == WindowAggExprContext && !conf.isWindowCollectSetEnabled) {
+            willNotWorkOnGpu("collect_set is disabled for window operations because " +
+                "the output can explode in size proportional to the window size squared. If " +
+                "you know the window is small you can try it by setting " +
+                s"${RapidsConf.ENABLE_WINDOW_COLLECT_SET} to true")
+          }
+        }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
@@ -3739,6 +3774,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[OctetLength](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
       }),
+    expr[Ascii](
+      "The numeric value of the first character of string data.",
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.STRING, TypeSig.STRING),
+      (a, conf, p, r) => new UnaryExprMeta[Ascii](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuAscii(child)
+      }).disabledByDefault("it only supports strings starting with ASCII or Latin-1 characters " +
+        "after Spark 3.2.3, 3.3.1 and 3.4.0. Otherwise the results will not match the CPU."),
     expr[GetArrayStructFields](
       "Extracts the `ordinal`-th fields of all array elements for the data with the type of" +
         " array of struct",

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -221,10 +221,12 @@ class GpuCoalesceBatchesRetrySuite
 
     def injectError(injectRetry: Int, injectSplitAndRetry: Int): Unit = {
       if (injectRetry > 0) {
-        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, injectRetry)
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, injectRetry,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
       }
       if (injectSplitAndRetry > 0) {
-        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, injectSplitAndRetry)
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, injectSplitAndRetry,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
       }
     }
 

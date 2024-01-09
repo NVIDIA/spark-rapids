@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -211,7 +211,8 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
       Iterator(buildBatch, buildBatch),
       gpuSorter,
       singleBatch = false)
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     while (eachBatchIter.hasNext) {
       var pos = 0
       var curValue = 0
@@ -234,7 +235,8 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
       inputIter,
       gpuSorter,
       singleBatch = false)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     assertThrows[GpuSplitAndRetryOOM] {
       eachBatchIter.next()
     }

@@ -18,7 +18,7 @@ from asserts import *
 from conftest import is_not_utc
 from data_gen import *
 from spark_session import *
-from marks import allow_non_gpu, approximate_float, datagen_overrides
+from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
@@ -65,7 +65,7 @@ def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen(date_start_1_2_1)).select(f.col('a').cast(DateType())),
+            lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
@@ -146,11 +146,12 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_2_1),
-                                      StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
-                                      StringGen(date_start_1_2_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
+@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
+                                      StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
                                       ],
                         ids=idfn)
+@tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
 def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
@@ -539,6 +540,11 @@ def test_cast_timestamp_to_string():
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as string)"))
 
+def test_cast_timestamp_to_date():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen)
+            .selectExpr("cast(a as date)"))
+
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():
     _assert_cast_to_string_equal(DayTimeIntervalGen(start_field='day', end_field='day', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)]), {})
@@ -691,9 +697,9 @@ def test_cast_int_to_string_not_UTC():
         lambda spark: unary_op_df(spark, int_gen, 100).selectExpr("a", "CAST(a AS STRING) as str"),
         {"spark.sql.session.timeZone": "+08"})
 
-not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (timestamp_gen, 'DATE'),
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING'),
         # python does not like year 0, and with time zones the default start date can become year 0 :(
-        (DateGen(start=date(1, 1, 3)), 'TIMESTAMP'),
+        (DateGen(start=date(1, 1, 1)), 'TIMESTAMP'),
         (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
 
 @allow_non_gpu('ProjectExec')

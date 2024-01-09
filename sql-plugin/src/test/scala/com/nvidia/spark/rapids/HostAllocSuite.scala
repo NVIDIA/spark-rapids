@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
   private val rc = new RapidsConf(sqlConf)
+  private val timeoutMs = 10000
 
   def setMockContext(taskAttemptId: Long): Unit = {
     val context = mock[TaskContext]
@@ -128,7 +129,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
 
         override def toString: String = s"INIT TASK $name TASK $taskId"
       })
-      waitForStart.get(1000, TimeUnit.MILLISECONDS)
+      waitForStart.get(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
     def done: Future[Void] = {
@@ -217,7 +218,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     var fc: Option[Future[Void]] = None
 
     def waitForAlloc(): Unit = {
-      fb.get(1000, TimeUnit.MILLISECONDS)
+      fb.get(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
     def assertAllocSize(expectedSize: Long): Unit = synchronized {
@@ -239,7 +240,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
 
     def waitForSpillable(): Unit = {
       if (fsb.isEmpty) makeSpillableOnThread()
-      fsb.get.get(1000, TimeUnit.MILLISECONDS)
+      fsb.get.get(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
     def freeOnThread(): Unit = {
@@ -256,7 +257,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
 
     def waitForFree(): Unit = {
       if (fc.isEmpty) freeOnThread()
-      fc.get.get(1000, TimeUnit.MILLISECONDS)
+      fc.get.get(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
     def freeAndWait(): Unit = {

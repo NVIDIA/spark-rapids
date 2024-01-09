@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,8 @@ class RangeRetrySuite extends RmmSparkRetrySuiteBase {
 
   test("GPU range iterator with split and retry OOM") {
     val rangeIter = new GpuRangeIterator(start, end, step, maxRows, null, NoopMetric)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     // It should produce two batches, and rows numbers are
     // 10 (=20/2) after retry, and
     // 15 (25-10), the remaining ones.
