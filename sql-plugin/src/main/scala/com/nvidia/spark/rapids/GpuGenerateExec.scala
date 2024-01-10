@@ -371,7 +371,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     val inputRows = inputBatch.numRows()
 
     // if the number of input rows is 1 or less, cannot split
-    //if (inputRows <= 1) return Array()
+    if (inputRows <= 1) return Array()
 
     val vectors = GpuColumnVector.extractBases(inputBatch)
 
@@ -544,12 +544,12 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         inputTable.explodePosition(genOffset)
       }
       // the position column is at genOffset and the exploded column at genOffset + 1
-      val posColToFix = toFixUp.getColumn(genOffset)
-      val fixedUpPosCol = withResource(Scalar.fromLong(fixUpOffset)) { offset =>
-        posColToFix.add(offset, posColToFix.getType)
-      }
-      withResource(fixedUpPosCol) { _ =>
-        withResource(toFixUp) { _ =>
+      withResource(toFixUp) { _ =>
+        val posColToFix = toFixUp.getColumn(genOffset)
+        val fixedUpPosCol = withResource(Scalar.fromLong(fixUpOffset)) { offset =>
+          posColToFix.add(offset, posColToFix.getType)
+        }
+        withResource(fixedUpPosCol) { _ =>
           val newCols = new Array[ColumnVector](toFixUp.getNumberOfColumns)
           (0 until genOffset).foreach { b =>
             newCols(b) = toFixUp.getColumn(b)
