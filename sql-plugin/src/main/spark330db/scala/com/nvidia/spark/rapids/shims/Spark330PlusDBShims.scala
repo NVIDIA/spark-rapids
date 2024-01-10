@@ -23,6 +23,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
@@ -31,7 +32,7 @@ import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExcha
 import org.apache.spark.sql.rapids.{GpuCheckOverflowInTableInsert, GpuElementAtMeta}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
-trait Spark330PlusDBShims extends Spark321PlusDBShims {
+trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[CheckOverflowInTableInsert](
@@ -79,7 +80,11 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
       case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
+        logInfo("in executor broadcast handling, creating new shuffle exchange")
         ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
+      case shuffleOther: ShuffleExchangeLike =>
+        logInfo("shuffle not executor broadcast: " +  shuffleOther)
+        shuffleOther
       case _ =>
         c2r
     }
