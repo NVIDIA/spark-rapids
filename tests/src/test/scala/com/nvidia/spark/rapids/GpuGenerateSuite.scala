@@ -364,7 +364,7 @@ class GpuGenerateSuite
 
             withResource(results) { _ =>
               withResource(results.map(GpuColumnVector.from)) { resultTbls =>
-                withResource(Table.concatenate(resultTbls: _*)) { res =>
+                withResource(Table.concatenate(resultTbls.toSeq: _*)) { res =>
                   withResource(GpuColumnVector.from(expectedExploded)) { expectedTbl =>
                     TestUtils.compareTables(expectedTbl, res)
                   }
