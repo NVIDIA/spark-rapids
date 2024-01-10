@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
-import java.util.Optional
+import java.text.DecimalFormatSymbols
+import java.util.{Locale, Optional}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -2296,7 +2297,20 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val d = rhs.getValue.asInstanceOf[Int]
     x.dataType match {
       case FloatType | DoubleType => {
-        CastStrings.fromFloatWithFormat(lhs.getBase, d)
+        val nanSymbol = DecimalFormatSymbols.getInstance(Locale.US).getNaN
+        // JDK 8's nan symbol is "�" ('\uFFFD'), which is also the jni kernel's nan symbol
+        // In higher JDK version, nan symbol is "NaN", so we need to handle it here.
+        if (nanSymbol == String.valueOf('\uFFFD')) {
+          CastStrings.fromFloatWithFormat(lhs.getBase, d)
+        } else {
+          withResource(Scalar.fromString(nanSymbol)) { nan =>
+            withResource(lhs.getBase.isNan) { isNan =>
+              withResource(CastStrings.fromFloatWithFormat(lhs.getBase, d)) { res =>
+                isNan.ifElse(nan, res)
+              }
+            }
+          }
+        }
       }
       case _ => {
         formatNumberNonKernel(lhs.getBase, d) 
