@@ -373,6 +373,7 @@ def __generate_symlinks():
 def __map_version_array(shim_json_string):
     shim_ver = str(json.loads(shim_json_string).get('spark'))
     assert shim_ver in __all_shims_arr, "all.buildvers in pom.xml does not contain %s" % shim_ver
+    return shim_ver
 
 def __traverse_source_tree_of_all_shims(src_type, func):
     """Walks src/<src_type>/sparkXYZ"""
