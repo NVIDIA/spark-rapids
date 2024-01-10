@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types._
 
 object DataTypeUtils {
   def isNestedType(dataType: DataType): Boolean = dataType match {
@@ -26,4 +27,15 @@ object DataTypeUtils {
 
   def hasNestedTypes(schema: StructType): Boolean =
     schema.exists(f => isNestedType(f.dataType))
+
+  /**
+   * If `t` is date/timestamp type or its children have a date/timestamp type.
+   *
+   * @param t input date type.
+   * @return if contains date type.
+   */
+  def hasDateOrTimestampType(t: DataType): Boolean = {
+    TrampolineUtil.dataTypeExistsRecursively(t, e =>
+      e.isInstanceOf[DateType] || e.isInstanceOf[TimestampType])
+  }
 }
