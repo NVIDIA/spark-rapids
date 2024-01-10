@@ -2298,9 +2298,9 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     x.dataType match {
       case FloatType | DoubleType => {
         val nanSymbol = DecimalFormatSymbols.getInstance(Locale.US).getNaN
-        // JDK 8's nan symbol is "�", which is also the jni kernel's nan symbol
+        // JDK 8's nan symbol is "�" ('\uFFFD'), which is also the jni kernel's nan symbol
         // In higher JDK version, nan symbol is "NaN", so we need to handle it here.
-        if (nanSymbol == "�") {
+        if (nanSymbol == String.valueOf('\uFFFD')) {
           CastStrings.fromFloatWithFormat(lhs.getBase, d)
         } else {
           withResource(Scalar.fromString(nanSymbol)) { nan =>
