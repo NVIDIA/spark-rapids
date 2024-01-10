@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuJsonToStructsShim, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -113,15 +113,16 @@ object GpuJsonScan {
 
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
     if (hasDates) {
-      GpuJsonToStructsShim.tagDateFormatSupport(meta,
-        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
+      GpuJsonUtils.optionalDateFormatInRead(parsedOptions) match {
+        case None | Some("yyyy-MM-dd") =>
+          // this is fine
+        case dateFormat =>
+          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
+      }
     }
 
     val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])
     if (hasTimestamps) {
-      GpuJsonToStructsShim.tagTimestampFormatSupport(meta,
-        GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions))
-
       GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions) match {
         case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
           // this is fine
@@ -162,15 +163,9 @@ object GpuJsonScan {
     tagSupportOptions(parsedOptions, meta)
 
     val types = readSchema.map(_.dataType)
-
-    val hasDates = TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[DateType])
-    if (hasDates) {
-
+    if (types.contains(DateType)) {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
-
-      GpuJsonToStructsShim.tagDateFormatSupportFromScan(meta,
-        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
 
       // For date type, timezone needs to be checked also. This is because JVM timezone is used
       // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
@@ -451,10 +446,6 @@ class JsonPartitionReader(
     }
   }
 
-  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
-    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat)
-  }
-
   /**
    * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
    *
@@ -499,6 +490,6 @@ class JsonPartitionReader(
     }
   }
 
-  override def dateFormat: Option[String] = GpuJsonUtils.optionalDateFormatInRead(parsedOptions)
+  override def dateFormat: String = GpuJsonUtils.dateFormatInRead(parsedOptions)
   override def timestampFormat: String = GpuJsonUtils.timestampFormatInRead(parsedOptions)
 }

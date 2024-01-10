@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,17 +23,13 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuCast
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
-import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
-
-  def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
-  }
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
     GpuJsonUtils.optionalDateFormatInRead(options) match {
@@ -44,44 +40,12 @@ object GpuJsonToStructsShim {
             GpuCast.castStringToDate(trimmed)
           }
         }
-      case Some(f) =>
-        // from_json does not respect EXCEPTION policy
-        jsonStringToDate(input, f, failOnInvalid = false)
+      case Some("yyyy-MM-dd") =>
+        GpuCast.convertDateOrNull(input, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "%Y-%m-%d")
+      case other =>
+        // should be unreachable due to GpuOverrides checks
+        throw new IllegalStateException(s"Unsupported dateFormat $other")
     }
-  }
-
-  def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
-  }
-
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
-      dateFormat: Option[String]): ColumnVector = {
-    dateFormat match {
-      case None =>
-        // legacy behavior
-        withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
-            GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
-        }
-      case Some(f) =>
-        jsonStringToDate(input, f,
-          GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
-    }
-  }
-
-  private def jsonStringToDate(input: ColumnVector, dateFormatPattern: String,
-      failOnInvalid: Boolean): ColumnVector = {
-    val regexRoot = dateFormatPattern
-      .replace("yyyy", raw"\d{4}")
-      .replace("MM", raw"\d{2}")
-      .replace("dd", raw"\d{2}")
-    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
-    GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat, failOnInvalid)
-  }
-
-  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
-      timestampFormat: Option[String]): Unit = {
-    // we only support the case where no format is specified
-    timestampFormat.foreach(f => meta.willNotWorkOnGpu(s"Unsupported timestampFormat: $f"))
   }
 
   def castJsonStringToTimestamp(input: ColumnVector,
@@ -95,6 +59,9 @@ object GpuJsonToStructsShim {
             GpuCast.castStringToTimestamp(trimmed, ansiMode = false)
           }
         }
+      case Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
+        GpuCast.convertTimestampOrNull(input,
+          "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z?$", "%Y-%m-%d")
       case other =>
         // should be unreachable due to GpuOverrides checks
         throw new IllegalStateException(s"Unsupported timestampFormat $other")
