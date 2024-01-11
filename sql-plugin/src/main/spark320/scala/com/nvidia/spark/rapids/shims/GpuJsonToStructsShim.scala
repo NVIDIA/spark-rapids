@@ -47,7 +47,7 @@ object GpuJsonToStructsShim {
   }
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
-    // dateFormat is ignored in from_json in Spark 3.2
+    // dateFormat is ignored in from_json in Spark 3.2.x and 3.3.x
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
         GpuCast.castStringToDate(trimmed)
@@ -82,8 +82,8 @@ object GpuJsonToStructsShim {
 
   def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
       timestampFormat: Option[String]): Unit = {
-    // we only support the case where no format is specified
-    timestampFormat.foreach(f => meta.willNotWorkOnGpu(s"Unsupported timestampFormat: $f"))
+    // timestampFormat is ignored by JsonToStructs in Spark 3.2.x and 3.3.x because it just
+    // performs a regular cast from string to timestamp
   }
 
   def castJsonStringToTimestamp(input: ColumnVector,
