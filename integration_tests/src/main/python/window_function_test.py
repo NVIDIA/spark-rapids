@@ -1685,6 +1685,8 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
         'FROM window_agg_table')
 
 
+@tz_sensitive_test
+@allow_non_gpu(*non_supported_tz_allow)
 @ignore_order(local=True)
 def test_to_date_with_window_functions():
     """
