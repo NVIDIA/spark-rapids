@@ -2863,6 +2863,53 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">Ascii</td>
+<td rowSpan="2">`ascii`</td>
+<td rowSpan="2">The numeric value of the first character of string data.</td>
+<td rowSpan="2">This is disabled by default because it only supports strings starting with ASCII or Latin-1 characters after Spark 3.2.3, 3.3.1 and 3.4.0. Otherwise the results will not match the CPU.</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="4">Asin</td>
 <td rowSpan="4">`asin`</td>
 <td rowSpan="4">Inverse sine</td>
@@ -6591,7 +6638,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Only timezones equivalent to UTC are supported</em></td>
+<td><em>PS<br/>Only non-DST(Daylight Savings Time) timezones are supported</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15394,6 +15441,74 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="3">ToUTCTimestamp</td>
+<td rowSpan="3">`to_utc_timestamp`</td>
+<td rowSpan="3">Render the input timestamp in UTC</td>
+<td rowSpan="3">None</td>
+<td rowSpan="3">project</td>
+<td>timestamp</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>timezone</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>Only non-DST(Daylight Savings Time) timezones are supported</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="3">ToUnixTimestamp</td>
 <td rowSpan="3">`to_unix_timestamp`</td>
 <td rowSpan="3">Returns the UNIX timestamp of the given time</td>
@@ -15598,6 +15713,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="4">UnaryMinus</td>
 <td rowSpan="4">`negative`</td>
 <td rowSpan="4">Negate a numeric value</td>
@@ -15686,32 +15827,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">UnaryPositive</td>
@@ -15971,6 +16086,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="2">Upper</td>
 <td rowSpan="2">`upper`, `ucase`</td>
 <td rowSpan="2">String uppercase operator</td>
@@ -16063,32 +16204,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="3">WindowExpression</td>
@@ -16891,7 +17006,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>window operations are disabled by default due to extreme memory usage;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16934,7 +17049,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>window operations are disabled by default due to extreme memory usage;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16977,7 +17092,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
+<td><em>PS<br/>window operations are disabled by default due to extreme memory usage;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17050,7 +17165,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>window operations are disabled by default due to extreme memory usage;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17093,7 +17208,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>window operations are disabled by default due to extreme memory usage;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17136,7 +17251,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>window operations are disabled by default due to extreme memory usage;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

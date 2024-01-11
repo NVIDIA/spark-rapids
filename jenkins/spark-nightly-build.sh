@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,10 +103,6 @@ function distWithReducedPom {
 
 # option to skip unit tests. Used in our CI to separate test runs in parallel stages
 SKIP_TESTS=${SKIP_TESTS:-"false"}
-if [[ "${SKIP_TESTS}" == "true" ]]; then
-  # if skip test, we could try speed up build with multiple-threads
-  MVN="${MVN} -T1C"
-fi
 
 set +H # turn off history expansion
 DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"!${DIST_PL}"} # TODO: deploy only required submodules to save time

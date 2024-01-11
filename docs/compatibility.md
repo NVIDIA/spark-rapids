@@ -349,7 +349,7 @@ with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStr
 
 Dates are partially supported but there are some known issues:
 
-- Only the default `dateFormat` of `yyyy-MM-dd` is supported. The query will fall back to CPU if any other format
+- Only the default `dateFormat` of `yyyy-MM-dd` is supported in Spark 3.1.x. The query will fall back to CPU if any other format
   is specified ([#9667](https://github.com/NVIDIA/spark-rapids/issues/9667))
 - Strings containing integers with more than four digits will be 
   parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4 
@@ -713,12 +713,12 @@ to `false`.
 
 The Rapids Accelerator for Apache Spark uses uses a method based on [ryu](https://github.com/ulfjack/ryu) when converting floating point data type to string. As a result the computed string can differ from the output of Spark in some cases: sometimes the output is shorter (which is arguably more accurate) and sometimes the output may differ in the precise digits output.
 
-The `format_number` function will retain 10 digits of precision for the GPU when the input is a floating 
-point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
-will return `1,234,567,890.00000` on the GPU and `1,234,567,890.12346` on the CPU. To enable this on the GPU, set [`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `true`.
-
 This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
+
+The `format_number` function also uses [ryu](https://github.com/ulfjack/ryu) as the solution when formatting floating-point data types to 
+strings, so results may differ from Spark in the same way. To disable this on the GPU, set 
+[`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `false`.
 
 ### String to Float
 

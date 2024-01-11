@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import org.apache.spark.sql.types._
  * A simple test performance framework for non-UTC features.
  * Usage:
  *
- *   argLine="-DTZs=Iran,Asia/Shanghai -DenableTimeZonePerf=true" \
+ *   argLine="-DTZs=Asia/Shanghai,Japan -DenableTimeZonePerf=true" \
  *   mvn test -Dbuildver=311 -DwildcardSuites=com.nvidia.spark.rapids.timezone.TimeZonePerfSuite
  * Note:
  *   Generate a Parquet file with 6 columns:
@@ -51,7 +51,7 @@ import org.apache.spark.sql.types._
 class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   // perf test is disabled by default since it's a long running time in UT.
   private val enablePerfTest = java.lang.Boolean.getBoolean("enableTimeZonePerf")
-  private val timeZoneStrings = System.getProperty("TZs", "Iran")
+  private val timeZoneStrings = System.getProperty("TZs", "Asia/Shanghai")
 
   // rows for perf test
   private val numRows: Long = 1024L * 1024L * 10L
@@ -133,6 +133,7 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     for (zoneStr <- zones) {
       // run 6 rounds, but ignore the first round.
       val elapses = (1 to 6).map { i =>
+      val elapses = (1 to 6).map { i =>
         // run on Cpu
         val startOnCpu = System.nanoTime()
         withCpuSparkSession(
@@ -156,8 +157,16 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
           (elapseOnCpuMS, elapseOnGpuMS)
         } else {
           (0L, 0L) // skip the first round
+          (elapseOnCpuMS, elapseOnGpuMS)
+        } else {
+          (0L, 0L) // skip the first round
         }
       }
+      val meanCpu = elapses.map(_._1).sum / 5.0
+      val meanGpu = elapses.map(_._2).sum / 5.0
+      val speedup = meanCpu.toDouble / meanGpu.toDouble
+      println(f"$testName, $zoneStr: mean cpu time: $meanCpu%.2f ms, " +
+          f"mean gpu time: $meanGpu%.2f ms, speedup: $speedup%.2f x")
       val meanCpu = elapses.map(_._1).sum / 5.0
       val meanGpu = elapses.map(_._2).sum / 5.0
       val speedup = meanCpu.toDouble / meanGpu.toDouble
@@ -205,5 +214,21 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     }
 
     runAndRecordTime("time_add", perfTest)
+  }
+
+  test("test to_utc_timestamp") {
+    assume(enablePerfTest)
+
+    // cache time zone DB in advance
+    GpuTimeZoneDB.cacheDatabase()
+    Thread.sleep(5L)
+
+    def perfTest(spark: SparkSession, zone: String): DataFrame = {
+      spark.read.parquet(path).select(functions.count(
+        functions.to_utc_timestamp(functions.col("c_ts"), zone)
+      ))
+    }
+
+    runAndRecordTime("to_utc_timestamp", perfTest)
   }
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
+from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc, is_supported_time_zone
 import time
 import os
 from functools import lru_cache
@@ -329,19 +329,39 @@ class UniqueLongGen(DataGen):
         self._start(rand, lambda: self.next_val())
 
 class RepeatSeqGen(DataGen):
-    """Generate Repeated seq of `length` random items"""
-    def __init__(self, child, length):
-        super().__init__(child.data_type, nullable=False)
-        self.nullable = child.nullable
-        self._child = child
+    """Generate Repeated seq of `length` random items if child is a DataGen,
+    otherwise repeat the provided seq when child is a list.
+
+    When child is a list:
+        data_type must be specified
+        length must be <= length of child
+    When child is a DataGen:
+        length must be specified
+        data_type must be None or match child's
+    """
+    def __init__(self, child, length=None, data_type=None):
+        if isinstance(child, list):
+            super().__init__(data_type, nullable=False)
+            self.nullable = None in child
+            assert (length is None or length < len(child))
+            self._length = length if length is not None else len(child)
+            self._child = child[:length] if length is not None else child
+        else:
+            super().__init__(child.data_type, nullable=False)
+            self.nullable = child.nullable
+            assert(data_type is None or data_type != child.data_type)
+            assert(length is not None)
+            self._length = length
+            self._child = child
         self._vals = []
-        self._length = length
         self._index = 0
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child) + ')'
 
     def _cache_repr(self):
+        if isinstance(self._child, list):
+            return super()._cache_repr() + '(' + str(self._child) + ',' + str(self._length) + ')'
         return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + ')'
 
     def _loop_values(self):
@@ -351,9 +371,12 @@ class RepeatSeqGen(DataGen):
 
     def start(self, rand):
         self._index = 0
-        self._child.start(rand)
         self._start(rand, self._loop_values)
-        self._vals = [self._child.gen() for _ in range(0, self._length)]
+        if isinstance(self._child, list):
+            self._vals = self._child
+        else:
+            self._child.start(rand)
+            self._vals = [self._child.gen() for _ in range(0, self._length)]
 
 class SetValuesGen(DataGen):
     """A set of values that are randomly selected"""
@@ -1211,6 +1234,11 @@ def get_25_partitions_df(spark):
 non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
                  'ExecutedCommandExec'] if is_not_utc() else []
+
+non_supported_tz_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if not is_supported_time_zone() else []
+
 
 # date related regexps for generating date strings within python's range limits
 
