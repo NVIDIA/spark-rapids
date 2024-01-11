@@ -550,14 +550,13 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           posColToFix.add(offset, posColToFix.getType)
         }
         withResource(fixedUpPosCol) { _ =>
-          val newCols = new Array[ColumnVector](toFixUp.getNumberOfColumns)
-          (0 until genOffset).foreach { b =>
-            newCols(b) = toFixUp.getColumn(b)
-          }
-          newCols(genOffset) = fixedUpPosCol
-          (genOffset + 1 until toFixUp.getNumberOfColumns).foreach { a =>
-            newCols(a) = toFixUp.getColumn(a)
-          }
+          val newCols = (0 until toFixUp.getNumberOfColumns).map { i =>
+            if (i == genOffset) {
+              fixedUpPosCol
+            } else {
+              toFixUp.getColumn(i)
+            }
+          }.toArray
           new Table(newCols: _*)
         }
       }
