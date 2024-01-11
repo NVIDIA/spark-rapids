@@ -653,6 +653,7 @@
             <id>arm64</id>
             <properties>
                 <jni.classifier>${cuda.version}-arm64</jni.classifier>
+                <ucx.version>${ucx.baseVersion}-aarch64</ucx.version>
             </properties>
         </profile>
         <profile>
@@ -735,7 +736,9 @@
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
-        <ucx.version>1.15.0</ucx.version>
+        <ucx.baseVersion>1.16.0-rc4</ucx.baseVersion>
+        <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
+        <ucx.version>${ucx.baseVersion}</ucx.version>
         <rapids.compressed.artifact>true</rapids.compressed.artifact>
         <rapids.default.jar.excludePattern/>
         <rapids.default.jar.phase>package</rapids.default.jar.phase>
