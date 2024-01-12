@@ -176,10 +176,11 @@ case class SlicedBySize(rideAlongColumns: SpillableColumnarBatch,
 object PendingSecondAggResults {
   def apply(result: SecondPassAggResult,
       boundStages: GpuUnboundedToUnboundedAggStages,
-      targetSizeBytes: Long): PendingSecondAggResults = {
+      targetSizeBytes: Long,
+      opTime: GpuMetric): PendingSecondAggResults = {
     closeOnExcept(result) { _ =>
       new PendingSecondAggResults(result.rideAlongColumns, result.aggResult,
-        boundStages, targetSizeBytes)
+        boundStages, targetSizeBytes, opTime)
     }
   }
 
@@ -213,14 +214,17 @@ object PendingSecondAggResults {
   }
 
   def concatBatchesAndClose(toConcat: AutoClosableArrayBuffer[SpillableColumnarBatch],
-      sparkTypes: Array[DataType]): SpillableColumnarBatch = {
+      sparkTypes: Array[DataType],
+      opTime: GpuMetric): SpillableColumnarBatch = {
     val cb = withRetryNoSplit(toConcat) { _ =>
-      closeOnExcept(new AutoClosableArrayBuffer[ColumnarBatch]) { cbs =>
-        toConcat.foreach { scb =>
-          cbs.append(scb.getColumnarBatch())
+      opTime.ns {
+        closeOnExcept(new AutoClosableArrayBuffer[ColumnarBatch]) { cbs =>
+          toConcat.foreach { scb =>
+            cbs.append(scb.getColumnarBatch())
+          }
+          // This consumes/closes the array of batches
+          ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(cbs.toArray, sparkTypes)
         }
-        // This consumes/closes the array of batches
-        ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(cbs.toArray, sparkTypes)
       }
     }
     SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
@@ -266,7 +270,8 @@ class PendingSecondAggResults private(
     private val rideAlongColumns: util.LinkedList[SpillableColumnarBatch],
     private var aggResult: SpillableColumnarBatch,
     private val boundStages: GpuUnboundedToUnboundedAggStages,
-    private val targetSizeBytes: Long) extends Iterator[SlicedBySize] with AutoCloseable {
+    private val targetSizeBytes: Long,
+    opTime: GpuMetric) extends Iterator[SlicedBySize] with AutoCloseable {
   import PendingSecondAggResults._
 
   private var totalRowsInAgg = {
@@ -331,8 +336,10 @@ class PendingSecondAggResults private(
           val theLastOne = toProcess.removeLast()
           val numRowsToKeepInLastBatch = (theLastOne.numRows() - numRowsToRemove).toInt
           val (keep, forNextTime) = withRetryNoSplit(theLastOne) { _ =>
-            withResource(theLastOne.getColumnarBatch()) { cb =>
-              splitCb(cb, numRowsToKeepInLastBatch)
+            opTime.ns {
+              withResource(theLastOne.getColumnarBatch()) { cb =>
+                splitCb(cb, numRowsToKeepInLastBatch)
+              }
             }
           }
           rideAlongColumns.addFirst(SpillableColumnarBatch(forNextTime,
@@ -343,7 +350,7 @@ class PendingSecondAggResults private(
         }
       }
     }
-    concatBatchesAndClose(toProcess, boundStages.boundRideAlong.map(_.dataType).toArray)
+    concatBatchesAndClose(toProcess, boundStages.boundRideAlong.map(_.dataType).toArray, opTime)
   }
 
   def getSlicedAggResultByRepeatedRows(numDesiredRows: Int): SpillableColumnarBatch = {
@@ -383,7 +390,8 @@ class PendingSecondAggResults private(
 class GpuUnboundedToUnboundedAggSliceBySizeIterator(
     input: Iterator[SecondPassAggResult],
     boundStages: GpuUnboundedToUnboundedAggStages,
-    targetSizeBytes: Long) extends Iterator[SlicedBySize] {
+    targetSizeBytes: Long,
+    opTime: GpuMetric) extends Iterator[SlicedBySize] {
 
   private var pending: Option[PendingSecondAggResults] = None
   private def pendingHasNext: Boolean = pending.exists(_.hasNext)
@@ -396,7 +404,7 @@ class GpuUnboundedToUnboundedAggSliceBySizeIterator(
     }
 
     if (!pendingHasNext) {
-      pending = Some(PendingSecondAggResults(input.next(), boundStages, targetSizeBytes))
+      pending = Some(PendingSecondAggResults(input.next(), boundStages, targetSizeBytes, opTime))
     }
     pending.get.next
   }
@@ -417,96 +425,50 @@ class GpuUnboundedToUnboundedAggSliceBySizeIterator(
 // return the result.
 
 class GpuUnboundedToUnboundedAggFinalIterator(
-    input: Iterator[SecondPassAggResult],
+    input: Iterator[SlicedBySize],
     boundStages: GpuUnboundedToUnboundedAggStages,
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] {
-  private var pending: Option[SecondPassAggResult] = None
 
-  Option(TaskContext.get()).foreach { tc =>
-    onTaskCompletion(tc) {
-      closePending()
-    }
-  }
-
-  private def hasMoreInPending: Boolean = pending.exists(!_.rideAlongColumns.isEmpty)
-  private def pendingAggResults: SpillableColumnarBatch = pending.get.aggResult.incRefCount()
-  private def nextPendingRideAlong: SpillableColumnarBatch = pending.get.rideAlongColumns.pop
-  private def closePending(): Unit = {
-    pending.foreach(_.aggResult.close())
-    pending.foreach(_.rideAlongColumns.forEach(_.close()))
-    pending = None
-  }
-  private def replacePending(p: SecondPassAggResult): Unit = {
-    closePending()
-    pending = Some(p)
-  }
-
-  override def hasNext: Boolean =  hasMoreInPending || input.hasNext
+  override def hasNext: Boolean = input.hasNext
 
   override def next(): ColumnarBatch = {
-    // TODO we need to add in the retry code, and pre-splitting of the data if possible, but
-    //  for now we are just going to try it.
     if (!hasNext) {
       throw new NoSuchElementException()
     }
-    while (!hasMoreInPending) {
-      replacePending(input.next())
-    }
+    // TODO we need to add in the split to the retry
 
-    // TODO this is a very dumb version right now that is not checking for size
-    //  That will be added later on.
-
-    // TODO fix this. We don't want just one batch of ride along columns, and we don't
-    //  want to leak anything if we run out of memory
-    var rideAlongCombined: ColumnarBatch = null
-    while (hasMoreInPending) {
-      val cb = withResource(nextPendingRideAlong) { scb =>
-        scb.getColumnarBatch()
-      }
-      withResource(cb) { _ =>
-        if (rideAlongCombined == null) {
-          rideAlongCombined = GpuColumnVector.incRefCounts(cb)
-        } else {
-          rideAlongCombined.close()
-          throw new IllegalStateException("Concat not implemented yet...")
-        }
-      }
-    }
-
-    // The first stage is to expand the aggregate based on the count column
-    val combined = withResource(rideAlongCombined) { _ =>
-      val repeatedCb = withResource(pendingAggResults) { scb =>
-        opTime.ns {
-          withResource(scb.getColumnarBatch()) { cb =>
-            withResource(AggResultBatchConventions.getCount(cb)) { counts =>
-              withResource(AggResultBatchConventions.getRepeatedAggColumns(cb)) { toRepeat =>
-                val dataTypes = GpuColumnVector.extractTypes(toRepeat)
-                withResource(GpuColumnVector.from(toRepeat)) { table =>
-                  withResource(table.repeat(counts.getBase)) { repeated =>
-                    GpuColumnVector.from(repeated, dataTypes)
-                  }
+    withRetryNoSplit(input.next()) { toExpand =>
+      opTime.ns {
+        // The first stage is to expand the aggregate based on the count column
+        val repeatedAggs = withResource(toExpand.aggResults.getColumnarBatch()) { cb =>
+          withResource(AggResultBatchConventions.getCount(cb)) { counts =>
+            withResource(AggResultBatchConventions.getRepeatedAggColumns(cb)) { toRepeat =>
+              val dataTypes = GpuColumnVector.extractTypes(toRepeat)
+              withResource(GpuColumnVector.from(toRepeat)) { table =>
+                withResource(table.repeat(counts.getBase)) { repeated =>
+                  GpuColumnVector.from(repeated, dataTypes)
                 }
               }
             }
           }
         }
-      }
-      // Second step is to stitch the two together
-      withResource(repeatedCb) { _ =>
-        opTime.ns {
-          GpuColumnVector.appendColumns(rideAlongCombined,
-            GpuColumnVector.extractColumns(repeatedCb): _*)
+        // Second step is to stitch the two together
+        val combined = withResource(repeatedAggs) { _ =>
+          withResource(toExpand.rideAlongColumns.getColumnarBatch()) { rideAlong =>
+            GpuColumnVector.appendColumns(rideAlong,
+              GpuColumnVector.extractColumns(repeatedAggs): _*)
+          }
         }
-      }
-    }
-    withResource(combined) { _ =>
-      opTime.ns {
-        closeOnExcept(GpuProjectExec.project(combined, boundStages.boundFinalProject)) { ret =>
-          numOutputBatches += 1
-          numOutputRows += ret.numRows()
-          ret
+        withResource(combined) { _ =>
+          opTime.ns {
+            closeOnExcept(GpuProjectExec.project(combined, boundStages.boundFinalProject)) { ret =>
+              numOutputBatches += 1
+              numOutputRows += ret.numRows()
+              ret
+            }
+          }
         }
       }
     }
@@ -649,12 +611,15 @@ object GpuUnboundedToUnboundedAggWindowIterator {
       boundStages: GpuUnboundedToUnboundedAggStages,
       numOutputBatches: GpuMetric,
       numOutputRows: GpuMetric,
-      opTime: GpuMetric): Iterator[ColumnarBatch] = {
+      opTime: GpuMetric,
+      targetSizeBytes: Long): Iterator[ColumnarBatch] = {
     val firstPass = new GpuUnboundedToUnboundedAggWindowFirstPassIterator(input, boundStages,
       opTime)
     val secondPass = new GpuUnboundedToUnboundedAggWindowSecondPassIterator(firstPass,
       boundStages, opTime)
-    new GpuUnboundedToUnboundedAggFinalIterator(secondPass, boundStages,
+    val slicedBySize = new GpuUnboundedToUnboundedAggSliceBySizeIterator(secondPass,
+      boundStages, targetSizeBytes, opTime)
+    new GpuUnboundedToUnboundedAggFinalIterator(slicedBySize, boundStages,
       numOutputBatches, numOutputRows, opTime)
   }
 }
@@ -671,7 +636,8 @@ case class GpuUnboundedToUnboundedAggWindowExec(
     gpuOrderSpec: Seq[SortOrder],
     child: SparkPlan)(
     override val cpuPartitionSpec: Seq[Expression],
-    override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
+    override val cpuOrderSpec: Seq[SortOrder],
+    targetSizeBytes: Long) extends GpuWindowBaseExec {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
@@ -691,7 +657,7 @@ case class GpuUnboundedToUnboundedAggWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       GpuUnboundedToUnboundedAggWindowIterator(iter, boundStages,
-        numOutputBatches, numOutputRows, opTime)
+        numOutputBatches, numOutputRows, opTime, targetSizeBytes)
     }
   }
 }

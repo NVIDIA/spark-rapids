@@ -28,10 +28,10 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
   test("basic repeat test") {
     // First I need to setup the operations. I am trying to test repeat in isolation
     // so we are not going to build them up using the front door
-    val aggOutput = Seq(AttributeReference("my_max", IntegerType, true)(),
-      AttributeReference("_count", LongType, true)())
+    val aggOutput = Seq(AttributeReference("my_max", IntegerType, nullable = true)(),
+      AttributeReference("_count", LongType, nullable = true)())
 
-    val rideAlongOutput = Seq(AttributeReference("a", ShortType, true)())
+    val rideAlongOutput = Seq(AttributeReference("a", ShortType, nullable = true)())
     val repeatOutput = GpuUnboundedToUnboundedAggWindowIterator.repeatOps(aggOutput)
 
     val finalProject = GpuUnboundedToUnboundedAggWindowIterator.computeFinalProject(
@@ -68,7 +68,9 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
     val rideAlongList = new util.LinkedList[SpillableColumnarBatch]
     rideAlongList.add(makeRideAlongCb())
     val inputIter = Seq(SecondPassAggResult(rideAlongList, makeRepeatCb())).toIterator
-    val repeatIter = new GpuUnboundedToUnboundedAggFinalIterator(inputIter, conf,
+    val splitIter = new GpuUnboundedToUnboundedAggSliceBySizeIterator(inputIter, conf,
+      1024 * 1024 * 1024, NoopMetric)
+    val repeatIter = new GpuUnboundedToUnboundedAggFinalIterator(splitIter, conf,
       NoopMetric, NoopMetric, NoopMetric)
 
     assert(repeatIter.hasNext)
