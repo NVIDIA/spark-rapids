@@ -133,7 +133,6 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
     for (zoneStr <- zones) {
       // run 6 rounds, but ignore the first round.
       val elapses = (1 to 6).map { i =>
-      val elapses = (1 to 6).map { i =>
         // run on Cpu
         val startOnCpu = System.nanoTime()
         withCpuSparkSession(
@@ -157,16 +156,8 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
           (elapseOnCpuMS, elapseOnGpuMS)
         } else {
           (0L, 0L) // skip the first round
-          (elapseOnCpuMS, elapseOnGpuMS)
-        } else {
-          (0L, 0L) // skip the first round
         }
       }
-      val meanCpu = elapses.map(_._1).sum / 5.0
-      val meanGpu = elapses.map(_._2).sum / 5.0
-      val speedup = meanCpu.toDouble / meanGpu.toDouble
-      println(f"$testName, $zoneStr: mean cpu time: $meanCpu%.2f ms, " +
-          f"mean gpu time: $meanGpu%.2f ms, speedup: $speedup%.2f x")
       val meanCpu = elapses.map(_._1).sum / 5.0
       val meanGpu = elapses.map(_._2).sum / 5.0
       val speedup = meanCpu.toDouble / meanGpu.toDouble

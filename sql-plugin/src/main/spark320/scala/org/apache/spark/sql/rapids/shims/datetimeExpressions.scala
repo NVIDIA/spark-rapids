@@ -117,15 +117,16 @@ case class GpuTimeAdd(start: Expression,
                   datetimeExpressionsUtils.timestampAddDuration(l.getBase, d)
                 }
               } else {
-                val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
-                  zoneID)) { utcTimestamp =>
-                  withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { 
-                    d => datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, d)
-                  }
-                }
-                withResource(utcRes) { _ =>
-                  GpuTimeZoneDB.fromTimestampToUtcTimestamp(utcRes, zoneID)
-                }
+                // val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
+                //   zoneID)) { utcTimestamp =>
+                //   withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, interval)) { 
+                //     d => datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, d)
+                //   }
+                // }
+                // withResource(utcRes) { _ =>
+                //   GpuTimeZoneDB.fromTimestampToUtcTimestamp(utcRes, zoneID)
+                // }
+                GpuTimeZoneDB.timeAdd(l.getBase, interval, zoneID)
               }
               GpuColumnVector.from(resCv, dataType)
             } else {
@@ -142,14 +143,17 @@ case class GpuTimeAdd(start: Expression,
                     datetimeExpressionsUtils.timestampAddDuration(l.getBase, duration)
                   }
                 } else {
-                  val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
-                    zoneID)) { utcTimestamp =>
-                    withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
-                      datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, duration)
-                    }
-                  }
-                  withResource(utcRes) { utc =>
-                    GpuTimeZoneDB.fromTimestampToUtcTimestamp(utc, zoneID)
+                  // val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
+                  //   zoneID)) { utcTimestamp =>
+                  //   withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { duration =>
+                  //     datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, duration)
+                  //   }
+                  // }
+                  // withResource(utcRes) { utc =>
+                  //   GpuTimeZoneDB.fromTimestampToUtcTimestamp(utc, zoneID)
+                  // }
+                  withResource(r.getBase.bitCastTo(DType.INT64)) { duration =>
+                    GpuTimeZoneDB.timeAdd(l.getBase, duration, zoneID)
                   }
                 }
                 GpuColumnVector.from(resCv, dataType)

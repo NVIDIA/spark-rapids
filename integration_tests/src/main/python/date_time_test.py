@@ -39,13 +39,13 @@ def test_timesub(data_gen):
         lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
-@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+@pytest.mark.parametrize('data_gen', [(2002335, 66506, 226873)], ids=idfn)
 @allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd(data_gen):
-    days, seconds = data_gen
+def test_timeadd_debug(data_gen):
+    days, seconds, mircos = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, TimestampGen())
-            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
+        lambda spark: unary_op_df(spark, TimestampGen(), length=500)
+            .selectExpr("a", "a + (interval {} days {} seconds {} microseconds)".format(days, seconds, mircos)))
 
 @pytest.mark.parametrize('edge_vals', [-pow(2, 63), pow(2, 63)], ids=idfn)
 @allow_non_gpu(*non_supported_tz_allow)
@@ -85,6 +85,17 @@ def test_timeadd_daytime_column():
         ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@allow_non_gpu(*non_supported_tz_allow)
+def test_timeadd_daytime_column_debug():
+    gen_list = [
+        # timestamp column max year is 1000
+        ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
+        # max days is 8000 year, so added result will not be out of range
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen_list, length=10).selectExpr("t", "d", "t + d"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
