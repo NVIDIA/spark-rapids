@@ -83,8 +83,10 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
         logInfo("in executor broadcast handling, creating new shuffle exchange")
         ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
       case shuffleOther: ShuffleExchangeLike =>
-        logInfo("shuffle not executor broadcast: " +  shuffleOther)
-        shuffleOther
+        logInfo("shuffle not executor broadcast: " + shuffleOther)
+        val res = ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
+        logInfo("adding shuffle with c2r : " + res)
+        res
       case _ =>
         c2r
     }
