@@ -32,14 +32,12 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
       AttributeReference("_count", LongType, true)())
 
     val rideAlongOutput = Seq(AttributeReference("a", ShortType, true)())
-    val (boundCount, repeatOutput, boundRepeat) =
-      GpuUnboundedToUnboundedAggWindowIterator.repeatOps(aggOutput)
+    val repeatOutput = GpuUnboundedToUnboundedAggWindowIterator.repeatOps(aggOutput)
 
     val finalProject = GpuUnboundedToUnboundedAggWindowIterator.computeFinalProject(
       rideAlongOutput, repeatOutput, repeatOutput ++ rideAlongOutput)
 
-    val conf = GpuUnboundedToUnboundedAggStages(Seq.empty, Seq.empty,
-      boundCount, boundRepeat, finalProject)
+    val conf = GpuUnboundedToUnboundedAggStages(Seq.empty, Seq.empty, finalProject)
 
     def makeRepeatCb(): SpillableColumnarBatch = {
       // very basic test to verify that the repeat stage works properly.

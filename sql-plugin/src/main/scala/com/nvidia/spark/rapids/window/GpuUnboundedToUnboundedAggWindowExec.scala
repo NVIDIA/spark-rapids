@@ -16,9 +16,14 @@
 
 package com.nvidia.spark.rapids.window
 
-import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
+
+import ai.rapids.cudf
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import java.util
 
@@ -27,18 +32,42 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuCount}
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.types.{DataType, LongType}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
+
+/**
+ * Just a simple wrapper to make working with buffers of AutoClosable things play
+ * nicely with withResource.
+ */
+class AutoClosableArrayBuffer[T <: AutoCloseable]() extends AutoCloseable {
+  private val data = new ArrayBuffer[T]()
+
+  def append(scb: T): Unit = data.append(scb)
+
+  def last: T = data.last
+
+  def removeLast(): T = data.remove(data.length - 1)
+
+  def foreach[U](f: T => U): Unit = data.foreach(f)
+
+  def toArray[B >: T : ClassTag]: Array[B] = data.toArray
+
+  override def close(): Unit = {
+    data.foreach(_.close())
+    data.clear()
+  }
+}
 
 // It is not really simple to do a single iterator that can do the splits and retries along with
 // The data as needed. Instead we are going to decompose the problem into multiple iterators that
 // feed into each other.
 // The first pass iterator will take in a batch of data and produce one or more aggregated result
-// pairs that include the ridealong columns with the aggregation results for that batch.
+// pairs that include the ride-along columns with the aggregation results for that batch.
 // Note that it is assumed that the aggregation was done as a sort based aggregation, so
-// the ridealong columns and the aggregation result should both be sorted by the partition by
+// the ride-along columns and the aggregation result should both be sorted by the partition by
 // columns.  Also the aggregation result must have a count column so it can be expanded using
-// repeat to get back to the size of the ridealong columns.
+// repeat to get back to the size of the ride-along columns.
 case class FirstPassAggResult(rideAlongColumns: SpillableColumnarBatch,
     aggResult: SpillableColumnarBatch) extends AutoCloseable {
   override def close(): Unit = {
@@ -80,11 +109,16 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
 // the result depending on if it knows that the group by keys is complete or not.
 // Completed data will have the aggregation results merged into a single aggregation result
 // Note that this aggregation result needs to remain sorted.  The result is returned as
-// an iterator of ridealong columns, and the full agg results for those columns. It is not
+// an iterator of ride-along columns, and the full agg results for those columns. It is not
 // the responsibility of the second stage to try and combine small batches or split up large
 // ones, beyond what the retry framework might do.
 case class SecondPassAggResult(rideAlongColumns: util.LinkedList[SpillableColumnarBatch],
-    aggResult: SpillableColumnarBatch) {
+    aggResult: SpillableColumnarBatch) extends AutoCloseable {
+  override def close(): Unit = {
+    rideAlongColumns.forEach(_.close())
+    rideAlongColumns.clear()
+    aggResult.close()
+  }
 }
 
 class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
@@ -128,9 +162,259 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   }
 }
 
-// The final step is to take the original input data along with the agg data, estimate how
-// to split/combine the input batches to output batches that are close to the target batch size
-// Then expand the data to match that size, combine everything together and return the result.
+// The next to final step is to take the original input data along with the agg data, estimate how
+// to split/combine the input batches to output batches that are close to the target batch size.
+
+case class SlicedBySize(rideAlongColumns: SpillableColumnarBatch,
+    aggResults: SpillableColumnarBatch) extends AutoCloseable {
+  override def close(): Unit = {
+    rideAlongColumns.close()
+    aggResults.close()
+  }
+}
+
+object PendingSecondAggResults {
+  def apply(result: SecondPassAggResult,
+      boundStages: GpuUnboundedToUnboundedAggStages,
+      targetSizeBytes: Long): PendingSecondAggResults = {
+    closeOnExcept(result) { _ =>
+      new PendingSecondAggResults(result.rideAlongColumns, result.aggResult,
+        boundStages, targetSizeBytes)
+    }
+  }
+
+  def makeBatch(columns: Array[cudf.ColumnVector], types: Array[DataType]): ColumnarBatch = {
+    val tmp = columns.zip(types).map {
+      case (c, t) => GpuColumnVector.from(c, t).asInstanceOf[ColumnVector]
+    }
+    new ColumnarBatch(tmp, columns(0).getRowCount.toInt)
+  }
+
+  def splitCb(cb: ColumnarBatch, inclusiveCutPoint: Int): (ColumnarBatch, ColumnarBatch) = {
+    // First save the types
+    val types = GpuColumnVector.extractTypes(cb)
+    // Slice is at the column level, not at a table level
+    closeOnExcept(new ArrayBuffer[cudf.ColumnVector]()) { before =>
+      val afterCb = closeOnExcept(new ArrayBuffer[cudf.ColumnVector]()) { after =>
+        withResource(GpuColumnVector.extractBases(cb)) { bases =>
+          bases.foreach { base =>
+            val result = base.split(inclusiveCutPoint)
+            before.append(result(0))
+            after.append(result(1))
+            assert(result.length == 2)
+          }
+        }
+        makeBatch(after.toArray, types)
+      }
+      closeOnExcept(afterCb) { _ =>
+        (makeBatch(before.toArray, types), afterCb)
+      }
+    }
+  }
+
+  def concatBatchesAndClose(toConcat: AutoClosableArrayBuffer[SpillableColumnarBatch],
+      sparkTypes: Array[DataType]): SpillableColumnarBatch = {
+    val cb = withRetryNoSplit(toConcat) { _ =>
+      closeOnExcept(new AutoClosableArrayBuffer[ColumnarBatch]) { cbs =>
+        toConcat.foreach { scb =>
+          cbs.append(scb.getColumnarBatch())
+        }
+        // This consumes/closes the array of batches
+        ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(cbs.toArray, sparkTypes)
+      }
+    }
+    SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+  }
+
+  def splitAggResultByRepeatedRows(aggResult: SpillableColumnarBatch,
+      targetRows: Int,
+      totalRows: Long): (SpillableColumnarBatch, SpillableColumnarBatch) = {
+    // We have high confidence that we need to split this in two, but even then we don't
+    // have enough information here to know that we don't need to split it without
+    // processing the batch
+    withResource(aggResult.getColumnarBatch()) { cb =>
+      if (cb.numRows() == 1) {
+        // This is a very common special case where there is one and only one row, so
+        // we need to keep all of the columns the same, but slice the count row accordingly.
+        withResource(AggResultBatchConventions.getRepeatedAggColumns(cb)) { aggs =>
+          // The aggs are just repeated, but the count is new
+          val firstPart = withResource(cudf.ColumnVector.fromLongs(targetRows)) { count =>
+            AggResultBatchConventions.appendCountColumn(aggs, count)
+          }
+          val secondPart = closeOnExcept(firstPart) { _ =>
+            withResource(cudf.ColumnVector.fromLongs(totalRows - targetRows)) {
+              count =>
+                AggResultBatchConventions.appendCountColumn(aggs, count)
+            }
+          }
+          (SpillableColumnarBatch(firstPart, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+              SpillableColumnarBatch(secondPart, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+        }
+      } else {
+        // This is a little complicated in the general case. We need to find which row
+        // in the aggregation we need to split on. The only way to do that is to get a
+        // running sum of the counts, and then do an upper bound on that column
+        withResource(AggResultBatchConventions.getCount(cb)) { counts =>
+          throw new IllegalStateException("NOT IMPLEMENTED YET...")
+        }
+      }
+    }
+  }
+}
+
+class PendingSecondAggResults private(
+    private val rideAlongColumns: util.LinkedList[SpillableColumnarBatch],
+    private var aggResult: SpillableColumnarBatch,
+    private val boundStages: GpuUnboundedToUnboundedAggStages,
+    private val targetSizeBytes: Long) extends Iterator[SlicedBySize] with AutoCloseable {
+  import PendingSecondAggResults._
+
+  private var totalRowsInAgg = {
+    var total = 0L
+    rideAlongColumns.forEach(total += _.numRows())
+    total
+  }
+
+  override def hasNext: Boolean = !rideAlongColumns.isEmpty
+
+  /**
+   * We want to estimate the average size per row that the aggregations will add. This
+   * does not have to be perfect because we will back it up with a split and retry handling
+   * that can slice the output in half. We are also going to include the count column because
+   * I don't want to read the data back, if it spilled.
+   */
+  private def estimateAggSizePerRow: Double =
+    aggResult.sizeInBytes.toDouble / aggResult.numRows()
+
+  /**
+   * Gets the next batch of ride along columns to process.
+   */
+  private def getRideAlongToProcess(): SpillableColumnarBatch = {
+    val averageAggSizePerRow = estimateAggSizePerRow
+    var currentSize = 0L
+    var numRowsTotal = 0
+
+    // First pull in the batches that might be enough to process
+    val toProcess = new AutoClosableArrayBuffer[SpillableColumnarBatch]()
+    closeOnExcept(toProcess) { _ =>
+      while (currentSize < targetSizeBytes && !rideAlongColumns.isEmpty) {
+        val scb = rideAlongColumns.pop()
+        toProcess.append(scb)
+        val numRows = scb.numRows()
+        val estimatedSize = (scb.sizeInBytes + (numRows * averageAggSizePerRow)).toLong
+        numRowsTotal += numRows
+        currentSize += estimatedSize
+      }
+
+      if (currentSize > targetSizeBytes) {
+        // If we buffered too much data we need to decide how to slice it, but we only
+        // want to slice the last batch in toProcess because we know that the batch before
+        // it was not large enough to send us over the limit. We do this by estimating how
+        // many rows we need from toProcess and hence how many rows we need to remove.
+        val avgSizePerRow = currentSize.toDouble / numRowsTotal
+        val estimatedRowsToKeep = math.ceil(targetSizeBytes / avgSizePerRow).toLong
+        val estimatedRowsToRemove = numRowsTotal - estimatedRowsToKeep
+
+        // If we need to remove more rows, than the last batch has, we just remove the last batch
+        val numRowsToRemove = if (estimatedRowsToRemove >= toProcess.last.numRows) {
+          val theLastOne = toProcess.removeLast()
+          rideAlongColumns.addFirst(theLastOne)
+          // We probably don't need to update numRowsTotal, but it is just to be defensive
+          numRowsTotal -= theLastOne.numRows()
+          0
+        } else {
+          numRowsTotal - estimatedRowsToKeep
+        }
+
+        if (numRowsToRemove > 0) {
+          // We need to slice the last batch
+          val theLastOne = toProcess.removeLast()
+          val numRowsToKeepInLastBatch = (theLastOne.numRows() - numRowsToRemove).toInt
+          val (keep, forNextTime) = withRetryNoSplit(theLastOne) { _ =>
+            withResource(theLastOne.getColumnarBatch()) { cb =>
+              splitCb(cb, numRowsToKeepInLastBatch)
+            }
+          }
+          rideAlongColumns.addFirst(SpillableColumnarBatch(forNextTime,
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+
+          toProcess.append(SpillableColumnarBatch(keep,
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        }
+      }
+    }
+    concatBatchesAndClose(toProcess, boundStages.boundRideAlong.map(_.dataType).toArray)
+  }
+
+  def getSlicedAggResultByRepeatedRows(numDesiredRows: Int): SpillableColumnarBatch = {
+    val (ret, keep) = withRetryNoSplit(aggResult) { _ =>
+      splitAggResultByRepeatedRows(aggResult, numDesiredRows, totalRowsInAgg)
+    }
+    totalRowsInAgg -= numDesiredRows
+    aggResult = keep
+    ret
+  }
+
+  override def next(): SlicedBySize = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+    closeOnExcept(getRideAlongToProcess()) { rideAlongScb =>
+      if (rideAlongColumns.isEmpty) {
+        // This is the last batch so we don't need to even figure out where to slice
+        // the AggResult
+        SlicedBySize(rideAlongScb, aggResult.incRefCount())
+      } else {
+        SlicedBySize(rideAlongScb, getSlicedAggResultByRepeatedRows(rideAlongScb.numRows()))
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    rideAlongColumns.forEach(_.close())
+    rideAlongColumns.clear()
+    aggResult.close()
+  }
+}
+
+/**
+ * Try to slice the input batches into right sized output.
+ */
+class GpuUnboundedToUnboundedAggSliceBySizeIterator(
+    input: Iterator[SecondPassAggResult],
+    boundStages: GpuUnboundedToUnboundedAggStages,
+    targetSizeBytes: Long) extends Iterator[SlicedBySize] {
+
+  private var pending: Option[PendingSecondAggResults] = None
+  private def pendingHasNext: Boolean = pending.exists(_.hasNext)
+
+  override def hasNext: Boolean = pendingHasNext || input.hasNext
+
+  override def next(): SlicedBySize = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+
+    if (!pendingHasNext) {
+      pending = Some(PendingSecondAggResults(input.next(), boundStages, targetSizeBytes))
+    }
+    pending.get.next
+  }
+
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
+
+  def close(): Unit = {
+    pending.foreach(_.close())
+    pending = None
+  }
+}
+
+// The final step is to expand the data to match that size, combine everything together and
+// return the result.
 
 class GpuUnboundedToUnboundedAggFinalIterator(
     input: Iterator[SecondPassAggResult],
@@ -196,12 +480,12 @@ class GpuUnboundedToUnboundedAggFinalIterator(
       val repeatedCb = withResource(pendingAggResults) { scb =>
         opTime.ns {
           withResource(scb.getColumnarBatch()) { cb =>
-            withResource(boundStages.boundCount.columnarEval(cb)) { counts =>
-              withResource(GpuProjectExec.project(cb, boundStages.boundAggsToRepeat)) { toRepeat =>
+            withResource(AggResultBatchConventions.getCount(cb)) { counts =>
+              withResource(AggResultBatchConventions.getRepeatedAggColumns(cb)) { toRepeat =>
+                val dataTypes = GpuColumnVector.extractTypes(toRepeat)
                 withResource(GpuColumnVector.from(toRepeat)) { table =>
                   withResource(table.repeat(counts.getBase)) { repeated =>
-                    GpuColumnVector.from(repeated,
-                      boundStages.boundAggsToRepeat.map(_.dataType).toArray)
+                    GpuColumnVector.from(repeated, dataTypes)
                   }
                 }
               }
@@ -234,16 +518,39 @@ class GpuUnboundedToUnboundedAggFinalIterator(
  * @param boundRideAlong used for a project that pulls out columns that are passing through
  *                       unchanged.
  * @param boundAggregations aggregations to be done. NOTE THIS IS WIP
- * @param boundCount The column that contains the count in it for the number of aggregations
- * @param boundAggsToRepeat the columns to get that need to be repeated by the amount in count
  * @param boundFinalProject the final project to get the output in the right order
  */
 case class GpuUnboundedToUnboundedAggStages(
     boundRideAlong: Seq[GpuExpression],
     boundAggregations: Seq[GpuExpression],
-    boundCount: GpuExpression,
-    boundAggsToRepeat: Seq[GpuExpression],
     boundFinalProject: Seq[GpuExpression]) extends Serializable
+
+object AggResultBatchConventions {
+  private def getColumnFromBatch(cb: ColumnarBatch, colId: Int): ColumnVector = {
+    val ret = cb.column(colId)
+    ret.asInstanceOf[GpuColumnVector].incRefCount()
+    ret
+  }
+
+  def getCount(cb: ColumnarBatch): GpuColumnVector = {
+    // By convention the last column is the count column
+    getColumnFromBatch(cb, cb.numCols() - 1).asInstanceOf[GpuColumnVector]
+  }
+
+  def getRepeatedAggColumns(cb: ColumnarBatch): ColumnarBatch = {
+    // By convention all of the columns, except the last one are agg columns
+    val columns = (0 until cb.numCols() - 1).safeMap { index =>
+      getColumnFromBatch(cb, index)
+    }
+    new ColumnarBatch(columns.toArray, cb.numRows())
+  }
+
+  def appendCountColumn(repeatedAggColumns: ColumnarBatch,
+      counts: cudf.ColumnVector): ColumnarBatch = {
+    val countCol = GpuColumnVector.fromChecked(counts.incRefCount(), LongType)
+    GpuColumnVector.appendColumns(repeatedAggColumns, countCol)
+  }
+}
 
 /**
  * An iterator that can do unbounded to unbounded window aggregations as group by aggregations
@@ -285,31 +592,18 @@ object GpuUnboundedToUnboundedAggWindowIterator {
           s"Found unexpected expression $other in window exec ${other.getClass}")
     } :+ GpuAlias(GpuCount(Seq(GpuLiteral(1L))), "_count")()
     // Later code by conventions "knows" that the last column is a count and that it can be
-    // thrown away. If we ever dedupe this with a COUNT(1) that already exists, then
-    // we need to update the output of this to have a clean way to say what is the count,
-    // and if that count is needed see repeatOps
+    // thrown away. We should never try and dedupe this count with an existing count column,
+    // because if we need to slice the aggregation results we will modify the count column
+    // to do that. This will not work if we are going to output that count column.
 
     val aggregationsOutput = windowAggs.map(_.toAttribute)
     val boundAggregations = GpuBindReferences.bindGpuReferences(windowAggs, childOutput)
     (aggregationsOutput, boundAggregations)
   }
 
-  def repeatOps(
-      aggregationsOutput: Seq[Attribute]): (GpuExpression, Seq[Attribute], Seq[GpuExpression]) = {
-    // It is assumed that the last aggregation column is a count that we will use for repeat
-    // If that ever changes, this code needs to be updated.
-    val aggOutputExpressions = aggregationsOutput.map { attr =>
-      GpuAlias(
-        AttributeReference(attr.name, attr.dataType, attr.nullable)(attr.exprId),
-        attr.name)(attr.exprId)
-    }
-    val boundAggOutputExpressions =
-      GpuBindReferences.bindGpuReferences(aggOutputExpressions, aggregationsOutput)
-
-    val boundCount = boundAggOutputExpressions.last
-    val aggsToRepeat = boundAggOutputExpressions.slice(0, boundAggOutputExpressions.length - 1)
-    val aggsToRepeatOutput = aggregationsOutput.slice(0, aggregationsOutput.length - 1)
-    (boundCount, aggsToRepeatOutput, aggsToRepeat)
+  def repeatOps(aggregationsOutput: Seq[Attribute]): Seq[Attribute] = {
+    // By convention the last column in the aggs is the count column we want to use
+    aggregationsOutput.slice(0, aggregationsOutput.length - 1)
   }
 
   def computeFinalProject(rideAlongOutput: Seq[Attribute],
@@ -339,17 +633,16 @@ object GpuUnboundedToUnboundedAggWindowIterator {
     // STEP 2. project that will pull out the columns needed for the aggregation.
     val (aggregationsOutput, boundAggregations) = tmpAggregationOps(windowOps, childOutput)
 
-    // STEP N: Given the output of the aggregations get count column and the other
-    //  columns so we can do the repeat call.
-    val (boundCount, aggsToRepeatOutput, aggsToRepeat) = repeatOps(aggregationsOutput)
+    // STEP N: Given the output of the aggregations get the aggregations without that count.
+    // The count and aggs locations is by convention.
+    val aggsToRepeatOutput = repeatOps(aggregationsOutput)
 
     // STEP N + 1: After the repeat is done the repeated columns are put at the end of the
     //  rideAlong columns and then we need to do a project that would put them all in the
     //  proper output order, according to the windowOps
     val finalProject = computeFinalProject(rideAlongOutput, aggsToRepeatOutput, windowOps)
 
-    GpuUnboundedToUnboundedAggStages(boundRideAlong, boundAggregations,
-      boundCount, aggsToRepeat, finalProject)
+    GpuUnboundedToUnboundedAggStages(boundRideAlong, boundAggregations, finalProject)
   }
 
   def apply(input: Iterator[ColumnarBatch],
