@@ -287,6 +287,7 @@ class AggHelper(
       SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
+  // TODO: CALEB:  This is how Hash Aggregate gets aggregations done. Via AggHelper.
   def aggregate(preProcessed: ColumnarBatch, numAggs: GpuMetric): ColumnarBatch = {
     val ret = if (groupingOrdinals.nonEmpty) {
       performGroupByAggregation(preProcessed)
