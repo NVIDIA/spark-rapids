@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,6 +50,12 @@ ART_VER=$(mvnEval $DIST_PL project.version)
 DEFAULT_CUDA_CLASSIFIER=$(mvnEval $DIST_PL cuda.version)
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"}
 CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"} # default as CUDA_CLASSIFIERS for compatibility
+SERVER_ID=${SERVER_ID:-"snapshots"}
+SERVER_URL=${SERVER_URL:-"file:/tmp/local-release-repo"}
+# Save to be deployed artifact list into the file, e.g.
+ARTIFACT_FILE=${ARTIFACT_FILE:-"/tmp/artifact-file"}
+# Clean rtifact list file befor saving
+rm -rf $ARTIFACT_FILE
 
 SQL_PL=${SQL_PL:-"sql-plugin"}
 POM_FILE=${POM_FILE:-"$DIST_PL/target/parallel-world/META-INF/maven/${ART_GROUP_ID}/${ART_ID}/pom.xml"}
@@ -63,7 +69,7 @@ DEPLOY_TYPES=$(echo $CLASSIFIERS | sed -e 's;[^,]*;jar;g')
 DEPLOY_FILES=$(echo $CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
 
 # dist does not have javadoc and sources jars, use 'sql-plugin' instead
-source jenkins/version-def.sh >/dev/null 2&>1
+source jenkins/version-def.sh >/dev/null 2>&1
 echo $SPARK_BASE_SHIM_VERSION
 SQL_ART_ID=$(mvnEval $SQL_PL project.artifactId)
 SQL_ART_VER=$(mvnEval $SQL_PL project.version)
@@ -96,6 +102,14 @@ echo "Deploy CMD: $DEPLOY_CMD"
 
 ###### Deploy the parent pom file ######
 $DEPLOY_CMD -Dfile=./pom.xml -DpomFile=./pom.xml
+PARENT_ART_ID=$(mvnEval "./" project.artifactId)
+echo "$ART_GROUP_ID:$PARENT_ART_ID:$ART_VER:pom" >> $ARTIFACT_FILE
+
+###### Deploy the jdk-profile pom file ######
+JDK_PROFILES=${JDK_PROFILES:-"jdk-profiles"}
+$DEPLOY_CMD -Dfile=$JDK_PROFILES/pom.xml -DpomFile=$JDK_PROFILES/pom.xml
+JDK_PROFILES_ART_ID=$(mvnEval "$JDK_PROFILES" project.artifactId)
+echo "$ART_GROUP_ID:$JDK_PROFILES_ART_ID:$ART_VER:pom" >> $ARTIFACT_FILE
 
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
@@ -105,3 +119,11 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
             -Dfiles=$DEPLOY_FILES \
             -Dtypes=$DEPLOY_TYPES \
             -Dclassifiers=$CLASSIFIERS
+
+echo "$ART_GROUP_ID:$ART_ID:$ART_VER:pom" >> $ARTIFACT_FILE
+echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar" >> $ARTIFACT_FILE
+CLASSLIST="$CLASSIFIERS,sources,javadoc"
+CLASSLIST=(${CLASSLIST//','/' '})
+for class in ${CLASSLIST[@]}; do
+    echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar:$class" >> $ARTIFACT_FILE
+done
