@@ -81,6 +81,9 @@ class RapidsBufferCatalog(
 
     private var closed = false
 
+    override def toString: String =
+      s"buffer handle $id at $priority"
+
     override def setSpillPriority(newPriority: Long): Unit = {
       priority = newPriority
       updateUnderlyingRapidsBuffer(this)
@@ -725,7 +728,11 @@ class RapidsBufferCatalog(
 
   override def close(): Unit = {
     bufferIdToHandles.values.forEach { handles =>
-      handles.foreach(_.close())
+      handles.foreach{ h =>
+        val tmp = bufferMap.get(h.id)
+        System.err.println(s"LOOKS LIKE YOU LEAKED $h / ${tmp.toList}")
+        h.close()
+      }
     }
     bufferIdToHandles.clear()
   }

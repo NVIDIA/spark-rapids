@@ -52,17 +52,29 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   override def afterEach(): Unit = {
+    System.err.println("A")
     super.afterEach()
+    System.err.println("B")
     SparkSession.getActiveSession.foreach(_.stop())
+    System.err.println("C")
     SparkSession.clearActiveSession()
+    System.err.println("D")
     RmmSpark.removeAllCurrentThreadAssociation()
+    System.err.println("E")
     RmmSpark.clearEventHandler()
+    System.err.println("F")
     RapidsBufferCatalog.close()
+    System.err.println("G")
     GpuSemaphore.shutdown()
+    System.err.println("H")
     if (rmmWasInitialized) {
+      System.err.println("I.1")
       Rmm.shutdown()
+      System.err.println("I.2")
     }
+    System.err.println("J")
     HostAlloc.initialize(-1)
+    System.err.println("K")
   }
 
   private class BaseRmmEventHandler extends RmmEventHandler {

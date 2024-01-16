@@ -197,13 +197,11 @@ object PendingSecondAggResults {
     // Slice is at the column level, not at a table level
     closeOnExcept(new ArrayBuffer[cudf.ColumnVector]()) { before =>
       val afterCb = closeOnExcept(new ArrayBuffer[cudf.ColumnVector]()) { after =>
-        withResource(GpuColumnVector.extractBases(cb)) { bases =>
-          bases.foreach { base =>
-            val result = base.split(inclusiveCutPoint)
-            before.append(result(0))
-            after.append(result(1))
-            assert(result.length == 2)
-          }
+        GpuColumnVector.extractBases(cb).foreach { base =>
+          val result = base.split(inclusiveCutPoint)
+          before.append(result(0))
+          after.append(result(1))
+          assert(result.length == 2)
         }
         makeBatch(after.toArray, types)
       }
@@ -214,17 +212,18 @@ object PendingSecondAggResults {
   }
 
   def concatBatchesAndClose(toConcat: AutoClosableArrayBuffer[SpillableColumnarBatch],
-      sparkTypes: Array[DataType],
       opTime: GpuMetric): SpillableColumnarBatch = {
     val cb = withRetryNoSplit(toConcat) { _ =>
       opTime.ns {
-        closeOnExcept(new AutoClosableArrayBuffer[ColumnarBatch]) { cbs =>
+        val ready = closeOnExcept(new AutoClosableArrayBuffer[ColumnarBatch]) { cbs =>
           toConcat.foreach { scb =>
             cbs.append(scb.getColumnarBatch())
           }
-          // This consumes/closes the array of batches
-          ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(cbs.toArray, sparkTypes)
+          cbs.toArray
         }
+        // This consumes/closes the array of batches
+        ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(ready,
+          GpuColumnVector.extractTypes(ready.head))
       }
     }
     SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
@@ -304,6 +303,7 @@ class PendingSecondAggResults private(
     closeOnExcept(toProcess) { _ =>
       while (currentSize < targetSizeBytes && !rideAlongColumns.isEmpty) {
         val scb = rideAlongColumns.pop()
+        System.err.println(s"RIDE ALONG GOT $scb")
         toProcess.append(scb)
         val numRows = scb.numRows()
         val estimatedSize = (scb.sizeInBytes + (numRows * averageAggSizePerRow)).toLong
@@ -350,7 +350,7 @@ class PendingSecondAggResults private(
         }
       }
     }
-    concatBatchesAndClose(toProcess, boundStages.boundRideAlong.map(_.dataType).toArray, opTime)
+    concatBatchesAndClose(toProcess, opTime)
   }
 
   def getSlicedAggResultByRepeatedRows(numDesiredRows: Int): SpillableColumnarBatch = {
@@ -639,7 +639,8 @@ case class GpuUnboundedToUnboundedAggWindowExec(
     override val cpuOrderSpec: Seq[SortOrder],
     targetSizeBytes: Long) extends GpuWindowBaseExec {
 
-  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
+  override def otherCopyArgs: Seq[AnyRef] =
+    cpuPartitionSpec :: cpuOrderSpec :: new java.lang.Long(targetSizeBytes) :: Nil
 
   // For this we only need the data to be sorted by the partition columns, but
   //  we don't change the input sort from the CPU yet. In some cases we might even

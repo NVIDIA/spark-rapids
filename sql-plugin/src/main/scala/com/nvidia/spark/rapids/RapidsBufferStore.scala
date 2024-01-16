@@ -622,7 +622,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       releaseResources()
     }
 
-    override def toString: String = s"$name buffer size=${memoryUsedBytes}"
+    override def toString: String = s"$name buffer size=$memoryUsedBytes"
   }
 }
 

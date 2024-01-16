@@ -113,10 +113,11 @@ class RapidsDeviceMemoryStore(
       buffer,
       initialSpillPriority)
     freeOnExcept(rapidsBuffer) { _ =>
-      logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
+      System.err.println(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
         s"uncompressed=${rapidsBuffer.meta.bufferMeta.uncompressedSize}, " +
         s"meta_id=${tableMeta.bufferMeta.id}, " +
         s"meta_size=${tableMeta.bufferMeta.size}]")
+      new Exception(s"ST_$id").printStackTrace(System.err)
       addBuffer(rapidsBuffer, needsSync)
       rapidsBuffer
     }

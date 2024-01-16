@@ -92,6 +92,7 @@ class SpillableColumnarBatchImpl (
     rowCount: Int,
     sparkTypes: Array[DataType])
     extends SpillableColumnarBatch {
+  System.err.println(s"CREATED NEW $this")
   private var refCount = 1
 
   override def dataTypes: Array[DataType] = sparkTypes
@@ -146,6 +147,9 @@ class SpillableColumnarBatchImpl (
 //      throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
 //    }
   }
+
+  override def toString: String =
+    s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
 }
 
 class JustRowsHostColumnarBatch(numRows: Int)
