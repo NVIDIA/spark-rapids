@@ -201,13 +201,13 @@ object GpuJsonScan {
     }
 
     if (!meta.conf.isJsonFloatReadEnabled &&
-        TrampolineUtil.dataTypeExistsRecursively(readSchema, _ == FloatType)) {
+        TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[FloatType])) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
     }
 
     if (!meta.conf.isJsonDoubleReadEnabled &&
-        TrampolineUtil.dataTypeExistsRecursively(readSchema, _ == DoubleType)) {
+        TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[DoubleType])) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading doubles. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
     }
