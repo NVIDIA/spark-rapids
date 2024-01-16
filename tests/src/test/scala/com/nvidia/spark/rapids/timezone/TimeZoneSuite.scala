@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.timezone
 
 import java.time._
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
@@ -25,7 +26,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.{CastStrings, GpuTimeZoneDB}
 import org.scalatest.BeforeAndAfterAll
 
 import org.apache.spark.SparkConf
@@ -51,6 +52,24 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
       while (idx < rows) {
         // convert seconds to micro seconds
         builder.append(epochSeconds(idx) * 1000000L)
+        idx += 1
+      }
+      withResource(builder.build()) { b =>
+        b.copyToDevice()
+      }
+    }
+  }
+
+  /**
+   * create string column vector
+   */
+  def createColumnVector(strings: Array[String]): ColumnVector = {
+    val rows = strings.length
+    withResource(HostColumnVector.builder(DType.STRING, rows)) { builder =>
+      var idx = 0
+      while (idx < rows) {
+        // convert seconds to micro seconds
+        builder.append(strings(idx))
         idx += 1
       }
       withResource(builder.build()) { b =>
@@ -99,6 +118,17 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   }
 
   /**
+   * create Spark data frame, schema is [(string: string)]
+   *
+   * @return
+   */
+  def createStrDF(spark: SparkSession, strings: Array[String]): DataFrame = {
+    val data = strings.map(d => Row(d))
+    val schema = StructType(Array(StructField("str_col", StringType)))
+    spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+  }
+
+  /**
    * assert timestamp result with Spark result
    */
   def assertTimestampRet(actualRet: ColumnVector, sparkRet: Seq[Row], input: ColumnVector): Unit = {
@@ -113,6 +143,10 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
               s"for ${hostInput.getInt(i)} " +
                 s"${microsToInstant(host.getLong(i))} != ${microsToInstant(sparkMicro)}")
 
+          } else if (hostInput.getType == DType.STRING) {
+            assert(host.getLong(i) == sparkMicro,
+              s"for ${hostInput.getJavaString(i)} " +
+                  s"${microsToInstant(host.getLong(i))} != ${microsToInstant(sparkMicro)}")
           } else {
             assert(host.getLong(i) == sparkMicro,
               s"for ${hostInput.getLong(i)} (${microsToInstant(hostInput.getLong(i))}) " +
@@ -289,6 +323,35 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
 
   }
 
+  def testCastStringToTimestamp(epochSeconds: Array[Long], zoneStr: String): Unit = {
+    val zone = ZoneId.of(zoneStr)
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    val strings = epochSeconds.map { l =>
+      val instant = Instant.ofEpochSecond(l)
+      val dt = instant.atZone(zone)
+      formatter.format(dt) + " " + zoneStr
+    }
+
+    // get result from Spark
+    val sparkRet = withCpuSparkSession(
+      spark => {
+        createStrDF(spark, strings).createOrReplaceTempView("tab")
+        // cast string to timestamp
+        spark.sql(s"select cast(str_col as timestamp) from tab").collect()
+      },
+      new SparkConf()
+          // by setting this, the Spark output for date type is java.time.LocalDate instead
+          // of java.sql.Date, it's convenient to compare result
+          .set("spark.sql.datetime.java8API.enabled", "true"))
+
+    // get result from TimeZoneDB
+    withResource(createColumnVector(strings)) { inputCv =>
+      withResource(CastStrings.toTimestamp(inputCv, ZoneId.of(zoneStr), false)) { actualRet =>
+        assertTimestampRet(actualRet, sparkRet, inputCv)
+      }
+    }
+  }
+
   def selectWithRepeatZones: Seq[String] = {
     val mustZones = Array[String]("Asia/Shanghai", "America/Los_Angeles")
     val repeatZones = ZoneId.getAvailableZoneIds.asScala.toList.filter { z =>
@@ -355,7 +418,7 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
       val endYear = if (testAllYears) 9999 else 2030
       for (year <- startYear until endYear by 7) {
         val epochSeconds = getEpochSeconds(year, year + 1)
-         testFromTimestampToDate(epochSeconds, zoneStr)
+        testFromTimestampToDate(epochSeconds, zoneStr)
       }
     }
   }
@@ -367,6 +430,18 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
       val endYear = if (testAllYears) 9999 else 2030
       val epochDays = getEpochDays(startYear, endYear)
       testFromDateToTimestamp(epochDays, zoneStr)
+    }
+  }
+
+  test("test cast string to timestamp") {
+    for (zoneStr <- zones) {
+      // iterate years
+      val startYear = if (testAllYears) 1 else 1899
+      val endYear = if (testAllYears) 9999 else 2030
+      for (year <- startYear until endYear) {
+        val epochSeconds = getEpochSeconds(year, year + 1)
+        testCastStringToTimestamp(epochSeconds, zoneStr)
+      }
     }
   }
 
