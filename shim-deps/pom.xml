@@ -176,6 +176,24 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <id>release350emr</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>350emr</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-emr-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
 
         <profile>
             <id>with-classifier</id>

@@ -160,6 +160,8 @@ def test_subtraction_ansi_no_overflow(data_gen):
     _decimal_gen_38_10,
     _decimal_gen_38_neg10
     ], ids=idfn)
+@pytest.mark.xfail(condition=is_spark_350emr(),
+                   reason='EMR back-ported https://issues.apache.org/jira/browse/SPARK-45786 in spark350emr')
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -203,6 +205,8 @@ def test_multiplication_ansi_overflow():
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.xfail(condition=is_spark_350emr(),
+                   reason='EMR back-ported https://issues.apache.org/jira/browse/SPARK-45786 in spark350emr')
 def test_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(

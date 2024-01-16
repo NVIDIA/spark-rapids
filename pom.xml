@@ -596,6 +596,27 @@
             </modules>
         </profile>
         <profile>
+            <id>release350emr</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>350emr</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>350emr</buildver>
+                <spark.version>${spark350emr.version}</spark.version>
+                <spark.test.version>${spark350emr.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>shim-deps/emr</module>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release351</id>
             <activation>
                 <property>
@@ -782,6 +803,7 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
+        <spark350emr.version>3.5.0-amzn-0</spark350emr.version>
         <spark351.version>3.5.1-SNAPSHOT</spark351.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
@@ -791,6 +813,7 @@
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <arrow.cdh.version>2.0.0</arrow.cdh.version>
         <slf4j.version>1.7.30</slf4j.version>
+        <log4j.version>2.20.0</log4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
         <iceberg.version>0.13.2</iceberg.version>
@@ -831,7 +854,8 @@
             340,
             341,
             342,
-            350
+            350,
+            350emr
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             351
@@ -933,6 +957,34 @@
                 <artifactId>jucx</artifactId>
                 <version>${ucx.version}</version>
             </dependency>
+            <!-- -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-slf4j2-impl</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-api</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-core</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+            <dependency>
+                <!-- API bridge between log4j 1 and 2 -->
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-1.2-api</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+            <!-- -->
             <dependency>
               <groupId>org.slf4j</groupId>
               <artifactId>jul-to-slf4j</artifactId>
