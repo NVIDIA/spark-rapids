@@ -26,10 +26,10 @@ import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 object datetimeExpressionsUtils {
   def timestampAddDuration(cv: ColumnVector, duration: BinaryOperable, 
       zoneId: ZoneId): ColumnVector = {
-    // Not use cv.add(duration), because of it invoke BinaryOperable.implicitConversion,
-    // and currently BinaryOperable.implicitConversion return Long
-    // Directly specify the return type is TIMESTAMP_MICROSECONDS
     val resWithOverflow = if (isUTCTimezone(zoneId)) {
+      // Not use cv.add(duration), because of it invoke BinaryOperable.implicitConversion,
+      // and currently BinaryOperable.implicitConversion return Long
+      // Directly specify the return type is TIMESTAMP_MICROSECONDS
       duration match {
         case durS: Scalar => cv.binaryOp(BinaryOp.ADD, durS, DType.TIMESTAMP_MICROSECONDS)
         case durC: ColumnView => {

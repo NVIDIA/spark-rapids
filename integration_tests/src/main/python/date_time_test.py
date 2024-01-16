@@ -44,7 +44,7 @@ def test_timesub(data_gen):
 def test_timeadd(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, TimestampGen(), length=500)
+        lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('edge_vals', [-pow(2, 63), pow(2, 63)], ids=idfn)
@@ -63,7 +63,7 @@ def test_timeadd_daytime_column():
         # timestamp column max year is 1000
         ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
         # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(days=1000 * 365), max_value=timedelta(days=8000 * 365)))]
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=-1000 * 365), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
