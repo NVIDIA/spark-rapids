@@ -249,6 +249,7 @@ Tanh,4
 TimeAdd,4
 ToDegrees,4
 ToRadians,4
+ToUTCTimestamp,4
 ToUnixTimestamp,4
 TransformKeys,4
 TransformValues,4

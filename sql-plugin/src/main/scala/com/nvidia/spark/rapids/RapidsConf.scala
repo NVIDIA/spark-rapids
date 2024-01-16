@@ -785,7 +785,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("format_number with floating point types on the GPU returns results that have " +
       "a different precision than the default results of Spark.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
