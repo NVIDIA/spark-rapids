@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.GpuOverrides
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, TimeZoneAwareExpression}
@@ -81,21 +80,7 @@ case class GpuTimeAdd(
             }
             val usToSub = intvl.days * microSecondsInOneDay + intvl.microseconds
             if (usToSub != 0) {
-              val res = if (GpuOverrides.isUTCTimezone(zoneId)) {
-                withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, usToSub)) { d =>
-                  datetimeExpressionsUtils.timestampAddDuration(l.getBase, d)
-                }
-              } else {
-                val utcRes = withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(l.getBase,
-                  zoneId)) { utcTimestamp =>
-                  withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, usToSub)) { 
-                    d => datetimeExpressionsUtils.timestampAddDuration(utcTimestamp, d)
-                  }
-                }
-                withResource(utcRes) { _ =>
-                  GpuTimeZoneDB.fromTimestampToUtcTimestamp(utcRes, zoneId)
-                }
-              }
+              val res = datetimeExpressionsUtils.timestampAddDuration(l.getBase, d, zoneId)
               GpuColumnVector.from(res, dataType)
             } else {
               l.incRefCount()

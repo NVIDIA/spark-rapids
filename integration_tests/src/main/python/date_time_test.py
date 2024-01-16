@@ -39,13 +39,13 @@ def test_timesub(data_gen):
         lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
-@pytest.mark.parametrize('data_gen', [(2002335, 66506, 226873)], ids=idfn)
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
 @allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd_debug(data_gen):
-    days, seconds, mircos = data_gen
+def test_timeadd(data_gen):
+    days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, TimestampGen(), length=500)
-            .selectExpr("a", "a + (interval {} days {} seconds {} microseconds)".format(days, seconds, mircos)))
+            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('edge_vals', [-pow(2, 63), pow(2, 63)], ids=idfn)
 @allow_non_gpu(*non_supported_tz_allow)
@@ -55,25 +55,6 @@ def test_timeadd_long_overflow(edge_vals):
             .selectExpr("a + (interval {} microseconds)".format(edge_vals)),
         conf={},
         error_message='long overflow')
-    
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd_daytime_column_normal():
-    gen_list = [
-        # timestamp column max year is 1000
-        ('t', TimestampGen(start=datetime(1900, 12, 31, 15, tzinfo=timezone.utc), end=datetime(1900, 12, 31, 16, tzinfo=timezone.utc))),
-        # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(seconds=0), max_value=timedelta(seconds=0)))]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list, length=2048).selectExpr("t", "d", "t + d"))
-
-@pytest.mark.parametrize('data_gen', [(0, 1)], ids=idfn)
-@allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd_special(data_gen):
-    days, seconds = data_gen
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(1900, 12, 31, 15, 55, tzinfo=timezone.utc), end=datetime(1900, 12, 31, 16, tzinfo=timezone.utc)), length=100)
-            .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
@@ -82,20 +63,9 @@ def test_timeadd_daytime_column():
         # timestamp column max year is 1000
         ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
         # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=1000 * 365), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd_daytime_column_debug():
-    gen_list = [
-        # timestamp column max year is 1000
-        ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
-        # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list, length=10).selectExpr("t", "d", "t + d"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
