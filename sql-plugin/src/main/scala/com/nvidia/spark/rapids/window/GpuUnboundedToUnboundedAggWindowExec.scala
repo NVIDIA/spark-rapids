@@ -747,7 +747,7 @@ case class GpuUnboundedToUnboundedAggWindowExec(
     targetSizeBytes: Long) extends GpuWindowBaseExec {
 
   override def otherCopyArgs: Seq[AnyRef] =
-    cpuPartitionSpec :: cpuOrderSpec :: new java.lang.Long(targetSizeBytes) :: Nil
+    cpuPartitionSpec :: cpuOrderSpec :: targetSizeBytes.asInstanceOf[java.lang.Long] :: Nil
 
   // For this we only need the data to be sorted by the partition columns, but
   //  we don't change the input sort from the CPU yet. In some cases we might even

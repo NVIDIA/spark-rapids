@@ -55,8 +55,8 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
         groupId += 1
         rowRemainingForRepeat -= rowsInGroup
       }
-      val table = withResource(ColumnVector.fromInts(data: _*)) { dataCv =>
-        withResource(ColumnVector.fromLongs(counts: _*)) { countsCv =>
+      val table = withResource(ColumnVector.fromInts(data.toSeq: _*)) { dataCv =>
+        withResource(ColumnVector.fromLongs(counts.toSeq: _*)) { countsCv =>
           new Table(dataCv, countsCv)
         }
       }
