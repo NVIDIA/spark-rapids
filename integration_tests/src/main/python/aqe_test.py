@@ -243,3 +243,54 @@ def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
 
+
+db_133_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
+@ignore_order(local=True)
+def test_aqe_join_executor_broadcast(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    bhj_disable_conf = copy_and_update(_adaptive_conf,
+        { "spark.rapids.sql.exec.BroadcastHashJoinExec": "false"}) 
+
+    def prep(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000),
+            (("Cathy ", "", "Green"), "3", "F", 3000)
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType()))
+
+        data_school= [
+            ("1", "school1"),
+            ("2", "school1"),
+            ("3", "school2")
+        ]
+        schema_school = (StructType()
+                  .add("id", StringType())
+                  .add("school", IntegerType()))
+
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df_school = spark.createDataFrame(spark.sparkContext.parallelize(data_school),schema_school)
+
+        df.write.format("parquet").mode("overwrite").save(data_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf = spark.read.parquet(data_path)
+        newdf.createOrReplaceTempView("df")
+
+        return spark.sql(
+            """
+                select /*+ BROADCAST(df_school) */ * from df a left outer join df_school b on a.id == b.id
+            """
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=bhj_disable_conf)
+
