@@ -50,6 +50,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   private var subIterator: Option[Iterator[AggResult]] = None
   override def hasNext: Boolean = subIterator.exists(_.hasNext) || input.hasNext
 
+  private val groupingColumnTypes = boundStages.boundPartitionSpec.map{_.dataType}
   private val groupColumnOrdinals = boundStages.boundPartitionSpec.map {
     case GpuBoundReference(ordinal, _, _) => ordinal
   }
@@ -58,6 +59,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   private val aggregateFunctions = boundAggs.map {
     _.asInstanceOf[GpuAlias].child.asInstanceOf[GpuAggregateFunction]
   }
+  private val outputTypes = groupingColumnTypes ++ aggregateFunctions.map{ _.dataType }
   private val cudfAggregates = aggregateFunctions.flatMap{ _.updateAggregates }
   private val aggInputProjections: Seq[Expression] =
     aggregateFunctions.flatMap{_.inputProjection}
@@ -72,10 +74,24 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
     SpillableColumnarBatch(input.next, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
+  private def upscaleCountResults(unfixed: cudf.Table): cudf.Table = {
+    // The group "count" result is in the last column, with type INT32.
+    // Cast this up to INT64.  Return the other columns unchanged.
+    val nCols = unfixed.getNumberOfColumns
+    withResource(unfixed) { _ =>
+      val fixedCols = Range(0, nCols).map {
+        case i if i != nCols-1 => unfixed.getColumn(i).incRefCount()
+        case _ => unfixed.getColumn(nCols - 1).castTo(cudf.DType.INT64)
+      }
+      new cudf.Table(fixedCols: _*)
+    }
+  }
+
   private def groupByAggregate(inputCB: ColumnarBatch) = {
     val groupByOptions = cudf.GroupByOptions.builder()
-      .withIgnoreNullKeys(false)
-      .withKeysSorted(true).build()
+                                            .withIgnoreNullKeys(false)
+                                            .withKeysSorted(true)
+                                            .build()
 
     val cudfAggsOnColumns = cudfAggregates.zip(aggInputOrdinals).map {
       case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
@@ -85,7 +101,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
       val aggResults = inputTable.groupBy(groupByOptions, groupColumnOrdinals: _*)
                                  .aggregate(cudfAggsOnColumns: _*)
       cudf.TableDebug.get.debug("Agg results: ", aggResults)
-//      GpuColumnVector.debug("Results: ", aggResults)
+      upscaleCountResults(aggResults)
     }
   }
 
@@ -102,8 +118,13 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
           println("aggInputProjs size: " + aggInputProjections.size)
           println("aggInputOrdinals size: " + aggInputOrdinals.size)
           GpuColumnVector.debug("CALEB: Input: ", cb)
-          groupByAggregate(cb)
-          throw new IllegalStateException("TODO: Do the agg!!!")
+          val aggResultTable = groupByAggregate(cb)
+
+          AggResult(scb.incRefCount(),
+                    SpillableColumnarBatch(
+                      GpuColumnVector.from(aggResultTable, outputTypes.toArray),
+                      SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+//           throw new IllegalStateException("TODO: Do the agg!!!")
         }
       }
       val result = currIter.next()
