@@ -185,19 +185,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case c2re @ ColumnarToRowExec(aqesr @ AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
       parent match {
-        case bhje: BroadcastHashJoinExec=>
-          logWarning("parent is broadcast hash join, specifics: " + bhje +
-            " is executor broadcast " + bhje.isExecutorBroadcast)
+        case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
+          logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
+            " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
+          logWarning("columnar to row with AQEShuffleReadExec " + c2re + " entire plan is: " + plan)
+          val planopt = optimizeAdaptiveTransitions(s, Some(plan))
+          val c2r = GpuColumnarToRowExec(planopt)
+          logWarning("tom planopt is " + planopt + " ctor: " + c2r)
+          SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s)
         case _ =>
           logWarning("not bhj")
+          c2re
       }
-      logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
-        " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
-      logWarning("columnar to row with AQEShuffleReadExec " + c2re + " entire plan is: " + plan)
-      val planopt = optimizeAdaptiveTransitions(s, Some(plan))
-      val c2r = GpuColumnarToRowExec(planopt)
-      logWarning("tom planopt is " + planopt + " ctor: " + c2r)
-      SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       logWarning("columnar to row with BroadcastQueryStageExec")
