@@ -74,19 +74,49 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
     }
   }
 
+  override def checkColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): Boolean = {
+    p match {
+      case c2re@ColumnarToRowExec(aqesr@AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+        parent match {
+          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
+            true
+          case _ =>
+            false
+        }
+      case _ =>
+        false
+    }
+  }
+
+  override def convertColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): SparkPlan = {
+    p match {
+      case c2re@ColumnarToRowExec(aqesr@AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+        parent match {
+          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
+            logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
+              " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
+            logWarning("columnar to row with AQEShuffleReadExec " + c2re + " entire plan is: " + plan)
+            val planopt = optimizeAdaptiveTransitions(s, Some(plan))
+            val c2r = GpuColumnarToRowExec(planopt)
+            logWarning("tom planopt is " + planopt + " ctor: " + c2r)
+            SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s, fromBHJExecutorBroadcast = true)
+
+          case _ =>
+            logWarning("not bhj")
+            c2re
+        }
+      case _ =>
+        p
+    }
+  }
 
   override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
-      sqse: ShuffleQueryStageExec): SparkPlan = {
+      sqse: ShuffleQueryStageExec, fromBHJExecutorBroadcast: Boolean = false): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
-      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
+      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) || fromBHJExecutorBroadcast =>
         logInfo("in executor broadcast handling, creating new shuffle exchange")
         ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
-      case shuffleOther: ShuffleExchangeLike =>
-        logInfo("shuffle not executor broadcast: " + shuffleOther)
-        val res = ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
-        logInfo("adding shuffle with c2r : " + res)
-        res
       case _ =>
         c2r
     }

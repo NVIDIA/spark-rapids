@@ -139,7 +139,11 @@ trait SparkShims {
    * that consumes rows
    */
   def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
-      sqse: ShuffleQueryStageExec): SparkPlan = c2r
+      sqse: ShuffleQueryStageExec, fromBHJExecutorBroadcast: Boolean = false): SparkPlan = c2r
+
+  def checkColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): Boolean = false
+
+  def convertColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): SparkPlan = p
 
   /**
    * Walk the plan recursively and return a list of operators that match the predicate

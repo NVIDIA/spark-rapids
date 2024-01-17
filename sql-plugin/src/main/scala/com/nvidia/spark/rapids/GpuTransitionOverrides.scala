@@ -177,26 +177,15 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // We wrap custom shuffle readers with a coalesce batches operator here.
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
+    case c2re: ColumnarToRowExec if
+        SparkShimImpl.checkColumnarToRowWithExecBroadcast(c2re, parent) =>
+      SparkShimImpl.convertColumnarToRowWithExecBroadcast(c2re, parent)
+
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       logWarning("columnar to row with ShuffleQueryStageExec - here we want " +
         "to replace with row one")
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
-
-    case c2re @ ColumnarToRowExec(aqesr @ AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
-      parent match {
-        case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
-          logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
-            " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
-          logWarning("columnar to row with AQEShuffleReadExec " + c2re + " entire plan is: " + plan)
-          val planopt = optimizeAdaptiveTransitions(s, Some(plan))
-          val c2r = GpuColumnarToRowExec(planopt)
-          logWarning("tom planopt is " + planopt + " ctor: " + c2r)
-          SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s)
-        case _ =>
-          logWarning("not bhj")
-          c2re
-      }
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       logWarning("columnar to row with BroadcastQueryStageExec")
