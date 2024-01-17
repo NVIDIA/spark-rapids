@@ -143,7 +143,10 @@ trait SparkShims {
 
   def checkColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): Boolean = false
 
-  def convertColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): SparkPlan = p
+  def convertColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan],
+      c2r: SparkPlan): SparkPlan = p
+
+  def getShuffleFromColumnarToRowWithExecBroadcast(p: SparkPlan): Option[SparkPlan] = None
 
   /**
    * Walk the plan recursively and return a list of operators that match the predicate
