@@ -184,6 +184,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case c2re @ ColumnarToRowExec(aqesr @ AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+      parent match {
+        case bhje: BroadcastHashJoinExec=>
+          logWarning("parent is broadcast hash join, specifics: " + bhje +
+            " is executor broadcast " + bhje.isExecutorBroadcast)
+        case _ =>
+          logWarning("not bhj")
+      }
       logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
         " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
       logWarning("columnar to row with AQEShuffleReadExec " + c2re + " entire plan is: " + plan)
