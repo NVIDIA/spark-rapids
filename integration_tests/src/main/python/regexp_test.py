@@ -1064,3 +1064,12 @@ def test_re_replace_all():
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, ".*$", "PROD", 1)'),
         conf=_regexp_conf)
+
+def test_lazy_quantifier():
+    gen = mk_str_gen('[a-z]{0,2} \"[a-z]{0,2}\" and \"[a-z]{0,3}\"')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'a', r'REGEXP_EXTRACT(a, "(\".??\")")',
+            r'REGEXP_EXTRACT(a, "(\".+?\")")',
+            r'REGEXP_EXTRACT(a, "(\".*?\")")'),
+        conf=_regexp_conf)

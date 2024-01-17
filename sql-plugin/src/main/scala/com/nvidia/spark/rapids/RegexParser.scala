@@ -1516,9 +1516,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('+')) =>
           throw new RegexUnsupportedException("Possessive quantifier *+ not supported",
             quantifier.position)
-        case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('?')) =>
-          throw new RegexUnsupportedException("Lazy quantifier *? not supported",
-            quantifier.position)
+        case (RegexRepetition(_, SimpleQuantifier('?')) |
+              RegexRepetition(_, SimpleQuantifier('*')) |
+              RegexRepetition(_, SimpleQuantifier('+')), SimpleQuantifier('?')) =>
+          RegexRepetition(rewrite(base, replacement, None, flags), quantifier)
         case _ =>
           throw new RegexUnsupportedException("Preceding token cannot be quantified",
             quantifier.position)
