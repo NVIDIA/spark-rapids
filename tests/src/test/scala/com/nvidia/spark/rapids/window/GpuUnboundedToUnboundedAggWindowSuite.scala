@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.window
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnVector, Scalar, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, NoopMetric, RmmSparkRetrySuiteBase, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -25,7 +27,8 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType, ShortType}
 
 class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
-  def basicRepeatTest(numOutputRows: Long, rowsPerBatch: Int, targetSizeBytes: Int) : Unit = {
+  def basicRepeatTest(numOutputRows: Long, rowsPerRideAlongBatch: Int,
+      aggGroups: Int, targetSizeBytes: Int) : Unit = {
     // First I need to setup the operations. I am trying to test repeat in isolation
     // so we are not going to build them up using the front door
     val aggOutput = Seq(AttributeReference("my_max", IntegerType, nullable = true)(),
@@ -40,12 +43,21 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
     val conf = GpuUnboundedToUnboundedAggStages(Seq.empty, Seq.empty, finalProject)
 
     def makeRepeatCb(): SpillableColumnarBatch = {
-      // very basic test to verify that the repeat stage works properly.
-      val table = withResource(ColumnVector.fromInts(1, 2)) { data1 =>
-        val firstBatchAmount = numOutputRows / 2
-        val secondBatchAmount = numOutputRows - firstBatchAmount
-        withResource(ColumnVector.fromLongs(firstBatchAmount, secondBatchAmount)) { counts =>
-          new Table(data1, counts)
+      val data = ArrayBuffer[Int]()
+      val counts = ArrayBuffer[Long]()
+      var rowRemainingForRepeat = numOutputRows
+      var groupId = 0
+      val rowsPerGroup = math.ceil(numOutputRows.toDouble / aggGroups).toLong
+      while(rowRemainingForRepeat > 0) {
+        data.append(groupId)
+        val rowsInGroup = math.min(rowRemainingForRepeat, rowsPerGroup)
+        counts.append(rowsInGroup)
+        groupId += 1
+        rowRemainingForRepeat -= rowsInGroup
+      }
+      val table = withResource(ColumnVector.fromInts(data: _*)) { dataCv =>
+        withResource(ColumnVector.fromLongs(counts: _*)) { countsCv =>
+          new Table(dataCv, countsCv)
         }
       }
       withResource(table) { _ =>
@@ -72,7 +84,7 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
     val rideAlongList = new util.LinkedList[SpillableColumnarBatch]
     var rowsRemaining = numOutputRows
     while (rowsRemaining > 0) {
-      val rowsToAdd = math.min(rowsRemaining, rowsPerBatch)
+      val rowsToAdd = math.min(rowsRemaining, rowsPerRideAlongBatch)
       rowsRemaining -= rowsToAdd
       rideAlongList.add(makeRideAlongCb(rowsToAdd.toInt))
     }
@@ -93,28 +105,39 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
   }
 
   test("single batch repeat test") {
-    basicRepeatTest(1000, 1000, 1024 * 1024 * 1024)
+    basicRepeatTest(1000, 1000, 2, 1024 * 1024 * 1024)
   }
 
   test("multi batch no split repeat test") {
-    basicRepeatTest(1000, 100, 1024 * 1024 * 1024)
+    basicRepeatTest(1000, 100, 2, 1024 * 1024 * 1024)
   }
 
   test("single batch with split repeat test") {
-    basicRepeatTest(1000, 1000, 4 * 1024)
+    basicRepeatTest(1000, 1000, 2, 4 * 1024)
   }
 
   test("multi batch with split repeat test") {
-    basicRepeatTest(1000, 100, 4 * 1024)
+    basicRepeatTest(1000, 100, 2, 4 * 1024)
   }
 
-  test("single batch with even split") {
-    // This is a bit brittle, but the targetSizeBytes is tuned so that we split
-    // the agg buffer exactly in half, which is a corner case we had to handle
-    // because the agg generated has two rows. Currently the average row
-    // size used in the heuristic is 14 bytes
-    basicRepeatTest(1000, 1000, 500 * 14)
+  test("single batch split on agg boundary") {
+    basicRepeatTest(1000, 1000, 1000, 1024)
   }
 
-  // TODO need a way to set the number of agg rows instead...
+  test("single batch single agg repeat test") {
+    basicRepeatTest(1000, 1000, 1, 1024 * 1024 * 1024)
+  }
+
+  test("multi batch no split single agg repeat test") {
+    basicRepeatTest(1000, 100, 1, 1024 * 1024 * 1024)
+  }
+
+  test("single batch with split single agg repeat test") {
+    basicRepeatTest(1000, 1000, 1, 4 * 1024)
+  }
+
+  test("multi batch with split single agg repeat test") {
+    basicRepeatTest(1000, 100, 1, 4 * 1024)
+  }
+
 }
