@@ -144,7 +144,7 @@ trait SparkShims {
   def checkColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): Boolean = false
 
   def convertColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan],
-      c2r: SparkPlan): SparkPlan = p
+      c2r: ColumnarToRowTransition): SparkPlan = p
 
   def getShuffleFromColumnarToRowWithExecBroadcast(p: SparkPlan): Option[SparkPlan] = None
 

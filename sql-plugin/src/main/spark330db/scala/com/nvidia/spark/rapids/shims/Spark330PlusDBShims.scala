@@ -91,7 +91,7 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
 
   override def getShuffleFromColumnarToRowWithExecBroadcast(p: SparkPlan): Option[SparkPlan] = {
     p match {
-      case c2re@ColumnarToRowExec(aqesr@AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+      case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
         Some(s)
       case _ =>
         None
@@ -99,14 +99,13 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
   }
 
   override def convertColumnarToRowWithExecBroadcast(p: SparkPlan,
-      parent: Option[SparkPlan], c2r: SparkPlan): SparkPlan = {
+      parent: Option[SparkPlan], c2r: ColumnarToRowTransition): SparkPlan = {
     p match {
       case c2re@ColumnarToRowExec(aqesr@AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
         parent match {
           case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
             logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
               " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
-            logWarning("tom planopt is " + planopt + " ctor: " + c2r)
             SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s, fromBHJExecutorBroadcast = true)
 
           case _ =>
