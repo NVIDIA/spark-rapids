@@ -722,14 +722,18 @@ strings, so results may differ from Spark in the same way. To disable this on th
 
 ### String to Float
 
-Casting from string to floating-point types on the GPU returns incorrect results when the string
-represents any number in the following ranges. In both cases the GPU returns `Double.MaxValue`. The
-default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
+Casting from string to double on the GPU returns incorrect results when the string represents any 
+number in the following ranges. In both cases the GPU returns `Double.MaxValue`. The default behavior 
+in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
 
 - `1.7976931348623158E308 <= x < 1.7976931348623159E308`
 - `-1.7976931348623159E308 < x <= -1.7976931348623158E308`
 
-Also, the GPU does not support casting from strings containing hex values.
+Casting from string to double on the GPU could also sometimes return incorrect results if the string 
+contains high precision values. Apache Spark rounds the values to the nearest double, while the GPU 
+truncates the values directly.
+
+Also, the GPU does not support casting from strings containing hex values to floating-point types.
 
 This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
