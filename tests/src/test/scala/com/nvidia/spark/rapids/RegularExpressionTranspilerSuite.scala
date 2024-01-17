@@ -97,7 +97,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   test("choice with repetition - regexp_find") {
-    val patterns = Seq("b?|a", "b*|^\t", "b+|^\t", "a|b+", "a+|b+", "a{2,3}|b+", "a*|b+", "b?|a",
+    val patterns = Seq("b?|a", "b*|^\t", "b+|^\t", "a|b+", "a+|b+", "a{2,3}|b+", "a*|b+",
       "b*?|^\t", "b+?|^\t", "a|b+?", "a+?|b+?", "a{2,3}|b+?", "a*?|b+?", "[cat]{3}|dog")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("aaa", "bb", "a\tb", "aaaabbbb", "a\tb\ta\tb"))
   }
