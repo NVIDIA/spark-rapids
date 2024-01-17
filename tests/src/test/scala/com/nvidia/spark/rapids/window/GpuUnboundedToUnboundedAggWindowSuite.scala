@@ -70,7 +70,6 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
     }
 
     val rideAlongList = new util.LinkedList[SpillableColumnarBatch]
-    // TODO need a way not to leak rideAlongList
     var rowsRemaining = numOutputRows
     while (rowsRemaining > 0) {
       val rowsToAdd = math.min(rowsRemaining, rowsPerBatch)
@@ -94,38 +93,18 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
   }
 
   test("single batch repeat test") {
-    try {
-      basicRepeatTest(1000, 1000, 1024 * 1024 * 1024)
-    } finally {
-      System.gc()
-      System.gc()
-    }
+    basicRepeatTest(1000, 1000, 1024 * 1024 * 1024)
   }
 
   test("multi batch no split repeat test") {
-    try {
-      basicRepeatTest(1000, 100, 1024 * 1024 * 1024)
-    } finally {
-      System.gc()
-      System.gc()
-    }
+    basicRepeatTest(1000, 100, 1024 * 1024 * 1024)
   }
 
   test("single batch with split repeat test") {
-    try {
     basicRepeatTest(1000, 1000, 4 * 1024)
-    } finally {
-      System.gc()
-      System.gc()
-    }
   }
 
   test("multi batch with split repeat test") {
-    try {
     basicRepeatTest(1000, 100, 4 * 1024)
-    } finally {
-      System.gc()
-      System.gc()
-    }
   }
 }

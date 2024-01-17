@@ -53,6 +53,8 @@ class AutoClosableArrayBuffer[T <: AutoCloseable]() extends AutoCloseable {
 
   def toArray[B >: T : ClassTag]: Array[B] = data.toArray
 
+  override def toString: String = s"AutoCloseable(${super.toString})"
+
   override def close(): Unit = {
     data.foreach(_.close())
     data.clear()
@@ -211,6 +213,65 @@ object PendingSecondAggResults {
     }
   }
 
+  def sliceInclusiveCb(cb: ColumnarBatch, inclusiveStart: Int, inclusiveEnd: Int): ColumnarBatch = {
+    // First save the types
+    val types = GpuColumnVector.extractTypes(cb)
+    // Slice is at the column level, not at a table level
+    closeOnExcept(new ArrayBuffer[cudf.ColumnVector]()) { cbs =>
+      GpuColumnVector.extractBases(cb).foreach { base =>
+        val result = base.slice(inclusiveStart, inclusiveEnd + 1)
+        cbs.append(result(0))
+        assert(result.length == 1)
+      }
+      makeBatch(cbs.toArray, types)
+    }
+  }
+
+  /**
+   * Makes a boolean vector where only one row is true.
+   * @param trueRow the row that should be true
+   * @param size the total number of rows.
+   */
+  def makeSingleRowMask(trueRow: Int, size: Int): cudf.ColumnVector = {
+    assert(size > trueRow, s"$size > $trueRow")
+    // TODO probably want an optimization if the size is really small
+    val rowsBefore = trueRow
+    val rowsAfter = size - trueRow - 1
+    if (rowsBefore == 0 && rowsAfter == 0) {
+      // Special Case where we cannot concat
+      cudf.ColumnVector.fromBooleans(true)
+    } else {
+      withResource(new AutoClosableArrayBuffer[cudf.ColumnView]) { toConcat =>
+        withResource(cudf.Scalar.fromBool(false)) { fs =>
+          if (rowsBefore > 0) {
+            toConcat.append(cudf.ColumnVector.fromScalar(fs, rowsBefore))
+          }
+          toConcat.append(cudf.ColumnVector.fromBooleans(true))
+          if (rowsAfter > 0) {
+            toConcat.append(cudf.ColumnVector.fromScalar(fs, rowsAfter))
+          }
+        }
+        cudf.ColumnVector.concatenate(toConcat.toArray: _*)
+      }
+    }
+  }
+
+  def replaceCountInAggAt(cb: ColumnarBatch, countRow: Int, newCount: Long): ColumnarBatch = {
+    // TODO I'm sure there is a lot we can do to optimize this, but this works...
+    withResource(AggResultBatchConventions.getRepeatedAggColumns(cb)) { aggColumns =>
+      val newCountCv = withResource(AggResultBatchConventions.getCount(cb)) { count =>
+        withResource(makeSingleRowMask(countRow, count.getRowCount.toInt)) { mask =>
+          withResource(cudf.Scalar.fromLong(newCount)) { ncScalar =>
+            mask.ifElse(ncScalar, count.getBase)
+          }
+        }
+      }
+      withResource(newCountCv) { _ =>
+        AggResultBatchConventions.appendCountColumn(aggColumns, newCountCv)
+      }
+    }
+  }
+
   def concatBatchesAndClose(toConcat: AutoClosableArrayBuffer[SpillableColumnarBatch],
       opTime: GpuMetric): SpillableColumnarBatch = {
     val cb = withRetryNoSplit(toConcat) { _ =>
@@ -258,7 +319,50 @@ object PendingSecondAggResults {
         // in the aggregation we need to split on. The only way to do that is to get a
         // running sum of the counts, and then do an upper bound on that column
         withResource(AggResultBatchConventions.getCount(cb)) { counts =>
-          throw new IllegalStateException("NOT IMPLEMENTED YET...")
+          val (splitIndex, countToKeep, countForNextTime) =
+            withResource(counts.getBase.prefixSum()) { runningCount =>
+              val splitIndex = withResource(new cudf.Table(runningCount)) { runningCountTable =>
+                withResource(cudf.ColumnVector.fromLongs(targetRows)) { tr =>
+                  withResource(new cudf.Table(tr)) { targetRowsTable =>
+                    runningCountTable.lowerBound(Array(true), targetRowsTable, Array(false))
+                  }
+                }
+              }
+              withResource(splitIndex) { _ =>
+                val indexToLookAt = withResource(splitIndex.getScalarElement(0)) { s =>
+                  s.getInt
+                }
+                val totalRowsUpToIndex = withResource(
+                  runningCount.getScalarElement(indexToLookAt)) { s =>
+                  s.getLong
+                }
+                val countInRow = withResource(counts.getBase.getScalarElement(indexToLookAt)) { s =>
+                  s.getLong
+                }
+                val countToKeep = targetRows - (totalRowsUpToIndex - countInRow)
+                val countForNextTime = countInRow - countToKeep
+                (indexToLookAt, countToKeep, countForNextTime)
+              }
+            }
+          if (countForNextTime == 0) {
+            // We got lucky and it is on an agg boundary
+            val (a, b) = splitCb(cb, splitIndex)
+            (SpillableColumnarBatch(a, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+                SpillableColumnarBatch(b, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+          } else {
+            val scbFirst = withResource(sliceInclusiveCb(cb, 0, splitIndex)) { first =>
+              SpillableColumnarBatch(replaceCountInAggAt(first, splitIndex, countToKeep),
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            }
+            closeOnExcept(scbFirst) { _ =>
+              val scbSecond = withResource(sliceInclusiveCb(cb, splitIndex, cb.numRows() - 1)) {
+                second =>
+                  SpillableColumnarBatch(replaceCountInAggAt(second, 0, countForNextTime),
+                    SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              }
+              (scbFirst, scbSecond)
+            }
+          }
         }
       }
     }
@@ -303,7 +407,6 @@ class PendingSecondAggResults private(
     closeOnExcept(toProcess) { _ =>
       while (currentSize < targetSizeBytes && !rideAlongColumns.isEmpty) {
         val scb = rideAlongColumns.pop()
-        System.err.println(s"RIDE ALONG GOT $scb")
         toProcess.append(scb)
         val numRows = scb.numRows()
         val estimatedSize = (scb.sizeInBytes + (numRows * averageAggSizePerRow)).toLong
@@ -406,7 +509,13 @@ class GpuUnboundedToUnboundedAggSliceBySizeIterator(
     if (!pendingHasNext) {
       pending = Some(PendingSecondAggResults(input.next(), boundStages, targetSizeBytes, opTime))
     }
-    pending.get.next
+    val ret = pending.get.next()
+    // avoid leaks in the tests
+    if (!pendingHasNext) {
+      pending.get.close()
+      pending = None
+    }
+    ret
   }
 
   Option(TaskContext.get()).foreach { tc =>
@@ -462,12 +571,10 @@ class GpuUnboundedToUnboundedAggFinalIterator(
           }
         }
         withResource(combined) { _ =>
-          opTime.ns {
-            closeOnExcept(GpuProjectExec.project(combined, boundStages.boundFinalProject)) { ret =>
-              numOutputBatches += 1
-              numOutputRows += ret.numRows()
-              ret
-            }
+          closeOnExcept(GpuProjectExec.project(combined, boundStages.boundFinalProject)) { ret =>
+            numOutputBatches += 1
+            numOutputRows += ret.numRows()
+            ret
           }
         }
       }
@@ -509,7 +616,7 @@ object AggResultBatchConventions {
 
   def appendCountColumn(repeatedAggColumns: ColumnarBatch,
       counts: cudf.ColumnVector): ColumnarBatch = {
-    val countCol = GpuColumnVector.fromChecked(counts.incRefCount(), LongType)
+    val countCol = GpuColumnVector.fromChecked(counts, LongType)
     GpuColumnVector.appendColumns(repeatedAggColumns, countCol)
   }
 }

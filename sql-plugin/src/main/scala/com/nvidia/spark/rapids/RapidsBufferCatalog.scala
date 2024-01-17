@@ -728,11 +728,7 @@ class RapidsBufferCatalog(
 
   override def close(): Unit = {
     bufferIdToHandles.values.forEach { handles =>
-      handles.foreach{ h =>
-        val tmp = bufferMap.get(h.id)
-        System.err.println(s"LOOKS LIKE YOU LEAKED $h / ${tmp.toList}")
-        h.close()
-      }
+      handles.foreach(_.close())
     }
     bufferIdToHandles.clear()
   }
