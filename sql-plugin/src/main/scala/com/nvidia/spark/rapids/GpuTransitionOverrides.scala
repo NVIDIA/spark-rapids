@@ -183,16 +183,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
-    case c2re @ ColumnarToRowExec(aqese @ AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+    case c2re @ ColumnarToRowExec(aqesr @ AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
+      logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
+        " spec: " + aqesr.partitionSpecs.mkString(","))
       logWarning("columnar to row with AQEShuffleReadExec " + c2re + " entire plan is: " + plan)
       val planopt = optimizeAdaptiveTransitions(s, Some(plan))
       val c2r = GpuColumnarToRowExec(planopt)
       logWarning("tom planopt is " + planopt + " ctor: " + c2r)
-
-      val res = SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s)
-      aqese.withNewChildren(Seq(res))
-      logWarning("spark plan after is: " + aqese)
-      aqese
+      SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       logWarning("columnar to row with BroadcastQueryStageExec")
