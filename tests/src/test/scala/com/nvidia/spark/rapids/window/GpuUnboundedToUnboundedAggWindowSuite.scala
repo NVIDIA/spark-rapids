@@ -107,4 +107,14 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
   test("multi batch with split repeat test") {
     basicRepeatTest(1000, 100, 4 * 1024)
   }
+
+  test("single batch with even split") {
+    // This is a bit brittle, but the targetSizeBytes is tuned so that we split
+    // the agg buffer exactly in half, which is a corner case we had to handle
+    // because the agg generated has two rows. Currently the average row
+    // size used in the heuristic is 14 bytes
+    basicRepeatTest(1000, 1000, 500 * 14)
+  }
+
+  // TODO need a way to set the number of agg rows instead...
 }

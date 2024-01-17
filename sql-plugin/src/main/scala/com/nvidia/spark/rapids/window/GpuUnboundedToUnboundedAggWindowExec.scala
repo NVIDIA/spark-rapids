@@ -346,7 +346,7 @@ object PendingSecondAggResults {
             }
           if (countForNextTime == 0) {
             // We got lucky and it is on an agg boundary
-            val (a, b) = splitCb(cb, splitIndex)
+            val (a, b) = splitCb(cb, splitIndex + 1)
             (SpillableColumnarBatch(a, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
                 SpillableColumnarBatch(b, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
           } else {
