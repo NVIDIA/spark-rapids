@@ -89,7 +89,8 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
    *        +- ShuffleQueryStage
    *            +- GpuColumnarExchange gpuhashpartitioning
    */
-  override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan, parent: Option[SparkPlan]): Boolean = {
+  override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
+      parent: Option[SparkPlan]): Boolean = {
     p match {
       case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
         parent match {
