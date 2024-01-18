@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan: SparkPlan,
       parent: Option[SparkPlan]): SparkPlan = plan match {
 
-    case bb@GpuBringBackToHost(child) if parent.isEmpty =>
+    case bb @ GpuBringBackToHost(child) if parent.isEmpty =>
       // This is hacky but we need to remove the GpuBringBackToHost from the final
       // query stage, if there is one. It gets inserted by
       // GpuTransitionOverrides.insertColumnarFromGpu around columnar adaptive
@@ -107,7 +107,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
 
     // adaptive plan final query stage with columnar output
-    case r2c@RowToColumnarExec(child) if parent.isEmpty =>
+    case r2c @ RowToColumnarExec(child) if parent.isEmpty =>
       val optimizedChild = optimizeAdaptiveTransitions(child, Some(r2c))
       val projectedChild =
         optimizedChild.getTagValue(GpuOverrides.preRowToColProjection).map { exprs =>
@@ -123,7 +123,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // individual query with no parent and we need to remove these operators in this case
       // because we need to return an operator that implements `BroadcastExchangeLike` or
       // `ShuffleExchangeLike`.
-      logWarning("handling columnar to row in optimizeAdaptiveTransitions")
       bb.child match {
         case GpuShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
           // The coalesce step gets added back into the plan later on, in a
@@ -153,11 +152,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
-            logWarning("shuffle query stage exec supports columnar and is custom reader "
-              + s + " x is: " + x)
             s
           case (ex: ShuffleExchangeLike, Some(x))
-            if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
+              if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
             // In some cases, the parent might have to read the shuffle data directly, so
             // we don't need the post-shuffle coalesce exec since the parent should 
             // coalesce the shuffle data as needed
@@ -178,7 +175,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case c2re: ColumnarToRowExec if
-      SparkShimImpl.checkCToRWithExecBroadcastAQECoalPart(c2re, parent) =>
+        SparkShimImpl.checkCToRWithExecBroadcastAQECoalPart(c2re, parent) =>
       val shuffle = SparkShimImpl.getShuffleFromCToRWithExecBroadcastAQECoalPart(c2re)
       shuffle match {
         case Some(s) =>
@@ -200,13 +197,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      logWarning("columnar to row with ShuffleQueryStageExec - here we want " +
-        "to replace with row one")
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
-      logWarning("columnar to row with BroadcastQueryStageExec")
       e.plan match {
         case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
@@ -729,8 +723,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-
-
   private def insertStageLevelMetrics(plan: SparkPlan): Unit = {
     val sc = SparkSession.active.sparkContext
     val gen = new AtomicInteger(0)
@@ -818,8 +810,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
           updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
         }
-
-
+        
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
