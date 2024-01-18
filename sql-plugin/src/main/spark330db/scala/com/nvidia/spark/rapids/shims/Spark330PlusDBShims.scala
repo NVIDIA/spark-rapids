@@ -93,15 +93,11 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
     p match {
       case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
         parent match {
-          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
-            true
-          case Some(bhnlj: GpuBroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast =>
-            true
-          case _ =>
-            false
+          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
+          case Some(bhnlj: GpuBroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast => true
+          case _ => false
         }
-      case _ =>
-        false
+      case _ => false
     }
   }
 
@@ -113,10 +109,8 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
    */
   override def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = {
     p match {
-      case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
-        Some(s)
-      case _ =>
-        None
+      case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) => Some(s)
+      case _ => None
     }
   }
 
@@ -133,10 +127,9 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
       sqse: ShuffleQueryStageExec): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
-      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
+      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
         addExecBroadcastShuffle(c2r)
-      case _ =>
-        c2r
+      case _ => c2r
     }
   }
 }
