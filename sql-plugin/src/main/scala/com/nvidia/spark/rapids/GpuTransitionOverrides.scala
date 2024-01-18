@@ -178,12 +178,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case c2re: ColumnarToRowExec if
-        SparkShimImpl.checkColumnarToRowWithExecBroadcast(c2re, parent) =>
-      val s = SparkShimImpl.getShuffleFromColumnarToRowWithExecBroadcast(c2re)
-      s match {
+      SparkShimImpl.checkCToRWithExecBroadcastAQECoalPart(c2re, parent) =>
+      val shuffle = SparkShimImpl.getShuffleFromCToRWithExecBroadcastAQECoalPart(c2re)
+      shuffle match {
         case Some(s) =>
-          val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(s, Some(plan)))
-          SparkShimImpl.convertColumnarToRowWithExecBroadcast(c2re, parent, c2r)
+            /*
+             * When we find this pattern, explicitly add in the GPU columnar to row and CPU
+             * exchange for executor broadcast.
+             * Note that this likely adds some performance overhead because we end up doing
+             * an extra exchange.
+             *
+             * +- Exchange (SinglePartition, EXECUTOR_BROADCAST)
+             *     +- GpuColumnarToRow
+             *         +- GpuShuffleCoalesce
+             *             +- ShuffleQueryStage
+             *                 +- GpuColumnarExchange
+             */
+          val gpuc2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(s, Some(plan)))
+          SparkShimImpl.addExecBroadcastShuffle(gpuc2r)
         case _ => c2re
       }
 

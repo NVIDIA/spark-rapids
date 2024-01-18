@@ -77,17 +77,19 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
 
   /*
    * We are looking for the below pattern. We end up with a ColumnarToRow that feeds into
-   * a CPU broadcasthash join which is using Executor broadcast.  This pattern fails on
-   * Databricks because it doesn't like the ColumnarToRow in there.
+   * a CPU broadcasthash join which is using Executor broadcast. This pattern fails on
+   * Databricks because it doesn't like the ColumnarToRow feeding into the BroadcastHashJoin.
+   * Note, in most other cases we see executor broadcast, the Exchange would be CPU
+   * single partition exchange explicitly marked with type EXECUTOR_BROADCAST.
    *
-   *  +-BroadcastHashJoin
+   *  +- BroadcastHashJoin || BroadcastNestedLoopJoin (using executor broadcast)
    *  ^
    *  +- ColumnarToRow
-   *      +- AQEShuffleRead ebj
-   *        +- ShuffleQueryStage 132, Statistics(sizeInBytes=7.8 MiB, rowCount=2.74E+5, ColumnStat: N/A, isRuntime=true)
-   *            +- GpuColumnarExchange gpuhashpartitioning(c
+   *      +- AQEShuffleRead ebj (uses coalesce partitions to go to 1 partition)
+   *        +- ShuffleQueryStage
+   *            +- GpuColumnarExchange gpuhashpartitioning
    */
-  override def checkColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): Boolean = {
+  override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan, parent: Option[SparkPlan]): Boolean = {
     p match {
       case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
         parent match {
@@ -103,7 +105,13 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
     }
   }
 
-  override def getShuffleFromColumnarToRowWithExecBroadcast(p: SparkPlan): Option[SparkPlan] = {
+  /*
+   * If this plan matches the checkCToRWithExecBroadcastCoalPart() then get the shuffle
+   * plan out so we can wrap it. This function does not check that the parent is
+   * BroadcastHashJoin doing executor broadcast, so is expected to be called only
+   * after checkCToRWithExecBroadcastCoalPart().
+   */
+  override def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = {
     p match {
       case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
         Some(s)
@@ -112,32 +120,21 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
     }
   }
 
-  override def convertColumnarToRowWithExecBroadcast(p: SparkPlan,
-      parent: Option[SparkPlan], c2r: ColumnarToRowTransition): SparkPlan = {
-    p match {
-      case c2re@ColumnarToRowExec(aqesr@AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) =>
-        parent match {
-          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
-            logWarning("tgraves aqe read is: " + aqesr + " coalesced: " + aqesr.isCoalescedRead +
-              " spec: " + aqesr.partitionSpecs.mkString(",") + " parent is: " + parent)
-            SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, s, fromBHJExecutorBroadcast = true)
-
-          case _ =>
-            logWarning("not bhj")
-            c2re
-        }
-      case _ =>
-        p
-    }
+  /*
+   * Explicitly add in the CPU exchange for executor broadcast. Generally
+   * we expect the plan to be passed in to be a GPU columnar to row but
+   * we are not explicitly limiting it.
+   */
+  override def addExecBroadcastShuffle(p: SparkPlan): SparkPlan = {
+    ShuffleExchangeExec(SinglePartition, p, EXECUTOR_BROADCAST)
   }
 
   override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
-      sqse: ShuffleQueryStageExec, fromBHJExecutorBroadcast: Boolean = false): SparkPlan = {
+      sqse: ShuffleQueryStageExec): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
-      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) || fromBHJExecutorBroadcast =>
-        logInfo("in executor broadcast handling, creating new shuffle exchange")
-        ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
+      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
+        addExecBroadcastShuffle(c2r)
       case _ =>
         c2r
     }
