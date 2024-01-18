@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ url_pattern = r'((http|https|ftp)://)(([a-zA-Z][a-zA-Z0-9]{0,2}\.){0,3}([a-zA-Z]
             r'(:[0-9]{1,3}){0,1}(/[a-zA-Z0-9]{1,3}){0,3}(\?[a-zA-Z0-9]{1,3}=[a-zA-Z0-9]{1,3}){0,1}(#([a-zA-Z0-9]{1,3})){0,1}'
 
 url_pattern_with_key = r'((http|https|ftp|file)://)(([a-z]{1,3}\.){0,3}([a-z]{1,3})\.([a-z]{1,3}))' \
-            r'(:[0-9]{1,3}){0,1}(/[a-z]{1,3}){0,3}(\?key=[a-z]{1,3}){0,1}(#([a-z]{1,3})){0,1}'
+            r'(:[0-9]{1,3}){0,1}(/[a-z]{1,3}){0,3}(\?[a-c]{1,3}=[a-z]{1,3}(&[a-c]{1,3}=[a-z]{1,3}){0,3}){0,1}(#([a-z]{1,3})){0,1}'
 
 edge_cases = [
     "userinfo@spark.apache.org/path?query=1#Ref",
@@ -150,8 +150,8 @@ url_gen = StringGen(url_pattern)
 
 supported_parts = ['PROTOCOL', 'HOST', 'QUERY']
 unsupported_parts = ['PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
-supported_with_key_parts = ['PROTOCOL', 'HOST']
-unsupported_with_key_parts = ['QUERY', 'PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+supported_with_key_parts = ['PROTOCOL', 'HOST', 'QUERY']
+unsupported_with_key_parts = ['PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
@@ -166,16 +166,21 @@ def test_parse_url_unsupported_fallback(part):
         lambda spark: unary_op_df(spark, url_gen).selectExpr("a", "parse_url(a, '" + part + "')"),
         'ParseUrl')
 
+def test_parse_url_query_with_key():
+    url_gen = StringGen(url_pattern_with_key)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, url_gen)
+            .selectExpr("a", "parse_url(a, 'QUERY', 'abc')", "parse_url(a, 'QUERY', 'a')")
+        )
+
 @pytest.mark.parametrize('part', supported_with_key_parts, ids=idfn)
 def test_parse_url_with_key(part):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"))
 
-
-
 @allow_non_gpu('ProjectExec', 'ParseUrl')
 @pytest.mark.parametrize('part', unsupported_with_key_parts, ids=idfn)
-def test_parse_url_query_with_key_fallback(part):
+def test_parse_url_with_key_fallback(part):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),
         'ParseUrl')
