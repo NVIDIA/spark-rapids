@@ -301,6 +301,14 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
             cpu_fallback_class_name = cpu_scan_class,
             conf=updated_conf)
 
+@allow_non_gpu("FileSourceScanExec")
+def test_json_scan_unsupported_date_fmt_fallback(std_input_path):
+    schema = StructType([StructField("a", StructType([StructField("date", DateType())]))])
+    assert_gpu_fallback_collect(
+        lambda spark : spark.read.option("dateFormat", "invalid").json(std_input_path + "/dates_in_struct.json"),
+        cpu_fallback_class_name = "FileSourceScanExec")
+
+
 @approximate_float
 @pytest.mark.parametrize('filename', [
     'boolean.json',
