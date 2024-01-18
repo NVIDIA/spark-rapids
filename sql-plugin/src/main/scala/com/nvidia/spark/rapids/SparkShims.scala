@@ -155,8 +155,7 @@ trait SparkShims {
    * If the shim doesn't support executor broadcast, just return the plan passed in
    */
   def addExecBroadcastShuffle(p: SparkPlan): SparkPlan = p
-
-
+  
   /**
    * Walk the plan recursively and return a list of operators that match the predicate
    */

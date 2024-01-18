@@ -810,7 +810,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
           updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
         }
-        
+
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
