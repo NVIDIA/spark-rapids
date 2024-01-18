@@ -266,18 +266,7 @@ def test_aqe_join_executor_broadcast(spark_tmp_path):
                   .add("gender", StringType())
                   .add("salary", IntegerType()))
 
-        data_school= [
-            ("1", "school1"),
-            ("2", "school1"),
-            ("3", "school2")
-        ]
-        schema_school = (StructType()
-                  .add("id", StringType())
-                  .add("school", IntegerType()))
-
         df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
-        df_school = spark.createDataFrame(spark.sparkContext.parallelize(data_school),schema_school)
-
         df.write.format("parquet").mode("overwrite").save(data_path)
 
     with_cpu_session(prep)
@@ -285,6 +274,16 @@ def test_aqe_join_executor_broadcast(spark_tmp_path):
     def do_it(spark):
         newdf = spark.read.parquet(data_path)
         newdf.createOrReplaceTempView("df")
+        data_school= [
+            ("1", "school1"),
+            ("2", "school1"),
+            ("3", "school2")
+        ]
+        schema_school = (StructType()
+                  .add("id", StringType())
+                  .add("school", StringType()))
+        df_school = spark.createDataFrame(spark.sparkContext.parallelize(data_school),schema_school)
+        df_school.createOrReplaceTempView("df_school")
 
         return spark.sql(
             """

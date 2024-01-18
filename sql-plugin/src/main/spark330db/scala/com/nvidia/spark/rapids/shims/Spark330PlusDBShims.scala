@@ -75,11 +75,25 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
     }
   }
 
+  /*
+   * We are looking for the below pattern. We end up with a ColumnarToRow that feeds into
+   * a CPU broadcasthash join which is using Executor broadcast.  This pattern fails on
+   * Databricks because it doesn't like the ColumnarToRow in there.
+   *
+   *  +-BroadcastHashJoin
+   *  ^
+   *  +- ColumnarToRow
+   *      +- AQEShuffleRead ebj
+   *        +- ShuffleQueryStage 132, Statistics(sizeInBytes=7.8 MiB, rowCount=2.74E+5, ColumnStat: N/A, isRuntime=true)
+   *            +- GpuColumnarExchange gpuhashpartitioning(c
+   */
   override def checkColumnarToRowWithExecBroadcast(p: SparkPlan, parent: Option[SparkPlan]): Boolean = {
     p match {
       case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
         parent match {
           case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast =>
+            true
+          case Some(bhnlj: GpuBroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast =>
             true
           case _ =>
             false
