@@ -26,7 +26,6 @@ import java.util.concurrent.TimeUnit
 import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
-import com.nvidia.spark.rapids.GpuOverrides
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
@@ -51,8 +50,8 @@ case class GpuTimeAdd(
   override def left: Expression = start
   override def right: Expression = interval
 
-  override def toString: String = s"$left - $right"
-  override def sql: String = s"${left.sql} - ${right.sql}"
+  override def toString: String = s"$left + $right"
+  override def sql: String = s"${left.sql} + ${right.sql}"
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, CalendarIntervalType)
 
   override def dataType: DataType = TimestampType
@@ -78,10 +77,13 @@ case class GpuTimeAdd(
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
             }
-            val usToSub = intvl.days * microSecondsInOneDay + intvl.microseconds
-            if (usToSub != 0) {
-              val res = datetimeExpressionsUtils.timestampAddDuration(l.getBase, d, zoneId)
-              GpuColumnVector.from(res, dataType)
+            val interval = intvl.days * microSecondsInOneDay + intvl.microseconds
+            if (interval != 0) {
+              val resCv = withResource(Scalar.durationFromLong(
+                  DType.DURATION_MICROSECONDS, interval)) { duration =>
+                datetimeExpressionsUtils.timestampAddDuration(l.getBase, duration, zoneId)
+              }
+              GpuColumnVector.from(resCv, dataType)
             } else {
               l.incRefCount()
             }
