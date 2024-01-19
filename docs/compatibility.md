@@ -443,29 +443,30 @@ Spark version 3.3.0 and later.
 
 ### get_json_object
 
-The `GetJsonObject` operator that takes JSON input and a json path string to process. The code base
-for this is currently separate from regular JSON parsing and so it has other problems associated
-with it, in addition to potential problems with parsing the json path string itself. Because of this
-`GetJsonObject` has been disabled to be on the GPU by default. But if you are aware of the current
-limitations with it, you might see a significant performance speedup by using it.
+The `GetJsonObject` operator takes a JSON formatted string and a JSON path string as input. The
+code base for this is currently separate from GPU parsing of JSON for files and `FromJsonObject`.
+Because of this the results can be different from each other. Because of several incompatibilities
+and bugs in the GPU version of `GetJsonObject` it will be on the CPU by default. If you are
+aware of the current limitations with the GPU version, you might see a significant performance
+speedup if you enable it by setting `spark.rapids.sql.expression.GetJsonObject` to `true`.
 
-Here is a list of known differences.
+The following is a list of known differences.
   * [No input validation](https://github.com/NVIDIA/spark-rapids/issues/10218). If the input string
-    is not valid JSON Apache Spark returns a null result, but ours will still try to find a match
+    is not valid JSON Apache Spark returns a null result, but ours will still try to find a match.
   * [Escapes are not properly processed for Strings](https://github.com/NVIDIA/spark-rapids/issues/10196).
-    when returning a result for a quoted string Apache Spark will remove the quotes and replace
+    When returning a result for a quoted string Apache Spark will remove the quotes and replace
     any escape sequences with the proper characters. The escape sequence processing does not happen
     on the GPU.
   * [Invalid JSON paths could throw exceptions](https://github.com/NVIDIA/spark-rapids/issues/10212)
-    If a json path is not valid Apache Spark returns a null result, but ours may throw an exception
+    If a JSON path is not valid Apache Spark returns a null result, but ours may throw an exception
     and fail the query.
   * [Non-string output is not normalized](https://github.com/NVIDIA/spark-rapids/issues/10218)
-    When returning a result for things other than strings a number of things are normalized by
-    Apache Spark, but are not normalized by the GPU. Like removing unnecessary white space,
-    parsing and then serializing floating point numbers, turing single quotes to double quotes,
+    When returning a result for things other than strings, a number of things are normalized by
+    Apache Spark, but are not normalized by the GPU, like removing unnecessary white space,
+    parsing and then serializing floating point numbers, turning single quotes to double quotes,
     and removing unneeded escapes for single quotes.
 
-There are also a number of bugs in bother our code and arguably in Apache Spark too.
+The following is a list of bugs in either the GPU version or arguably in Apache Spark itself.
    * https://github.com/NVIDIA/spark-rapids/issues/10219 non-matching quotes in quoted strings
    * https://github.com/NVIDIA/spark-rapids/issues/10213 array index notation works without root
    * https://github.com/NVIDIA/spark-rapids/issues/10214 unquoted array index notation is not
@@ -474,8 +475,9 @@ There are also a number of bugs in bother our code and arguably in Apache Spark 
      keys.
    * https://github.com/NVIDIA/spark-rapids/issues/10216 It appears that Spark is flattening some
      output, which is different from other implementations including the GPU version.
-   * https://github.com/NVIDIA/spark-rapids/issues/10217
-   * https://issues.apache.org/jira/browse/SPARK-46761
+   * https://github.com/NVIDIA/spark-rapids/issues/10217 a JSON path execution bug
+   * https://issues.apache.org/jira/browse/SPARK-46761 Apache Spark does not allow the `?` character in
+     a quoted JSON path string.
 
 ## Avro
 
