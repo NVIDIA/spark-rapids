@@ -17,12 +17,13 @@
 package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import ai.rapids.cudf.OrderByArg
+import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillPriorities, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import java.util
 
+import java.util
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, SortOrder}
@@ -56,36 +57,15 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   private var subIterator: Option[Iterator[FirstPassAggResult]] = None
   override def hasNext: Boolean = subIterator.exists(_.hasNext) || input.hasNext
 
-//  private val groupingColumnTypes = boundStages.boundPartitionSpec.map{_.dataType}
-//  private val groupColumnOrdinals = boundStages.boundPartitionSpec.map {
-//    case GpuBoundReference(ordinal, _, _) => ordinal
-//  }
-
-//  private val boundAggs = boundStages.boundAggregations
-//  private val aggregateFunctions = boundAggs.map {
-//    _.asInstanceOf[GpuAlias].child.asInstanceOf[GpuAggregateFunction]
-//  }
-//  private val outputTypes =
-//    boundStages.groupingColumnTypes ++ boundStages.aggregateFunctions.map{ _.dataType }
-//  private val cudfAggregates = aggregateFunctions.flatMap{ _.updateAggregates }
-//  private val aggInputProjections: Seq[Expression] =
-//    aggregateFunctions.flatMap{_.inputProjection}
-//
-//  private val aggInputOrdinals: Seq[Int] = aggInputProjections.map {
-//    case GpuBoundReference(ordinal, _, _) => ordinal
-//    case GpuLiteral(_, _) => 0
-//    case _ => throw new IllegalStateException("Unexpected expression")
-//  }
-
-  private def getSpillableInputBatch(): SpillableColumnarBatch = {
-    SpillableColumnarBatch(input.next, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-  }
-
   private def toSpillableBatch(cb: ColumnarBatch): SpillableColumnarBatch = {
     SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
   private def toSpillableBatch(table: cudf.Table, types: Seq[DataType]): SpillableColumnarBatch = {
     toSpillableBatch(GpuColumnVector.from(table, types.toArray))
+  }
+
+  private def getSpillableInputBatch(): SpillableColumnarBatch = {
+    toSpillableBatch(input.next)
   }
 
   private def upscaleCountResults(unfixed: cudf.Table): cudf.Table = {
@@ -115,7 +95,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
     withResource(GpuColumnVector.from(inputCB)) { inputTable =>
       val aggResults = inputTable.groupBy(groupByOptions, boundStages.groupColumnOrdinals: _*)
                                  .aggregate(cudfAggsOnColumns: _*)
-      cudf.TableDebug.get.debug("Agg results: ", aggResults)
+//      cudf.TableDebug.get.debug("Agg results: ", aggResults)
       upscaleCountResults(aggResults)
     }
   }
@@ -133,6 +113,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
           val aggResultTable = groupByAggregate(cb)
           val rideAlongColumns = GpuProjectExec.project(cb, boundStages.boundRideAlong)
 
+          GpuColumnVector.debug("CALEB: FirstIter: Output: rideAlong: ", rideAlongColumns)
           FirstPassAggResult(toSpillableBatch(rideAlongColumns),
                              toSpillableBatch(aggResultTable,
                                boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
@@ -144,6 +125,100 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
     }
   }
 }
+
+case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
+                                         boundStages: GpuUnboundedToUnboundedAggStages) {
+  /*
+  var firstGroupKeys: Option[SpillableColumnarBatch] = None
+  var firstGroupRideAlong: Option[SpillableColumnarBatch] = None
+  var intermediateGroupKeys: Option[SpillableColumnarBatch] = None
+  var intermediateGroupRideAlong: Option[SpillableColumnarBatch] = None
+  var lastGroupKeys: Option[SpillableColumnarBatch] = None
+  var lastGroupRideAlong: Option[SpillableColumnarBatch] = None
+   */
+
+  val numGroupingKeys: Int = boundStages.boundPartitionSpec.size
+
+  withResource(firstPassAggResult.rideAlongColumns.getColumnarBatch()) {
+    cb => GpuColumnVector.debug("Partitioning input: ", cb)
+  }
+
+  if (firstPassAggResult.aggResult.numRows() < 1) {
+    throw new IllegalStateException("Expected at least one result row.")
+  }
+
+  def getTableSlice(tbl: cudf.Table,
+                    beginRow: Int, endRow: Int,
+                    beginCol: Int, endCol: Int): cudf.Table = {
+    val projectedColumns =
+      Range(beginCol, endCol).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
+    new cudf.Table(projectedColumns.toArray: _*)
+  }
+
+  // TODO: This table needs closing.
+  private val groupTable =
+    GpuProjectExec.project(firstPassAggResult.rideAlongColumns.getColumnarBatch(),
+                           boundStages.boundPartitionSpec)
+  GpuColumnVector.debug("ANOTHER groupTable post extraction: ", groupTable)
+
+
+  private def getIndexForGroupMarginAtRowNumber(aggResultTable: cudf.Table,
+                                                rowNumber: Int,
+                                                isLowerBound: Boolean): Int = {
+    withResource(getTableSlice(aggResultTable,
+                               beginRow = rowNumber,
+                               endRow = rowNumber + 1,
+                               beginCol = 0,
+                               endCol = numGroupingKeys)) { lastGroup =>
+      cudf.TableDebug.get.debug("LastGroup: ", lastGroup)
+
+      // Find lower-bound for this group, in the "ride-along".
+      // TODO: Transmit sort-orders. Hard-coding for now.
+      val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
+      withResource(GpuColumnVector.from(groupTable)) { groupTable =>
+        val groupMargin = if (isLowerBound) {
+          groupTable.lowerBound(lastGroup, orderBys: _*)
+        } else {
+          groupTable.lowerBound(lastGroup, orderBys: _*)
+        }
+        withResource(groupMargin.copyToHost()) { groupMarginHost =>
+          groupMarginHost.getInt(0)
+        }
+      }
+    }
+  }
+
+  withResource(firstPassAggResult.aggResult.getColumnarBatch()) { cb =>
+    withResource(GpuColumnVector.from(cb)) { aggResultTable =>
+//      withResource(getTableSlice(tbl,
+//                                 beginRow = tbl.getRowCount.asInstanceOf[Int] - 1,
+//                                 endRow = tbl.getRowCount.asInstanceOf[Int],
+//                                 beginCol = 0,
+//                                 endCol = numGroupingKeys)) { lastGroup =>
+//        cudf.TableDebug.get.debug("LastGroup: ", lastGroup)
+//
+//        // Find lower-bound for this group, in the "ride-along".
+//        // TODO: Transmit sort-orders. Hard-coding for now.
+//        val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
+//        withResource(GpuColumnVector.from(groupTable)) { groupTable =>
+//          val lastGroupBegin = groupTable.lowerBound(lastGroup, orderBys: _*)
+//          cudf.TableDebug.get.debug("LastGroupBegin: ", lastGroupBegin)
+//          withResource(lastGroupBegin.copyToHost()) { lastGroupBeginHost =>
+//            val idx = lastGroupBeginHost.getInt(0)
+//            // Slice from idx to end of batch.
+//          }
+//
+//          // TODO: Slice off the last `n` rows, add them to "incomplete".
+//        }
+//      }
+      val lastGroupBeginIdx =
+        getIndexForGroupMarginAtRowNumber(aggResultTable,
+                                          aggResultTable.getRowCount.asInstanceOf[Int] - 1,
+                                          isLowerBound = true)
+      println(s"CALEB: LastGroup begins at $lastGroupBeginIdx, in ride-along.")
+    }
+  }
+} // class PartitionedFirstPassAggResult.
 
 // The second pass through the data will take the output of the first pass. It will slice
 // the result depending on if it knows that the group by keys is complete or not.
@@ -166,7 +241,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   // Agg results where the input keys are not fully complete yet. They will need to be combined
   // together before being returned.
   // TODO this should be uncommented once we start using it
-  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+//  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
 
   override def hasNext: Boolean = (!rideAlongColumnsPendingCompletion.isEmpty) || input.hasNext
 
@@ -190,14 +265,8 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     while (output.isEmpty) {
       if (input.hasNext) {
         withResource(input.next()) { newData =>
-          // TODO remove this line. It is here to avoid compile warnings becoming errors
-          output = None
-          println("AggResultsPendingCompletion size: " + aggResultsPendingCompletion.size)
-          println("Results from 1st iter: ")
-          val rideAlong = newData.rideAlongColumns.getColumnarBatch()
-          GpuColumnVector.debug("2nd Iter: Ride-along columns: ", rideAlong)
-          val aggResults = newData.aggResult.getColumnarBatch()
-          GpuColumnVector.debug("2nd Iter: Agg results: ", aggResults)
+
+          PartitionedFirstPassAggResult(newData, boundStages)
 
           val resultRideAlongs = new util.LinkedList[SpillableColumnarBatch]()
           resultRideAlongs.add(newData.rideAlongColumns.incRefCount())
@@ -363,7 +432,6 @@ case class GpuUnboundedToUnboundedAggStages(
   val cudfMergeAggregates: Seq[CudfAggregate] = aggregateFunctions.flatMap {
     _.mergeAggregates
   }
-
 }
 
 /**
