@@ -411,7 +411,7 @@ def invalid_date_string_df(spark):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_utc_tz_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_string_to_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
@@ -425,7 +425,7 @@ def test_string_to_unix_timestamp_ansi_exception():
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_utc_tz_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_string_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),

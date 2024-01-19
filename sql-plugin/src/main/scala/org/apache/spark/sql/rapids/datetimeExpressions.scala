@@ -874,7 +874,9 @@ abstract class GpuToTimestamp
         if (GpuOverrides.isUTCTimezone(zoneId)) {
           res
         } else {
-          GpuTimeZoneDB.fromTimestampToUtcTimestamp(res, zoneId)
+          withResource(res) { _ =>
+            GpuTimeZoneDB.fromTimestampToUtcTimestamp(res, zoneId)
+          }
         }
       case _: DateType =>
         timeZoneId match {
