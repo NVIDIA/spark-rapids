@@ -241,6 +241,9 @@ def is_spark_332cdh():
 def is_spark_cdh():
     return is_spark_321cdh() or is_spark_330cdh() or is_spark_332cdh()
 
+def is_spark_emr():
+    return is_spark350emr()
+
 def is_spark_350emr():
     return "3.5.0-amzn" in spark_version()
 
