@@ -149,6 +149,7 @@ trait SparkShims {
    */
   def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
       parent: Option[SparkPlan]): Boolean = false
+
   def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = None
 
   /**
