@@ -244,9 +244,16 @@ def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
 
 
+# this is specifically to reproduce the issue found in
+# https://github.com/NVIDIA/spark-rapids/issues/10165 where it has an executor broadcast
+# but the exchange going into the BroadcastHashJoin is an exchange with multiple partitions
+# and goes into AQEShuffleRead that uses CoalescePartitions to go down to a single partition
 db_133_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
 @ignore_order(local=True)
-def test_aqe_join_executor_broadcast(spark_tmp_path):
+@pytest.mark.skipif(not (is_databricks_runtime()), \
+    reason="Executor side broadcast only supported on Databricks")
+@allow_non_gpu('BroadcastHashJoinExec', 'ColumnartoRowExec', *db_113_cpu_bnlj_join_allow)
+def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     bhj_disable_conf = copy_and_update(_adaptive_conf,
         { "spark.rapids.sql.exec.BroadcastHashJoinExec": "false"}) 
@@ -265,15 +272,8 @@ def test_aqe_join_executor_broadcast(spark_tmp_path):
                   .add("id", StringType())
                   .add("gender", StringType())
                   .add("salary", IntegerType()))
-
         df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
         df.write.format("parquet").mode("overwrite").save(data_path)
-
-    with_cpu_session(prep)
-
-    def do_it(spark):
-        newdf = spark.read.parquet(data_path)
-        newdf.createOrReplaceTempView("df")
         data_school= [
             ("1", "school1"),
             ("2", "school1"),
@@ -285,6 +285,11 @@ def test_aqe_join_executor_broadcast(spark_tmp_path):
         df_school = spark.createDataFrame(spark.sparkContext.parallelize(data_school),schema_school)
         df_school.createOrReplaceTempView("df_school")
 
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf = spark.read.parquet(data_path)
+        newdf.createOrReplaceTempView("df")
         return spark.sql(
             """
                 select /*+ BROADCAST(df_school) */ * from df a left outer join df_school b on a.id == b.id

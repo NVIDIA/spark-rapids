@@ -143,9 +143,9 @@ trait SparkShims {
 
   /*
    * The following two functions are used to recognize when an executor broadcast
-   * is being used to feed into a join but a columnar to row get inserted between
+   * is being used to feed into a join but a columnar to row gets inserted between
    * the exchange and the join. This causes issues on some versions of Spark so we
-   *  have to shim it.
+   * have to shim it.
    */
   def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
       parent: Option[SparkPlan]): Boolean = false
@@ -155,7 +155,7 @@ trait SparkShims {
    * If the shim doesn't support executor broadcast, just return the plan passed in
    */
   def addExecBroadcastShuffle(p: SparkPlan): SparkPlan = p
-  
+
   /**
    * Walk the plan recursively and return a list of operators that match the predicate
    */

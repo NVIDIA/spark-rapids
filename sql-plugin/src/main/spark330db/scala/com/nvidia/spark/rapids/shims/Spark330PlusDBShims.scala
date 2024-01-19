@@ -23,7 +23,6 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution._
@@ -33,7 +32,7 @@ import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.rapids.{GpuCheckOverflowInTableInsert, GpuElementAtMeta}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
-trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
+trait Spark330PlusDBShims extends Spark321PlusDBShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[CheckOverflowInTableInsert](
@@ -76,8 +75,8 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims with Logging {
   }
 
   /*
-   * We are looking for the below pattern. We end up with a ColumnarToRow that feeds into
-   * a CPU broadcasthash join which is using Executor broadcast. This pattern fails on
+   * We are looking for the pattern describe below. We end up with a ColumnarToRow that feeds
+   * into a CPU broadcasthash join which is using Executor broadcast. This pattern fails on
    * Databricks because it doesn't like the ColumnarToRow feeding into the BroadcastHashJoin.
    * Note, in most other cases we see executor broadcast, the Exchange would be CPU
    * single partition exchange explicitly marked with type EXECUTOR_BROADCAST.
