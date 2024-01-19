@@ -252,7 +252,7 @@ db_133_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later(
 @ignore_order(local=True)
 @pytest.mark.skipif(not (is_databricks_runtime()), \
     reason="Executor side broadcast only supported on Databricks")
-@allow_non_gpu('BroadcastHashJoinExec', 'ColumnartoRowExec', *db_113_cpu_bnlj_join_allow)
+@allow_non_gpu('BroadcastHashJoinExec', 'ColumnarToRowExec', *db_113_cpu_bnlj_join_allow)
 def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     bhj_disable_conf = copy_and_update(_adaptive_conf,
