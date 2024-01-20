@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, 
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.window.PartitionedFirstPassAggResult.{debug, sliceAndMakeSpillable}
 
 import java.util
 import org.apache.spark.TaskContext
@@ -47,6 +48,15 @@ case class FirstPassAggResult(rideAlongColumns: SpillableColumnarBatch,
   override def close(): Unit = {
     rideAlongColumns.close()
     aggResult.close()
+  }
+}
+
+trait SpillableBatchUtil {
+  def toSpillableBatch(cb: ColumnarBatch): SpillableColumnarBatch = {
+    SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+  }
+  def toSpillableBatch(table: cudf.Table, types: Seq[DataType]): SpillableColumnarBatch = {
+    toSpillableBatch(GpuColumnVector.from(table, types.toArray))
   }
 }
 
@@ -128,23 +138,24 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
 
 case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
                                          boundStages: GpuUnboundedToUnboundedAggStages) {
-  /*
-  var firstGroupKeys: Option[SpillableColumnarBatch] = None
+  var firstGroupAggResult: Option[SpillableColumnarBatch] = None
   var firstGroupRideAlong: Option[SpillableColumnarBatch] = None
-  var intermediateGroupKeys: Option[SpillableColumnarBatch] = None
+  var intermediateGroupAggResult: Option[SpillableColumnarBatch] = None
   var intermediateGroupRideAlong: Option[SpillableColumnarBatch] = None
-  var lastGroupKeys: Option[SpillableColumnarBatch] = None
+  var lastGroupAggResult: Option[SpillableColumnarBatch] = None
   var lastGroupRideAlong: Option[SpillableColumnarBatch] = None
-   */
 
   val numGroupingKeys: Int = boundStages.boundPartitionSpec.size
+  val numGroups: Int = firstPassAggResult.aggResult.numRows()
+  val numRideAlongRows: Int = firstPassAggResult.rideAlongColumns.numRows()
 
   withResource(firstPassAggResult.rideAlongColumns.getColumnarBatch()) {
-    cb => GpuColumnVector.debug("Partitioning input: ", cb)
+    cb => GpuColumnVector.debug("CALEB: Partitioning input: ", cb)
   }
 
-  if (firstPassAggResult.aggResult.numRows() < 1) {
-    throw new IllegalStateException("Expected at least one result row.")
+//  if (firstPassAggResult.aggResult.numRows() < 1) {
+  if (numGroups < 1) {
+      throw new IllegalStateException("Expected at least one result group.")
   }
 
   def getTableSlice(tbl: cudf.Table,
@@ -161,7 +172,6 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
                            boundStages.boundPartitionSpec)
   GpuColumnVector.debug("ANOTHER groupTable post extraction: ", groupTable)
 
-
   private def getIndexForGroupMarginAtRowNumber(aggResultTable: cudf.Table,
                                                 rowNumber: Int,
                                                 isLowerBound: Boolean): Int = {
@@ -172,14 +182,13 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
                                endCol = numGroupingKeys)) { lastGroup =>
       cudf.TableDebug.get.debug("LastGroup: ", lastGroup)
 
-      // Find lower-bound for this group, in the "ride-along".
       // TODO: Transmit sort-orders. Hard-coding for now.
       val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
       withResource(GpuColumnVector.from(groupTable)) { groupTable =>
         val groupMargin = if (isLowerBound) {
           groupTable.lowerBound(lastGroup, orderBys: _*)
         } else {
-          groupTable.lowerBound(lastGroup, orderBys: _*)
+          groupTable.upperBound(lastGroup, orderBys: _*)
         }
         withResource(groupMargin.copyToHost()) { groupMarginHost =>
           groupMarginHost.getInt(0)
@@ -188,37 +197,88 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
     }
   }
 
+  if (firstPassAggResult.aggResult.numRows() < 2) {
+    throw new IllegalStateException("Should have at least 2 groups at this point.")
+  }
+  // TODO: There is some unnesting we can do here.
   withResource(firstPassAggResult.aggResult.getColumnarBatch()) { cb =>
     withResource(GpuColumnVector.from(cb)) { aggResultTable =>
-//      withResource(getTableSlice(tbl,
-//                                 beginRow = tbl.getRowCount.asInstanceOf[Int] - 1,
-//                                 endRow = tbl.getRowCount.asInstanceOf[Int],
-//                                 beginCol = 0,
-//                                 endCol = numGroupingKeys)) { lastGroup =>
-//        cudf.TableDebug.get.debug("LastGroup: ", lastGroup)
-//
-//        // Find lower-bound for this group, in the "ride-along".
-//        // TODO: Transmit sort-orders. Hard-coding for now.
-//        val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
-//        withResource(GpuColumnVector.from(groupTable)) { groupTable =>
-//          val lastGroupBegin = groupTable.lowerBound(lastGroup, orderBys: _*)
-//          cudf.TableDebug.get.debug("LastGroupBegin: ", lastGroupBegin)
-//          withResource(lastGroupBegin.copyToHost()) { lastGroupBeginHost =>
-//            val idx = lastGroupBeginHost.getInt(0)
-//            // Slice from idx to end of batch.
-//          }
-//
-//          // TODO: Slice off the last `n` rows, add them to "incomplete".
-//        }
-//      }
+
       val lastGroupBeginIdx =
         getIndexForGroupMarginAtRowNumber(aggResultTable,
                                           aggResultTable.getRowCount.asInstanceOf[Int] - 1,
                                           isLowerBound = true)
-      println(s"CALEB: LastGroup begins at $lastGroupBeginIdx, in ride-along.")
+      System.err.println(s"CALEB: LastGroup begins at $lastGroupBeginIdx, in ride-along.")
+
+      val firstGroupEndIdx = getIndexForGroupMarginAtRowNumber(aggResultTable,
+                                                               0,
+                                                               isLowerBound = false)
+      System.err.println(s"CALEB: FirstGroup ends at $firstGroupEndIdx, in ride-along.")
+
+      withResource(firstPassAggResult.rideAlongColumns.getColumnarBatch()) { rideAlongCB =>
+        withResource(GpuColumnVector.from(rideAlongCB)) { rideAlongTable =>
+          // Slice and dice!
+          val aggResultTypes = boundStages.groupingColumnTypes ++ boundStages.aggResultTypes
+          val rideAlongTypes = boundStages.rideAlongColumnTypes
+          firstGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable, 0, 1,
+                                                           aggResultTypes))
+          debug("CALEB: FirstGroup Agg: ", firstGroupAggResult)
+          firstGroupRideAlong = Some(sliceAndMakeSpillable(rideAlongTable, 0, firstGroupEndIdx,
+                                                           rideAlongTypes))
+          debug("CALEB: FirstGroup RideAlong: ", firstGroupRideAlong)
+          lastGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable, numGroups - 1, numGroups,
+                                                          aggResultTypes))
+          debug("CALEB: LastGroup Agg: ", lastGroupAggResult)
+          lastGroupRideAlong = Some(sliceAndMakeSpillable(rideAlongTable, lastGroupBeginIdx,
+                                                          numRideAlongRows, rideAlongTypes))
+          debug("CALEB: LastGroup RideAlong: ", lastGroupRideAlong)
+          if (numGroups > 2) {
+            // Lump the remaining groups together.
+            intermediateGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable,
+                                                                    1,
+                                                                    numGroups - 1,
+                                                                    aggResultTypes))
+            debug("CALEB: InterGroup Agg: ", intermediateGroupAggResult)
+            intermediateGroupRideAlong = Some(sliceAndMakeSpillable(aggResultTable,
+                                                                    firstGroupEndIdx,
+                                                                    lastGroupBeginIdx,
+                                                                    rideAlongTypes))
+            debug("CALEB: InterGroup RideAlong: ", intermediateGroupRideAlong)
+          }
+        }
+      }
     }
   }
 } // class PartitionedFirstPassAggResult.
+
+object PartitionedFirstPassAggResult extends SpillableBatchUtil {
+
+  private def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
+    val nCols = tbl.getNumberOfColumns
+    val columns = Range(0, nCols).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
+    new cudf.Table(columns.toArray: _*)
+  }
+
+  def sliceAndMakeSpillable(tbl: cudf.Table,
+                            rowBegin: Int,
+                            rowEnd: Int,
+                            dataTypes: Seq[DataType]): SpillableColumnarBatch = {
+    val sliced = getTableSlice(tbl, rowBegin, rowEnd)
+    toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
+  }
+
+  // TODO: CALEB: Remove.
+  def debug(msg: String, scb: Option[SpillableColumnarBatch]): Unit = {
+    scb.foreach { scb =>
+      withResource(scb.getColumnarBatch()) { cb =>
+        System.err.println()
+        GpuColumnVector.debug(msg, cb)
+        System.err.println()
+        System.err.println()
+      }
+    }
+  }
+}
 
 // The second pass through the data will take the output of the first pass. It will slice
 // the result depending on if it knows that the group by keys is complete or not.
@@ -241,7 +301,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   // Agg results where the input keys are not fully complete yet. They will need to be combined
   // together before being returned.
   // TODO this should be uncommented once we start using it
-//  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
 
   override def hasNext: Boolean = (!rideAlongColumnsPendingCompletion.isEmpty) || input.hasNext
 
@@ -266,7 +326,16 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
       if (input.hasNext) {
         withResource(input.next()) { newData =>
 
-          PartitionedFirstPassAggResult(newData, boundStages)
+          if (newData.aggResult.numRows() == 1) {
+            // All the aggregation results are for the same group.
+            // Add the lot to "incomplete", and go again.
+            rideAlongColumnsPendingCompletion.add(newData.rideAlongColumns.incRefCount())
+            aggResultsPendingCompletion.add(newData.aggResult.incRefCount())
+          }
+          else {
+            PartitionedFirstPassAggResult(newData, boundStages)
+          }
+
 
           val resultRideAlongs = new util.LinkedList[SpillableColumnarBatch]()
           resultRideAlongs.add(newData.rideAlongColumns.incRefCount())
@@ -432,6 +501,7 @@ case class GpuUnboundedToUnboundedAggStages(
   val cudfMergeAggregates: Seq[CudfAggregate] = aggregateFunctions.flatMap {
     _.mergeAggregates
   }
+  val rideAlongColumnTypes: Seq[DataType] = boundRideAlong.map { _.dataType }
 }
 
 /**
