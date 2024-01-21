@@ -18,13 +18,13 @@ package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf
 import ai.rapids.cudf.OrderByArg
-import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillPriorities, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.window.PartitionedFirstPassAggResult.{debug, sliceAndMakeSpillable}
-
+import com.nvidia.spark.rapids.window.TableAndBatchUtils.{debug, getTableSlice, sliceAndMakeSpillable, toSpillableBatch}
 import java.util
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, SortOrder}
@@ -51,12 +51,47 @@ case class FirstPassAggResult(rideAlongColumns: SpillableColumnarBatch,
   }
 }
 
-trait SpillableBatchUtil {
+object TableAndBatchUtils {
   def toSpillableBatch(cb: ColumnarBatch): SpillableColumnarBatch = {
     SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
+
   def toSpillableBatch(table: cudf.Table, types: Seq[DataType]): SpillableColumnarBatch = {
     toSpillableBatch(GpuColumnVector.from(table, types.toArray))
+  }
+
+  def getTableSlice(tbl: cudf.Table,
+                    beginRow: Int, endRow: Int,
+                    beginCol: Int, endCol: Int): cudf.Table = {
+    val projectedColumns =
+      Range(beginCol, endCol).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
+    new cudf.Table(projectedColumns.toArray: _*)
+  }
+
+  def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
+    val nCols = tbl.getNumberOfColumns
+    val columns = Range(0, nCols).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
+    new cudf.Table(columns.toArray: _*)
+  }
+
+  def sliceAndMakeSpillable(tbl: cudf.Table,
+                            rowBegin: Int,
+                            rowEnd: Int,
+                            dataTypes: Seq[DataType]): SpillableColumnarBatch = {
+    val sliced = getTableSlice(tbl, rowBegin, rowEnd)
+    toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
+  }
+
+  // TODO: CALEB: Remove.
+  def debug(msg: String, scb: Option[SpillableColumnarBatch]): Unit = {
+    scb.foreach { scb =>
+      withResource(scb.getColumnarBatch()) { cb =>
+        System.err.println()
+        GpuColumnVector.debug(msg, cb)
+        System.err.println()
+        System.err.println()
+      }
+    }
   }
 }
 
@@ -66,13 +101,6 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
     opTime: GpuMetric) extends Iterator[FirstPassAggResult] {
   private var subIterator: Option[Iterator[FirstPassAggResult]] = None
   override def hasNext: Boolean = subIterator.exists(_.hasNext) || input.hasNext
-
-  private def toSpillableBatch(cb: ColumnarBatch): SpillableColumnarBatch = {
-    SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-  }
-  private def toSpillableBatch(table: cudf.Table, types: Seq[DataType]): SpillableColumnarBatch = {
-    toSpillableBatch(GpuColumnVector.from(table, types.toArray))
-  }
 
   private def getSpillableInputBatch(): SpillableColumnarBatch = {
     toSpillableBatch(input.next)
@@ -153,18 +181,10 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
     cb => GpuColumnVector.debug("CALEB: Partitioning input: ", cb)
   }
 
-//  if (firstPassAggResult.aggResult.numRows() < 1) {
   if (numGroups < 1) {
       throw new IllegalStateException("Expected at least one result group.")
   }
 
-  def getTableSlice(tbl: cudf.Table,
-                    beginRow: Int, endRow: Int,
-                    beginCol: Int, endCol: Int): cudf.Table = {
-    val projectedColumns =
-      Range(beginCol, endCol).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
-    new cudf.Table(projectedColumns.toArray: _*)
-  }
 
   // TODO: This table needs closing.
   private val groupTable =
@@ -251,35 +271,6 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
   }
 } // class PartitionedFirstPassAggResult.
 
-object PartitionedFirstPassAggResult extends SpillableBatchUtil {
-
-  private def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
-    val nCols = tbl.getNumberOfColumns
-    val columns = Range(0, nCols).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
-    new cudf.Table(columns.toArray: _*)
-  }
-
-  def sliceAndMakeSpillable(tbl: cudf.Table,
-                            rowBegin: Int,
-                            rowEnd: Int,
-                            dataTypes: Seq[DataType]): SpillableColumnarBatch = {
-    val sliced = getTableSlice(tbl, rowBegin, rowEnd)
-    toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
-  }
-
-  // TODO: CALEB: Remove.
-  def debug(msg: String, scb: Option[SpillableColumnarBatch]): Unit = {
-    scb.foreach { scb =>
-      withResource(scb.getColumnarBatch()) { cb =>
-        System.err.println()
-        GpuColumnVector.debug(msg, cb)
-        System.err.println()
-        System.err.println()
-      }
-    }
-  }
-}
-
 // The second pass through the data will take the output of the first pass. It will slice
 // the result depending on if it knows that the group by keys is complete or not.
 // Completed data will have the aggregation results merged into a single aggregation result
@@ -301,7 +292,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   // Agg results where the input keys are not fully complete yet. They will need to be combined
   // together before being returned.
   // TODO this should be uncommented once we start using it
-  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+//  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
 
   override def hasNext: Boolean = (!rideAlongColumnsPendingCompletion.isEmpty) || input.hasNext
 
@@ -317,6 +308,20 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     }
   }
 
+  /*
+  private def firstRowMatchesCachedGroup(newAggResult: SpillableColumnarBatch)
+    : Boolean = {
+
+    val firstRowGroups =
+      withResource(newAggResult.getColumnarBatch()) { newCB =>
+        withResource(GpuColumnVector.from(newCB)) { newTable =>
+
+        }
+      }
+
+  }
+   */
+
   override def next(): SecondPassAggResult = {
     if (!hasNext) {
       throw new NoSuchElementException()
@@ -326,6 +331,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
       if (input.hasNext) {
         withResource(input.next()) { newData =>
 
+          /*
           if (newData.aggResult.numRows() == 1) {
             // All the aggregation results are for the same group.
             // Add the lot to "incomplete", and go again.
@@ -333,9 +339,16 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
             aggResultsPendingCompletion.add(newData.aggResult.incRefCount())
           }
           else {
-            PartitionedFirstPassAggResult(newData, boundStages)
-          }
+            val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
+            // There are at least two aggregation result rows.
 
+            // The first agg result might complete the previously incomplete group.
+            if (!aggResultsPendingCompletion.isEmpty) {
+              // Check if the first agg-result row belongs to the same group.
+            }
+          }
+           */
+          PartitionedFirstPassAggResult(newData, boundStages)
 
           val resultRideAlongs = new util.LinkedList[SpillableColumnarBatch]()
           resultRideAlongs.add(newData.rideAlongColumns.incRefCount())
