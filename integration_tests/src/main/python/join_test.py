@@ -1166,15 +1166,15 @@ def test_new_inner_join(is_left_host_shuffle, is_right_host_shuffle, is_left_sma
     left_size, right_size = (2048, 1024) if is_left_smaller else (1024, 2048)
     def do_join(spark):
         left_df = gen_df(spark, [
-            ("key1", RepeatSeqGen(long_gen, length = 10)),
+            ("key1", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
             ("ints", int_gen),
-            ("key2", RepeatSeqGen(int_gen, length = 20)),
+            ("key2", RepeatSeqGen([5, 6, 7, None], data_type=LongType())),
             ("floats", float_gen)], left_size)
         right_df = gen_df(spark, [
             ("doubles", double_gen),
-            ("key2", RepeatSeqGen(int_gen, length = 30)),
+            ("key2", RepeatSeqGen([5, 7, None, 8], data_type=LongType())),
             ("shorts", short_gen),
-            ("key1", RepeatSeqGen(long_gen, length = 15))], right_size)
+            ("key1", RepeatSeqGen([1, 2, 3, 5, 7, None], data_type=IntegerType()))], right_size)
         if not is_left_host_shuffle:
             left_df = left_df.groupBy("key1", "key2").max("ints", "floats")
         if not is_right_host_shuffle:
@@ -1195,14 +1195,14 @@ def test_new_inner_join_conditional(is_ast_supported, is_left_smaller, batch_siz
     left_size, right_size = (2048, 1024) if is_left_smaller else (1024, 2048)
     def do_join(spark):
         left_df = gen_df(spark, [
-            ("key1", RepeatSeqGen(long_gen, length = 10)),
-            ("ints", RepeatSeqGen(int_gen, length = 5)),
-            ("key2", RepeatSeqGen(int_gen, length = 20)),
+            ("key1", RepeatSeqGen([1, 2, 3, 4, None], data_type=IntegerType())),
+            ("ints", RepeatSeqGen(IntegerGen(), length = 5)),
+            ("key2", RepeatSeqGen([5, 6, 7, None], data_type=LongType())),
             ("floats", float_gen)], left_size)
         right_df = gen_df(spark, [
-            ("key2", RepeatSeqGen(int_gen, length = 30)),
-            ("ints", RepeatSeqGen(int_gen, length = 3)),
-            ("key1", RepeatSeqGen(long_gen, length = 15))], right_size)
+            ("key2", RepeatSeqGen([5, 7, None, 8], data_type=LongType())),
+            ("ints", RepeatSeqGen(IntegerGen(), length = 3)),
+            ("key1", RepeatSeqGen([1, 2, 3, 5, 7, None], data_type=IntegerType()))], right_size)
         cond = [left_df.key1 == right_df.key1, left_df.key2 == right_df.key2]
         if is_ast_supported:
             cond.append(left_df.ints >= right_df.ints)
