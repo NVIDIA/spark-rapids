@@ -764,32 +764,29 @@ To allow casts from string to timestamp on the GPU, enable the configuration pro
 
 Casting from string to timestamp currently has the following limitations.
 
-| Format or Pattern                                                   | Supported on GPU? |
-| ------------------------------------------------------------------- | ------------------|
-| `"yyyy"`                                                            | Yes               |
-| `"yyyy-[M]M"`                                                       | Yes               |
-| `"yyyy-[M]M "`                                                      | Yes               |
-| `"yyyy-[M]M-[d]d"`                                                  | Yes               |
-| `"yyyy-[M]M-[d]d "`                                                 | Yes               |
-| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
-| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [\[1\]](#Footnote1)       |
-| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | Partial [\[1\]](#Footnote1)       |
-| `"epoch"`                                                           | Yes               |
-| `"now"`                                                             | Yes               |
-| `"today"`                                                           | Yes               |
-| `"tomorrow"`                                                        | Yes               |
-| `"yesterday"`                                                       | Yes               |
+| Format or Pattern                                                   | Supported on GPU?            |
+|---------------------------------------------------------------------|------------------------------|
+| `"yyyy"`                                                            | Yes                          |
+| `"yyyy-[M]M"`                                                       | Yes                          |
+| `"yyyy-[M]M "`                                                      | Yes                          |
+| `"yyyy-[M]M-[d]d"`                                                  | Yes                          |
+| `"yyyy-[M]M-[d]d "`                                                 | Yes                          |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s[zone_id]"`                          | Partial [\[1\]](#Footnote1)  |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s[zone_id]"`                          | Partial [\[1\]](#Footnote1)  |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)  |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)  |
+| `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | No                           |
+| `"T[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`               | No                           |
+| `"epoch"`                                                           | No                           |
+| `"now"`                                                             | No                           |
+| `"today"`                                                           | No                           |
+| `"tomorrow"`                                                        | No                           |
+| `"yesterday"`                                                       | No                           |
 
 - <a name="Footnote1"></a>[1] Leap seconds are not supported. If a zone_id is provided then only
- timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
-
-Spark is very lenient when casting from string to timestamp because all date and time components
-are optional, meaning that input values such as `T`, `T2`, `:`, `::`, `1:`, `:1`, and `::1`
-are considered valid timestamps. The GPU will treat these values as invalid and cast them to null
-values.
+ non-DST(Daylight Saving Times) timezones are supported. Casting unsupported formats will result in
+ null values. From Spark 320 and 320+, Spark does not support "epoch", "now", "today", "tomorrow",
+ "yesterday", GPU is consistent with Spark320+.
 
 ### Constant Folding
 
