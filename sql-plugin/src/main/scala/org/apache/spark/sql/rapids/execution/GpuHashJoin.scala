@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -557,19 +557,15 @@ class ConditionalHashJoinIterator(
   }
 }
 
-/**
- * An iterator that does a hash full join against a stream of batches.  It does this by
- * doing a left or right outer join and keeping track of the hits on the build side.  It then
- * produces a final batch of all the build side rows that were not already included.
- */
-class HashFullJoinIterator(
+
+class HashFullJoinStreamSideIterator(
     built: LazySpillableColumnarBatch,
     boundBuiltKeys: Seq[Expression],
+    buildSideTrackerInit: Option[SpillableColumnarBatch],
     stream: Iterator[LazySpillableColumnarBatch],
     boundStreamKeys: Seq[Expression],
     streamAttributes: Seq[Attribute],
-    boundCondition: Option[GpuExpression],
-    numFirstConditionTableColumns: Int,
+    compiledCondition: Option[CompiledExpression],
     targetSize: Long,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
@@ -588,18 +584,13 @@ class HashFullJoinIterator(
       joinTime = joinTime) {
   // Full Join is implemented via LeftOuter or RightOuter join, depending on the build side.
   private val useLeftOuterJoin = (buildSide == GpuBuildRight)
-  private val numBuiltRows = built.numRows
-
-  private[this] var builtSideTracker : Option[SpillableColumnarBatch] = None
 
   private val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
 
-  private val compiledConditionRes: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
-    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
-  }
+  private[this] var builtSideTracker: Option[SpillableColumnarBatch] = buildSideTrackerInit
 
   private def unconditionalLeftJoinGatherMaps(
-      leftKeys: Table, rightKeys: Table) : Array[GatherMap] = {
+      leftKeys: Table, rightKeys: Table): Array[GatherMap] = {
     if (useLeftOuterJoin) {
       leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
     } else {
@@ -614,7 +605,7 @@ class HashFullJoinIterator(
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch,
-      compiledCondition: CompiledExpression) : Array[GatherMap] = {
+      compiledCondition: CompiledExpression): Array[GatherMap] = {
     withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
       withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
         if (useLeftOuterJoin) {
@@ -637,8 +628,8 @@ class HashFullJoinIterator(
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     withResource(new NvtxWithMetrics("full hash join gather map",
       NvtxColor.ORANGE, joinTime)) { _ =>
-      val maps = compiledConditionRes.map { compiledCondition =>
-        conditionalLeftJoinGatherMaps(leftKeys, leftData, rightKeys, rightData, compiledCondition)
+      val maps = compiledCondition.map { condition =>
+        conditionalLeftJoinGatherMaps(leftKeys, leftData, rightKeys, rightData, condition)
       }.getOrElse {
         unconditionalLeftJoinGatherMaps(leftKeys, rightKeys)
       }
@@ -674,55 +665,20 @@ class HashFullJoinIterator(
     }
   }
 
+  // Need to avoid close on exhaust so others can access the built side tracker after iteration.
+  override protected val shouldAutoCloseOnExhaust: Boolean = false
+
+  def releaseBuiltSideTracker(): Option[SpillableColumnarBatch] = {
+    val result = builtSideTracker
+    builtSideTracker = None
+    result
+  }
+
   override def close(): Unit = {
     if (!closed) {
       super.close()
-      compiledConditionRes.foreach(_.close())
       builtSideTracker.foreach(_.close())
-    }
-  }
-
-  override def getFinalBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("get final batch",
-      NvtxColor.ORANGE, joinTime)) { _ =>
-      builtSideTracker match {
-        case None => None
-        case Some(tracker) => {
-          val filteredBatch = withResource(tracker) { scb =>
-            withResource(scb.getColumnarBatch()) { trackerBatch =>
-              withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
-                val batch = built.getBatch
-                withResource(GpuColumnVector.from(batch)) { builtTable =>
-                  withResource(builtTable.filter(trackerTab.getColumn(0))) { filterTab =>
-                    GpuColumnVector.from(filterTab, GpuColumnVector.extractTypes(batch))
-                  }
-                }
-              }
-            }
-          }
-          // Combine build-side columns with null columns for stream side
-          val ret = withResource(filteredBatch) { builtBatch =>
-            val numFilterRows = builtBatch.numRows()
-            if (numFilterRows > 0) {
-              val streamColumns = streamAttributes.safeMap { attr =>
-                GpuColumnVector.fromNull(numFilterRows, attr.dataType)
-              }
-              withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) { streamBatch =>
-                buildSide match {
-                  case GpuBuildRight =>
-                    Some(GpuColumnVector.combineColumns(streamBatch, builtBatch))
-                  case GpuBuildLeft =>
-                    Some(GpuColumnVector.combineColumns(builtBatch, streamBatch))
-                }
-              }
-            } else {
-              None
-            }
-          }
-          builtSideTracker = None
-          ret
-        }
-      }
+      builtSideTracker = None
     }
   }
 
@@ -768,7 +724,7 @@ class HashFullJoinIterator(
           }
         }
       }.getOrElse {
-        trueColumnTable(numBuiltRows)
+        trueColumnTable(built.numRows)
       }
       withResource(builtTrackingTable) { trackingTable =>
         withResource(Scalar.fromBool(false)) { falseScalar =>
@@ -784,6 +740,106 @@ class HashFullJoinIterator(
     }
     // If we throw above, we should not close the existing tracker
     previousTracker.foreach(_.close())
+  }
+}
+
+/**
+ * An iterator that does a hash full join against a stream of batches.  It does this by
+ * doing a left or right outer join and keeping track of the hits on the build side.  It then
+ * produces a final batch of all the build side rows that were not already included.
+ */
+class HashFullJoinIterator(
+    built: LazySpillableColumnarBatch,
+    boundBuiltKeys: Seq[Expression],
+    stream: Iterator[LazySpillableColumnarBatch],
+    boundStreamKeys: Seq[Expression],
+    streamAttributes: Seq[Attribute],
+    boundCondition: Option[GpuExpression],
+    numFirstConditionTableColumns: Int,
+    targetSize: Long,
+    buildSide: GpuBuildSide,
+    compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
+    opTime: GpuMetric,
+    joinTime: GpuMetric) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
+
+  private val compiledCondition: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
+    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+  }
+
+  private val streamJoinIter = new HashFullJoinStreamSideIterator(built, boundBuiltKeys, None,
+    stream, boundStreamKeys, streamAttributes, compiledCondition, targetSize, buildSide,
+    compareNullsEqual, opTime, joinTime)
+
+  private var finalBatch: Option[ColumnarBatch] = None
+
+  override def hasNext: Boolean = {
+    if (streamJoinIter.hasNext || finalBatch.isDefined) {
+      true
+    } else {
+      finalBatch = getFinalBatch()
+      finalBatch.isDefined
+    }
+  }
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException("batches exhausted")
+    }
+    if (streamJoinIter.hasNext) {
+      streamJoinIter.next()
+    } else {
+      val batch = finalBatch.get
+      finalBatch = None
+      batch
+    }
+  }
+
+  override def close(): Unit = {
+    if (!closed) {
+      super.close()
+      finalBatch.foreach(_.close())
+      finalBatch = None
+    }
+  }
+
+  private def getFinalBatch(): Option[ColumnarBatch] = {
+    withResource(new NvtxWithMetrics("get final batch", NvtxColor.ORANGE, joinTime)) { _ =>
+      streamJoinIter.releaseBuiltSideTracker() match {
+        case None => None
+        case Some(tracker) =>
+          val filteredBatch = withResource(tracker) { scb =>
+            withResource(scb.getColumnarBatch()) { trackerBatch =>
+              withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
+                val batch = built.getBatch
+                withResource(GpuColumnVector.from(batch)) { builtTable =>
+                  withResource(builtTable.filter(trackerTab.getColumn(0))) { filterTab =>
+                    GpuColumnVector.from(filterTab, GpuColumnVector.extractTypes(batch))
+                  }
+                }
+              }
+            }
+          }
+          // Combine build-side columns with null columns for stream side
+          withResource(filteredBatch) { builtBatch =>
+            val numFilterRows = builtBatch.numRows()
+            if (numFilterRows > 0) {
+              val streamColumns = streamAttributes.safeMap { attr =>
+                GpuColumnVector.fromNull(numFilterRows, attr.dataType)
+              }
+              withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) { streamBatch =>
+                buildSide match {
+                  case GpuBuildRight =>
+                    Some(GpuColumnVector.combineColumns(streamBatch, builtBatch))
+                  case GpuBuildLeft =>
+                    Some(GpuColumnVector.combineColumns(builtBatch, streamBatch))
+                }
+              }
+            } else {
+              None
+            }
+          }
+      }
+    }
   }
 }
 
