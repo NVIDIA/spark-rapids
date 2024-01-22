@@ -147,19 +147,21 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
     if (subIterator.exists(_.hasNext)) {
       subIterator.map(_.next()).get
     } else {
-      val currIter = withRetry(getSpillableInputBatch(), splitSpillableInHalfByRows) { scb =>
-        withResource(scb.getColumnarBatch()) { cb =>
-          val aggResultTable = groupByAggregate(cb)
-          val rideAlongColumns = GpuProjectExec.project(cb, boundStages.boundRideAlong)
+      opTime.ns {
+        val currIter = withRetry(getSpillableInputBatch(), splitSpillableInHalfByRows) { scb =>
+          withResource(scb.getColumnarBatch()) { cb =>
+            val aggResultTable = groupByAggregate(cb)
+            val rideAlongColumns = GpuProjectExec.project(cb, boundStages.boundRideAlong)
 
-          FirstPassAggResult(toSpillableBatch(rideAlongColumns),
-                             toSpillableBatch(aggResultTable,
-                               boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+            FirstPassAggResult(toSpillableBatch(rideAlongColumns),
+              toSpillableBatch(aggResultTable,
+                boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+          }
         }
+        val result = currIter.next()
+        subIterator = Some(currIter)
+        result
       }
-      val result = currIter.next()
-      subIterator = Some(currIter)
-      result
     }
   }
 }
@@ -343,49 +345,56 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
             aggResultsPendingCompletion += newData.aggResult.incRefCount()
           }
           else {
-            val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
-            // There are at least two aggregation result rows.
+            opTime.ns {
+              val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
+              // There are at least two aggregation result rows.
 
-            // 1. Set aside the last agg result row (incomplete), and its rideAlong.
-            // 2. Append the rest of the results together.  Run agg merge.
-            // 3. Save last agg result and rideAlong as currently incomplete.
-            // 4. Return merge results as the result batch.
+              // 1. Set aside the last agg result row (incomplete), and its rideAlong.
+              // 2. Append the rest of the results together.  Run agg merge.
+              // 3. Save last agg result and rideAlong as currently incomplete.
+              // 4. Return merge results as the result batch.
 
-            val completedAggResults = aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
+              val completedAggResults =
+                aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
 
-            output = withResource(completedAggResults) { _ =>
-              val concatAggResults = concat(completedAggResults,
-                                            boundStages.groupingColumnTypes ++
-                                              boundStages.aggResultTypes)
-              val mergedAggResults = withResource(concatAggResults) {
-                groupByMerge
+              output = withResource(completedAggResults) { _ =>
+                val concatAggResults = concat(completedAggResults,
+                  boundStages.groupingColumnTypes ++
+                    boundStages.aggResultTypes)
+                val mergedAggResults = withResource(concatAggResults) {
+                  groupByMerge
+                }
+                rideAlongColumnsPendingCompletion.add(partitioned.otherGroupRideAlong.get)
+                Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
+                  removeGroupColumns(mergedAggResults)))
               }
-              rideAlongColumnsPendingCompletion.add(partitioned.otherGroupRideAlong.get)
-              Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
-                                       removeGroupColumns(mergedAggResults)))
-            }
 
-            // Output has been calculated. Set last group's data in "pendingCompletion".
-            rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
-            rideAlongColumnsPendingCompletion.add(partitioned.lastGroupRideAlong.get)
-            aggResultsPendingCompletion = ListBuffer.tabulate(1) { _ =>
-              partitioned.lastGroupAggResult.get
+              // Output has been calculated. Set last group's data in "pendingCompletion".
+              rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+              rideAlongColumnsPendingCompletion.add(partitioned.lastGroupRideAlong.get)
+              aggResultsPendingCompletion = ListBuffer.tabulate(1) { _ =>
+                partitioned.lastGroupAggResult.get
+              }
             }
           }
         }
       } else {
-        // No more input. All pending batches can now be assumed complete.
-        output = withResource(aggResultsPendingCompletion) { _ =>
-          val concatAggResults = concat(aggResultsPendingCompletion,
-                                        boundStages.groupingColumnTypes ++
-                                          boundStages.aggResultTypes)
-          val mergedAggResults = withResource(concatAggResults) { groupByMerge }
-          Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
-                                   removeGroupColumns(mergedAggResults)))
+        opTime.ns {
+          // No more input. All pending batches can now be assumed complete.
+          output = withResource(aggResultsPendingCompletion) { _ =>
+            val concatAggResults = concat(aggResultsPendingCompletion,
+              boundStages.groupingColumnTypes ++
+                boundStages.aggResultTypes)
+            val mergedAggResults = withResource(concatAggResults) {
+              groupByMerge
+            }
+            Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
+              removeGroupColumns(mergedAggResults)))
+          }
+          // Final output has been calculated. The fat lady has sung.
+          aggResultsPendingCompletion = ListBuffer.empty[SpillableColumnarBatch]
+          rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]
         }
-        // Final output has been calculated. The fat lady has sung.
-        aggResultsPendingCompletion = ListBuffer.empty[SpillableColumnarBatch]
-        rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]
       }
     }
     output.get
