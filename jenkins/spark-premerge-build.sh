@@ -153,12 +153,8 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
         invoke_shuffle_integration_test
 
-    echo "Done with rapids_shuffle_smoke_test"
-
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
-
-    echo "Standalone cluster stopped after rapids_shuffle_smoke_test"
 }
 
 ci_2() {
