@@ -316,7 +316,18 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
                 f
             }
           }))
-        val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
+
+        val builder = Schema.builder
+        for (field <- dataSchemaWithStrings.fields) {
+          val dt = field.dataType match {
+            case _: StructType =>
+              // note we cannot specify to read primitives in the struct as strings yet
+              DType.STRUCT
+            case _ => GpuColumnVector.getNonNestedRapidsType(field.dataType)
+          }
+          builder.column(dt, field.name)
+        }
+        val cudfSchema = builder.build
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
