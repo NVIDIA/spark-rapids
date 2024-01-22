@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -333,6 +333,11 @@ EOF
                 --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
                 --conf spark.executor.extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
             )
+        elif [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--packages "${PYSP_TEST_spark_jars_packages}")
+            if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
+                SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
+            fi
         else
             SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
         fi
