@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf
 import ai.rapids.cudf.OrderByArg
-import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillPriorities, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -166,12 +166,14 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
 
 case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
                                          boundStages: GpuUnboundedToUnboundedAggStages) {
-  var firstGroupAggResult: Option[SpillableColumnarBatch] = None
-  var firstGroupRideAlong: Option[SpillableColumnarBatch] = None
-  var intermediateGroupAggResult: Option[SpillableColumnarBatch] = None
-  var intermediateGroupRideAlong: Option[SpillableColumnarBatch] = None
+//  var firstGroupAggResult: Option[SpillableColumnarBatch] = None
+//  var firstGroupRideAlong: Option[SpillableColumnarBatch] = None
+//  var intermediateGroupAggResult: Option[SpillableColumnarBatch] = None
+//  var intermediateGroupRideAlong: Option[SpillableColumnarBatch] = None
   var lastGroupAggResult: Option[SpillableColumnarBatch] = None
   var lastGroupRideAlong: Option[SpillableColumnarBatch] = None
+  var otherGroupAggResult: Option[SpillableColumnarBatch] = None
+  var otherGroupRideAlong: Option[SpillableColumnarBatch] = None
 
   val numGroupingKeys: Int = boundStages.boundPartitionSpec.size
   val numGroups: Int = firstPassAggResult.aggResult.numRows()
@@ -181,89 +183,80 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
     cb => GpuColumnVector.debug("CALEB: Partitioning input: ", cb)
   }
 
-  if (numGroups < 1) {
-      throw new IllegalStateException("Expected at least one result group.")
+  if (numGroups < 2) {
+      throw new IllegalStateException("Expected at least two result groups.")
   }
 
-
+  /*
   // TODO: This table needs closing.
   private val groupTable =
     GpuProjectExec.project(firstPassAggResult.rideAlongColumns.getColumnarBatch(),
                            boundStages.boundPartitionSpec)
   GpuColumnVector.debug("ANOTHER groupTable post extraction: ", groupTable)
+  */
 
-  private def getIndexForGroupMarginAtRowNumber(aggResultTable: cudf.Table,
-                                                rowNumber: Int,
-                                                isLowerBound: Boolean): Int = {
+  /**
+   * The `rideAlongGroupsTable` is the projection of the group rows from "rideAlong" columns
+   * from the first pass aggregation.  There could well be repeats of the group values,
+   * once for every "rideAlong" row in the same group.
+   * The `aggResultTable` has one row per group; no repeats.
+   * This helper function finds the beginning index (in groupTable) for the last group
+   * in `aggResultTable`.
+   */
+  private def getStartIndexForLastGroup(aggResultTable: cudf.Table,
+                                        rideAlongGroupsTable: cudf.Table): Int = {
+    val lastRowIndex = aggResultTable.getRowCount.asInstanceOf[Int] - 1
     withResource(getTableSlice(aggResultTable,
-                               beginRow = rowNumber,
-                               endRow = rowNumber + 1,
+                               beginRow = lastRowIndex,
+                               endRow = lastRowIndex + 1,
                                beginCol = 0,
-                               endCol = numGroupingKeys)) { lastGroup =>
-      cudf.TableDebug.get.debug("LastGroup: ", lastGroup)
-
+                               endCol = numGroupingKeys)) { group =>
       // TODO: Transmit sort-orders. Hard-coding for now.
       val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
-      withResource(GpuColumnVector.from(groupTable)) { groupTable =>
-        val groupMargin = if (isLowerBound) {
-          groupTable.lowerBound(lastGroup, orderBys: _*)
-        } else {
-          groupTable.upperBound(lastGroup, orderBys: _*)
-        }
-        withResource(groupMargin.copyToHost()) { groupMarginHost =>
-          groupMarginHost.getInt(0)
-        }
+      val groupMargin = rideAlongGroupsTable.lowerBound(group, orderBys: _*)
+      withResource(groupMargin.copyToHost()) { groupMarginHost =>
+        groupMarginHost.getInt(0)
       }
     }
   }
 
-  if (firstPassAggResult.aggResult.numRows() < 2) {
-    throw new IllegalStateException("Should have at least 2 groups at this point.")
-  }
-  // TODO: There is some unnesting we can do here.
-  withResource(firstPassAggResult.aggResult.getColumnarBatch()) { cb =>
-    withResource(GpuColumnVector.from(cb)) { aggResultTable =>
+  withResource(firstPassAggResult.rideAlongColumns.getColumnarBatch()) { rideAlongCB =>
+    withResource(GpuProjectExec.project(rideAlongCB, boundStages.boundPartitionSpec)) { rideGrpCB =>
+      withResource(GpuColumnVector.from(rideGrpCB)) { rideAlongGroupsTable =>
+        withResource(firstPassAggResult.aggResult.getColumnarBatch()) { aggResultsCB =>
+          withResource(GpuColumnVector.from(aggResultsCB)) { aggResultTable =>
+            val lastGroupBeginIdx = getStartIndexForLastGroup(aggResultTable,
+                                                              rideAlongGroupsTable)
+            System.err.println(s"CALEB: LastGroup begins at $lastGroupBeginIdx, in ride-along.")
+            withResource(GpuColumnVector.from(rideAlongCB)) { rideAlongTable =>
+              // Slice and dice!
+              val aggResultTypes = boundStages.groupingColumnTypes ++ boundStages.aggResultTypes
+              val rideAlongTypes = boundStages.rideAlongColumnTypes
 
-      val lastGroupBeginIdx =
-        getIndexForGroupMarginAtRowNumber(aggResultTable,
-                                          aggResultTable.getRowCount.asInstanceOf[Int] - 1,
-                                          isLowerBound = true)
-      System.err.println(s"CALEB: LastGroup begins at $lastGroupBeginIdx, in ride-along.")
+              lastGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable,
+                                                              numGroups - 1,
+                                                              numGroups,
+                                                              aggResultTypes))
+              debug("CALEB: LastGroup Agg: ", lastGroupAggResult)
 
-      val firstGroupEndIdx = getIndexForGroupMarginAtRowNumber(aggResultTable,
+              lastGroupRideAlong = Some(sliceAndMakeSpillable(rideAlongTable,
+                                                              lastGroupBeginIdx,
+                                                              numRideAlongRows,
+                                                              rideAlongTypes))
+              debug("CALEB: LastGroup RideAlong: ", lastGroupRideAlong)
+
+              otherGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable,
                                                                0,
-                                                               isLowerBound = false)
-      System.err.println(s"CALEB: FirstGroup ends at $firstGroupEndIdx, in ride-along.")
+                                                               numGroups - 1,
+                                                               aggResultTypes))
+              debug("CALEB: OtherGroup Agg: ", otherGroupAggResult)
 
-      withResource(firstPassAggResult.rideAlongColumns.getColumnarBatch()) { rideAlongCB =>
-        withResource(GpuColumnVector.from(rideAlongCB)) { rideAlongTable =>
-          // Slice and dice!
-          val aggResultTypes = boundStages.groupingColumnTypes ++ boundStages.aggResultTypes
-          val rideAlongTypes = boundStages.rideAlongColumnTypes
-          firstGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable, 0, 1,
-                                                           aggResultTypes))
-          debug("CALEB: FirstGroup Agg: ", firstGroupAggResult)
-          firstGroupRideAlong = Some(sliceAndMakeSpillable(rideAlongTable, 0, firstGroupEndIdx,
-                                                           rideAlongTypes))
-          debug("CALEB: FirstGroup RideAlong: ", firstGroupRideAlong)
-          lastGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable, numGroups - 1, numGroups,
-                                                          aggResultTypes))
-          debug("CALEB: LastGroup Agg: ", lastGroupAggResult)
-          lastGroupRideAlong = Some(sliceAndMakeSpillable(rideAlongTable, lastGroupBeginIdx,
-                                                          numRideAlongRows, rideAlongTypes))
-          debug("CALEB: LastGroup RideAlong: ", lastGroupRideAlong)
-          if (numGroups > 2) {
-            // Lump the remaining groups together.
-            intermediateGroupAggResult = Some(sliceAndMakeSpillable(aggResultTable,
-                                                                    1,
-                                                                    numGroups - 1,
-                                                                    aggResultTypes))
-            debug("CALEB: InterGroup Agg: ", intermediateGroupAggResult)
-            intermediateGroupRideAlong = Some(sliceAndMakeSpillable(aggResultTable,
-                                                                    firstGroupEndIdx,
-                                                                    lastGroupBeginIdx,
-                                                                    rideAlongTypes))
-            debug("CALEB: InterGroup RideAlong: ", intermediateGroupRideAlong)
+              otherGroupRideAlong = Some(sliceAndMakeSpillable(rideAlongTable,
+                                                               0,
+                                                               lastGroupBeginIdx,
+                                                               rideAlongTypes))
+              debug("CALEB: OtherGroup RideAlong: ", otherGroupRideAlong)
+            }
           }
         }
       }
@@ -309,18 +302,32 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   }
 
   /*
-  private def firstRowMatchesCachedGroup(newAggResult: SpillableColumnarBatch)
-    : Boolean = {
-
-    val firstRowGroups =
-      withResource(newAggResult.getColumnarBatch()) { newCB =>
-        withResource(GpuColumnVector.from(newCB)) { newTable =>
-
+  private def firstRowMatchesCachedGroup(newAggResult: SpillableColumnarBatch,
+                                         numGroupCols: Int) : Boolean = {
+    def extractGroups(scb: SpillableColumnarBatch): cudf.Table =
+      withResource(scb.getColumnarBatch()) { cb =>
+        withResource(GpuColumnVector.from(cb)) { table =>
+          getTableSlice(table,
+                        beginRow = 0,
+                        endRow = 1,
+                        beginCol = 0,
+                        endCol = numGroupCols)
         }
       }
-
+      
+    withResource(extractGroups(newAggResult)) { newGroups =>
+      withResource(extractGroups(aggResultsPendingCompletion.get(0))) { cachedGroups =>
+        // Check if these two match rows.
+        val numMatchingRows = newGroups.innerJoinRowCount(new HashJoin(cachedGroups, true))
+        numMatchingRows == 1
+      }
+    }
   }
-   */
+
+  private def mergeAggResults(aggResults: util.LinkedList[SpillableColumnarBatch])
+    : SpillableColumnarBatch = {
+  }
+  */
 
   override def next(): SecondPassAggResult = {
     if (!hasNext) {
@@ -339,13 +346,22 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
             aggResultsPendingCompletion.add(newData.aggResult.incRefCount())
           }
           else {
-            val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
+//            val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
             // There are at least two aggregation result rows.
 
             // The first agg result might complete the previously incomplete group.
-            if (!aggResultsPendingCompletion.isEmpty) {
+//            if (!aggResultsPendingCompletion.isEmpty) {
               // Check if the first agg-result row belongs to the same group.
-            }
+//              if (firstRowMatchesCachedGroup(partitioned.firstGroupAggResult.get,
+//                                             boundStages.boundPartitionSpec.size)) {
+                // Combine first agg result with all pending agg results.
+                // Batch the lot for return.
+//              }
+//              else {
+                // Previously batched group is now complete.
+                // So are all except the last group.
+//              }
+//            }
           }
            */
           PartitionedFirstPassAggResult(newData, boundStages)
