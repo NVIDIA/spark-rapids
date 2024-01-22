@@ -116,7 +116,6 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
             -Dtypes=$DEPLOY_TYPES \
             -Dclassifiers=$CLASSIFIERS
 
-echo "$ART_GROUP_ID:$ART_ID:$ART_VER:pom" >> $ARTIFACT_FILE
 echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar" >> $ARTIFACT_FILE
 CLASSLIST="$CLASSIFIERS,sources,javadoc"
 CLASSLIST=(${CLASSLIST//','/' '})
