@@ -69,7 +69,7 @@ object Arm extends ArmScalaSpecificImpl {
     }
   }
 
-  /** Executes the provided code block and then closes the array buffer of resources */
+  /** Executes the provided code block and then closes the queue of resources */
   def withResource[T <: AutoCloseable, V](r: mutable.Queue[T])(block: mutable.Queue[T] => V): V = {
     try {
       block(r)

@@ -1175,6 +1175,10 @@ def test_new_inner_join(is_left_host_shuffle, is_right_host_shuffle, is_left_sma
             ("key2", RepeatSeqGen([5, 7, None, 8], data_type=LongType())),
             ("shorts", short_gen),
             ("key1", RepeatSeqGen([1, 2, 3, 5, 7, None], data_type=IntegerType()))], right_size)
+        # The symmetric join code handles inputs differently based on whether they are coming from
+        # host memory or GPU memory. Simple joins produce inputs directly from a shuffle which
+        # covers the host memory case. For GPU memory cases, we insert an aggregation to force the
+        # respective join input to be from a prior GPU operation in the same stage.
         if not is_left_host_shuffle:
             left_df = left_df.groupBy("key1", "key2").max("ints", "floats")
         if not is_right_host_shuffle:
