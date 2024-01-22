@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -626,6 +626,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .booleanConf
       .createWithDefault(true)
+
+  val USE_SHUFFLED_SYMMETRIC_HASH_JOIN = conf("spark.rapids.sql.join.useShuffledSymmetricHashJoin")
+    .doc("Use the experimental shuffle symmetric hash join designed to improve handling of large " +
+      "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -2294,6 +2301,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
+
+  lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
