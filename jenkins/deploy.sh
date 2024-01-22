@@ -102,14 +102,10 @@ echo "Deploy CMD: $DEPLOY_CMD"
 
 ###### Deploy the parent pom file ######
 $DEPLOY_CMD -Dfile=./pom.xml -DpomFile=./pom.xml
-PARENT_ART_ID=$(mvnEval "./" project.artifactId)
-echo "$ART_GROUP_ID:$PARENT_ART_ID:$ART_VER:pom" >> $ARTIFACT_FILE
 
 ###### Deploy the jdk-profile pom file ######
 JDK_PROFILES=${JDK_PROFILES:-"jdk-profiles"}
 $DEPLOY_CMD -Dfile=$JDK_PROFILES/pom.xml -DpomFile=$JDK_PROFILES/pom.xml
-JDK_PROFILES_ART_ID=$(mvnEval "$JDK_PROFILES" project.artifactId)
-echo "$ART_GROUP_ID:$JDK_PROFILES_ART_ID:$ART_VER:pom" >> $ARTIFACT_FILE
 
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
