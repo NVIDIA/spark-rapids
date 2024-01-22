@@ -18,12 +18,13 @@ package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf
 import ai.rapids.cudf.OrderByArg
-import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillPriorities, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.window.TableAndBatchUtils.{debug, getTableSlice, sliceAndMakeSpillable, toSpillableBatch}
+import com.nvidia.spark.rapids.window.TableAndBatchUtils.{debug, getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
 import java.util
+import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -59,6 +60,8 @@ object TableAndBatchUtils {
   def toSpillableBatch(table: cudf.Table, types: Seq[DataType]): SpillableColumnarBatch = {
     toSpillableBatch(GpuColumnVector.from(table, types.toArray))
   }
+
+  def toTable(cb: ColumnarBatch): cudf.Table = GpuColumnVector.from(cb)
 
   def getTableSlice(tbl: cudf.Table,
                     beginRow: Int, endRow: Int,
@@ -166,10 +169,6 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
 
 case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
                                          boundStages: GpuUnboundedToUnboundedAggStages) {
-//  var firstGroupAggResult: Option[SpillableColumnarBatch] = None
-//  var firstGroupRideAlong: Option[SpillableColumnarBatch] = None
-//  var intermediateGroupAggResult: Option[SpillableColumnarBatch] = None
-//  var intermediateGroupRideAlong: Option[SpillableColumnarBatch] = None
   var lastGroupAggResult: Option[SpillableColumnarBatch] = None
   var lastGroupRideAlong: Option[SpillableColumnarBatch] = None
   var otherGroupAggResult: Option[SpillableColumnarBatch] = None
@@ -186,14 +185,6 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
   if (numGroups < 2) {
       throw new IllegalStateException("Expected at least two result groups.")
   }
-
-  /*
-  // TODO: This table needs closing.
-  private val groupTable =
-    GpuProjectExec.project(firstPassAggResult.rideAlongColumns.getColumnarBatch(),
-                           boundStages.boundPartitionSpec)
-  GpuColumnVector.debug("ANOTHER groupTable post extraction: ", groupTable)
-  */
 
   /**
    * The `rideAlongGroupsTable` is the projection of the group rows from "rideAlong" columns
@@ -280,12 +271,10 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     boundStages: GpuUnboundedToUnboundedAggStages,
     opTime: GpuMetric) extends Iterator[SecondPassAggResult] {
   // input data where we don't know if the results are done yet
-  // TODO this should probably be a var once we start using it
-  private val rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+  private var rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
   // Agg results where the input keys are not fully complete yet. They will need to be combined
   // together before being returned.
-  // TODO this should be uncommented once we start using it
-//  private val aggResultsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+  private var aggResultsPendingCompletion = ListBuffer.empty[SpillableColumnarBatch]
 
   override def hasNext: Boolean = (!rideAlongColumnsPendingCompletion.isEmpty) || input.hasNext
 
@@ -301,33 +290,55 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     }
   }
 
-  /*
-  private def firstRowMatchesCachedGroup(newAggResult: SpillableColumnarBatch,
-                                         numGroupCols: Int) : Boolean = {
-    def extractGroups(scb: SpillableColumnarBatch): cudf.Table =
-      withResource(scb.getColumnarBatch()) { cb =>
-        withResource(GpuColumnVector.from(cb)) { table =>
-          getTableSlice(table,
-                        beginRow = 0,
-                        endRow = 1,
-                        beginCol = 0,
-                        endCol = numGroupCols)
-        }
+  /**
+   * Concatenates all underlying tables in `inputSCB`, and returns
+   * a SpillableColumnarBatch of the result.
+   */
+  private def concat(inputSCB: Seq[SpillableColumnarBatch],
+                     schema: Seq[DataType])
+    : SpillableColumnarBatch = {
+
+    val tables = inputSCB.map { scb =>
+      withResource(scb.getColumnarBatch()) {
+        toTable
       }
-      
-    withResource(extractGroups(newAggResult)) { newGroups =>
-      withResource(extractGroups(aggResultsPendingCompletion.get(0))) { cachedGroups =>
-        // Check if these two match rows.
-        val numMatchingRows = newGroups.innerJoinRowCount(new HashJoin(cachedGroups, true))
-        numMatchingRows == 1
+    }.toArray
+
+    val resultTable = if (tables.length == 1) {
+      tables.head
+    }
+    else {
+      withResource(tables) { _ =>
+        cudf.Table.concatenate(tables: _*)
+      }
+    }
+
+    toSpillableBatch(resultTable, schema)
+  }
+
+  private def groupByMerge(aggResultSCB: SpillableColumnarBatch) = {
+    val groupByOptions = cudf.GroupByOptions.builder()
+                                            .withIgnoreNullKeys(false)
+                                            .withKeysSorted(true)
+                                            .build
+    val numGroupColumns = boundStages.groupingColumnTypes.size
+    val cudfMergeAggregates = boundStages.cudfMergeAggregates
+    val cudfAggsOnColumns = cudfMergeAggregates.zipWithIndex.map {
+      case (mergeAgg, ord) => mergeAgg.groupByAggregate.onColumn(ord + numGroupColumns)
+    }
+    withResource(aggResultSCB.getColumnarBatch()) { aggResultCB =>
+      withResource(toTable(aggResultCB)) { aggResultTable =>
+        val mergeResults = aggResultTable.groupBy(groupByOptions,
+                                                  Range(0, numGroupColumns).toArray: _*)
+                                         .aggregate(cudfAggsOnColumns: _*)
+        val result =
+          toSpillableBatch(mergeResults,
+                           boundStages.groupingColumnTypes ++ boundStages.aggResultTypes)
+        debug("CALEB: MergedResult: ", Some(result))
+        result
       }
     }
   }
-
-  private def mergeAggResults(aggResults: util.LinkedList[SpillableColumnarBatch])
-    : SpillableColumnarBatch = {
-  }
-  */
 
   override def next(): SecondPassAggResult = {
     if (!hasNext) {
@@ -338,50 +349,56 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
       if (input.hasNext) {
         withResource(input.next()) { newData =>
 
-          /*
           if (newData.aggResult.numRows() == 1) {
             // All the aggregation results are for the same group.
             // Add the lot to "incomplete", and go again.
             rideAlongColumnsPendingCompletion.add(newData.rideAlongColumns.incRefCount())
-            aggResultsPendingCompletion.add(newData.aggResult.incRefCount())
+            aggResultsPendingCompletion += newData.aggResult.incRefCount()
           }
           else {
-//            val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
+            val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
             // There are at least two aggregation result rows.
 
-            // The first agg result might complete the previously incomplete group.
-//            if (!aggResultsPendingCompletion.isEmpty) {
-              // Check if the first agg-result row belongs to the same group.
-//              if (firstRowMatchesCachedGroup(partitioned.firstGroupAggResult.get,
-//                                             boundStages.boundPartitionSpec.size)) {
-                // Combine first agg result with all pending agg results.
-                // Batch the lot for return.
-//              }
-//              else {
-                // Previously batched group is now complete.
-                // So are all except the last group.
-//              }
-//            }
+            // 1. Set aside the last agg result row (incomplete), and its rideAlong.
+            // 2. Append the rest of the results together.  Run agg merge.
+            // 3. Save last agg result and rideAlong as currently incomplete.
+            // 4. Return merge results as the result batch.
+
+            val completedAggResults = aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
+
+            output = withResource(completedAggResults) { _ =>
+              val concatAggResults = concat(completedAggResults,
+                                            boundStages.groupingColumnTypes ++
+                                              boundStages.aggResultTypes)
+              val mergedAggResults = withResource(concatAggResults) {
+                groupByMerge
+              }
+              rideAlongColumnsPendingCompletion.add(partitioned.otherGroupRideAlong.get)
+              Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
+                                       removeGroupColumns(mergedAggResults)))
+            }
+
+            // Output has been calculated. Set last group's data in "pendingCompletion".
+            rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+            rideAlongColumnsPendingCompletion.add(partitioned.lastGroupRideAlong.get)
+            aggResultsPendingCompletion = ListBuffer.tabulate(1) { _ =>
+              partitioned.lastGroupAggResult.get
+            }
           }
-           */
-          PartitionedFirstPassAggResult(newData, boundStages)
-
-          val resultRideAlongs = new util.LinkedList[SpillableColumnarBatch]()
-          resultRideAlongs.add(newData.rideAlongColumns.incRefCount())
-
-          output = Some(
-            SecondPassAggResult(resultRideAlongs, removeGroupColumns(newData.aggResult))
-          )
-          // TODO newData should be sliced based off of which rows are known to be completed and
-          //  which are not. If there are parts that are done it should be combined with
-          //  the data pending completion and put into output. Then the incomplete data
-          //  should be put into the pending completion queues.
         }
       } else {
-        throw new IllegalStateException("Merge aggResultsPendingCompletion")
-        // TODO There is no more data, so we need to merge the aggResultsPendingCompletion
-        //  into a single SpillableColumnarBatch, and put the result output along with
-        //  the rideAlongColumnPendingCompletion
+        // No more input. All pending batches can now be assumed complete.
+        output = withResource(aggResultsPendingCompletion) { _ =>
+          val concatAggResults = concat(aggResultsPendingCompletion,
+                                        boundStages.groupingColumnTypes ++
+                                          boundStages.aggResultTypes)
+          val mergedAggResults = withResource(concatAggResults) { groupByMerge }
+          Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
+                                   removeGroupColumns(mergedAggResults)))
+        }
+        // Final output has been calculated. The fat lady has sung.
+        aggResultsPendingCompletion = ListBuffer.empty[SpillableColumnarBatch]
+        rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]
       }
     }
     output.get
