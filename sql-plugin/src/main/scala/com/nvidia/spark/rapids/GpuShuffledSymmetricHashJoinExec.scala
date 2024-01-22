@@ -871,15 +871,15 @@ class BuildSidePartitioner(
   def getBuildBatch(partitionGroupIndex: Int): LazySpillableColumnarBatch = {
     var batch = partitionBatches(partitionGroupIndex)
     if (batch == null) {
-      val spillBatches = new mutable.ArrayBuffer[SpillableColumnarBatch]()
-      closeOnExcept(spillBatches) { _ =>
+      val spillBatchesBuffer = new mutable.ArrayBuffer[SpillableColumnarBatch]()
+      closeOnExcept(spillBatchesBuffer) { _ =>
         joinGroups(partitionGroupIndex).foreach { i =>
           val batches = partitions(i).releaseBatches()
           assert(batches.nonEmpty)
-          spillBatches ++= batches
+          spillBatchesBuffer ++= batches
         }
       }
-      val concatBatch = withRetryNoSplit(spillBatches) { _ =>
+      val concatBatch = withRetryNoSplit(spillBatchesBuffer.toSeq) { spillBatches =>
         val batchesToConcat = spillBatches.safeMap(_.getColumnarBatch()).toArray
         opTime.ns {
           concatTime.ns {
@@ -978,7 +978,7 @@ class StreamSidePartitioner(
   }
 
   def releasePartitions(partIndices: BitSet): Array[SpillableColumnarBatch] = {
-    partIndices.flatMap(i => partitions(i).releaseBatches()).toArray
+    partIndices.iterator.flatMap(i => partitions(i).releaseBatches().toSeq).toArray
   }
 
   override def close(): Unit = {
