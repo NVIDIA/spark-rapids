@@ -14,6 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# This file checks whether all the dependency jar or pom files for the specified
+# artifacts defined in the file "$ARTIFACT_FILE" are available
+# in the "$SERVER_ID::default::$SERVER_URL" maven repo
+
 
 # Argument(s):
 #   ARTIFACT_FILE :  Artifact(groupId:artifactId:version:[[packaging]:classifier]) list file
