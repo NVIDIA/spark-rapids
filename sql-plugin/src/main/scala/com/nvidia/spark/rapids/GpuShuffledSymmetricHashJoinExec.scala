@@ -53,6 +53,10 @@ object GpuShuffledSymmetricHashJoinExec {
       buildSideNeedsNullFilter: Boolean)
 
   object BoundJoinExprs {
+    /**
+     * Utility to bind join expressions and produce a BoundJoinExprs result. Note that this should
+     * be called with the build side that was dynamically determined after probing the join inputs.
+     */
     def bind(
         leftKeys: Seq[Expression],
         leftOutput: Seq[Attribute],
@@ -365,8 +369,8 @@ case class GpuShuffledSymmetricHashJoinExec(
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val localLeftKeys = leftKeys
     val leftOutput = left.output
-    val localRightKeys = rightKeys
     val isLeftHost = isHostBatchProducer(left)
+    val localRightKeys = rightKeys
     val rightOutput = right.output
     val isRightHost = isHostBatchProducer(right)
     val localCondition = condition
