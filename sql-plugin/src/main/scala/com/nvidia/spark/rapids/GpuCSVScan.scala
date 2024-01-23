@@ -347,6 +347,9 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
                DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
                DataTypes.TimestampType =>
             f.copy(dataType = DataTypes.StringType)
+          case _: StructType =>
+            // this should be unreachable
+            throw new IllegalStateException("CSV does not support StructType")
           case other if GpuTypeShims.supportCsvRead(other) =>
             f.copy(dataType = DataTypes.StringType)
           case _ =>
@@ -355,6 +358,11 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
       }))
     GpuColumnVector.from(dataSchemaWithStrings)
   }
+
+  override def supportsReadColumn(dt: DataType): Boolean = GpuTypeShims.supportCsvRead(dt)
+
+  override def readColumn(cv: ColumnVector, dt: DataType): ColumnVector =
+    GpuTypeShims.csvRead(cv, dt)
 
   /**
    * CSV supports "true" and "false" (case-insensitive) as valid boolean values.

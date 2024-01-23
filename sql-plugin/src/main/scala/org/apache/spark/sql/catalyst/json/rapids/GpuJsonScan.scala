@@ -246,7 +246,8 @@ object GpuJsonScan {
    * @return cuDF schema using string types for primitives
    */
   def createCudfSchema(dataSchema: StructType): Schema = {
-    val dataSchemaWithStrings = StructType(dataSchema.fields
+
+    def toCudf(t: StructType): StructType = StructType(t.fields
       .map(f => {
         f.dataType match {
           case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
@@ -254,17 +255,14 @@ object GpuJsonScan {
                DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
                DataTypes.TimestampType =>
             f.copy(dataType = DataTypes.StringType)
-          case _: StructType =>
-            // we want to read structs as string but this is not currently supported
-            // in cuDF and we fall back to CPU for this case, but eventually this is
-            // the logic that we want
-            // cuDF tracking issue: https://github.com/rapidsai/cudf/issues/14830
-            f.copy(dataType = DataTypes.StringType)
+          case s: StructType =>
+            f.copy(dataType = toCudf(s))
           case _ =>
             f
         }
       }))
-    GpuColumnVector.from(dataSchemaWithStrings)
+
+    GpuColumnVector.from(toCudf(dataSchema))
   }
 }
 

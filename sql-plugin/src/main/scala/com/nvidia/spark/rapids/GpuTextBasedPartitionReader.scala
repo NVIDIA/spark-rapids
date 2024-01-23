@@ -26,7 +26,6 @@ import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, Hos
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -37,7 +36,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
-import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -340,8 +339,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
                 case DataTypes.TimestampType =>
                   castStringToTimestamp(table.getColumn(i), timestampFormat,
                     DType.TIMESTAMP_MICROSECONDS)
-                case other if GpuTypeShims.supportCsvRead(other) =>
-                  GpuTypeShims.csvRead(table.getColumn(i), other)
+                case other if supportsReadColumn(other) =>
+                  readColumn(table.getColumn(i), other)
                 case _ =>
                   table.getColumn(i).incRefCount()
               }
@@ -359,6 +358,10 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   def createCudfSchema(dataSchema: StructType): Schema
+  def supportsReadColumn(dt: DataType): Boolean = false
+  def readColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
+    throw new IllegalStateException(s"readColumn not implemented for $dt")
+  }
 
   def dateFormat: Option[String]
   def timestampFormat: String
