@@ -39,9 +39,7 @@ object datetimeExpressionsUtils {
           cv.binaryOp(BinaryOp.ADD, durS, DType.TIMESTAMP_MICROSECONDS)
         }
         case durC: ColumnView => {
-          withResource(durC.bitCastTo(DType.DURATION_MICROSECONDS)) { durMirco =>
-            cv.binaryOp(BinaryOp.ADD, durMirco, DType.TIMESTAMP_MICROSECONDS)
-          }
+          cv.binaryOp(BinaryOp.ADD, durC, DType.TIMESTAMP_MICROSECONDS)
         }
       }
     } else {

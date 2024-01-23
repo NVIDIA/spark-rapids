@@ -69,6 +69,17 @@ def test_timeadd_daytime_column():
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
+def test_timeadd_daytime_column_debug():
+    gen_list = [
+        # timestamp column max year is 1000
+        ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
+        # max days is 8000 year, so added result will not be out of range
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=-1000 * 365), max_value=timedelta(days=8000 * 365)))]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen_list, length=2000000).selectExpr("t", "d", "t + d"))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@allow_non_gpu(*non_supported_tz_allow)
 def test_timeadd_daytime_column_long_overflow():
     overflow_gen = SetValuesGen(DayTimeIntervalType(), 
                                 [timedelta(microseconds=-pow(2, 63)), timedelta(microseconds=(pow(2, 63) - 1))])

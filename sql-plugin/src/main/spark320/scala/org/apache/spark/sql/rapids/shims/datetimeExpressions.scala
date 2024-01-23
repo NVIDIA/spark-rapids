@@ -125,8 +125,9 @@ case class GpuTimeAdd(start: Expression,
                 // DayTimeIntervalType is stored as long
                 // bitCastTo is similar to reinterpret_cast, it's fast, the time can be ignored.
                 val zoneId = ZoneId.of(timeZoneId.getOrElse("UTC"))
-                val resCv = datetimeExpressionsUtils.timestampAddDuration(
-                    l.getBase, r.getBase, zoneId)
+                val resCv = withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { dur =>
+                  datetimeExpressionsUtils.timestampAddDuration(l.getBase, dur, zoneId)
+                }
                 GpuColumnVector.from(resCv, dataType)
               case _ =>
                 throw new UnsupportedOperationException(
