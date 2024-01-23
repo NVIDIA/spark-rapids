@@ -18,13 +18,16 @@ package com.nvidia.spark.rapids
 
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+
 import scala.collection.JavaConverters._
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuTypeShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
