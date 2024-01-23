@@ -777,6 +777,8 @@ class HashFullJoinStreamSideIterator(
  *
  * @param built spillable form of the build side table. This will be closed by the iterator.
  * @param boundBuiltKeys bound expressions for the build side equi-join keys
+ * @param buildSideTrackerInit initial value of the build side row tracker, if any. This will be
+ *                             closed by the iterator.
  * @param stream iterator to produce batches for the stream side table
  * @param boundStreamKeys bound expressions for the stream side equi-join keys
  * @param streamAttributes schema of the stream side table
@@ -790,6 +792,7 @@ class HashFullJoinStreamSideIterator(
 class HashFullJoinIterator(
     built: LazySpillableColumnarBatch,
     boundBuiltKeys: Seq[Expression],
+    buildSideTrackerInit: Option[SpillableColumnarBatch],
     stream: Iterator[LazySpillableColumnarBatch],
     boundStreamKeys: Seq[Expression],
     streamAttributes: Seq[Attribute],
@@ -805,9 +808,9 @@ class HashFullJoinIterator(
     use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
   }
 
-  private val streamJoinIter = new HashFullJoinStreamSideIterator(built, boundBuiltKeys, None,
-    stream, boundStreamKeys, streamAttributes, compiledCondition, targetSize, buildSide,
-    compareNullsEqual, opTime, joinTime)
+  private val streamJoinIter = new HashFullJoinStreamSideIterator(built, boundBuiltKeys,
+    buildSideTrackerInit, stream, boundStreamKeys, streamAttributes, compiledCondition, targetSize,
+    buildSide, compareNullsEqual, opTime, joinTime)
 
   private var finalBatch: Option[ColumnarBatch] = None
 
@@ -1118,7 +1121,7 @@ trait GpuHashJoin extends GpuExec {
           opTime,
           joinTime)
       case FullOuter =>
-        new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
+        new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, None, lazyStream,
           boundStreamKeys, streamedPlan.output, boundCondition, numFirstConditionTableColumns,
           targetSize, buildSide, compareNullsEqual, opTime, joinTime)
       case _ =>
