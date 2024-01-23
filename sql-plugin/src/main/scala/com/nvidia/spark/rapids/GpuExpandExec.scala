@@ -52,8 +52,9 @@ class GpuExpandExecMeta(
    */
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
-    GpuExpandExec(projections, expand.output,
-      childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
+    GpuExpandExec(projections, expand.output, childPlans.head.convertIfNeeded())(
+      useTieredProject = conf.isTieredProjectEnabled,
+      preprojectEnabled = conf.isExpandPreprojectEnabled)
   }
 }
 
@@ -70,10 +71,12 @@ case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
     output: Seq[Attribute],
     child: SparkPlan)(
-    useTieredProject: Boolean = false) extends ShimUnaryExecNode with GpuExec {
+    useTieredProject: Boolean = false,
+    preprojectEnabled: Boolean = false) extends ShimUnaryExecNode with GpuExec {
 
-  override def otherCopyArgs: Seq[AnyRef] =
-    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean])
+  override def otherCopyArgs: Seq[AnyRef] = Seq[AnyRef](
+    useTieredProject.asInstanceOf[java.lang.Boolean],
+    preprojectEnabled.asInstanceOf[java.lang.Boolean])
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -94,7 +97,7 @@ case class GpuExpandExec(
     var projectionsForBind = projections
     var attributesForBind = child.output
     var preprojectIter = identity[Iterator[ColumnarBatch]] _
-    if (useTieredProject) {
+    if (useTieredProject && preprojectEnabled) {
       // Tiered projection is enabled, check if pre-projection is needed.
       val boundPreprojections = GpuBindReferences.bindGpuReferencesTiered(
         preprojectionList, child.output, useTieredProject)

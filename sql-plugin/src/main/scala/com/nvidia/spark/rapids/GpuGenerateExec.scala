@@ -79,7 +79,8 @@ class GpuGenerateExecSparkPlanMeta(
     }
     val output: Seq[Attribute] = gen.requiredChildOutput ++ gen.generatorOutput.take(numFields)
     GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(
-        useTieredProject = conf.isTieredProjectEnabled)
+        useTieredProject = conf.isTieredProjectEnabled,
+        preprojectEnabled = conf.isExpandPreprojectEnabled)
   }
 
   override def convertToGpu(): GpuExec = {

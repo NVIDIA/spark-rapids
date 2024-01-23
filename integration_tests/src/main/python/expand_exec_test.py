@@ -38,4 +38,5 @@ def test_expand_pre_project():
 
     assert_gpu_and_cpu_are_equal_sql(get_df,
         "pre_pro",
-        "select count(distinct (a+b)), count(distinct if((a+b)>100, c, null)) from pre_pro group by a")
+        "select count(distinct (a+b)), count(distinct if((a+b)>100, c, null)) from pre_pro group by a",
+        {"spark.rapids.sql.expandPreproject.enabled": "true"})
