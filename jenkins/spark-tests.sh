@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ set -ex
 nvidia-smi
 
 . jenkins/version-def.sh
+# if run in jenkins WORKSPACE refers to rapids root path; if not run in jenkins just use current pwd(contains jenkins dirs)
+WORKSPACE=${WORKSPACE:-`pwd`}
 
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
@@ -203,7 +205,7 @@ run_delta_lake_tests() {
   fi
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
-    DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
+    DELTA_LAKE_VERSIONS="2.1.1 2.2.0 2.3.0"
   fi
 
   if [[ $SPARK_VER =~ $SPARK_34X_PATTERN ]]; then
@@ -273,13 +275,13 @@ run_pyarrow_tests() {
 
 run_non_utc_time_zone_tests() {
   # select one time zone according to current day of week
-  non_utc_time_zones=("Asia/Shanghai" "Iran")
-  time_zones_length=${#non_utc_time_zones[@]}
+  source "${WORKSPACE}/jenkins/test-timezones.sh"
+  time_zones_length=${#time_zones_test_cases[@]}
   # get day of week, Sunday is represented by 0 and Saturday by 6
   current_date=$(date +%w)
   echo "Current day of week is: ${current_date}"
   time_zone_index=$((current_date % time_zones_length))
-  time_zone="${non_utc_time_zones[${time_zone_index}]}"
+  time_zone="${time_zones_test_cases[${time_zone_index}]}"
   echo "Run Non-UTC tests, time zone is ${time_zone}"
 
   # run tests

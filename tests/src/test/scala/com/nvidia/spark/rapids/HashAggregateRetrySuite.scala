@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +116,8 @@ class HashAggregateRetrySuite
 
   test("computeAndAggregate reduction with retry") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val result = doReduction(reductionBatch)
     withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
@@ -133,7 +134,8 @@ class HashAggregateRetrySuite
 
   test("computeAndAggregate reduction with two retries") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val result = doReduction(reductionBatch)
     withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
@@ -162,7 +164,8 @@ class HashAggregateRetrySuite
 
   test("computeAndAggregate group by with retry") {
     val groupByBatch = buildGroupByBatch()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val result = doGroupBy(groupByBatch)
     withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
@@ -195,7 +198,8 @@ class HashAggregateRetrySuite
 
   test("computeAndAggregate reduction with split and retry") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val result = doReduction(reductionBatch)
     withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
@@ -213,7 +217,8 @@ class HashAggregateRetrySuite
 
   test("computeAndAggregate group by with split retry") {
     val groupByBatch = buildGroupByBatch()
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val result = doGroupBy(groupByBatch)
     withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
@@ -248,7 +253,8 @@ class HashAggregateRetrySuite
     // with forceMerge we expect 1 batch to be returned at all costs
     val groupByBatch = buildGroupByBatch()
     // we force a split because that would cause us to compute two aggs
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val result = doGroupBy(groupByBatch, forceMerge = true)
     withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
