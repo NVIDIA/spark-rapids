@@ -335,9 +335,10 @@ EOF
             )
         elif [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
             SPARK_SHELL_ARGS_ARR+=(--packages "${PYSP_TEST_spark_jars_packages}")
-            if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
-                SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
-            fi
+          fi
+          if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
+              SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
+          fi
         else
             SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
         fi
