@@ -335,14 +335,13 @@ EOF
             )
         elif [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
             SPARK_SHELL_ARGS_ARR+=(--packages "${PYSP_TEST_spark_jars_packages}")
-          fi
-          if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
-              SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
-          fi
         else
             SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
         fi
 
+        if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
+        fi
         # NOTE grep is used not only for checking the output but also
         # to workaround the fact that spark-shell catches all failures.
         # In this test it exits not because of the failure but because it encounters
