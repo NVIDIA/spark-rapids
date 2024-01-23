@@ -1703,13 +1703,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         // String type is not supported yet for non-UTC timezone.
-        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
-          a.left.dataType match {
-            case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
-            case _ => true
-          }
-        }
-
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
@@ -1724,14 +1718,7 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
-        // String type is not supported yet for non-UTC timezone.
-        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
-            a.left.dataType match {
-              case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
-              case _ => true
-            }
-        }
-
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
@@ -3647,7 +3634,8 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
       }
-    ),
+    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
+        "validated, and the output is not normalized the same as Spark"),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
