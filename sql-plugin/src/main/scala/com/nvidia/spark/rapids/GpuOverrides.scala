@@ -3260,8 +3260,24 @@ object GpuOverrides extends Logging {
           if (a.failOnError) {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
-
+          
+          // In Spark, the key in parse_url could act like a regex, but on GPU, we only support
+          // literal keys. So we need to fallback if the key contains regex special characters.
+          // See Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            case Some("QUERY") if (a.children.size == 3) => {
+              extractLit(a.children(2)).foreach { key =>
+                if (key.value != null) {
+                  val keyStr = key.value.asInstanceOf[UTF8String].toString
+                  val specialCharacters = List("\\", "[", "]", "{", "}", "^", "-", "$", 
+                      ".", "+", "*", "?", "|")
+                  if (specialCharacters.exists(keyStr.contains(_))) {
+                    willNotWorkOnGpu(s"Key $keyStr could act like a regex which is not " + 
+                        "supported on GPU")
+                  }
+                }
+              }
+            }
             case Some(part) if GpuParseUrl.isSupportedPart(part) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")

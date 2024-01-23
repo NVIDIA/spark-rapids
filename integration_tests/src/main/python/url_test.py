@@ -172,6 +172,14 @@ def test_parse_url_query_with_key():
         lambda spark: unary_op_df(spark, url_gen)
             .selectExpr("a", "parse_url(a, 'QUERY', 'abc')", "parse_url(a, 'QUERY', 'a')")
         )
+    
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+def test_parse_url_query_with_key_regex_fallback():
+    url_gen = StringGen(url_pattern_with_key)
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, url_gen)
+            .selectExpr("a", "parse_url(a, 'QUERY', 'a?c')", "parse_url(a, 'QUERY', '*')"),
+            'ParseUrl')
 
 @pytest.mark.parametrize('part', supported_with_key_parts, ids=idfn)
 def test_parse_url_with_key(part):
