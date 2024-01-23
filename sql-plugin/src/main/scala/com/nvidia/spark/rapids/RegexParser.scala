@@ -1565,6 +1565,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
             r.position)
         }
 
+        (ll, rr) match {
+          // ll = lazyQuantifier inside a choice
+          case (RegexSequence(ListBuffer(RegexRepetition(
+          RegexRepetition(_, SimpleQuantifier('?')), SimpleQuantifier('?')))), _) |
+               // rr = lazyQuantifier inside a choice
+               (_, RegexSequence(ListBuffer(RegexRepetition(
+               RegexRepetition(_, SimpleQuantifier('?')), SimpleQuantifier('?'))))) =>
+            throw new RegexUnsupportedException(
+              "cuDF does not support lazy quantifier inside choice", r.position)
+          case _ =>
+        }
         RegexChoice(ll, rr)
 
       case g @ RegexGroup(_, _, Some(lookahead)) =>
