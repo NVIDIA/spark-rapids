@@ -123,6 +123,10 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   }
 
   private def groupByAggregate(inputCB: ColumnarBatch) = {
+    // Note: The data is always ordered first by the grouping keys,
+    // as ASC NULLS FIRST, regardless of how the order-by columns
+    // are ordered.  This happens prior to the window exec, since
+    // the GpuSortOrder is upstream from the window exec.
     val groupByOptions = cudf.GroupByOptions.builder()
                                             .withIgnoreNullKeys(false)
                                             .withKeysSorted(true)
@@ -154,8 +158,8 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
             val rideAlongColumns = GpuProjectExec.project(cb, boundStages.boundRideAlong)
 
             FirstPassAggResult(toSpillableBatch(rideAlongColumns),
-              toSpillableBatch(aggResultTable,
-                boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+                               toSpillableBatch(aggResultTable,
+                                 boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
           }
         }
         val result = currIter.next()
@@ -177,10 +181,6 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
   val numGroups: Int = firstPassAggResult.aggResult.numRows()
   val numRideAlongRows: Int = firstPassAggResult.rideAlongColumns.numRows()
 
-  withResource(firstPassAggResult.rideAlongColumns.getColumnarBatch()) {
-    cb => GpuColumnVector.debug("CALEB: Partitioning input: ", cb)
-  }
-
   if (numGroups < 2) {
       throw new IllegalStateException("Expected at least two result groups.")
   }
@@ -201,7 +201,10 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
                                endRow = lastRowIndex + 1,
                                beginCol = 0,
                                endCol = numGroupingKeys)) { group =>
-      // TODO: Transmit sort-orders. Hard-coding for now.
+      // The grouping keys are always ordered ASC NULLS FIRST,
+      // regardless of how the order-by columns are ordered.
+      // Searching for a group does not involve the order-by columns in any way.
+      // A simple `lowerBound` does the trick.
       val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
       val groupMargin = rideAlongGroupsTable.lowerBound(group, orderBys: _*)
       withResource(groupMargin.copyToHost()) { groupMarginHost =>
@@ -268,6 +271,16 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   // together before being returned.
   private var aggResultsPendingCompletion = ListBuffer.empty[SpillableColumnarBatch]
 
+  // Register cleanup for incomplete shutdown.
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      Range(0, rideAlongColumnsPendingCompletion.size).foreach { i =>
+        rideAlongColumnsPendingCompletion.get(i).close()
+      }
+      aggResultsPendingCompletion.foreach{_.close}
+    }
+  }
+
   override def hasNext: Boolean = (!rideAlongColumnsPendingCompletion.isEmpty) || input.hasNext
 
   private def removeGroupColumns(aggResults: SpillableColumnarBatch): SpillableColumnarBatch = {
@@ -309,6 +322,10 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   }
 
   private def groupByMerge(aggResultSCB: SpillableColumnarBatch) = {
+    // Note: The data is always ordered first by the grouping keys,
+    // as ASC NULLS FIRST, regardless of how the order-by columns
+    // are ordered.  This happens prior to the window exec, since
+    // the GpuSortOrder is upstream from the window exec.
     val groupByOptions = cudf.GroupByOptions.builder()
                                             .withIgnoreNullKeys(false)
                                             .withKeysSorted(true)
