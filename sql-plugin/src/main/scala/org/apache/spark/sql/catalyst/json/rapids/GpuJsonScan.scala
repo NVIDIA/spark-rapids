@@ -41,7 +41,7 @@ import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileSca
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DataType, DataTypes, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -235,6 +235,36 @@ object GpuJsonScan {
     }
 
     FileFormatChecks.tag(meta, readSchema, JsonFormatType, ReadFileOp)
+  }
+
+  /**
+   * When reading from text formats, we want to read primitive types as strings
+   * rather than have cuDF infer the types. We then cast those strings to the
+   * primitive types in the plugin in a Spark-compatible way.
+   *
+   * @param dataSchema Spark schema
+   * @return cuDF schema using string types for primitives
+   */
+  def createCudfSchema(dataSchema: StructType): Schema = {
+    val dataSchemaWithStrings = StructType(dataSchema.fields
+      .map(f => {
+        f.dataType match {
+          case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
+               DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
+               DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
+               DataTypes.TimestampType =>
+            f.copy(dataType = DataTypes.StringType)
+          case _: StructType =>
+            // we want to read structs as string but this is not currently supported
+            // in cuDF and we fall back to CPU for this case, but eventually this is
+            // the logic that we want
+            // cuDF tracking issue: https://github.com/rapidsai/cudf/issues/14830
+            f.copy(dataType = DataTypes.StringType)
+          case _ =>
+            f
+        }
+      }))
+    GpuColumnVector.from(dataSchemaWithStrings)
   }
 }
 
@@ -432,6 +462,10 @@ class JsonPartitionReader(
       val prunedColumnVectors = prunedCols.map(i => table.getColumn(i))
       Some(new Table(prunedColumnVectors: _*))
     }
+  }
+
+  def createCudfSchema(dataSchema: StructType): Schema = {
+    GpuJsonScan.createCudfSchema(dataSchema)
   }
 
   /**

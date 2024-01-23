@@ -301,22 +301,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           readDataSchema
         }
 
-        // read boolean and numeric columns as strings in cuDF
-        val dataSchemaWithStrings = StructType(dataSchema.fields
-          .map(f => {
-            f.dataType match {
-              case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
-                   DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
-                   DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
-                   DataTypes.TimestampType =>
-                f.copy(dataType = DataTypes.StringType)
-              case other if GpuTypeShims.supportCsvRead(other) =>
-                f.copy(dataType = DataTypes.StringType)
-              case _ =>
-                f
-            }
-          }))
-        val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
+        // read primitive columns as strings in cuDF
+        val cudfSchema = createCudfSchema(dataSchema)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -371,6 +357,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       dataBuffer.close()
     }
   }
+
+  def createCudfSchema(dataSchema: StructType): Schema
 
   def dateFormat: Option[String]
   def timestampFormat: String

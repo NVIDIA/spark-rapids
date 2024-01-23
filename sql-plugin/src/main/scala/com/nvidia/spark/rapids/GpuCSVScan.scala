@@ -18,16 +18,13 @@ package com.nvidia.spark.rapids
 
 import java.io.IOException
 import java.nio.charset.StandardCharsets
-
 import scala.collection.JavaConverters._
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuTypeShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
@@ -332,6 +329,32 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
    * @return the file format short name
    */
   override def getFileFormatShortName: String = "CSV"
+
+  /**
+   * When reading from text formats, we want to read primitive types as strings
+   * rather than have cuDF infer the types. We then cast those strings to the
+   * primitive types in the plugin in a Spark-compatible way.
+   *
+   * @param dataSchema Spark schema
+   * @return cuDF schema using string types for primitives
+   */
+  def createCudfSchema(dataSchema: StructType): Schema = {
+    val dataSchemaWithStrings = StructType(dataSchema.fields
+      .map(f => {
+        f.dataType match {
+          case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
+               DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
+               DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
+               DataTypes.TimestampType =>
+            f.copy(dataType = DataTypes.StringType)
+          case other if GpuTypeShims.supportCsvRead(other) =>
+            f.copy(dataType = DataTypes.StringType)
+          case _ =>
+            f
+        }
+      }))
+    GpuColumnVector.from(dataSchemaWithStrings)
+  }
 
   /**
    * CSV supports "true" and "false" (case-insensitive) as valid boolean values.
