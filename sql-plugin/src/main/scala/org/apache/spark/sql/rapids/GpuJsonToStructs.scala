@@ -17,10 +17,9 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
+import ai.rapids.cudf.{ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, DType, HostMemoryBuffer, Scalar}
+import com.nvidia.spark.rapids.{GpuCast, GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 import com.nvidia.spark.rapids.shims.GpuJsonToStructsShim
@@ -28,6 +27,43 @@ import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
+
+class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
+  lazy val data = combined.getData
+  lazy val totalSize = data.getLength
+  override def size(): Long = totalSize
+
+  override def hostRead(offset: Long, length: Long): HostMemoryBuffer = {
+    val realLength = math.min(totalSize - offset, length)
+    withResource(data.slice(offset, realLength)) { sliced =>
+      closeOnExcept(HostAlloc.alloc(realLength)) { hostMemoryBuffer =>
+        hostMemoryBuffer.copyFromDeviceBuffer(sliced.asInstanceOf[DeviceMemoryBuffer])
+        hostMemoryBuffer
+      }
+    }
+  }
+
+  override def hostRead(offset: Long, hostMemoryBuffer: HostMemoryBuffer): Long = {
+    val length = math.min(totalSize - offset, hostMemoryBuffer.getLength)
+    withResource(data.slice(offset, length)) { sliced =>
+      hostMemoryBuffer.copyFromDeviceBuffer(sliced.asInstanceOf[DeviceMemoryBuffer])
+    }
+    length
+  }
+
+  override def supportsDeviceRead = true
+
+  override def deviceRead(offset: Long, dest: DeviceMemoryBuffer, stream: Cuda.Stream): Long = {
+    val length = math.min(totalSize - offset, dest.getLength)
+    dest.copyFromDeviceBufferAsync(0, data, offset, length, stream)
+    length
+  }
+
+  override def close(): Unit = {
+    combined.close()
+    super.close()
+  }
+}
 
 case class GpuJsonToStructs(
     schema: DataType,
@@ -58,7 +94,7 @@ case class GpuJsonToStructs(
     }
 
     withResource(stripped) { stripped =>
-      val isEmpty = withResource(stripped.getCharLengths) { lengths =>
+      val isEmpty = withResource(stripped.getByteCount) { lengths =>
         withResource(cudf.Scalar.fromInt(0)) { zero =>
           lengths.lessOrEqualTo(zero)
         }
@@ -70,6 +106,7 @@ case class GpuJsonToStructs(
       }
       closeOnExcept(isNullOrEmptyInput) { _ =>
         withResource(cudf.Scalar.fromString(emptyRowStr)) { emptyRow =>
+          // TODO is it worth checking if any are empty or null and then skipping this?
           withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { nullsReplaced =>
             val isLiteralNull = withResource(Scalar.fromString("null")) { literalNull =>
               nullsReplaced.equalTo(literalNull)
@@ -169,23 +206,16 @@ case class GpuJsonToStructs(
         // Step 2: Concat the data into a single buffer
         val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
         withResource(isNullOrEmpty) { isNullOrEmpty =>
-          // Step 3: copy the data back to the host so we can parse it.
-          val combinedHost = withResource(combined) { combined =>
-            combined.copyToHost()
-          }
-          // Step 4: Have cudf parse the JSON data
-          val (names, rawTable) = withResource(combinedHost) { combinedHost =>
-            val data = combinedHost.getData
-            val start = combinedHost.getStartListOffset(0)
-            val end = combinedHost.getEndListOffset(0)
-            val length = end - start
-
+          // Step 3: setup a datasource
+          val (names, rawTable) = withResource(new JsonDeviceDataSource(combined)) { ds =>
+            // Step 4: Have cudf parse the JSON data
             val jsonOptions = cudf.JSONOptions.builder()
               .withRecoverWithNull(true)
               .withMixedTypesAsStrings(enableMixedTypesAsString)
               .withNormalizeSingleQuotes(true)
               .build()
-            withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
+            withResource(
+              cudf.Table.readAndInferJSON(jsonOptions, ds)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames
               (names, tableWithMeta.releaseTable())
             }
