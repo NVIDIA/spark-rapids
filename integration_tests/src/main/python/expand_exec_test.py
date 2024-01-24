@@ -31,12 +31,15 @@ def test_expand_exec(data_gen):
     assert_gpu_and_cpu_are_equal_collect(op_df)
 
 
+pre_pro_sqls = [
+    "select count(distinct (a+b)), count(distinct if((a+b)>100, c, null)) from pre_pro group by a",
+    "select count(b), count(c) from pre_pro group by cube((a+b), if((a+b)>100, c, null))",
+    "select count(b), count(c) from pre_pro group by rollup((a+b), if((a+b)>100, c, null))"]
+
 @ignore_order(local=True)
-def test_expand_pre_project():
+@pytest.mark.parametrize('sql', pre_pro_sqls, ids=["distinct_agg", "cube", "rollup"])
+def test_expand_pre_project(sql):
     def get_df(spark):
         return three_col_df(spark, short_gen, int_gen, string_gen)
 
-    assert_gpu_and_cpu_are_equal_sql(get_df,
-        "pre_pro",
-        "select count(distinct (a+b)), count(distinct if((a+b)>100, c, null)) from pre_pro group by a",
-        {"spark.rapids.sql.expandPreproject.enabled": "true"})
+    assert_gpu_and_cpu_are_equal_sql(get_df, "pre_pro", sql)

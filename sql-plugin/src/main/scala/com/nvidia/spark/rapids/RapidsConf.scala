@@ -1080,15 +1080,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
-    .doc("When set to true enables the pre-projection for GPU Expand. " +
+    .doc("When set to false disables the pre-projection for GPU Expand. " +
       "Pre-projection leverages the tiered projection to evaluate expressions that " +
       "semantically equal across Expand projection lists before expanding, to avoid " +
-      "duplicate evaluations. Usually it increases the GPU memory pressure, so disable " +
-      s"it by default. '${ENABLE_TIERED_PROJECT.key}' should also set to true to " +
-      s"enable this.")
+      s"duplicate evaluations. '${ENABLE_TIERED_PROJECT.key}' should also set to true " +
+      "to enable this.")
     .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
