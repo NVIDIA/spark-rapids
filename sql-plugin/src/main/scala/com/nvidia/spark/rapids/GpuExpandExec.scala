@@ -94,6 +94,9 @@ case class GpuExpandExec(
     AttributeSet(projections.flatten.flatMap(_.references))
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    // cache in a local to avoid serializing the plan
+    val metricsMap = allMetrics
+
     var projectionsForBind = projections
     var attributesForBind = child.output
     var preprojectIter = identity[Iterator[ColumnarBatch]] _
@@ -107,8 +110,10 @@ case class GpuExpandExec(
         projectionsForBind = preprojectedProjections
         attributesForBind = preprojectionList.map(_.toAttribute)
         preprojectIter = (iter: Iterator[ColumnarBatch]) => iter.map(cb =>
-          boundPreprojections.projectAndCloseWithRetrySingleBatch(
-            SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+          metricsMap(OP_TIME).ns {
+            boundPreprojections.projectAndCloseWithRetrySingleBatch(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+          }
         )
       }
     }
@@ -116,9 +121,6 @@ case class GpuExpandExec(
     val boundProjections = projectionsForBind.map { pl =>
       GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, useTieredProject)
     }
-
-    // cache in a local to avoid serializing the plan
-    val metricsMap = allMetrics
 
     child.executeColumnar().mapPartitions { it =>
       new GpuExpandIterator(boundProjections, metricsMap, preprojectIter(it))
