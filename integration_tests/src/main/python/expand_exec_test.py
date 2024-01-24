@@ -31,6 +31,8 @@ def test_expand_exec(data_gen):
     assert_gpu_and_cpu_are_equal_collect(op_df)
 
 
+# "cube" and "rollup" will not run into the pre-projection because of different
+# planning by Spark. But it is still good to test them to make sure no regressions.
 pre_pro_sqls = [
     "select count(distinct (a+b)), count(distinct if((a+b)>100, c, null)) from pre_pro group by a",
     "select count(b), count(c) from pre_pro group by cube((a+b), if((a+b)>100, c, null))",
