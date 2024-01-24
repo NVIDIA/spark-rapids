@@ -180,9 +180,9 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
   var otherGroupAggResult: Option[SpillableColumnarBatch] = None
   var otherGroupRideAlong: Option[SpillableColumnarBatch] = None
 
-  val numGroupingKeys: Int = boundStages.boundPartitionSpec.size
   val numGroups: Int = firstPassAggResult.aggResult.numRows()
-  val numRideAlongRows: Int = firstPassAggResult.rideAlongColumns.numRows()
+  private val numGroupingKeys: Int = boundStages.boundPartitionSpec.size
+  private val numRideAlongRows: Int = firstPassAggResult.rideAlongColumns.numRows()
 
   if (numGroups < 2) {
       throw new IllegalStateException("Expected at least two result groups.")
