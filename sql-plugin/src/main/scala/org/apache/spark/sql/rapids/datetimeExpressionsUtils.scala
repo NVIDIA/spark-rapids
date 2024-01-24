@@ -58,6 +58,8 @@ object datetimeExpressionsUtils {
 
   def timestampAddDurationCalendar(cv: ColumnVector, days: Long, 
       microseconds: Long, zoneId: ZoneId): ColumnVector = {
+    assert(cv.getType == DType.TIMESTAMP_MICROSECONDS, 
+        "cv should be TIMESTAMP_MICROSECONDS type but got " + cv.getType)
     val interval = days * microSecondsInOneDay + microseconds
     if (interval == 0) {
       return cv.incRefCount()
@@ -66,6 +68,9 @@ object datetimeExpressionsUtils {
       cv.binaryOp(BinaryOp.ADD, Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
             interval), DType.TIMESTAMP_MICROSECONDS)
     } else {
+      // For CalendarInterval, microseconds could be larger than 1 day or negative,
+      // and microseconds in TimeAdd is not affected by timezone, so we need to
+      // calculate days and microseconds separately.
       val daysScalar = Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
           days * microSecondsInOneDay)
       val resDays = withResource(daysScalar) { _ =>
@@ -76,6 +81,7 @@ object datetimeExpressionsUtils {
           microseconds), DType.TIMESTAMP_MICROSECONDS)
       }
     }
+    // The sign of duration will be unchanged considering the impact of timezone
     withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
         interval)) { duration =>
       timeAddOverflowCheck(cv, duration, resWithOverflow)

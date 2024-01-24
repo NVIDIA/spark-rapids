@@ -98,7 +98,9 @@ case class GpuTimeAdd(start: Expression,
                 if (calendarI.months != 0) {
                   throw new UnsupportedOperationException("Months aren't supported at the moment")
                 }
-                timestampAddDurationCalendar(l, calendarI.days, calendarI.microseconds, timeZone)
+                val resCv = datetimeExpressionsUtils.timestampAddDurationCalendar(l.getBase, 
+                    calendarI.days, calendarI.microseconds, zoneId)
+                GpuColumnVector.from(resCv, dataType)
               case _: DayTimeIntervalType =>
                 val interval = intervalS.getValue.asInstanceOf[Long]
                 // add interval
