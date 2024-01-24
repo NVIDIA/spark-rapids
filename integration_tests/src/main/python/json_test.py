@@ -372,7 +372,9 @@ def test_read_invalid_json(spark_tmp_table_factory, std_input_path, read_func, f
     'mixed-primitives.ndjson',
     'mixed-primitives-nested.ndjson',
     'simple-nested.ndjson',
-    pytest.param('mixed-nested.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9353'))
+    'mixed-nested.ndjson',
+    'mixed-types-in-struct.ndjson',
+    'mixed-primitive-arrays.ndjson',
 ])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('schema', [_int_schema])
