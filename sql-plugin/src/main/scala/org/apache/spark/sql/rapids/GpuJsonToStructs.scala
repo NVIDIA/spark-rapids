@@ -177,9 +177,7 @@ case class GpuJsonToStructs(
 
             val jsonOptions = cudf.JSONOptions.builder()
               .withRecoverWithNull(true)
-              // tracking issue for enabling mixed type as string
-              // https://github.com/NVIDIA/spark-rapids/issues/10253
-              .withMixedTypesAsStrings(false)
+              .withMixedTypesAsStrings(true)
               .build()
             withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames
