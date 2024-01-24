@@ -89,8 +89,7 @@ case class GpuTimeAdd(start: Expression,
         // lhs is start, rhs is interval
         (lhs, rhs) match {
           case (l, intervalS: GpuScalar) =>
-            // get long type interval
-            val interval = intervalS.dataType match {
+            intervalS.dataType match {
               case CalendarIntervalType =>
                 // Scalar does not support 'CalendarInterval' now, so use
                 // the Scala value instead.
@@ -99,25 +98,24 @@ case class GpuTimeAdd(start: Expression,
                 if (calendarI.months != 0) {
                   throw new UnsupportedOperationException("Months aren't supported at the moment")
                 }
-                calendarI.days * microSecondsInOneDay + calendarI.microseconds
+                timestampAddDurationCalendar(l, calendarI.days, calendarI.microseconds, timeZone)
               case _: DayTimeIntervalType =>
-                intervalS.getValue.asInstanceOf[Long]
+                val interval = intervalS.getValue.asInstanceOf[Long]
+                // add interval
+                if (interval != 0) {
+                  val zoneId = ZoneId.of(timeZoneId.getOrElse("UTC"))
+                  val resCv = withResource(Scalar.durationFromLong(
+                      DType.DURATION_MICROSECONDS, interval)) { duration =>
+                    datetimeExpressionsUtils.timestampAddDurationUs(
+                      l.getBase, duration, zoneId)
+                  }
+                  GpuColumnVector.from(resCv, dataType)
+                } else {
+                  l.incRefCount()
+                }
               case _ =>
                 throw new UnsupportedOperationException(
                   "GpuTimeAdd unsupported data type: " + intervalS.dataType)
-            }
-
-            // add interval
-            if (interval != 0) {
-              val zoneId = ZoneId.of(timeZoneId.getOrElse("UTC"))
-              val resCv = withResource(Scalar.durationFromLong(
-                  DType.DURATION_MICROSECONDS, interval)) { duration =>
-                datetimeExpressionsUtils.timestampAddDuration(
-                  l.getBase, duration, zoneId)
-              }
-              GpuColumnVector.from(resCv, dataType)
-            } else {
-              l.incRefCount()
             }
           case (l, r: GpuColumnVector) =>
             (l.dataType(), r.dataType) match {
@@ -126,7 +124,7 @@ case class GpuTimeAdd(start: Expression,
                 // bitCastTo is similar to reinterpret_cast, it's fast, the time can be ignored.
                 val zoneId = ZoneId.of(timeZoneId.getOrElse("UTC"))
                 val resCv = withResource(r.getBase.bitCastTo(DType.DURATION_MICROSECONDS)) { dur =>
-                  datetimeExpressionsUtils.timestampAddDuration(l.getBase, dur, zoneId)
+                  datetimeExpressionsUtils.timestampAddDurationUs(l.getBase, dur, zoneId)
                 }
                 GpuColumnVector.from(resCv, dataType)
               case _ =>

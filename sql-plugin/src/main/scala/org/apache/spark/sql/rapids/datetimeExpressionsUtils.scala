@@ -17,14 +17,18 @@
 package org.apache.spark.sql.rapids
 
 import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuOverrides.isUTCTimezone
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 
 object datetimeExpressionsUtils {
-  def timestampAddDuration(cv: ColumnVector, duration: BinaryOperable, 
+
+  val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
+
+  def timestampAddDurationUs(cv: ColumnVector, duration: BinaryOperable, 
       zoneId: ZoneId): ColumnVector = {
     assert(cv.getType == DType.TIMESTAMP_MICROSECONDS, 
         "cv should be TIMESTAMP_MICROSECONDS type but got " + cv.getType)
@@ -48,28 +52,60 @@ object datetimeExpressionsUtils {
         case durC: ColumnView => GpuTimeZoneDB.timeAdd(cv, durC, zoneId)
       }
     }
-    closeOnExcept(resWithOverflow) { _ =>
-      withResource(resWithOverflow.castTo(DType.INT64)) { resWithOverflowLong =>
-        withResource(cv.bitCastTo(DType.INT64)) { cvLong =>
-          duration match {
-          case dur: Scalar =>
-            val durLong = Scalar.fromLong(dur.getLong)
-            withResource(durLong) { _ =>
-            AddOverflowChecks.basicOpOverflowCheck(
-                cvLong, durLong, resWithOverflowLong, "long overflow")
-            }
-          case dur: ColumnView =>
-            withResource(dur.bitCastTo(DType.INT64)) { durationLong =>
-            AddOverflowChecks.basicOpOverflowCheck(
-                cvLong, durationLong, resWithOverflowLong, "long overflow")
-            }
-          case _ =>
-            throw new UnsupportedOperationException("only scalar and column arguments " +
-                s"are supported, got ${duration.getClass}")
+    timeAddOverflowCheck(cv, duration, resWithOverflow)
+    resWithOverflow
+  }
+
+  def timestampAddDurationCalendar(cv: ColumnVector, days: Long, 
+      microseconds: Long, zoneId: ZoneId): ColumnVector = {
+    val interval = days * microSecondsInOneDay + microseconds
+    if (interval == 0) {
+      return cv.incRefCount()
+    }
+    val resWithOverflow = if (isUTCTimezone(zoneId)) {
+      cv.binaryOp(BinaryOp.ADD, Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
+            interval), DType.TIMESTAMP_MICROSECONDS)
+    } else {
+      val daysScalar = Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
+          days * microSecondsInOneDay)
+      val resDays = withResource(daysScalar) { _ =>
+        GpuTimeZoneDB.timeAdd(cv, daysScalar, zoneId)
+      }
+      withResource(resDays) { _ =>
+        resDays.binaryOp(BinaryOp.ADD, Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
+          microseconds), DType.TIMESTAMP_MICROSECONDS)
+      }
+    }
+    withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
+        interval)) { duration =>
+      timeAddOverflowCheck(cv, duration, resWithOverflow)
+    }
+    resWithOverflow
+  }
+
+  def timeAddOverflowCheck(
+      cv: ColumnVector,
+      duration: BinaryOperable,
+      resWithOverflow: ColumnVector): Unit = {
+    withResource(resWithOverflow.castTo(DType.INT64)) { resWithOverflowLong =>
+      withResource(cv.bitCastTo(DType.INT64)) { cvLong =>
+        duration match {
+        case dur: Scalar =>
+          val durLong = Scalar.fromLong(dur.getLong)
+          withResource(durLong) { _ =>
+          AddOverflowChecks.basicOpOverflowCheck(
+              cvLong, durLong, resWithOverflowLong, "long overflow")
           }
+        case dur: ColumnView =>
+          withResource(dur.bitCastTo(DType.INT64)) { durationLong =>
+          AddOverflowChecks.basicOpOverflowCheck(
+              cvLong, durationLong, resWithOverflowLong, "long overflow")
+          }
+        case _ =>
+          throw new UnsupportedOperationException("only scalar and column arguments " +
+              s"are supported, got ${duration.getClass}")
         }
       }
     }
-    resWithOverflow
   }
 }

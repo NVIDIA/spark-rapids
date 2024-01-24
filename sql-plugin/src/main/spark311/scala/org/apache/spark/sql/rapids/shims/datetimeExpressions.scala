@@ -21,9 +21,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import java.util.concurrent.TimeUnit
-
-import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -58,8 +55,6 @@ case class GpuTimeAdd(
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
-  val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
-
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
@@ -77,16 +72,9 @@ case class GpuTimeAdd(
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
             }
-            val interval = intvl.days * microSecondsInOneDay + intvl.microseconds
-            if (interval != 0) {
-              val resCv = withResource(Scalar.durationFromLong(
-                  DType.DURATION_MICROSECONDS, interval)) { duration =>
-                datetimeExpressionsUtils.timestampAddDuration(l.getBase, duration, zoneId)
-              }
-              GpuColumnVector.from(resCv, dataType)
-            } else {
-              l.incRefCount()
-            }
+            val resCv = datetimeExpressionsUtils.timestampAddDurationCalendar(l.getBase, 
+                intvl.days, intvl.microseconds, zoneId)
+            GpuColumnVector.from(resCv, dataType)
           case _ =>
             throw new UnsupportedOperationException("only column and interval arguments " +
               s"are supported, got left: ${lhs.getClass} right: ${rhs.getClass}")
