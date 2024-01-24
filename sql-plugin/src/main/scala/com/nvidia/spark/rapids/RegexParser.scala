@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.sql.SQLException
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 
 /**
@@ -684,7 +685,6 @@ sealed class RegexRewriteFlags(val emptyRepetition: Boolean)
                 RegexSplitMode   if performing a split (string_split)
  */
 class CudfRegexTranspiler(mode: RegexMode) {
-  private val regexMetaChars = ".$^[]\\|?*+(){}"
   private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
   private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
       'b' -> '\b', 'e' -> '\u001b')
@@ -747,7 +747,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     e match {
       case RegexEscaped(ch) if escapeChars.contains(ch) => Some(escapeChars(ch).toString)
       case RegexEscaped(ch) if regexPunct.contains(ch) => Some(ch.toString)
-      case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexChar(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
       case RegexSequence(parts) =>
         parts.foldLeft[Option[String]](Some("")) { (all, x) =>
           all match {

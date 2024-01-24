@@ -85,6 +85,16 @@ case class GpuParseUrl(children: Seq[Expression])
     ParseURI.parseURIQueryWithLiteral(col.getBase, keyStr)
   }
 
+  def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, 
+      key: GpuColumnVector): ColumnVector = {
+    val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
+    if (part != QUERY) {
+      // return a null columnvector
+      return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
+    }
+    ParseURI.parseURIQueryWithColumn(col.getBase, key.getBase)
+  }
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (children.size == 2) {
       val Seq(url, partToExtract) = children
@@ -109,6 +119,8 @@ case class GpuParseUrl(children: Seq[Expression])
             (urls, parts, keys) match {
               case (urlCv: GpuColumnVector, partScalar: GpuScalar, keyScalar: GpuScalar) =>
                 GpuColumnVector.from(doColumnar(urlCv, partScalar, keyScalar), dataType)
+              case (urlCv: GpuColumnVector, partScalar: GpuScalar, keyCv: GpuColumnVector) =>
+                GpuColumnVector.from(doColumnar(urlCv, partScalar, keyCv), dataType)
               case _ =>
                 throw new 
                     UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")

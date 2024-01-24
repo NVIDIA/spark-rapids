@@ -537,6 +537,10 @@ The following regular expression patterns are not yet supported on the GPU and w
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
+## URL Parsing
+
+`parse_url` QUERY with a column key could produce different results on CPU and GPU. In Spark, the `key` in `parse_url` could act like a regex, but GPU will match the key exactly. If key is literal, GPU will check if key contains regex special characters and fallback to CPU if it does, but if key is column, it will not be able to fallback. For example, `parse_url("http://foo/bar?abc=BAD&a.c=GOOD", QUERY, "a.c")` will return "BAD" on CPU, but "GOOD" on GPU. See the Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
+
 ## Timestamps
 
 Spark stores timestamps internally relative to the JVM time zone.  Converting an arbitrary timestamp

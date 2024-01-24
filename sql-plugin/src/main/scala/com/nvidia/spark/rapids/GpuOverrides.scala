@@ -445,7 +445,7 @@ object GpuOverrides extends Logging {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
-
+  val regexMetaChars = ".$^[]\\|?*+(){}"
   /**
    * Provides a way to log an info message about how long an operation took in milliseconds.
    */
@@ -3252,26 +3252,26 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
-            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST"), TypeSig.STRING)),
+            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST | QUERY"), 
+            TypeSig.STRING)),
           // Should really be an OptionalParam
-          Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+          Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (a.failOnError) {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
           
-          // In Spark, the key in parse_url could act like a regex, but on GPU, we only support
-          // literal keys. So we need to fallback if the key contains regex special characters.
-          // See Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
+            // In Spark, the key in parse_url could act like a regex, but GPU will match the key 
+            // exactly. When key is literal, GPU will check if the key contains regex special and
+            // fallbcak to CPU if it does, but we are not able to fallback when key is column.
+            // see Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
             case Some("QUERY") if (a.children.size == 3) => {
               extractLit(a.children(2)).foreach { key =>
                 if (key.value != null) {
                   val keyStr = key.value.asInstanceOf[UTF8String].toString
-                  val specialCharacters = List("\\", "[", "]", "{", "}", "^", "-", "$", 
-                      ".", "+", "*", "?", "|")
-                  if (specialCharacters.exists(keyStr.contains(_))) {
+                  if (regexMetaChars.exists(keyStr.contains(_))) {
                     willNotWorkOnGpu(s"Key $keyStr could act like a regex which is not " + 
                         "supported on GPU")
                   }
