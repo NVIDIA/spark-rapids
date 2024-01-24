@@ -822,6 +822,17 @@ def test_from_json_struct_of_list(schema):
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.parametrize('schema', [
+    'struct<a:string>'
+])
+@allow_non_gpu(*non_utc_allow)
+def test_from_json_mixed_types_list_struct(schema):
+    json_string_gen = StringGen(r'{"a": (\[1,2,3\]|{"b": "[a-z]{2}"}) }')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select('a', f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_all_empty_string_input(schema):
