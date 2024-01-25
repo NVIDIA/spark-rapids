@@ -833,7 +833,8 @@ def test_from_json_mixed_types_list_struct(schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select('a', f.from_json('a', schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.rapids.sql.json.read.mixedTypesAsString.enabled': True})
 
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
 @allow_non_gpu(*non_utc_allow)
