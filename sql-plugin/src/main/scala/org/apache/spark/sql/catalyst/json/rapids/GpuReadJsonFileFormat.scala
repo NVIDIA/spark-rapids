@@ -67,7 +67,8 @@ class GpuReadJsonFileFormat extends JsonFileFormat with GpuReadFileFormatWithMet
       rapidsConf.maxReadBatchSizeBytes,
       rapidsConf.maxGpuColumnSizeBytes,
       metrics,
-      options)
+      options,
+      rapidsConf.isJsonMixedTypesAsStringEnabled)
     PartitionReaderIterator.buildReader(factory)
   }
 

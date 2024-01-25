@@ -33,6 +33,7 @@ case class GpuJsonToStructs(
     schema: DataType,
     options: Map[String, String],
     child: Expression,
+    enableMixedTypesAsString: Boolean,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
@@ -177,7 +178,7 @@ case class GpuJsonToStructs(
 
             val jsonOptions = cudf.JSONOptions.builder()
               .withRecoverWithNull(true)
-              .withMixedTypesAsStrings(true)
+              .withMixedTypesAsStrings(enableMixedTypesAsString)
               .build()
             withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames
