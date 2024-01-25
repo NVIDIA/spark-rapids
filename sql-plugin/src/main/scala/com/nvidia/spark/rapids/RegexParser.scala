@@ -747,7 +747,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     e match {
       case RegexEscaped(ch) if escapeChars.contains(ch) => Some(escapeChars(ch).toString)
       case RegexEscaped(ch) if regexPunct.contains(ch) => Some(ch.toString)
-      case RegexChar(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
       case RegexSequence(parts) =>
         parts.foldLeft[Option[String]](Some("")) { (all, x) =>
           all match {
