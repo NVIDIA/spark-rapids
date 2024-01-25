@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -216,6 +216,18 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
             .select([f.col('py_array').getItem(i) for i in range(0, 1)]),
         conf=arrow_udf_conf)
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', [byte_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf_array_input(data_gen, window):
+    @f.pandas_udf(returnType=LongType())
+    def pandas_size(to_process: pd.Series) -> int:
+        return to_process.size
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, data_gen, data_gen, ArrayGen(data_gen)).select(
+            pandas_size(f.col('c')).over(window).alias('size_col')),
+        conf=arrow_udf_conf)
 
 # ======= Test flat map group in Pandas =======
 
