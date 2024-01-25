@@ -42,7 +42,7 @@ def create_dim_table(table_name, table_format, length=500):
         df.write.format(table_format) \
             .mode("overwrite") \
             .saveAsTable(table_name)
-        return df.select('filter').first()[0]
+        return df.select('filter').where("value > 0").first()[0]
 
     return with_cpu_session(fn)
 

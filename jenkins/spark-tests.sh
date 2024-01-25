@@ -304,6 +304,11 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
     ./run_pyspark_from_build.sh
 
+  SPARK_SHELL_SMOKE_TEST=1 \
+  PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
+  PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+    ./run_pyspark_from_build.sh
+
   # ParquetCachedBatchSerializer cache_test
   PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer \
     ./run_pyspark_from_build.sh -k cache_test

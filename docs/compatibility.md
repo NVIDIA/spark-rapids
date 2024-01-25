@@ -441,6 +441,44 @@ parse some variants of `NaN` and `Infinity` even when this option is disabled
 ([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with
 Spark version 3.3.0 and later.
 
+### get_json_object
+
+The `GetJsonObject` operator takes a JSON formatted string and a JSON path string as input. The
+code base for this is currently separate from GPU parsing of JSON for files and `FromJsonObject`.
+Because of this the results can be different from each other. Because of several incompatibilities
+and bugs in the GPU version of `GetJsonObject` it will be on the CPU by default. If you are
+aware of the current limitations with the GPU version, you might see a significant performance
+speedup if you enable it by setting `spark.rapids.sql.expression.GetJsonObject` to `true`.
+
+The following is a list of known differences.
+  * [No input validation](https://github.com/NVIDIA/spark-rapids/issues/10218). If the input string
+    is not valid JSON Apache Spark returns a null result, but ours will still try to find a match.
+  * [Escapes are not properly processed for Strings](https://github.com/NVIDIA/spark-rapids/issues/10196).
+    When returning a result for a quoted string Apache Spark will remove the quotes and replace
+    any escape sequences with the proper characters. The escape sequence processing does not happen
+    on the GPU.
+  * [Invalid JSON paths could throw exceptions](https://github.com/NVIDIA/spark-rapids/issues/10212)
+    If a JSON path is not valid Apache Spark returns a null result, but ours may throw an exception
+    and fail the query.
+  * [Non-string output is not normalized](https://github.com/NVIDIA/spark-rapids/issues/10218)
+    When returning a result for things other than strings, a number of things are normalized by
+    Apache Spark, but are not normalized by the GPU, like removing unnecessary white space,
+    parsing and then serializing floating point numbers, turning single quotes to double quotes,
+    and removing unneeded escapes for single quotes.
+
+The following is a list of bugs in either the GPU version or arguably in Apache Spark itself.
+   * https://github.com/NVIDIA/spark-rapids/issues/10219 non-matching quotes in quoted strings
+   * https://github.com/NVIDIA/spark-rapids/issues/10213 array index notation works without root
+   * https://github.com/NVIDIA/spark-rapids/issues/10214 unquoted array index notation is not
+     supported
+   * https://github.com/NVIDIA/spark-rapids/issues/10215 leading spaces can be stripped from named
+     keys.
+   * https://github.com/NVIDIA/spark-rapids/issues/10216 It appears that Spark is flattening some
+     output, which is different from other implementations including the GPU version.
+   * https://github.com/NVIDIA/spark-rapids/issues/10217 a JSON path execution bug
+   * https://issues.apache.org/jira/browse/SPARK-46761 Apache Spark does not allow the `?` character in
+     a quoted JSON path string.
+
 ## Avro
 
 The Avro format read is a very experimental feature which is expected to have some issues, so we disable
@@ -491,7 +529,7 @@ The following regular expression patterns are not yet supported on the GPU and w
   or more results
 - Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Lazy quantifiers, such as `a*?`
+- Lazy quantifiers within a choice block such as `(2|\u2029??)+` 
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`,
   or `[a-z&&[^bc]]`
@@ -722,14 +760,18 @@ strings, so results may differ from Spark in the same way. To disable this on th
 
 ### String to Float
 
-Casting from string to floating-point types on the GPU returns incorrect results when the string
-represents any number in the following ranges. In both cases the GPU returns `Double.MaxValue`. The
-default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
+Casting from string to double on the GPU returns incorrect results when the string represents any 
+number in the following ranges. In both cases the GPU returns `Double.MaxValue`. The default behavior 
+in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
 
 - `1.7976931348623158E308 <= x < 1.7976931348623159E308`
 - `-1.7976931348623159E308 < x <= -1.7976931348623158E308`
 
-Also, the GPU does not support casting from strings containing hex values.
+Casting from string to double on the GPU could also sometimes return incorrect results if the string 
+contains high precision values. Apache Spark rounds the values to the nearest double, while the GPU 
+truncates the values directly.
+
+Also, the GPU does not support casting from strings containing hex values to floating-point types.
 
 This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
