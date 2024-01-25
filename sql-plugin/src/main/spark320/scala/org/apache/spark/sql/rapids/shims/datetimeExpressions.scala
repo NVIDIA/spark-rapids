@@ -108,8 +108,7 @@ case class GpuTimeAdd(start: Expression,
                   val zoneId = ZoneId.of(timeZoneId.getOrElse("UTC"))
                   val resCv = withResource(Scalar.durationFromLong(
                       DType.DURATION_MICROSECONDS, interval)) { duration =>
-                    datetimeExpressionsUtils.timestampAddDurationUs(
-                      l.getBase, duration, zoneId)
+                    datetimeExpressionsUtils.timestampAddDurationUs(l.getBase, duration, zoneId)
                   }
                   GpuColumnVector.from(resCv, dataType)
                 } else {

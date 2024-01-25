@@ -44,7 +44,7 @@ def test_timesub(data_gen):
 def test_timeadd(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, TimestampGen(), length=200000)
+        lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('edge_vals', [-pow(2, 63), pow(2, 63)], ids=idfn)
@@ -58,25 +58,14 @@ def test_timeadd_long_overflow(edge_vals):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd_daytime_column_invalid():
+def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000
         ('t', TimestampGen(end=datetime(2000, 1, 1, tzinfo=timezone.utc))),
         # max days is 8000 year, so added result will not be out of range
         ('d', DayTimeIntervalGen(min_value=timedelta(days=-1000 * 365), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list).selectExpr("t + INTERVAL 0 DAYS 86400000001 MICROSECONDS"))
-
-@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@allow_non_gpu(*non_supported_tz_allow)
-def test_timeadd_daytime_column_debug():
-    gen_list = [
-        # timestamp column max year is 1000
-        ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
-        # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(days=-1000 * 365), max_value=timedelta(days=8000 * 365)))]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen_list, length=2000000).selectExpr("t", "d", "t + d"))
+        lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu(*non_supported_tz_allow)

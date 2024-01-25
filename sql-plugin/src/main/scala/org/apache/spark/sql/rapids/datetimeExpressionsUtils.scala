@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.isUTCTimezone
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 
@@ -52,7 +52,9 @@ object datetimeExpressionsUtils {
         case durC: ColumnView => GpuTimeZoneDB.timeAdd(cv, durC, zoneId)
       }
     }
-    timeAddOverflowCheck(cv, duration, resWithOverflow)
+    closeOnExcept(resWithOverflow) { _ =>
+      timeAddOverflowCheck(cv, duration, resWithOverflow)
+    }
     resWithOverflow
   }
 
@@ -82,9 +84,11 @@ object datetimeExpressionsUtils {
       }
     }
     // The sign of duration will be unchanged considering the impact of timezone
-    withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
-        interval)) { duration =>
-      timeAddOverflowCheck(cv, duration, resWithOverflow)
+    closeOnExcept(resWithOverflow) { _ =>
+      withResource(Scalar.durationFromLong(DType.DURATION_MICROSECONDS, 
+          interval)) { duration =>
+        timeAddOverflowCheck(cv, duration, resWithOverflow)
+      }
     }
     resWithOverflow
   }
@@ -99,13 +103,13 @@ object datetimeExpressionsUtils {
         case dur: Scalar =>
           val durLong = Scalar.fromLong(dur.getLong)
           withResource(durLong) { _ =>
-          AddOverflowChecks.basicOpOverflowCheck(
-              cvLong, durLong, resWithOverflowLong, "long overflow")
+            AddOverflowChecks.basicOpOverflowCheck(
+                cvLong, durLong, resWithOverflowLong, "long overflow")
           }
         case dur: ColumnView =>
           withResource(dur.bitCastTo(DType.INT64)) { durationLong =>
-          AddOverflowChecks.basicOpOverflowCheck(
-              cvLong, durationLong, resWithOverflowLong, "long overflow")
+            AddOverflowChecks.basicOpOverflowCheck(
+                cvLong, durationLong, resWithOverflowLong, "long overflow")
           }
         case _ =>
           throw new UnsupportedOperationException("only scalar and column arguments " +
