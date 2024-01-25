@@ -597,7 +597,7 @@ def test_from_json_map_fallback():
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_struct(schema):
     # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
-    json_string_gen = StringGen(r'{"a": [1-9]{0,5}, "b": "[A-Z]{0,5}", "c": 1\d\d\d}') \
+    json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
