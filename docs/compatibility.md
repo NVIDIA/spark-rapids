@@ -382,7 +382,9 @@ When a JSON attribute contains mixed types (different types in different rows), 
 and lists, Spark will return a string representation of the JSON, but when running on GPU, the default 
 behavior is to throw an exception. There is an experimental setting 
 `spark.rapids.sql.json.read.mixedTypesAsString.enabled` that can be set to true to support reading
-mixed types as string, but there are known issues where it could also read structs as string in some cases.
+mixed types as string, but there are known issues where it could also read structs as string in some cases. There
+can also be minor formatting differences. Spark will return a parsed and formatted representation, but the
+GPU implementation returns the unparsed JSON string.
 
 ### `to_json` function
 
