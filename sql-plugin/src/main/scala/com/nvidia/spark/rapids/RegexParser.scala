@@ -19,6 +19,7 @@ import java.sql.SQLException
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 
 /**
@@ -684,7 +685,6 @@ sealed class RegexRewriteFlags(val emptyRepetition: Boolean)
                 RegexSplitMode   if performing a split (string_split)
  */
 class CudfRegexTranspiler(mode: RegexMode) {
-  private val regexMetaChars = ".$^[]\\|?*+(){}"
   private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
   private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
       'b' -> '\b', 'e' -> '\u001b')
