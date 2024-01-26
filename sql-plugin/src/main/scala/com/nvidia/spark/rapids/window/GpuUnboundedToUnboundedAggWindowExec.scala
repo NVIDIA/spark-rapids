@@ -402,19 +402,18 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
           aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
 
         val result = withResource(completedAggResults) { _ =>
-          val concatAggResults = concat(completedAggResults,
-                                        boundStages.groupingColumnTypes ++
-                                          boundStages.aggResultTypes)
-          val mergedAggResults = withResource(concatAggResults) {
-            groupByMerge
+          withResource(concat(completedAggResults,
+                              boundStages.groupingColumnTypes ++
+                                boundStages.aggResultTypes)) { concatAggResults =>
+            withResource(groupByMerge(concatAggResults)) { mergedAggResults =>
+              val completedRideAlongBatches =
+                rideAlongColumnsPendingCompletion.clone // Cloned for exception safety.
+                  .asInstanceOf[util.LinkedList[SpillableColumnarBatch]]
+              completedRideAlongBatches.add(partitioned.otherGroupRideAlong.get)
+              SecondPassAggResult(completedRideAlongBatches,
+                                  removeGroupColumns(mergedAggResults))
+            }
           }
-          val completedRideAlongBatches =
-            rideAlongColumnsPendingCompletion.clone
-              .asInstanceOf[util.LinkedList[SpillableColumnarBatch]]
-          completedRideAlongBatches.add(partitioned.otherGroupRideAlong.get)
-          // TODO: Must close mergedAggResults?
-          SecondPassAggResult(completedRideAlongBatches,
-                              removeGroupColumns(mergedAggResults))
         }
 
         // Output has been calculated. Set last group's data in "pendingCompletion".
