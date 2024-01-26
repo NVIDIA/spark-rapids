@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, 
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.window.TableAndBatchUtils.{getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
+import com.nvidia.spark.rapids.window.TableAndBatchUtils.{debug, getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
 import java.util
 import scala.collection.mutable.ListBuffer
 
@@ -31,7 +31,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression, GpuAggregateFunction, GpuCount}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -96,6 +96,13 @@ object TableAndBatchUtils {
       }
     }
   }
+
+  def debug(msg: String, table: cudf.Table): Unit = {
+    System.err.println()
+    cudf.TableDebug.get.debug(msg, table)
+    System.err.println()
+    System.err.println()
+  }
 }
 
 class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
@@ -120,6 +127,26 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
         case _ => unfixed.getColumn(nCols - 1).castTo(cudf.DType.INT64)
       }
       new cudf.Table(fixedCols: _*)
+    }
+  }
+
+  // Append column at the end to account for the added `GpuCount(1)`.
+  private def preProcess(inputCB: ColumnarBatch): ColumnarBatch = {
+    withResource(GpuColumnVector.from(inputCB)) { inputTable =>
+      withResource(cudf.Scalar.fromInt(1)) { one =>
+        withResource(
+          cudf.ColumnVector.fromScalar(one,
+            inputTable.getColumn(0).getRowCount.asInstanceOf[Int])) { ones =>
+          val columns = Range(0, inputTable.getNumberOfColumns)
+                          .map {
+                            inputTable.getColumn(_).incRefCount()
+                          } :+ ones
+          withResource(new cudf.Table(columns: _*)) { preProcessedTable =>
+            GpuColumnVector.from(preProcessedTable,
+                                 boundStages.inputTypes.toArray :+ IntegerType)
+          }
+        }
+      }
     }
   }
 
@@ -157,12 +184,16 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
       opTime.ns {
         val currIter = withRetry(getSpillableInputBatch(), splitSpillableInHalfByRows) { scb =>
           withResource(scb.getColumnarBatch()) { cb =>
-            val aggResultTable = groupByAggregate(cb)
-            val rideAlongColumns = GpuProjectExec.project(cb, boundStages.boundRideAlong)
+            withResource(preProcess(cb)) { preProcessedInput =>
+              val aggResultTable = groupByAggregate(preProcessedInput)
+              debug("CALEB: Agg results: ", aggResultTable)
+              val rideAlongColumns = GpuProjectExec.project(preProcessedInput,
+                                                            boundStages.boundRideAlong)
 
-            FirstPassAggResult(toSpillableBatch(rideAlongColumns),
-                               toSpillableBatch(aggResultTable,
-                                 boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+              FirstPassAggResult(toSpillableBatch(rideAlongColumns),
+                toSpillableBatch(aggResultTable,
+                  boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+            }
           }
         }
         val result = currIter.next()
@@ -343,6 +374,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
         val mergeResults = aggResultTable.groupBy(groupByOptions,
                                                   Range(0, numGroupColumns).toArray: _*)
                                          .aggregate(cudfAggsOnColumns: _*)
+        debug("CALEB: mergeResults: ", mergeResults)
         toSpillableBatch(mergeResults,
                          boundStages.groupingColumnTypes ++ boundStages.aggResultTypes)
       }
@@ -532,6 +564,7 @@ class GpuUnboundedToUnboundedAggFinalIterator(
  * @param boundFinalProject the final project to get the output in the right order
  */
 case class GpuUnboundedToUnboundedAggStages(
+    inputTypes: Seq[DataType],
     boundPartitionSpec: Seq[GpuExpression],
     boundRideAlong: Seq[GpuExpression],
     boundAggregations: Seq[GpuExpression],
@@ -552,7 +585,8 @@ case class GpuUnboundedToUnboundedAggStages(
   val aggInputProjections: Seq[Expression] = aggregateFunctions.flatMap{ _.inputProjection }
   val aggInputOrdinals: Seq[Int] = aggInputProjections.map {
     case GpuBoundReference(ordinal, _, _) => ordinal
-    case GpuLiteral(_, _) => 0
+    // TODO: Cannot assume GpuLiteral is always for GpuCount. Maybe check agg type first.
+    case GpuLiteral(_, _) => inputTypes.size // An all 1s column appended at the end.
     case _ => throw new IllegalStateException("Unexpected expression")
   }
   val cudfUpdateAggregates: Seq[CudfAggregate] = aggregateFunctions.flatMap {
@@ -660,6 +694,8 @@ object GpuUnboundedToUnboundedAggWindowIterator {
                           childOutput: Seq[Attribute])
                           : GpuUnboundedToUnboundedAggStages = {
 
+    val childTypes = childOutput.map{_.dataType}
+
     val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
 
     // STEP 1. project that will pull out the columns that are output unchanged.
@@ -677,7 +713,8 @@ object GpuUnboundedToUnboundedAggWindowIterator {
     //  proper output order, according to the windowOps
     val finalProject = computeFinalProject(rideAlongOutput, aggsToRepeatOutput, windowOps)
 
-    GpuUnboundedToUnboundedAggStages(boundPartitionSpec,
+    GpuUnboundedToUnboundedAggStages(childTypes,
+                                     boundPartitionSpec,
                                      boundRideAlong, boundAggregations,
                                      boundCount, aggsToRepeat, finalProject)
   }
