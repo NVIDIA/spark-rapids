@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, 
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.window.TableAndBatchUtils.{debug, getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
+import com.nvidia.spark.rapids.window.TableAndBatchUtils.{getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
 import java.util
 import scala.collection.mutable.ListBuffer
 
@@ -186,7 +186,6 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
           withResource(scb.getColumnarBatch()) { cb =>
             withResource(preProcess(cb)) { preProcessedInput =>
               val aggResultTable = groupByAggregate(preProcessedInput)
-              debug("CALEB: Agg results: ", aggResultTable)
               val rideAlongColumns = GpuProjectExec.project(preProcessedInput,
                                                             boundStages.boundRideAlong)
 
@@ -374,9 +373,58 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
         val mergeResults = aggResultTable.groupBy(groupByOptions,
                                                   Range(0, numGroupColumns).toArray: _*)
                                          .aggregate(cudfAggsOnColumns: _*)
-        debug("CALEB: mergeResults: ", mergeResults)
         toSpillableBatch(mergeResults,
                          boundStages.groupingColumnTypes ++ boundStages.aggResultTypes)
+      }
+    }
+  }
+
+  private def processNewData(newData: FirstPassAggResult): Option[SecondPassAggResult] = {
+
+    if (newData.aggResult.numRows() == 1) {
+      // All the aggregation results are for the same group.
+      // Add the lot to "incomplete".  No results with this input.
+      rideAlongColumnsPendingCompletion.add(newData.rideAlongColumns.incRefCount())
+      aggResultsPendingCompletion += newData.aggResult.incRefCount()
+      None
+    }
+    else {
+      opTime.ns {
+        val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
+        // There are at least two aggregation result rows.
+
+        // 1. Set aside the last agg result row (incomplete), and its rideAlong.
+        // 2. Append the rest of the results together.  Run agg merge.
+        // 3. Save last agg result and rideAlong as currently incomplete.
+        // 4. Return merge results as the result batch.
+
+        val completedAggResults =
+          aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
+
+        val result = withResource(completedAggResults) { _ =>
+          val concatAggResults = concat(completedAggResults,
+                                        boundStages.groupingColumnTypes ++
+                                          boundStages.aggResultTypes)
+          val mergedAggResults = withResource(concatAggResults) {
+            groupByMerge
+          }
+          val completedRideAlongBatches =
+            rideAlongColumnsPendingCompletion.clone
+              .asInstanceOf[util.LinkedList[SpillableColumnarBatch]]
+          completedRideAlongBatches.add(partitioned.otherGroupRideAlong.get)
+          // TODO: Must close mergedAggResults?
+          SecondPassAggResult(completedRideAlongBatches,
+                              removeGroupColumns(mergedAggResults))
+        }
+
+        // Output has been calculated. Set last group's data in "pendingCompletion".
+        rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
+        rideAlongColumnsPendingCompletion.add(partitioned.lastGroupRideAlong.get)
+        aggResultsPendingCompletion = ListBuffer.tabulate(1) { _ =>
+          partitioned.lastGroupAggResult.get
+        }
+
+        Some(result)
       }
     }
   }
@@ -389,46 +437,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     while (output.isEmpty) {
       if (input.hasNext) {
         withResource(input.next()) { newData =>
-
-          if (newData.aggResult.numRows() == 1) {
-            // All the aggregation results are for the same group.
-            // Add the lot to "incomplete", and go again.
-            rideAlongColumnsPendingCompletion.add(newData.rideAlongColumns.incRefCount())
-            aggResultsPendingCompletion += newData.aggResult.incRefCount()
-          }
-          else {
-            opTime.ns {
-              val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
-              // There are at least two aggregation result rows.
-
-              // 1. Set aside the last agg result row (incomplete), and its rideAlong.
-              // 2. Append the rest of the results together.  Run agg merge.
-              // 3. Save last agg result and rideAlong as currently incomplete.
-              // 4. Return merge results as the result batch.
-
-              val completedAggResults =
-                aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
-
-              output = withResource(completedAggResults) { _ =>
-                val concatAggResults = concat(completedAggResults,
-                  boundStages.groupingColumnTypes ++
-                    boundStages.aggResultTypes)
-                val mergedAggResults = withResource(concatAggResults) {
-                  groupByMerge
-                }
-                rideAlongColumnsPendingCompletion.add(partitioned.otherGroupRideAlong.get)
-                Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
-                  removeGroupColumns(mergedAggResults)))
-              }
-
-              // Output has been calculated. Set last group's data in "pendingCompletion".
-              rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]()
-              rideAlongColumnsPendingCompletion.add(partitioned.lastGroupRideAlong.get)
-              aggResultsPendingCompletion = ListBuffer.tabulate(1) { _ =>
-                partitioned.lastGroupAggResult.get
-              }
-            }
-          }
+          output = processNewData(newData)
         }
       } else {
         opTime.ns {
