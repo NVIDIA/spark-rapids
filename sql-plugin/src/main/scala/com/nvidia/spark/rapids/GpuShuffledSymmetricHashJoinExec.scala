@@ -1071,7 +1071,7 @@ class BigSymmetricJoinIterator(
   use(buildPartitioner)
 
   private val joinGroups = buildPartitioner.getJoinGroups
-  private var currentJoinGroupIndex = joinGroups.length
+  private var currentJoinGroupIndex = joinGroups.length - 1
 
   private val streamPartitioner = use(new StreamSidePartitioner(buildPartitioner.numPartitions,
     buildPartitioner.getEmptyPartitions, info.streamIter, info.exprs.streamTypes,
@@ -1123,7 +1123,7 @@ class BigSymmetricJoinIterator(
 
   override def close(): Unit = {
     super.close()
-    buildSideRowTrackers.flatten.foreach(_.close())
+    buildSideRowTrackers.flatten.safeClose()
     isExhausted = true
   }
 
@@ -1150,11 +1150,16 @@ class BigSymmetricJoinIterator(
             isExhausted = true
             subIter = None
           } else {
-            // Setup an iterator to produce the final full outer join batches for the join group.
             // TODO: Can free the build-side batch in the build partitioner early here since
             //       this will be the last iterator to use it.
+            // https://github.com/NVIDIA/spark-rapids/issues/10282
             val tracker = buildSideRowTrackers(currentJoinGroupIndex)
             buildSideRowTrackers(currentJoinGroupIndex) = None
+            // Setup an iterator to produce the final full outer join batches for the join group.
+            // All stream batches have been consumed, so an empty iterator is used for the stream
+            // side. The condition also doesn't need to be passed since there are no join row pairs
+            // left to evaluate conditionally. The only rows that will be emitted by this are the
+            // build-side rows that never matched rows on the stream side.
             subIter = Some(new HashFullJoinIterator(
               buildPartitioner.getBuildBatch(currentJoinGroupIndex), info.exprs.boundBuildKeys,
               tracker, Iterator.empty, info.exprs.boundStreamKeys, info.exprs.streamOutput,
@@ -1172,11 +1177,9 @@ class BigSymmetricJoinIterator(
   }
 
   private def moveToNextBuildGroup(): Iterator[ColumnarBatch] = {
-    currentJoinGroupIndex = if (currentJoinGroupIndex >= joinGroups.length - 1) {
-      0
-    } else {
-      currentJoinGroupIndex + 1
-    }
+    // If we were at the last build group, loop back to the first since we're processing the next
+    // stream batch.
+    currentJoinGroupIndex = (currentJoinGroupIndex + 1) % joinGroups.length
     val builtBatch = buildPartitioner.getBuildBatch(currentJoinGroupIndex)
     val group = joinGroups(currentJoinGroupIndex)
     val streamBatches = streamPartitioner.releasePartitions(group)
