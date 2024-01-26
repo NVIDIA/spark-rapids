@@ -18,13 +18,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "321db"}
-{"spark": "332db"}
+{"spark": "330db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import java.io.DataOutputStream
-import java.net.Socket
 
 import com.nvidia.spark.rapids.GpuSemaphore
 
@@ -34,7 +33,6 @@ import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonWriter, GpuPythonRunnerCommon}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.Utils
 
 /**
  * Group Map UDF specific serializer for Databricks because they have a special GroupUDFSerializer.
@@ -56,21 +54,21 @@ class GpuGroupUDFArrowPythonRunner(
     pythonInSchema: StructType,
     timeZoneId: String,
     conf: Map[String, String],
-    maxBatchSize: Long,
+    batchSize: Long,
     override val pythonOutSchema: StructType,
     jobArtifactUUID: Option[String] = None)
   extends GpuBasePythonRunner[ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID)
     with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
-  protected override def newWriterThread(
+  protected override def newWriter(
       env: SparkEnv,
-      worker: Socket,
+      worker: PythonWorker, // From DB341, changed from Socket to PythonWorker
       inputIterator: Iterator[ColumnarBatch],
       partitionIndex: Int,
-      context: TaskContext): WriterThread = {
-    new WriterThread(env, worker, inputIterator, partitionIndex, context) {
+      context: TaskContext): Writer = {
+    new Writer(env, worker, inputIterator, partitionIndex, context) {
 
-      val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, maxBatchSize) {
+      val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, batchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {
           PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
         }
@@ -80,22 +78,29 @@ class GpuGroupUDFArrowPythonRunner(
         arrowWriter.writeCommand(dataOut, conf)
       }
 
-      protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
-        Utils.tryWithSafeFinally {
-          while(inputIterator.hasNext) {
-            // write 1 out to indicate there is more to read
+      override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
+        try {
+          if (inputIterator.hasNext) {
             dataOut.writeInt(1)
             arrowWriter.start(dataOut)
             arrowWriter.writeAndClose(inputIterator.next())
             arrowWriter.reset()
             dataOut.flush()
+            true
+          } else {
+            // The iterator can grab the semaphore even on an empty batch
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            // tell serializer we are done
+            dataOut.writeInt(0)
+            dataOut.flush()
+            false
           }
-        } {
-          arrowWriter.close()
-          // tell serializer we are done
-          dataOut.writeInt(0)
-          dataOut.flush()
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        } catch {
+          case t: Throwable =>
+            arrowWriter.close()
+            // release the semaphore in case of exception in the middle of writing a batch
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            throw t
         }
       }
     }

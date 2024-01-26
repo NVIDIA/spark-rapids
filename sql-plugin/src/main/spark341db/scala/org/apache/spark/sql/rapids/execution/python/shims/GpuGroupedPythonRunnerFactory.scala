@@ -15,18 +15,17 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "321db"}
-{"spark": "330db"}
-{"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import org.apache.spark.api.python._
-import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-case class GpuArrowPythonRunnerShims(
+
+//TODO is this needed? we already have a similar version in spark321db
+case class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
   chainedFunc: Seq[ChainedPythonFunctions],
   argOffsets: Array[Array[Int]],
@@ -38,7 +37,7 @@ case class GpuArrowPythonRunnerShims(
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
-  def getRunner(): GpuPythonRunnerBase[ColumnarBatch] = {
+  def getRunner(): GpuBasePythonRunner[ColumnarBatch] = {
     if (zeroConfEnabled && maxBytes > 0L) {
       new GpuGroupUDFArrowPythonRunner(
         chainedFunc,
