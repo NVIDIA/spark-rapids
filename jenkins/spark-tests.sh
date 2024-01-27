@@ -306,6 +306,9 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
 
   # As '--packages' only works on the default cuda11 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
+  # "$CLASSIFIER" == ''" is usally for the case running by developers,
+  # while "$CLASSIFIER" == "cuda11" is for the case running on CI.
+  # We expect to run packages test for both cases
   if [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda11" ]]; then
     SPARK_SHELL_SMOKE_TEST=1 \
     PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
