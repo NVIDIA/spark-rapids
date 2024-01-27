@@ -87,7 +87,11 @@ case class GpuJsonToStructs(
                   }
                 }
 
-                (isNullOrEmptyInput, withNewline.joinStrings(null, emptyRow))
+                val joined = withResource(Scalar.fromString("")) { emptyString =>
+                  withNewline.joinStrings(emptyString, emptyRow)
+                }
+
+                (isNullOrEmptyInput, joined)
               }
             }
           }
