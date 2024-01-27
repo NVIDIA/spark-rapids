@@ -189,7 +189,8 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
               val rideAlongColumns = GpuProjectExec.project(preProcessedInput,
                                                             boundStages.boundRideAlong)
 
-              FirstPassAggResult(toSpillableBatch(rideAlongColumns),
+              FirstPassAggResult(
+                toSpillableBatch(rideAlongColumns),
                 toSpillableBatch(aggResultTable,
                   boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
             }
@@ -320,10 +321,11 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     withResource(aggResults.getColumnarBatch()) { cb =>
       val numColumnsToSkip = boundStages.boundPartitionSpec.size
       withResource(GpuColumnVector.from(cb)) { tbl =>
-        val groupColumnsRemoved = GpuColumnVector.from(
+        withResource(GpuColumnVector.from(
           tbl, boundStages.aggResultTypes.toArray, numColumnsToSkip, tbl.getNumberOfColumns
-        )
-        SpillableColumnarBatch(groupColumnsRemoved, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        )) { groupColumnsRemoved =>
+          SpillableColumnarBatch(groupColumnsRemoved, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        }
       }
     }
   }
