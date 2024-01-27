@@ -79,18 +79,19 @@ case class GpuJsonToStructs(
                 checkForNewline(cleaned, "\n", "line separator")
                 checkForNewline(cleaned, "\r", "carriage return")
 
-                // add a newline to each JSON line and then join all the JSON lines into one string
-                val withNewline = withResource(cleaned) { _ =>
-                  withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-                    withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
-                      newLineCol =>
-                        ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
-                    }
+                // add a newline to each JSON line
+                val withNewline = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                  withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
+                    newLineCol =>
+                      ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
                   }
                 }
 
-                val joined = withResource(Scalar.fromString("")) { emptyString =>
-                  withNewline.joinStrings(emptyString, emptyRow)
+                // join all the JSON lines into one string
+                val joined = withResource(withNewline) { _ =>
+                  withResource(Scalar.fromString("")) { emptyString =>
+                    withNewline.joinStrings(emptyString, emptyRow)
+                  }
                 }
 
                 (isNullOrEmptyInput, joined)
