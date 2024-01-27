@@ -121,11 +121,11 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
     // The group "count" result is in the last column, with type INT32.
     // Cast this up to INT64.  Return the other columns unchanged.
     val nCols = unfixed.getNumberOfColumns
-    withResource(unfixed) { _ =>
-      val fixedCols = Range(0, nCols).map {
-        case i if i != nCols-1 => unfixed.getColumn(i).incRefCount()
-        case _ => unfixed.getColumn(nCols - 1).castTo(cudf.DType.INT64)
-      }
+    val fixedCols = Range(0, nCols).map {
+      case i if i != nCols-1 => unfixed.getColumn(i).incRefCount()
+      case _ => unfixed.getColumn(nCols - 1).castTo(cudf.DType.INT64)
+    }
+    withResource(fixedCols) { _ =>
       new cudf.Table(fixedCols: _*)
     }
   }
@@ -168,7 +168,9 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
                                  .aggregate(cudfAggsOnColumns: _*)
       // The COUNT aggregate result (at the end) is returned from libcudf as an INT32,
       // while Spark expects an `INT64`.  This needs to be scaled up.
-      upscaleCountResults(aggResults)
+      withResource(aggResults) {
+        upscaleCountResults
+      }
     }
   }
 
