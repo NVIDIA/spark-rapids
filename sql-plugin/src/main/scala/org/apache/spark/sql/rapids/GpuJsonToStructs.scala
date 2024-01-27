@@ -78,19 +78,16 @@ case class GpuJsonToStructs(
               withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
                 checkForNewline(cleaned, "\n", "line separator")
                 checkForNewline(cleaned, "\r", "carriage return")
-                // if the last entry in a column is incomplete or invalid, then cuDF
-                // will drop the row rather than replace with null if there is no newline, so we
-                // add a newline here to prevent that
-                val joined = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-                  cleaned.joinStrings(lineSep, emptyRow)
-                }
-                val concat = withResource(joined) { _ =>
-                  withResource(ColumnVector.fromStrings("\n")) { newline =>
-                    ColumnVector.stringConcatenate(Array[ColumnView](joined, newline))
+
+                // add a newline to each JSON line and then join all the JSON lines into one string
+                val withNewline = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                  withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
+                      newLineCol =>
+                    ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
                   }
                 }
 
-                (isNullOrEmptyInput, concat)
+                (isNullOrEmptyInput, withNewline.joinStrings(null, emptyRow))
               }
             }
           }
