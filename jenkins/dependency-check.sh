@@ -34,6 +34,8 @@ ARTIFACT_FILE=${1:-"/tmp/artifacts-list"}
 SERVER_ID=${SERVER_ID:-"snapshots"}
 SERVER_URL=${SERVER_URL:-"file:/tmp/local-release-repo"}
 M2_CACHE=${M2_CACHE:-"/tmp/m2-cache"}
+DEST_PATH=${DEST_PATH:-"/tmp/test-get-dest"}
+rm -rf $DEST_PATH && mkdir -p $DEST_PATH
 
 remote_maven_repo=$SERVER_ID::default::$SERVER_URL
 # Get the spark-rapids-jni and spark-rapids-private jars from OSS Snapshot maven repo
@@ -43,5 +45,9 @@ if [ "$SERVER_ID" == "snapshots" ]; then
 fi
 while read line; do
     artifact=$line # artifact=groupId:artifactId:version:[[packaging]:classifier]
-    mvn dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact
+    # Clean up $M2_CACHE to avoid side-effect of previous dependency:get
+    rm -rf $M2_CACHE/com/nvida
+    mvn -B dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact -Ddest=$DEST_PATH
 done < $ARTIFACT_FILE
+
+ls -l $DEST_PATH
