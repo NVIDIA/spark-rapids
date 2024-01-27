@@ -378,6 +378,14 @@ In particular, the output map is not resulted from a regular JSON parsing but in
  * If the input JSON is given as multiple rows, any row containing invalid JSON format will be parsed as an empty 
    struct instead of a null value ([#9592](https://github.com/NVIDIA/spark-rapids/issues/9592)).
 
+When a JSON attribute contains mixed types (different types in different rows), such as a mix of dictionaries 
+and lists, Spark will return a string representation of the JSON, but when running on GPU, the default 
+behavior is to throw an exception. There is an experimental setting 
+`spark.rapids.sql.json.read.mixedTypesAsString.enabled` that can be set to true to support reading
+mixed types as string, but there are known issues where it could also read structs as string in some cases. There
+can also be minor formatting differences. Spark will return a parsed and formatted representation, but the
+GPU implementation returns the unparsed JSON string.
+
 ### `to_json` function
 
 The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
@@ -529,13 +537,17 @@ The following regular expression patterns are not yet supported on the GPU and w
   or more results
 - Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Lazy quantifiers, such as `a*?`
+- Lazy quantifiers within a choice block such as `(2|\u2029??)+` 
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`,
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
+
+## URL Parsing
+
+`parse_url` QUERY with a column key could produce different results on CPU and GPU. In Spark, the `key` in `parse_url` could act like a regex, but GPU will match the key exactly. If key is literal, GPU will check if key contains regex special characters and fallback to CPU if it does, but if key is column, it will not be able to fallback. For example, `parse_url("http://foo/bar?abc=BAD&a.c=GOOD", QUERY, "a.c")` will return "BAD" on CPU, but "GOOD" on GPU. See the Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
 
 ## Timestamps
 

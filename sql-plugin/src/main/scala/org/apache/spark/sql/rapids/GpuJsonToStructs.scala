@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ case class GpuJsonToStructs(
     schema: DataType,
     options: Map[String, String],
     child: Expression,
+    enableMixedTypesAsString: Boolean,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
@@ -177,9 +178,7 @@ case class GpuJsonToStructs(
 
             val jsonOptions = cudf.JSONOptions.builder()
               .withRecoverWithNull(true)
-              // tracking issue for enabling mixed type as string
-              // https://github.com/NVIDIA/spark-rapids/issues/10253
-              .withMixedTypesAsStrings(false)
+              .withMixedTypesAsStrings(enableMixedTypesAsString)
               .withNormalizeSingleQuotes(true)
               .build()
             withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
