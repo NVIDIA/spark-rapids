@@ -112,7 +112,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   private var subIterator: Option[Iterator[FirstPassAggResult]] = None
   override def hasNext: Boolean = subIterator.exists(_.hasNext) || input.hasNext
 
-  private def getSpillableInputBatch(): SpillableColumnarBatch = {
+  private def getSpillableInputBatch: SpillableColumnarBatch = {
     toSpillableBatch(input.next)
   }
 
@@ -138,9 +138,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
           cudf.ColumnVector.fromScalar(one,
             inputTable.getColumn(0).getRowCount.asInstanceOf[Int])) { ones =>
           val columns = Range(0, inputTable.getNumberOfColumns)
-                          .map {
-                            inputTable.getColumn(_).incRefCount()
-                          } :+ ones
+                          .map {inputTable.getColumn} :+ ones
           withResource(new cudf.Table(columns: _*)) { preProcessedTable =>
             GpuColumnVector.from(preProcessedTable,
                                  boundStages.inputTypes.toArray :+ IntegerType)
@@ -182,7 +180,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
       subIterator.map(_.next()).get
     } else {
       opTime.ns {
-        val currIter = withRetry(getSpillableInputBatch(), splitSpillableInHalfByRows) { scb =>
+        val currIter = withRetry(getSpillableInputBatch, splitSpillableInHalfByRows) { scb =>
           withResource(scb.getColumnarBatch()) { cb =>
             withResource(preProcess(cb)) { preProcessedInput =>
               val aggResultTable = groupByAggregate(preProcessedInput)
