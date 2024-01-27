@@ -378,6 +378,14 @@ In particular, the output map is not resulted from a regular JSON parsing but in
  * If the input JSON is given as multiple rows, any row containing invalid JSON format will be parsed as an empty 
    struct instead of a null value ([#9592](https://github.com/NVIDIA/spark-rapids/issues/9592)).
 
+When a JSON attribute contains mixed types (different types in different rows), such as a mix of dictionaries 
+and lists, Spark will return a string representation of the JSON, but when running on GPU, the default 
+behavior is to throw an exception. There is an experimental setting 
+`spark.rapids.sql.json.read.mixedTypesAsString.enabled` that can be set to true to support reading
+mixed types as string, but there are known issues where it could also read structs as string in some cases. There
+can also be minor formatting differences. Spark will return a parsed and formatted representation, but the
+GPU implementation returns the unparsed JSON string.
+
 ### `to_json` function
 
 The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
