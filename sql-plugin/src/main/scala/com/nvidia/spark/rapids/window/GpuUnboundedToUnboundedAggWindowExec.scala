@@ -20,7 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.OrderByArg
 import com.nvidia.spark.rapids.{GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.window.TableAndBatchUtils.{getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
 import java.util
@@ -392,7 +392,9 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     }
     else {
       opTime.ns {
-        val partitioned = PartitionedFirstPassAggResult(newData, boundStages)
+        val partitioned = withRetryNoSplit(newData) {
+          PartitionedFirstPassAggResult(_, boundStages)
+        }
         // There are at least two aggregation result rows.
 
         // 1. Set aside the last agg result row (incomplete), and its rideAlong.
@@ -403,13 +405,13 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
         val completedAggResults =
           aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
 
-        val result = withResource(completedAggResults) { _ =>
+        val result = withRetryNoSplit(completedAggResults) { _ =>
           withResource(concat(completedAggResults,
                               boundStages.groupingColumnTypes ++
                                 boundStages.aggResultTypes)) { concatAggResults =>
             withResource(groupByMerge(concatAggResults)) { mergedAggResults =>
               val completedRideAlongBatches =
-                rideAlongColumnsPendingCompletion.clone // Cloned for exception safety.
+                rideAlongColumnsPendingCompletion.clone // Cloned for exception/retry safety.
                   .asInstanceOf[util.LinkedList[SpillableColumnarBatch]]
               completedRideAlongBatches.add(partitioned.otherGroupRideAlong.get)
               SecondPassAggResult(completedRideAlongBatches,
@@ -443,17 +445,17 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
       } else {
         opTime.ns {
           // No more input. All pending batches can now be assumed complete.
-          output = withResource(aggResultsPendingCompletion) { _ =>
-            val concatAggResults = concat(aggResultsPendingCompletion,
-              boundStages.groupingColumnTypes ++
-                boundStages.aggResultTypes)
-            val mergedAggResults = withResource(concatAggResults) {
-              groupByMerge
+          output = withRetryNoSplit(aggResultsPendingCompletion) { _ =>
+            withResource(concat(aggResultsPendingCompletion,
+                                boundStages.groupingColumnTypes ++
+                                  boundStages.aggResultTypes)) { concatAggResults =>
+              withResource(groupByMerge(concatAggResults)) { mergedAggResults =>
+                Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
+                                         removeGroupColumns(mergedAggResults)))
+              }
             }
-            Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
-              removeGroupColumns(mergedAggResults)))
           }
-          // Final output has been calculated. The fat lady has sung.
+          // Final output has been calculated. It is safe to reset the buffers.
           aggResultsPendingCompletion = ListBuffer.empty[SpillableColumnarBatch]
           rideAlongColumnsPendingCompletion = new util.LinkedList[SpillableColumnarBatch]
         }
