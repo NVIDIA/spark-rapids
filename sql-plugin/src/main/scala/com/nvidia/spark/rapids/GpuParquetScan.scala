@@ -2588,7 +2588,6 @@ object MakeParquetTableProducer extends Logging {
       } else {
         0L
       }
-      System.err.println(s"CHUNKED LIMITS: $chunkSizeByteLimit $passReadLimit")
       ParquetTableReader(conf, chunkSizeByteLimit, passReadLimit, opts, buffer, offset,
         len, metrics, dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,

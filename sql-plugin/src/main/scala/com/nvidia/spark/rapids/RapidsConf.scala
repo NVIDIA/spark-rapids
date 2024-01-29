@@ -584,8 +584,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .createWithDefault(true)
 
   val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
-      .doc("Enable a chunked reader for where possible for reading data that is smaller " +
-          "than the typical row group/page limit.")
+      .doc("Enable a chunked reader where possible for reading data that is smaller " +
+          "than the typical row group/page limit. Currently this only works for parquet.")
       .booleanConf
       .createWithDefault(false)
 
