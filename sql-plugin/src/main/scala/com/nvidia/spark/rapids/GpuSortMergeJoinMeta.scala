@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.plans.Inner
+import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
@@ -83,8 +83,9 @@ class GpuSortMergeJoinMeta(
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val joinExec = join.joinType match {
-      case Inner if conf.useShuffledSymmetricHashJoin =>
+      case Inner | FullOuter if conf.useShuffledSymmetricHashJoin =>
         GpuShuffledSymmetricHashJoinExec(
+          join.joinType,
           leftKeys.map(_.convertToGpu()),
           rightKeys.map(_.convertToGpu()),
           joinCondition,
