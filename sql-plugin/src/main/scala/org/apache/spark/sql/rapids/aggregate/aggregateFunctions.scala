@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, TypeUtilsShims}
+import com.nvidia.spark.rapids.window._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -652,6 +653,15 @@ case class GpuExtractChunk32(
   override def children: Seq[Expression] = Seq(data)
 }
 
+object GpuExtractChunk32 {
+  /** Build the aggregate expressions for summing the four 32-bit chunks of a 128-bit decimal. */
+  def chunkSumExprs(): Seq[CudfAggregate] = (0 until 4).map { i =>
+    // first three chunk columns are UINT32, so they are promoted to UINT64 during aggregation.
+    val colType = if (i < 3) GpuUnsignedLongType else LongType
+    new CudfSum(colType)
+  }
+}
+
 /**
  * Reassembles a 128-bit value from four separate 64-bit sum results
  * @param chunkAttrs attributes for the four 64-bit sum chunks ordered from least significant to
@@ -1090,7 +1100,7 @@ case class GpuDecimal128Sum(
     chunks :+ GpuIsNull(child)
   }
 
-  private lazy val updateSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
+  private lazy val updateSumChunks = GpuExtractChunk32.chunkSumExprs
 
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateIsEmpty
 
@@ -1109,7 +1119,7 @@ case class GpuDecimal128Sum(
     chunks ++ Seq(isEmpty, GpuIsNull(sum))
   }
 
-  private lazy val mergeSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
+  private lazy val mergeSumChunks = GpuExtractChunk32.chunkSumExprs()
 
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
@@ -1474,7 +1484,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
     chunks :+ forCount
   }
 
-  private lazy val updateSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
+  private lazy val updateSumChunks = GpuExtractChunk32.chunkSumExprs()
 
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateCount
 
@@ -1492,7 +1502,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
     chunks ++ Seq(count, GpuIsNull(sum))
   }
 
-  private lazy val mergeSumChunks = (0 until 4).map(_ => new CudfSum(LongType))
+  private lazy val mergeSumChunks = GpuExtractChunk32.chunkSumExprs()
 
   override lazy val mergeAggregates: Seq[CudfAggregate] =
     mergeSumChunks ++ Seq(mergeCount, mergeIsOverflow)

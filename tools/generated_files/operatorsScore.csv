@@ -57,6 +57,7 @@ ArrayTransform,4
 ArrayUnion,4
 ArraysOverlap,4
 ArraysZip,4
+Ascii,4
 Asin,4
 Asinh,4
 AtLeastNNonNulls,4
@@ -181,6 +182,7 @@ Not,4
 NthValue,4
 OctetLength,4
 Or,4
+ParseUrl,4
 PercentRank,4
 Percentile,4
 PivotFirst,4
@@ -247,6 +249,7 @@ Tanh,4
 TimeAdd,4
 ToDegrees,4
 ToRadians,4
+ToUTCTimestamp,4
 ToUnixTimestamp,4
 TransformKeys,4
 TransformValues,4

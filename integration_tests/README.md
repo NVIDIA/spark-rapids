@@ -330,6 +330,51 @@ Basically, you need first to upload the test resources onto the cloud path `reso
 `root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
 to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
 
+### Running with a fixed data generation seed
+
+By default the tests are run with a different random data generator seed to increase the chance of
+uncovering bugs due to specific inputs. The seed used for a test is printed as part of the test
+name, see the `DATAGEN_SEED=` part of the test name printed as tests are run. If a problem is found
+with a specific data generation seed, the seed can be set explicitly when running the tests by
+exporting the `DATAGEN_SEED` environment variable to the desired seed before running the
+integration tests. For example:
+
+```shell
+$ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
+```
+
+Tests can override the seed used using the test marker: 
+
+```
+@datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`. 
+```
+
+This marker has the following arguments: 
+- `seed`: a hard coded datagen seed to use. 
+- `condition`: is used to gate when the override is appropriate, usually used to say that specific shims
+               need the special override.
+- `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
+
+### Running with non-UTC time zone
+For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
+The non-UTC nightly CIs are verifing all cases with non-UTC time zone.
+But only a small amout of cases are verifing with non-UTC time zone in the pre-merge CI due to limited GPU resources.
+When adding cases, should also check non-UTC is working besides the default UTC time zone.
+Please test the following time zones:
+```shell
+$ TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh
+$ TZ=America/Los_Angeles ./integration_tests/run_pyspark_from_build.sh
+```
+`Asia/Shanghai` is non-DST(Daylight Savings Time) time zone and `America/Los_Angeles` is DST time zone.
+
+If the new added cases failed with non-UTC, then should allow the operator(does not support non-UTC) fallback,
+For example, add the following annotation to the case:
+```python
+non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is supported for sequence
+@allow_non_gpu(*non_utc_allow_for_sequence)
+test_my_new_added_case_for_sequence_operator()
+```
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
