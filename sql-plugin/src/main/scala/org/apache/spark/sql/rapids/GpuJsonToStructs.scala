@@ -183,6 +183,7 @@ case class GpuJsonToStructs(
             val jsonOptions = cudf.JSONOptions.builder()
               .withRecoverWithNull(true)
               .withMixedTypesAsStrings(enableMixedTypesAsString)
+              .withNormalizeSingleQuotes(true)
               .build()
             withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames

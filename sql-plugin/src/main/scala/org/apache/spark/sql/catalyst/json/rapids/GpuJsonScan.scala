@@ -359,6 +359,7 @@ class JsonPartitionReader(
     cudf.JSONOptions.builder()
       .withRecoverWithNull(true)
       .withMixedTypesAsStrings(enableMixedTypesAsString)
+      .withNormalizeSingleQuotes(true)
       .build
   }
 
