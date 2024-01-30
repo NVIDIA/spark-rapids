@@ -117,6 +117,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   }
 
   // "Fixes up" the count aggregate results, by casting up to INT64.
+  // TODO: This should not be required after fixing project after update.
   private def upscaleCountResults(unfixed: cudf.Table): cudf.Table = {
     // The group "count" result is in the last column, with type INT32.
     // Cast this up to INT64.  Return the other columns unchanged.
@@ -239,10 +240,11 @@ case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
       // regardless of how the order-by columns are ordered.
       // Searching for a group does not involve the order-by columns in any way.
       // A simple `lowerBound` does the trick.
-      val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i))
-      val groupMargin = rideAlongGroupsTable.lowerBound(group, orderBys: _*)
-      withResource(groupMargin.copyToHost()) { groupMarginHost =>
-        groupMarginHost.getInt(0)
+      val orderBys = Range(0, numGroupingKeys).map(i => OrderByArg.asc(i, true))
+      withResource(rideAlongGroupsTable.lowerBound(group, orderBys: _*)) { groupMargin =>
+        withResource(groupMargin.copyToHost()) { groupMarginHost =>
+          groupMarginHost.getInt(0)
+        }
       }
     }
   }
