@@ -30,6 +30,24 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
+/**
+ * The result of trying to acquire a semaphore could be
+ * `SemaphoreAcquired` or `AcquireFailed`.
+ */
+sealed trait TryAcquireResult
+
+/**
+ * The Semaphore was successfully acquired.
+ */
+case object SemaphoreAcquired extends TryAcquireResult
+
+/**
+ * To acquire the semaphore this thread would have to block.
+ * @param numWaitingTasks the number of tasks waiting at the time the request was made.
+ *                        Note that this can change very quickly.
+ */
+case class AcquireFailed(numWaitingTasks: Int) extends TryAcquireResult
+
 object GpuSemaphore {
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
   @volatile private var instance: GpuSemaphore = _
@@ -63,12 +81,12 @@ object GpuSemaphore {
    * listener will automatically be installed to ensure the semaphore is always released by the
    * time the task completes.
    */
-  def tryAcquire(context: TaskContext): Boolean = {
+  def tryAcquire(context: TaskContext): TryAcquireResult = {
     if (context != null) {
       getInstance.tryAcquire(context)
     } else {
       // For unit tests that might try with no context
-      true
+      SemaphoreAcquired
     }
   }
 
@@ -262,8 +280,7 @@ private final class SemaphoreTaskInfo() extends Logging {
   def tryAcquire(semaphore: Semaphore): Boolean = synchronized {
     val t = Thread.currentThread()
     if (hasSemaphore) {
-      blockedThreads.add(t)
-      moveToActive(t)
+      activeThreads.add(t)
       true
     } else {
       if (blockedThreads.size() == 0) {
@@ -271,8 +288,7 @@ private final class SemaphoreTaskInfo() extends Logging {
         val ret = semaphore.tryAcquire(numPermits)
         if (ret) {
           hasSemaphore = true
-          blockedThreads.add(t)
-          moveToActive(t)
+          activeThreads.add(t)
           // no need to notify because there are no other threads and we are holding the lock
           // to ensure that.
         }
@@ -305,7 +321,7 @@ private final class GpuSemaphore() extends Logging {
   // Keep track of all tasks that are both active on the GPU and blocked waiting on the GPU
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
-  def tryAcquire(context: TaskContext): Boolean = {
+  def tryAcquire(context: TaskContext): TryAcquireResult = {
     // Make sure that the thread/task is registered before we try and block
     TaskRegistryTracker.registerThreadForRetry()
     val taskAttemptId = context.taskAttemptId()
@@ -313,11 +329,19 @@ private final class GpuSemaphore() extends Logging {
       onTaskCompletion(context, completeTask)
       new SemaphoreTaskInfo()
     })
-    val acquired = taskInfo.tryAcquire(semaphore)
-    if (acquired) {
+    if (taskInfo.tryAcquire(semaphore)) {
       GpuDeviceManager.initializeFromTask()
+      SemaphoreAcquired
+    } else {
+      // We need to get the number of tasks that are still waiting
+      var numWaiting = 0
+      tasks.values().forEach { ti =>
+        if (ti.isHoldingSemaphore) {
+          numWaiting += 1
+        }
+      }
+      AcquireFailed(numWaiting)
     }
-    acquired
   }
 
   def acquireIfNecessary(context: TaskContext): Unit = {

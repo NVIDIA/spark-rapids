@@ -84,12 +84,25 @@ class GpuSemaphoreSuite extends AnyFunSuite
     verify(context, times(1)).addTaskCompletionListener[Unit](any())
   }
 
+  def assertAcquired(result: TryAcquireResult): Unit = result match {
+    case SemaphoreAcquired => // NOOP
+    case AcquireFailed(_) =>
+      fail("The Semaphore was not acquired")
+  }
+
+  def assertNotAcquired(numExpectedWaiting: Int, result: TryAcquireResult): Unit = result match {
+    case SemaphoreAcquired =>
+      fail("The Semaphore was acquired when we didn't expect it")
+    case AcquireFailed(numWaiting) =>
+      assert(numWaiting == numExpectedWaiting, "The number of waiting tasks didn't match")
+  }
+
   test("multi tryAcquire") {
     GpuDeviceManager.setRmmTaskInitEnabled(false)
     val context = mockContext(1)
     try {
-      assert(GpuSemaphore.tryAcquire(context))
-      assert(GpuSemaphore.tryAcquire(context))
+      assertAcquired(GpuSemaphore.tryAcquire(context))
+      assertAcquired(GpuSemaphore.tryAcquire(context))
     } finally {
       GpuSemaphore.releaseIfNecessary(context)
     }
@@ -101,8 +114,8 @@ class GpuSemaphoreSuite extends AnyFunSuite
     val context2 = mockContext(2)
     try {
       GpuSemaphore.acquireIfNecessary(context1)
-      assert(!GpuSemaphore.tryAcquire(context2))
-      assert(!GpuSemaphore.tryAcquire(context2))
+      assertNotAcquired(1, GpuSemaphore.tryAcquire(context2))
+      assertNotAcquired(1, GpuSemaphore.tryAcquire(context2))
     } finally {
       GpuSemaphore.releaseIfNecessary(context1)
       GpuSemaphore.releaseIfNecessary(context2)
