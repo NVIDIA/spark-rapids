@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,6 +56,20 @@ object GpuSemaphore {
       throw new IllegalStateException("already initialized")
     }
     instance = new GpuSemaphore()
+  }
+
+  /**
+   * A thread may try to acquire the semaphore without blocking on it. NOTE: A task completion
+   * listener will automatically be installed to ensure the semaphore is always released by the
+   * time the task completes.
+   */
+  def tryAcquire(context: TaskContext): Boolean = {
+    if (context != null) {
+      getInstance.tryAcquire(context)
+    } else {
+      // For unit tests that might try with no context
+      true
+    }
   }
 
   /**
@@ -245,6 +259,30 @@ private final class SemaphoreTaskInfo() extends Logging {
     }
   }
 
+  def tryAcquire(semaphore: Semaphore): Boolean = synchronized {
+    val t = Thread.currentThread()
+    if (hasSemaphore) {
+      blockedThreads.add(t)
+      moveToActive(t)
+      true
+    } else {
+      if (blockedThreads.size() == 0) {
+        // No other threads for this task are waiting, so we might be able to grab this directly
+        val ret = semaphore.tryAcquire(numPermits)
+        if (ret) {
+          hasSemaphore = true
+          blockedThreads.add(t)
+          moveToActive(t)
+          // no need to notify because there are no other threads and we are holding the lock
+          // to ensure that.
+        }
+        ret
+      } else {
+        false
+      }
+    }
+  }
+
   def releaseSemaphore(semaphore: Semaphore): Unit = synchronized {
     val t = Thread.currentThread()
     activeThreads.remove(t)
@@ -266,6 +304,21 @@ private final class GpuSemaphore() extends Logging {
   private val semaphore = new Semaphore(MAX_PERMITS)
   // Keep track of all tasks that are both active on the GPU and blocked waiting on the GPU
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
+
+  def tryAcquire(context: TaskContext): Boolean = {
+    // Make sure that the thread/task is registered before we try and block
+    TaskRegistryTracker.registerThreadForRetry()
+    val taskAttemptId = context.taskAttemptId()
+    val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
+      onTaskCompletion(context, completeTask)
+      new SemaphoreTaskInfo()
+    })
+    val acquired = taskInfo.tryAcquire(semaphore)
+    if (acquired) {
+      GpuDeviceManager.initializeFromTask()
+    }
+    acquired
+  }
 
   def acquireIfNecessary(context: TaskContext): Unit = {
     // Make sure that the thread/task is registered before we try and block

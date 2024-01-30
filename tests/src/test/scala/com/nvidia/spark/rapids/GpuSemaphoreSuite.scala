@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,19 +29,23 @@ import org.apache.spark.sql.SparkSession
 
 class GpuSemaphoreSuite extends AnyFunSuite
     with BeforeAndAfterEach with MockitoSugar with TimeLimits  with TimeLimitedTests {
-  val timeLimit = Span(10, Seconds)
+  val timeLimit: Span = Span(10, Seconds)
 
   override def beforeEach(): Unit = {
     ScalableTaskCompletion.reset()
     GpuSemaphore.shutdown()
     // semaphore tests depend on a SparkEnv being available
     val activeSession = SparkSession.getActiveSession
-    if (activeSession.isEmpty) {
-      SparkSession.builder
+    if (activeSession.isDefined) {
+      SparkSession.getActiveSession.foreach(_.stop())
+      SparkSession.clearActiveSession()
+    }
+    SparkSession.builder
         .appName("semaphoreTests")
         .master("local[1]")
+        // only 1 task at a time so we can verify what blocks and what does not block
+        .config("spark.rapids.sql.concurrentGpuTasks", "1")
         .getOrCreate()
-    }
   }
 
   override def afterEach(): Unit = {
@@ -78,5 +82,30 @@ class GpuSemaphoreSuite extends AnyFunSuite
     GpuSemaphore.acquireIfNecessary(context)
     GpuSemaphore.acquireIfNecessary(context)
     verify(context, times(1)).addTaskCompletionListener[Unit](any())
+  }
+
+  test("multi tryAcquire") {
+    GpuDeviceManager.setRmmTaskInitEnabled(false)
+    val context = mockContext(1)
+    try {
+      assert(GpuSemaphore.tryAcquire(context))
+      assert(GpuSemaphore.tryAcquire(context))
+    } finally {
+      GpuSemaphore.releaseIfNecessary(context)
+    }
+  }
+
+  test("tryAcquire non-blocking") {
+    GpuDeviceManager.setRmmTaskInitEnabled(false)
+    val context1 = mockContext(1)
+    val context2 = mockContext(2)
+    try {
+      GpuSemaphore.acquireIfNecessary(context1)
+      assert(!GpuSemaphore.tryAcquire(context2))
+      assert(!GpuSemaphore.tryAcquire(context2))
+    } finally {
+      GpuSemaphore.releaseIfNecessary(context1)
+      GpuSemaphore.releaseIfNecessary(context2)
+    }
   }
 }
