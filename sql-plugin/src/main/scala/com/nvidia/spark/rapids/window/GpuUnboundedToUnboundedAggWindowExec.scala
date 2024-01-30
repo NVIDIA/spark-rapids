@@ -68,13 +68,24 @@ object TableAndBatchUtils {
                     beginCol: Int, endCol: Int): cudf.Table = {
     val projectedColumns =
       Range(beginCol, endCol).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
-    new cudf.Table(projectedColumns.toArray: _*)
+    withResource(projectedColumns) { _ =>
+      new cudf.Table(projectedColumns.toArray: _*)
+    }
   }
 
   def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
     val nCols = tbl.getNumberOfColumns
-    val columns = Range(0, nCols).map { i => tbl.getColumn(i).slice(beginRow, endRow).head }
-    new cudf.Table(columns.toArray: _*)
+    val columns = Range(0, nCols).map { i =>
+      tbl.getColumn(i)
+    }
+
+    val slices = columns.map { col =>
+      withResource(col.slice(beginRow, endRow)) { _.head.incRefCount() }
+    }
+
+    withResource(slices) { _ =>
+      new cudf.Table(slices.toArray: _*)
+    }
   }
 
   def sliceAndMakeSpillable(tbl: cudf.Table,
@@ -186,14 +197,15 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
         val currIter = withRetry(getSpillableInputBatch, splitSpillableInHalfByRows) { scb =>
           withResource(scb.getColumnarBatch()) { cb =>
             withResource(preProcess(cb)) { preProcessedInput =>
-              val aggResultTable = groupByAggregate(preProcessedInput)
-              val rideAlongColumns = GpuProjectExec.project(preProcessedInput,
-                                                            boundStages.boundRideAlong)
+              withResource(groupByAggregate(preProcessedInput)) { aggResultTable =>
+                val rideAlongColumns = GpuProjectExec.project(preProcessedInput,
+                                                              boundStages.boundRideAlong)
 
-              FirstPassAggResult(
-                toSpillableBatch(rideAlongColumns),
-                toSpillableBatch(aggResultTable,
-                  boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+                FirstPassAggResult(
+                  toSpillableBatch(rideAlongColumns),
+                  toSpillableBatch(aggResultTable,
+                    boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
+              }
             }
           }
         }
