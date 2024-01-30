@@ -92,8 +92,9 @@ object TableAndBatchUtils {
                             rowBegin: Int,
                             rowEnd: Int,
                             dataTypes: Seq[DataType]): SpillableColumnarBatch = {
-    val sliced = getTableSlice(tbl, rowBegin, rowEnd)
-    toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
+    withResource(getTableSlice(tbl, rowBegin, rowEnd)) { sliced =>
+      toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
+    }
   }
 
   // TODO: Remove, when merging the PR.
