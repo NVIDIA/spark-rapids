@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,6 +87,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
   private final long maxBatchSizeBytes;
   private final long targetBatchSizeBytes;
   private final boolean useChunkedReader;
+  private final boolean useSubPageChunked;
   private final scala.Option<String> debugDumpPrefix;
   private final boolean debugDumpAlways;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
@@ -97,6 +98,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       Map<Integer, ?> idToConstant, GpuDeleteFilter deleteFilter,
       PartitionedFile partFile, Configuration conf, int maxBatchSizeRows,
       long maxBatchSizeBytes, long targetBatchSizeBytes, boolean useChunkedReader,
+      boolean useSubPageChunked,
       scala.Option<String> debugDumpPrefix, boolean debugDumpAlways,
       scala.collection.immutable.Map<String, GpuMetric> metrics) {
     this.input = input;
@@ -113,6 +115,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     this.maxBatchSizeBytes = maxBatchSizeBytes;
     this.targetBatchSizeBytes = targetBatchSizeBytes;
     this.useChunkedReader = useChunkedReader;
+    this.useSubPageChunked = useSubPageChunked;
     this.debugDumpPrefix = debugDumpPrefix;
     this.debugDumpAlways = debugDumpAlways;
     this.metrics = metrics;
@@ -139,7 +142,9 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       ParquetPartitionReader parquetPartReader = new ParquetPartitionReader(conf, partFile,
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
-          maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader, metrics,
+          maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader,
+          useSubPageChunked,
+          metrics,
           DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
           DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
           true, // hasInt96Timestamps
