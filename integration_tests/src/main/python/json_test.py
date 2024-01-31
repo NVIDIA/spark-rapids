@@ -828,6 +828,7 @@ def test_from_json_struct_of_list(schema):
     'struct<a:string>'
 ])
 @allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10351')
 def test_from_json_mixed_types_list_struct(schema):
     json_string_gen = StringGen(r'{"a": (\[1,2,3\]|{"b":"[a-z]{2}"}) }')
     assert_gpu_and_cpu_are_equal_collect(
