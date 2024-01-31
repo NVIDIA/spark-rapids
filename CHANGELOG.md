@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-12-29
+Generated on 2024-01-31
 
 ## Release 23.12
 
@@ -10,7 +10,7 @@ Generated on 2023-12-29
 |[#9805](https://github.com/NVIDIA/spark-rapids/issues/9805)|[FEA] Support ```current_date``` expression function with CST (UTC + 8) timezone support|
 |[#9515](https://github.com/NVIDIA/spark-rapids/issues/9515)|[FEA] Support temporal types in to_json|
 |[#9872](https://github.com/NVIDIA/spark-rapids/issues/9872)|[FEA][JSON] Support Decimal type in `to_json`|
-|[#9802](https://github.com/NVIDIA/spark-rapids/issues/9802)|[FEA] Support FromUTCTimestamp on the GPU with a non-UTC timezone|
+|[#9802](https://github.com/NVIDIA/spark-rapids/issues/9802)|[FEA] Support FromUTCTimestamp on the GPU with a non-UTC time zone|
 |[#6831](https://github.com/NVIDIA/spark-rapids/issues/6831)|[FEA] Support timestamp transitions to and from UTC for single time zones with no repeating rules|
 |[#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)|[FEA][JSON] Support temporal types in `from_json`|
 |[#9804](https://github.com/NVIDIA/spark-rapids/issues/9804)|[FEA] Support CPU path for from_utc_timestamp function with timezone|
@@ -118,6 +118,10 @@ Generated on 2023-12-29
 ### PRs
 |||
 |:---|:---|
+|[#10340](https://github.com/NVIDIA/spark-rapids/pull/10340)|Copyright to 2024 [skip ci]|
+|[#10323](https://github.com/NVIDIA/spark-rapids/pull/10323)|Upgrade version to 23.12.2-SNAPSHOT|
+|[#10274](https://github.com/NVIDIA/spark-rapids/pull/10274)|PythonRunner Changes|
+|[#10124](https://github.com/NVIDIA/spark-rapids/pull/10124)|Update changelog for v23.12.1 [skip ci]|
 |[#10123](https://github.com/NVIDIA/spark-rapids/pull/10123)|Change version to v23.12.1 [skip ci]|
 |[#10122](https://github.com/NVIDIA/spark-rapids/pull/10122)|Init changelog for v23.12.1 [skip ci]|
 |[#10121](https://github.com/NVIDIA/spark-rapids/pull/10121)|[DOC] update download page for db hot fix  [skip ci]|

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@
 {"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
-{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
@@ -42,14 +41,13 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.DataOutputStream
 import java.net.Socket
 
-import ai.rapids.cudf.{ArrowIPCWriterOptions, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuSemaphore}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.{GpuArrowWriter, GpuPythonRunnerCommon}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -69,9 +67,10 @@ class GpuCoGroupedArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Int,
-    pythonOutSchema: StructType)
-  extends GpuPythonRunnerBase[(ColumnarBatch, ColumnarBatch)](funcs, evalType, argOffsets)
-    with GpuPythonArrowOutput {
+    override val pythonOutSchema: StructType,
+    jobArtifactUUID: Option[String] = None)
+  extends GpuBasePythonRunner[(ColumnarBatch, ColumnarBatch)](funcs, evalType,
+    argOffsets, jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -82,14 +81,11 @@ class GpuCoGroupedArrowPythonRunner(
     new WriterThread(env, worker, inputIterator, partitionIndex, context) {
 
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
-
-        // Write config for the worker as a number of key -> value pairs of strings
         dataOut.writeInt(conf.size)
         for ((k, v) <- conf) {
           PythonRDD.writeUTF(k, dataOut)
           PythonRDD.writeUTF(v, dataOut)
         }
-
         PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
       }
 
@@ -107,42 +103,20 @@ class GpuCoGroupedArrowPythonRunner(
         // The iterator can grab the semaphore even on an empty batch
         GpuSemaphore.releaseIfNecessary(TaskContext.get())
         dataOut.writeInt(0)
+        dataOut.flush()
       }
 
       private def writeGroupBatch(groupBatch: ColumnarBatch, batchSchema: StructType,
           dataOut: DataOutputStream): Unit = {
-        val writer = {
-          val builder = ArrowIPCWriterOptions.builder()
-          builder.withMaxChunkSize(batchSize)
-          builder.withCallback((table: Table) => {
-            table.close()
-            GpuSemaphore.releaseIfNecessary(TaskContext.get())
-          })
-          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
-          GpuArrowPythonRunner.flattenNames(batchSchema).foreach { case (name, nullable) =>
-            if (nullable) {
-              builder.withColumnNames(name)
-            } else {
-              builder.withNotNullableColumnNames(name)
-            }
-          }
-          Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
-        }
-
+        val gpuArrowWriter = GpuArrowWriter(batchSchema, batchSize)
         Utils.tryWithSafeFinally {
-          withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
-            // The callback will handle closing table and releasing the semaphore
-            writer.write(GpuColumnVector.from(groupBatch))
-          }
+          gpuArrowWriter.start(dataOut)
+          gpuArrowWriter.write(groupBatch)
         } {
-          writer.close()
+          gpuArrowWriter.reset()
           dataOut.flush()
         }
       } // end of writeGroup
     }
   } // end of newWriterThread
-
-  def toBatch(table: Table): ColumnarBatch = {
-    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
-  }
 }
