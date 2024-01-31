@@ -74,18 +74,7 @@ object TableAndBatchUtils {
   }
 
   def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
-    val nCols = tbl.getNumberOfColumns
-    val columns = Range(0, nCols).map { i =>
-      tbl.getColumn(i)
-    }
-
-    val slices = columns.map { col =>
-      withResource(col.slice(beginRow, endRow)) { _.head.incRefCount() }
-    }
-
-    withResource(slices) { _ =>
-      new cudf.Table(slices.toArray: _*)
-    }
+    getTableSlice(tbl, beginRow, endRow, beginCol=0, endCol=tbl.getNumberOfColumns)
   }
 
   def sliceAndMakeSpillable(tbl: cudf.Table,
