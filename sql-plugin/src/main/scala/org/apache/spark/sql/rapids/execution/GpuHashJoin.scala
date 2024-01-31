@@ -1080,7 +1080,6 @@ trait GpuHashJoin extends GpuExec {
       stream: Iterator[ColumnarBatch],
       targetSize: Long,
       numOutputRows: GpuMetric,
-      joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
@@ -1140,7 +1139,6 @@ trait GpuHashJoin extends GpuExec {
     }
 
     joinIterator.map { cb =>
-      joinOutputRows += cb.numRows()
       numOutputRows += cb.numRows()
       numOutputBatches += 1
       cb
