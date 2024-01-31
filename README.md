@@ -73,7 +73,7 @@ as a `provided` dependency.
 <dependency>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark_2.12</artifactId>
-    <version>23.12.1</version>
+    <version>23.12.2</version>
     <scope>provided</scope>
 </dependency>
 ```
