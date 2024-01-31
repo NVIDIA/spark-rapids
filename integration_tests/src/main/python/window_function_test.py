@@ -1479,10 +1479,15 @@ def test_window_aggs_for_rows_collect_set():
 
 @ignore_order(local=True)
 @allow_non_gpu(*non_utc_allow)
-def test_window_aggs_for_fully_unbounded_collect_set():
+def test_window_aggs_for_fully_unbounded_partitioned_collect_set():
+    """
+    Test that confirms that `collect_set` window aggregation, when run over UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING
+    runs through the `GpuUnboundedToUnboundedAggWindowExec` (which optimizes it to run via sort-based group-by
+    aggregations).
+    Note: This optimization only holds for the partitioned case.  Unpartitioned windows are not supported yet.
+    """
     assert_gpu_and_cpu_are_equal_sql(
-        # gen_and_persist,
-        lambda spark: gen_df(spark, _gen_data_for_collect_set, length=2048).repartition(1),
+        lambda spark: gen_df(spark, _gen_data_for_collect_set, length=2048),
         "window_collect_table",
         '''
         select a, b,
@@ -1535,7 +1540,40 @@ def test_window_aggs_for_fully_unbounded_collect_set():
         ''',
         conf={'spark.rapids.sql.window.collectSet.enabled': True,
               'spark.rapids.sql.window.unboundedAgg.enabled': True,
-              'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'})
+              'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'},
+        validate_execs_in_gpu_plan=['GpuUnboundedToUnboundedAggWindowExec'])
+
+
+@ignore_order(local=True)
+@allow_non_gpu(*non_utc_allow)
+def test_window_aggs_for_fully_unbounded_unpartitioned_collect_set():
+    """
+    Test that confirms that `collect_set` window aggregation, when run over UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING
+    falls back to GpuWindowExec, if no partition spec is specified.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, _gen_data_for_collect_set, length=2048),
+        "window_collect_table",
+        '''
+        select a, b,
+            sort_array(cc_int),
+            sort_array(cc_long),
+            sort_array(cc_short)
+        from (
+            select a, b,
+               collect_set(c_int) over
+                 (order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_int,
+               collect_set(c_long) over
+                 (order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_long,
+               collect_set(c_short) over
+                 (order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_short
+            from window_collect_table
+        ) t
+        ''',
+        conf={'spark.rapids.sql.window.collectSet.enabled': True,
+              'spark.rapids.sql.window.unboundedAgg.enabled': True,
+              'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'},
+        validate_execs_in_gpu_plan=['GpuWindowExec'])
 
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
