@@ -445,9 +445,10 @@ object GpuWindowExecMeta {
     }
 
   def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
-    GpuSpecialFrameBoundary(UnboundedPreceding),
-    GpuSpecialFrameBoundary(UnboundedFollowing))) => true
+    case GpuWindowSpecDefinition(partSpec, _, GpuSpecifiedWindowFrame(_,
+                                  GpuSpecialFrameBoundary(UnboundedPreceding),
+                                  GpuSpecialFrameBoundary(UnboundedFollowing))) =>
+          partSpec.nonEmpty // Un-partitioned case currently unsupported.
     case _ => false
   }
 
