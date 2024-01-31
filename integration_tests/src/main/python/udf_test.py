@@ -35,7 +35,7 @@ except Exception as e:
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
     pytestmark = pytest.mark.skip(reason=str(e))
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
 from data_gen import *
 from marks import approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window
@@ -429,40 +429,33 @@ def test_map_pandas_udf_with_empty_partitions():
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf)
 
 
-@pytest.mark.skipif(is_before_spark_350(), reason='mapInPandas with barrier mode is introduced by Pyspark 3.5.0')
-def test_map_in_pandas_with_barrier_mode():
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='mapInPandas/mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_map_in_pandas', [True, False], ids=idfn)
+def test_map_in_pandas_in_arrow_with_barrier_mode(is_map_in_pandas):
     def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
         assert not isinstance(tc, BarrierTaskContext)
         for batch in iterator:
             yield batch
-    with_gpu_session(lambda spark: spark.range(0, 1, 1, 1).mapInPandas(func, "id long", False).collect())
 
-    def func1(iterator):
+    def func_barrier_mode(iterator):
         tc = TaskContext.get()
         assert tc is not None
         assert isinstance(tc, BarrierTaskContext)
         for batch in iterator:
             yield batch
-    with_gpu_session(lambda spark: spark.range(0, 1, 1, 1).mapInPandas(func1, "id long", True).collect())
 
+    def run(spark):
+        df = spark.range(0, 10, 1, 1)
+        if is_map_in_pandas:
+            ret1 = df.mapInPandas(func, "id long", False).collect()
+            ret2 = df.mapInPandas(func_barrier_mode, "id long", True).collect()
+        else:
+            ret1 = df.mapInArrow(func, "id long", False).collect()
+            ret2 = df.mapInArrow(func_barrier_mode, "id long", True).collect()
+        return ret1, ret2
 
-@pytest.mark.skipif(is_before_spark_350(), reason='mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
-def test_map_in_arrow_with_barrier_mode():
-    def func(iterator):
-        from pyspark import BarrierTaskContext, TaskContext
-        tc = TaskContext.get()
-        assert tc is not None
-        assert not isinstance(tc, BarrierTaskContext)
-        for batch in iterator:
-            yield batch
-    with_gpu_session(lambda spark: spark.range(0, 1, 1, 1).mapInArrow(func, "id long", False).collect())
-
-    def func1(iterator):
-        tc = TaskContext.get()
-        assert tc is not None
-        assert isinstance(tc, BarrierTaskContext)
-        for batch in iterator:
-            yield batch
-    with_gpu_session(lambda spark: spark.range(0, 1, 1, 1).mapInArrow(func1, "id long", True).collect())
+    non_barrier_result, barrier_result = with_gpu_session(lambda spark: run(spark))
+    assert_equal(non_barrier_result, barrier_result)
