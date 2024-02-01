@@ -627,6 +627,7 @@ def test_from_json_struct_boolean(pattern):
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @allow_non_gpu(*non_utc_allow)
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10349')
 def test_from_json_struct_decimal():
     json_string_gen = StringGen(r'{ "a": "[+-]?([0-9]{0,5})?(\.[0-9]{0,2})?([eE][+-]?[0-9]{1,2})?" }') \
         .with_special_pattern('', weight=50) \
