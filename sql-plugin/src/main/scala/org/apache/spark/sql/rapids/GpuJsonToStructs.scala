@@ -17,10 +17,10 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, DType, HostMemoryBuffer, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, DType, HostMemoryBuffer, Scalar, Schema}
 import com.nvidia.spark.rapids.{GpuCast, GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.MapUtils
 import com.nvidia.spark.rapids.shims.GpuJsonToStructsShim
 import org.apache.commons.text.StringEscapeUtils
@@ -153,33 +153,9 @@ case class GpuJsonToStructs(
     }
   }
 
-  // Process a sequence of field names. If there are duplicated field names, we only keep the field
-  // name with the largest index in the sequence, for others, replace the field names with null.
-  // Example:
-  // Input = [("a", StringType), ("b", StringType), ("a", IntegerType)]
-  // Output = [(null, StringType), ("b", StringType), ("a", IntegerType)]
-  private def processFieldNames(names: Seq[(String, DataType)]): Seq[(String, DataType)] = {
-    val zero = (Set.empty[String], Seq.empty[(String, DataType)])
-    val (_, resultFields) = names.foldRight (zero) { case ((name, dtype), (existingNames, acc)) =>
-      if (existingNames(name)) {
-        (existingNames, (null, dtype) +: acc)
-      } else {
-        (existingNames + name, (name, dtype) +: acc)
-      }
-    }
-    resultFields
-  }
-
   // Given a cudf column, return its Spark type
   private def getSparkType(col: cudf.ColumnView): DataType = {
     col.getType match {
-      case cudf.DType.INT8 | cudf.DType.UINT8 => ByteType
-      case cudf.DType.INT16 | cudf.DType.UINT16 => ShortType
-      case cudf.DType.INT32 | cudf.DType.UINT32 => IntegerType
-      case cudf.DType.INT64 | cudf.DType.UINT64 => LongType
-      case cudf.DType.FLOAT32 => FloatType
-      case cudf.DType.FLOAT64 => DoubleType
-      case cudf.DType.BOOL8 => BooleanType
       case cudf.DType.STRING => StringType
       case cudf.DType.LIST => ArrayType(getSparkType(col.getChildColumnView(0)))
       case cudf.DType.STRUCT =>
@@ -189,8 +165,30 @@ case class GpuJsonToStructs(
         }
         StructType(structFields)
       case t => throw new IllegalArgumentException(
-        s"GpuJsonToStructs currently cannot process CUDF column of type $t.")
+        s"GpuJsonToStructs currently expects STRINGS to be the leaf columns found $t")
     }
+  }
+
+  private def populateStringLeafSchema(dt: DataType,
+      name: String, builder: Schema.Builder): Unit = dt match {
+    case at: ArrayType =>
+      val child = builder.addColumn(DType.LIST, name)
+      populateStringLeafSchema(at.elementType, "element", child)
+    case st: StructType =>
+      val child = builder.addColumn(DType.STRUCT, name)
+      for (sf <- st.fields) {
+        populateStringLeafSchema(sf.dataType, sf.name, child)
+      }
+    case _: MapType =>
+      throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
+    case _ =>
+      builder.addColumn(DType.STRING, name)
+  }
+
+  def makeStringLeafSchema(input: StructType): Schema = {
+    val builder = Schema.builder
+    input.foreach(f => populateStringLeafSchema(f.dataType, f.name, builder))
+    builder.build
   }
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
@@ -198,6 +196,7 @@ case class GpuJsonToStructs(
       case _: MapType =>
         MapUtils.extractRawMapFromJsonString(input.getBase)
       case struct: StructType => {
+        val cudfSchema = makeStringLeafSchema(struct)
         // We cannot handle all corner cases with this right now. The parser just isn't
         // good enough, but we will try to handle a few common ones.
         val numRows = input.getRowCount.toInt
@@ -207,24 +206,18 @@ case class GpuJsonToStructs(
         val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
         withResource(isNullOrEmpty) { isNullOrEmpty =>
           // Step 3: setup a datasource
-          val (names, rawTable) = withResource(new JsonDeviceDataSource(combined)) { ds =>
+          val rawTable = withResource(new JsonDeviceDataSource(combined)) { ds =>
             // Step 4: Have cudf parse the JSON data
             val jsonOptions = cudf.JSONOptions.builder()
-              .withRecoverWithNull(true)
-              .withMixedTypesAsStrings(enableMixedTypesAsString)
-              .withNormalizeSingleQuotes(true)
-              .build()
-            withResource(
-              cudf.Table.readAndInferJSON(jsonOptions, ds)) { tableWithMeta =>
-              val names = tableWithMeta.getColumnNames
-              (names, tableWithMeta.releaseTable())
-            }
+                .withRecoverWithNull(true)
+                .withMixedTypesAsStrings(enableMixedTypesAsString)
+                .withNormalizeSingleQuotes(true)
+                .build()
+
+            cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
           }
 
-          // process duplicated field names in input struct schema
-          val fieldNames = processFieldNames(struct.fields.map (f => (f.name, f.dataType)))
-
-          withResource(rawTable) { rawTable =>
+          val columns = withResource(rawTable) { rawTable =>
             // Step 5: verify that the data looks correct
             if (rawTable.getRowCount != numRows) {
               throw new IllegalStateException("The input data didn't parse correctly and we read " +
@@ -232,41 +225,31 @@ case class GpuJsonToStructs(
                   s"but got ${rawTable.getRowCount}")
             }
 
-            // Step 6: get the data based on input struct schema
-            val columns = fieldNames.safeMap { case (name, dtype) =>
-              val i = names.indexOf(name)
-              if (i == -1) {
-                GpuColumnVector.columnVectorFromNull(numRows, dtype)
-              } else {
+            // Step 6: Cast the data if needed to match the types that we want
+            // TODO need to make this work for nested types too...
+            struct.zipWithIndex.safeMap {
+              case (sf, i) =>
+                val expectedType = sf.dataType
                 val col = rawTable.getColumn(i)
                 // getSparkType is only used to get the "from type" for cast
                 val sparkType = getSparkType(col)
-                (sparkType, dtype) match {
+                (sparkType, expectedType) match {
                   case (DataTypes.StringType, DataTypes.BooleanType) =>
                     castJsonStringToBool(col)
                   case (DataTypes.StringType, DataTypes.DateType) =>
                     GpuJsonToStructsShim.castJsonStringToDate(col, options)
-                  case (_, DataTypes.DateType) =>
-                    castToNullDate(input.getBase)
                   case (DataTypes.StringType, DataTypes.TimestampType) =>
                     GpuJsonToStructsShim.castJsonStringToTimestamp(col, options)
-                  case (DataTypes.LongType, DataTypes.TimestampType) =>
-                    GpuCast.castLongToTimestamp(col, DataTypes.TimestampType)
-                  case (_, DataTypes.TimestampType) =>
-                    castToNullTimestamp(input.getBase)
-                  case _ => GpuCast.doCast(col, sparkType, dtype)
+                  case _ => GpuCast.doCast(col, sparkType, expectedType)
                 }
-
-              }
             }
-
-            // Step 7: turn the data into a Struct
-            withResource(columns) { columns =>
-              withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-                // Step 8: put nulls back in for nulls and empty strings
-                withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  isNullOrEmpty.ifElse(nullVal, structData)
-                }
+          }
+          // Step 7: turn the data into a Struct
+          withResource(columns) { columns =>
+            withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
+              // Step 8: put nulls back in for nulls and empty strings
+              withResource(GpuScalar.from(null, struct)) { nullVal =>
+                isNullOrEmpty.ifElse(nullVal, structData)
               }
             }
           }
@@ -297,18 +280,6 @@ case class GpuJsonToStructs(
           isTrue.ifElse(trueLit, falseOrNull)
         }
       }
-    }
-  }
-
-  private def castToNullDate(input: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
-      ColumnVector.fromScalar(nullScalar, input.getRowCount.toInt)
-    }
-  }
-
-  private def castToNullTimestamp(input: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
-      ColumnVector.fromScalar(nullScalar, input.getRowCount.toInt)
     }
   }
 

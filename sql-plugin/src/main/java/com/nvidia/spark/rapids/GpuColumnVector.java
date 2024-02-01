@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -503,6 +503,24 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new StructType(fields);
   }
 
+  private static void populateSchema(DataType dt, String name, Schema.Builder builder) {
+    if (dt instanceof ArrayType) {
+      ArrayType at = (ArrayType)dt;
+      Schema.Builder child = builder.addColumn(DType.LIST, name);
+      populateSchema(at.elementType(), "element", child);
+    } else if (dt instanceof StructType) {
+      StructType st = (StructType)dt;
+      Schema.Builder child = builder.addColumn(DType.STRUCT, name);
+      for (StructField sf: st.fields()) {
+        populateSchema(sf.dataType(), sf.name(), child);
+      }
+    } else if (dt instanceof MapType) {
+      throw new IllegalArgumentException("MapType is not supported yet for schema conversion");
+    } else {
+      builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name);
+    }
+  }
+
   /**
    * Convert a Spark schema into a cudf schema
    * @param input the Spark schema to convert
@@ -510,7 +528,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static Schema from(StructType input) {
     Schema.Builder builder = Schema.builder();
-    input.foreach(f -> builder.column(GpuColumnVector.getNonNestedRapidsType(f.dataType()), f.name()));
+    input.foreach(f -> {
+      populateSchema(f.dataType(), f.name(), builder);
+      return null;
+    });
     return builder.build();
   }
 
