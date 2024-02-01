@@ -35,7 +35,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PythonMapInArrowExec
-import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
+import org.apache.spark.sql.rapids.shims.GpuPythonMapInArrowExecMeta
 
 object PythonMapInArrowExecShims {
 

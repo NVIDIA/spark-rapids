@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run
 from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
@@ -33,7 +34,7 @@ except Exception as e:
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
     pytestmark = pytest.mark.skip(reason=str(e))
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
 from data_gen import *
 from marks import approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window
@@ -425,3 +426,41 @@ def test_map_pandas_udf_with_empty_partitions():
             lambda data: [pd.DataFrame([len(list(data))])], schema="ret:integer")
 
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf)
+
+
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='mapInPandas with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
+def test_map_in_pandas_with_barrier_mode(is_barrier):
+    def func(iterator):
+        tc = TaskContext.get()
+        assert tc is not None
+        if is_barrier:
+            assert isinstance(tc, BarrierTaskContext)
+        else:
+            assert not isinstance(tc, BarrierTaskContext)
+
+        for batch in iterator:
+            yield batch
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0, 10, 1, 1).mapInPandas(func, "id long", is_barrier))
+
+
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
+def test_map_in_arrow_with_barrier_mode(is_barrier):
+    def func(iterator):
+        tc = TaskContext.get()
+        assert tc is not None
+        if is_barrier:
+            assert isinstance(tc, BarrierTaskContext)
+        else:
+            assert not isinstance(tc, BarrierTaskContext)
+
+        for batch in iterator:
+            yield batch
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0, 10, 1, 1).mapInArrow(func, "id long", is_barrier))
