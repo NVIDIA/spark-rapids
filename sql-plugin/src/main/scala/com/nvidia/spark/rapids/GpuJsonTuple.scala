@@ -55,30 +55,29 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       generatorOffset: Int,
       outer: Boolean): Iterator[ColumnarBatch] = {
     withRetry(inputBatches, splitSpillableInHalfByRows) { attempt =>
-      // this is obviously broken
-      val inputBatch = attempt.getColumnarBatch()
+      withResource(attempt.getColumnarBatch()) { inputBatch =>
+        val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
+        val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
-      val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
-      val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
-
-      val fieldScalars = fieldExpressions.safeMap { field =>
-        withResourceIfAllowed(field.columnarEvalAny(inputBatch)) {
-          case fieldScalar: GpuScalar =>
-            // Specials characters like '.', '[', ']' are not supported in field names
-            Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
-          case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
+        val fieldScalars = fieldExpressions.safeMap { field =>
+          withResourceIfAllowed(field.columnarEvalAny(inputBatch)) {
+            case fieldScalar: GpuScalar =>
+              // Specials characters like '.', '[', ']' are not supported in field names
+              Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
+            case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
+          }
         }
-      }
 
-      withResource(fieldScalars) { fieldScalars =>
-        withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
-          val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
-            case (col, dataType) => GpuColumnVector.from(col, dataType)
+        withResource(fieldScalars) { fieldScalars =>
+          withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
+            val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
+              case (col, dataType) => GpuColumnVector.from(col, dataType)
+            }
+            val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
+              inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
+            }
+            new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
           }
-          val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
-            inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
-          }
-          new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
         }
       }
     }
