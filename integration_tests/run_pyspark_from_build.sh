@@ -226,6 +226,10 @@ else
     # time zone will be tested; use export TZ=time_zone_name before run this script
     TZ=${TZ:-UTC}
 
+    # Disable Spark UI by default since it is not needed for tests, and Spark can fail to start
+    # due to Spark UI port collisions, especially in a parallel test setup.
+    export PYSP_TEST_spark_ui_enabled=${PYSP_TEST_spark_ui_enabled:-false}
+
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
