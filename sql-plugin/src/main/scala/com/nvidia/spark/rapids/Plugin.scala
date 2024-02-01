@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,11 +120,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-23.12.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.04.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g. 
-        // rapids-4-spark_2.12-23.12.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-23.12.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.04.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -147,13 +147,10 @@ object RapidsPluginUtils extends Logging {
         }.mkString + "\n"
       }
     }.mkString
-    // scalastyle:off line.size.limit
-    lazy val msg = s"""Multiple $jarName jars found in the classpath:
-        |$rapidsJarsVersMsg
-        |Please make sure there is only one $jarName jar in the classpath.
-        |If it is impossible to fix the classpath you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS.
-        """.stripMargin
-    // scalastyle:on line.size.limit
+    lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
+        s"Please make sure there is only one $jarName jar in the classpath. "
+
+    require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
 
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
@@ -161,12 +158,19 @@ object RapidsPluginUtils extends Logging {
           logWarning(msg)
         }
       case AllowMultipleJars.SAME_REVISION =>
-        require(revisionMap.size == 1, msg)
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+              s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS, but this " +
+              s"can cause unpredictable behavior as the plugin may pick up the wrong jar."
+        require(revisionMap.size == 1, msg + recommended)
         if (revisionMap.values.exists(_.size != 1)) {
-          logWarning(msg)
+          logWarning(msg + recommended)
         }
       case AllowMultipleJars.NEVER =>
-        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+            s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS." +
+            " But setting it to ALWAYS can cause unpredictable behavior as the plugin may pick " +
+            "up the wrong jar."
+        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
     }
   }
 

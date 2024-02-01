@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from conftest import is_not_utc
 from data_gen import *
-from marks import allow_non_gpu
+from marks import allow_non_gpu, datagen_overrides
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
 from orc_test import reader_opt_confs
@@ -101,7 +101,6 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema_str).orc(orc_path)
     )
-
 
 @pytest.mark.parametrize('data_gen', [DoubleGen(max_exp=32, special_cases=None),
                                       DoubleGen(max_exp=32, special_cases=[8.88e9, 9.99e10, 1.314e11])])

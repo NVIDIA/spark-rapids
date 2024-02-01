@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -25,7 +26,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PythonMapInArrowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
+import org.apache.spark.sql.rapids.shims.GpuPythonMapInArrowExecMeta
 import org.apache.spark.sql.types.{BinaryType, StringType}
 
 object PythonMapInArrowExecShims {

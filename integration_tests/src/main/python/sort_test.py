@@ -22,6 +22,9 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_340
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = pytest.mark.premerge_ci_1
+
 # Many Spark versions have issues sorting decimals.
 # https://issues.apache.org/jira/browse/SPARK-40089
 _orderable_not_null_big_decimal_gen = DecimalGen(precision=20, scale=2, nullable=False)

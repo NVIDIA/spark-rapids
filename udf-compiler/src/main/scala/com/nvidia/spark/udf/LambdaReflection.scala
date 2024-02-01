@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,6 +76,32 @@ class LambdaReflection private(private val classPool: ClassPool,
         classPool.getCtClass(className).getDeclaredConstructor(params)
       }
     }
+  }
+
+  def lookupBootstrapMethod(constPoolIndex: Int): (CtMethod, Seq[Any]) = {
+    if (constPool.getTag(constPoolIndex) != ConstPool.CONST_InvokeDynamic) {
+      throw new SparkException(s"Unexpected index ${constPoolIndex} for bootstrap")
+    }
+    val bootstrapMethodIndex = constPool.getInvokeDynamicBootstrap(constPoolIndex)
+    val bootstrapMethodsAttribute = ctMethod.getDeclaringClass.getClassFile.getAttributes
+      .toArray.filter(_.isInstanceOf[javassist.bytecode.BootstrapMethodsAttribute])
+    if (bootstrapMethodsAttribute.length != 1) {
+      throw new SparkException(s"Multiple bootstrap methods attributes aren't supported")
+    }
+    val bootstrapMethods = bootstrapMethodsAttribute.head
+      .asInstanceOf[javassist.bytecode.BootstrapMethodsAttribute].getMethods
+    val bootstrapMethod = bootstrapMethods(bootstrapMethodIndex)
+    val bootstrapMethodArguments = try {
+      bootstrapMethod.arguments.map(lookupConstant)
+    } catch {
+      case _: Throwable =>
+        throw new SparkException(s"only constants are supported as bootstrap method arguments")
+    }
+    val constPoolIndexMethodref = constPool.getMethodHandleIndex(bootstrapMethod.methodRef)
+    val methodName = constPool.getMethodrefName(constPoolIndexMethodref)
+    val descriptor = constPool.getMethodrefType(constPoolIndexMethodref)
+    val className = constPool.getMethodrefClassName(constPoolIndexMethodref)
+    (classPool.getCtClass(className).getMethod(methodName, descriptor), bootstrapMethodArguments)
   }
 
   def lookupClassName(constPoolIndex: Int): String = {

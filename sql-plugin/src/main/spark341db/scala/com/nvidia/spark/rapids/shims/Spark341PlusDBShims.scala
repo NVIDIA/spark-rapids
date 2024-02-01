@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,10 @@ import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
-import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
+import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
@@ -171,4 +173,43 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ shimExecs
 
+  /*
+   * We are looking for the pattern describe below. We end up with a ColumnarToRow that feeds
+   * into a CPU broadcasthash join which is using Executor broadcast. This pattern fails on
+   * Databricks because it doesn't like the ColumnarToRow feeding into the BroadcastHashJoin.
+   * Note, in most other cases we see executor broadcast, the Exchange would be CPU
+   * single partition exchange explicitly marked with type EXECUTOR_BROADCAST.
+   *
+   *  +- BroadcastHashJoin || BroadcastNestedLoopJoin (using executor broadcast)
+   *  ^
+   *  +- ColumnarToRow
+   *      +- AQEShuffleRead ebj (uses coalesce partitions to go to 1 partition)
+   *        +- ShuffleQueryStage
+   *            +- GpuColumnarExchange gpuhashpartitioning
+   */
+  override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
+      parent: Option[SparkPlan]): Boolean = {
+    p match {
+      case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
+        parent match {
+          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
+          case Some(bhnlj: BroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast => true
+          case _ => false
+        }
+      case _ => false
+    }
+  }
+
+  /*
+   * If this plan matches the checkCToRWithExecBroadcastCoalPart() then get the shuffle
+   * plan out so we can wrap it. This function does not check that the parent is
+   * BroadcastHashJoin doing executor broadcast, so is expected to be called only
+   * after checkCToRWithExecBroadcastCoalPart().
+   */
+  override def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = {
+    p match {
+      case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) => Some(s)
+      case _ => None
+    }
+  }
 }

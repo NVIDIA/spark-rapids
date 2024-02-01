@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,7 +83,8 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
         }
         closeOnExcept(sb) { _ =>
           if (forceRetry) {
-            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+              RmmSpark.OomInjectionType.GPU.ordinal, 0)
           }
         }
         boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
@@ -117,7 +118,8 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
 
         val cb = buildBatch()
         if (forceRetry) {
-          RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+          RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+            RmmSpark.OomInjectionType.GPU.ordinal, 0)
         }
         val batchSeq = GpuFilter.filterAndClose(cb, boundCondition,
           NoopMetric, NoopMetric, NoopMetric).toSeq

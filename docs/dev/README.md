@@ -19,7 +19,9 @@ following topics:
   * [Expressions](#expressions)
   * [The GPU Semaphore](#the-gpu-semaphore)
 * [Debugging Tips](#debugging-tips)
+  * [Memory Debugging](#memory-debugging) 
 * [Profiling Tips](#profiling-tips)
+* [Hard To Debug Errors](#hard-to-debug-errors)
 
 ## Spark SQL and Query Plans
 
@@ -240,6 +242,11 @@ port 5005.
 
 You can also use [Compute Sanitizer](compute_sanitizer.md) to debug CUDA memory errors.
 
+### Memory Debugging
+Java's garbage collector does not play nicely with CUDA memory allocations or with off heap memory.
+There are a number of tools that we have developed that can help to
+[Debug Memory Issues](mem_debug.md)
+
 ## Profiling Tips
 [NVIDIA Nsight Systems](https://developer.nvidia.com/nsight-systems) makes
 profiling easy.  In addition to showing where time is being spent in CUDA
@@ -272,3 +279,31 @@ via environment variable `JACOCO_SPARK_VER` before generate coverage report, e.g
 mvn clean verify
 ./build/coverage-report
 ```
+
+## Hard To Debug Errors
+Spark is not designed to do what we are doing. The following are issues that devs have
+run into in the past that were really hard to debug, and could not easily be fixed by a
+framework change.
+
+### Never Change the Order of Output Columns
+Spark follows a fairly traditional SQL optimization path. It starts with a logical plan.
+Does optimizations on that logical plan. Then translates it to a physical plan and
+does more optimizations there. But when Spark does a `collect` operation it looks at the
+output of the logical plan at that point to know how to convert the data to the format
+that is collected. If we ever change the order or type of a column so it is different
+from the logical plan's output we can get data corruption if assertions are disabled or
+AssertionErrors like the following if they are enabled.
+
+```
+java.lang.AssertionError: sizeInBytes (1) should be a multiple of 8
+  at org.apache.spark.sql.catalyst.expressions.UnsafeRow.pointTo(UnsafeRow.java:179)
+  at org.apache.spark.sql.catalyst.expressions.UnsafeRow.getStruct(UnsafeRow.java:453)
+  at org.apache.spark.sql.catalyst.expressions.UnsafeRow.getStruct(UnsafeRow.java:61)
+  at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.createExternalRow_0_1$(Unknown Source)
+  at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+  at org.apache.spark.sql.catalyst.encoders.ExpressionEncoder$Deserializer.apply(ExpressionEncoder.scala:175)
+  at org.apache.spark.sql.catalyst.encoders.ExpressionEncoder$Deserializer.apply(ExpressionEncoder.scala:166)
+```
+
+Changing the order can be tempting because late binding will make everything work,
+except if it is the last stage in a plan that will be collected.

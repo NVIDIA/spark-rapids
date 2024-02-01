@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -41,27 +40,7 @@ object GpuSubPartitionHashJoin {
    */
   def concatSpillBatchesAndClose(
       spillBatches: Seq[SpillableColumnarBatch]): Option[SpillableColumnarBatch] = {
-    val retBatch = if (spillBatches.length >= 2) {
-      // two or more batches, concatenate them
-      val (concatTable, types) = RmmRapidsRetryIterator.withRetryNoSplit(spillBatches) { _ =>
-        withResource(spillBatches.safeMap(_.getColumnarBatch())) { batches =>
-          val batchTypes = GpuColumnVector.extractTypes(batches.head)
-          withResource(batches.safeMap(GpuColumnVector.from)) { tables =>
-            (Table.concatenate(tables: _*), batchTypes)
-          }
-        }
-      }
-      // Make the concatenated table spillable.
-      withResource(concatTable) { _ =>
-        SpillableColumnarBatch(GpuColumnVector.from(concatTable, types),
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-      }
-    } else if (spillBatches.length == 1) {
-      // only one batch
-      spillBatches.head
-    } else null
-
-    Option(retBatch)
+    GpuBatchUtils.concatSpillBatchesAndClose(spillBatches)
   }
 
   /**
@@ -575,7 +554,6 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
       targetSize: Long,
       numPartitions: Int,
       numOutputRows: GpuMetric,
-      joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
@@ -615,7 +593,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
           }
           // Leverage the original join iterators
           val joinIter = doJoin(buildCb, streamIter, targetSize, 
-            numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+            numOutputRows, numOutputBatches, opTime, joinTime)
           Some(joinIter)
         }
       }

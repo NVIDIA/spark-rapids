@@ -158,16 +158,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     }
   }
 
-  testSparkResultsAreEqual("to_unix_timestamp parse yyyy/MM (improvedTimeOps)",
-    timestampsAsStrings,
-    new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
-        .set(RapidsConf.IMPROVED_TIMESTAMP_OPS.key, "true")) {
-    df => {
-      df.createOrReplaceTempView("df")
-      df.sqlContext.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
-    }
-  }
-
   testSparkResultsAreEqual("unix_timestamp parse timestamp",
       timestampsAsStrings,
       CORRECTED_TIME_PARSER_POLICY) {

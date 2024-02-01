@@ -20,6 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
@@ -1112,26 +1113,22 @@ abstract class BaseExprMeta[INPUT <: Expression](
   // There are 4 levels of timezone check in GPU plan tag phase:
   //    Level 1: Check whether an expression is related to timezone. This is achieved by
   //        [[needTimeZoneCheck]] below.
-  //    Level 2: Check on golden configuration 'spark.rapids.sql.nonUTC.enabled'. If
-  //        yes, we pass to next level timezone check. If not, we only pass UTC case as before.
-  //    Level 3: Check related expression has been implemented with timezone. There is a
+  //    Level 2: Check related expression has been implemented with timezone. There is a
   //        toggle flag [[isTimeZoneSupported]] for this. If false, fallback to UTC-only check as
   //        before. If yes, move to next level check. When we add timezone support for a related
   //        function. [[isTimeZoneSupported]] should be override as true.
-  //    Level 4: Check whether the desired timezone is supported by Gpu kernel.
+  //    Level 3: Check whether the desired timezone is supported by Gpu kernel.
   def checkExprForTimezone(): Unit = {
     // Level 1 check
     if (!needTimeZoneCheck) return
 
     // Level 2 check
-    if(!conf.nonUTCTimeZoneEnabled) return checkUTCTimezone(this)
-
-    // Level 3 check
     if (!isTimeZoneSupported) return checkUTCTimezone(this)
 
-    // Level 4 check
-    if (TimeZoneDB.isSupportedTimezone(getZoneId())) {
-      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
+    // Level 3 check
+    val zoneId = getZoneId()
+    if (!GpuTimeZoneDB.isSupportedTimeZone(zoneId)) {
+      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(zoneId.toString))
     }
   }
 
@@ -1157,7 +1154,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //|         Value          | needTimeZoneCheck |           isTimeZoneSupported           |
   //+------------------------+-------------------+-----------------------------------------+
   //| TimezoneAwareExpression| True              | False by default, True when implemented |
-  //| UTCTimestamp           | True              | False by default, True when implemented |
   //| Others                 | False             | N/A (will not be checked)               |
   //+------------------------+-------------------+-----------------------------------------+
   lazy val needTimeZoneCheck: Boolean = {
@@ -1174,7 +1170,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
         } else{
           true
         }
-      case _: UTCTimestamp => true
       case _ => false
     }
   }
@@ -1199,9 +1194,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
     case _ => Cast.needsTimeZone(from, to)
   }
 
-  // Level 3 timezone checking flag, need to override to true when supports timezone in functions
+  // Level 2 timezone checking flag, need to override to true when supports timezone in functions
   // Useless if it's not timezone related expression defined in [[needTimeZoneCheck]]
-  val isTimeZoneSupported: Boolean = false
+  def isTimeZoneSupported: Boolean = false
 
   /**
    * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
