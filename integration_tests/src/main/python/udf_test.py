@@ -16,8 +16,7 @@ import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341, \
-    with_gpu_session
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -430,32 +429,38 @@ def test_map_pandas_udf_with_empty_partitions():
 
 
 @pytest.mark.skipif(is_before_spark_350(),
-                    reason='mapInPandas/mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
-@pytest.mark.parametrize('is_map_in_pandas', [True, False], ids=idfn)
-def test_map_in_pandas_in_arrow_with_barrier_mode(is_map_in_pandas):
+                    reason='mapInPandas with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
+def test_map_in_pandas_with_barrier_mode(is_barrier):
     def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
-        assert not isinstance(tc, BarrierTaskContext)
+        if is_barrier:
+            assert isinstance(tc, BarrierTaskContext)
+        else:
+            assert not isinstance(tc, BarrierTaskContext)
+
         for batch in iterator:
             yield batch
 
-    def func_barrier_mode(iterator):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0, 10, 1, 1).mapInPandas(func, "id long", is_barrier))
+
+
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
+def test_map_in_arrow_with_barrier_mode(is_barrier):
+    def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
-        assert isinstance(tc, BarrierTaskContext)
+        if is_barrier:
+            assert isinstance(tc, BarrierTaskContext)
+        else:
+            assert not isinstance(tc, BarrierTaskContext)
+
         for batch in iterator:
             yield batch
 
-    def run(spark):
-        df = spark.range(0, 10, 1, 1)
-        if is_map_in_pandas:
-            ret1 = df.mapInPandas(func, "id long", False).collect()
-            ret2 = df.mapInPandas(func_barrier_mode, "id long", True).collect()
-        else:
-            ret1 = df.mapInArrow(func, "id long", False).collect()
-            ret2 = df.mapInArrow(func_barrier_mode, "id long", True).collect()
-        return ret1, ret2
-
-    non_barrier_result, barrier_result = with_gpu_session(lambda spark: run(spark))
-    assert_equal(non_barrier_result, barrier_result)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0, 10, 1, 1).mapInArrow(func, "id long", is_barrier))
