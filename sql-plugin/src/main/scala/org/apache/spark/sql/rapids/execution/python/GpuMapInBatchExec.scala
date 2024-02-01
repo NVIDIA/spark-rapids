@@ -44,8 +44,6 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
   protected val func: Expression
   protected val pythonEvalType: Int
 
-  protected val isBarrier: Boolean
-
   private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
@@ -67,7 +65,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
     val localEvalType = pythonEvalType
 
     // Start process
-    val func = (inputIter: Iterator[ColumnarBatch]) => {
+    child.executeColumnar().mapPartitionsInternal { inputIter =>
       val context = TaskContext.get()
 
       // Single function with one struct.
@@ -111,14 +109,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
           numOutputRows += cb.numRows
           cb
         }
-    } // end of func
-
-    if (isBarrier) {
-      child.executeColumnar().barrier().mapPartitions(func)
-    } else {
-      child.executeColumnar().mapPartitionsInternal(func)
-    }
-
+    } // end of mapPartitionsInternal
   } // end of internalDoExecuteColumnar
 
 }
