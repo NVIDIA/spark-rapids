@@ -127,8 +127,7 @@ case class GpuShuffledHashJoinExec(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -170,7 +169,6 @@ case class GpuShuffledHashJoinExec(
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
        .map(_ && RapidsConf.TEST_CONF.get(conf))
@@ -202,7 +200,7 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
-              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+              numOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>
@@ -212,8 +210,7 @@ case class GpuShuffledHashJoinExec(
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
-              numPartitions, numOutputRows, joinOutputRows, numOutputBatches,
-              opTime, joinTime)
+              numPartitions, numOutputRows, numOutputBatches, opTime, joinTime)
         }
       }
     }

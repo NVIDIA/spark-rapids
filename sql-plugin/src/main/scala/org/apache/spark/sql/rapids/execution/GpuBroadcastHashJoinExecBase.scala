@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -111,7 +111,6 @@ abstract class GpuBroadcastHashJoinExecBase(
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
@@ -180,7 +179,6 @@ abstract class GpuBroadcastHashJoinExecBase(
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
@@ -196,8 +194,7 @@ abstract class GpuBroadcastHashJoinExecBase(
           new CollectTimeIterator("broadcast join stream", it, streamTime),
           allMetrics)
       // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize,
-        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 
