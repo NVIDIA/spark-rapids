@@ -18,24 +18,23 @@ package com.nvidia.spark.rapids.window
 
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
-
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillPriorities, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.window.TableAndBatchUtils.{getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
+import com.nvidia.spark.rapids.window.TableAndBatchUtils.{adoptAndMakeSpillable, getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
+
 import java.util
 import scala.collection.mutable.ListBuffer
-
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression, GpuAggregateFunction, GpuCount}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 
 /**
@@ -67,16 +66,44 @@ class AutoClosableArrayBuffer[T <: AutoCloseable]() extends AutoCloseable {
  * Utilities for conversion between SpillableColumnarBatch, ColumnarBatch, and cudf.Table.
  */
 object TableAndBatchUtils {
-  def toSpillableBatch(cb: ColumnarBatch): SpillableColumnarBatch = {
+
+  /**
+   * Constructs SpillableColumnarBatch from ColumnarBatch `cb`.
+   * The new SpillableColumnarBatch takes ownership of `cb`, so the caller
+   * should not be closing `cb` after the call.
+   * The returned SpillableColumnarBatch needs to be closed by the caller
+   * after use.
+   */
+  def adoptAndMakeSpillable(cb: ColumnarBatch): SpillableColumnarBatch = {
     SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
+  /**
+   * Constructs a SpillableColumnarBatch from the `table` and `types` specified.
+   * The argument `table` is not closed by this function.
+   * The resultant SpillableColumnarBatch needs to be closed by the caller
+   * after use.
+   */
   def toSpillableBatch(table: cudf.Table, types: Seq[DataType]): SpillableColumnarBatch = {
-    toSpillableBatch(GpuColumnVector.from(table, types.toArray))
+    adoptAndMakeSpillable(GpuColumnVector.from(table, types.toArray))
   }
 
+  /**
+   * Shorthand function to construct a cudf.Table from a ColumnarBatch.
+   * The columns in the ColumnarBatch will have their reference counts incremented,
+   * when the new Table is constructed.
+   * Both the argument and the returned Table need to be closed by the caller,
+   * after use.
+   */
   def toTable(cb: ColumnarBatch): cudf.Table = GpuColumnVector.from(cb)
 
+  /**
+   * Gets a rectangular slice of the specified cudf.Table, with
+   * rows [beginRow, endRow) of columns [beginCol, endCol).
+   * The argument `tbl` is not closed by the function. The caller needs to close,
+   * or otherwise manage its lifetime.
+   * The returned Table is owned by the caller, and needs to be closed after use.
+   */
   def getTableSlice(tbl: cudf.Table,
                     beginRow: Int, endRow: Int,
                     beginCol: Int, endCol: Int): cudf.Table = {
@@ -87,16 +114,31 @@ object TableAndBatchUtils {
     }
   }
 
-  def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
+  /**
+   * Gets a rectangular slice of the specified cudf.Table, with rows [beginRow, endRow)
+   * of all its columns, and returns the result as a new cudf.Table.
+   * The argument `tbl` is not closed by the function. The caller needs to close,
+   * or otherwise manage its lifetime.
+   * The returned Table is owned by the caller, and needs to be closed after use.
+   */
+   def getTableSlice(tbl: cudf.Table, beginRow: Int, endRow: Int): cudf.Table = {
     getTableSlice(tbl, beginRow, endRow, beginCol=0, endCol=tbl.getNumberOfColumns)
   }
 
+  /**
+   * Gets a rectangular slice of the specified cudf.Table, with rows [beginRow, endRow)
+   * of all its columns, and converts the result into a SpillableColumnarBatch.
+   * The argument `tbl` is not closed by the function. The caller needs to close,
+   * or otherwise manage its lifetime.
+   * The returned SpillableColumnarBatch is owned by the caller, and needs to be
+   * closed after use.
+   */
   def sliceAndMakeSpillable(tbl: cudf.Table,
                             rowBegin: Int,
                             rowEnd: Int,
                             dataTypes: Seq[DataType]): SpillableColumnarBatch = {
     withResource(getTableSlice(tbl, rowBegin, rowEnd)) { sliced =>
-      toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
+      adoptAndMakeSpillable(GpuColumnVector.from(sliced, dataTypes.toArray))
     }
   }
 }
@@ -126,7 +168,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   override def hasNext: Boolean = subIterator.exists(_.hasNext) || input.hasNext
 
   private def getSpillableInputBatch: SpillableColumnarBatch = {
-    toSpillableBatch(input.next)
+    adoptAndMakeSpillable(input.next)
   }
 
   // "Fixes up" the count aggregate results, by casting up to INT64.
@@ -205,7 +247,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
                 boundStages.boundRideAlong)
 
               FirstPassAggResult(
-                toSpillableBatch(rideAlongColumns),
+                adoptAndMakeSpillable(rideAlongColumns),
                 toSpillableBatch(aggResultTable,
                   boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
             }
