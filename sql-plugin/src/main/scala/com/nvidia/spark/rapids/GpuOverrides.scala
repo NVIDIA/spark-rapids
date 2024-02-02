@@ -67,7 +67,7 @@ import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
-import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuTimeAdd}
+import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuMapInPandasExecMeta, GpuTimeAdd}
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -445,7 +445,7 @@ object GpuOverrides extends Logging {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
-
+  val regexMetaChars = ".$^[]\\|?*+(){}"
   /**
    * Provides a way to log an info message about how long an operation took in milliseconds.
    */
@@ -1703,13 +1703,7 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
         // String type is not supported yet for non-UTC timezone.
-        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
-          a.left.dataType match {
-            case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
-            case _ => true
-          }
-        }
-
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
@@ -1724,14 +1718,7 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
-        // String type is not supported yet for non-UTC timezone.
-        override def isTimeZoneSupported: Boolean = a.timeZoneId.forall { zoneID =>
-            a.left.dataType match {
-              case _: StringType => GpuOverrides.isUTCTimezone(zoneID)
-              case _ => true
-            }
-        }
-
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
@@ -3265,18 +3252,32 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
-            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST"), TypeSig.STRING)),
+            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST | QUERY"), 
+            TypeSig.STRING)),
           // Should really be an OptionalParam
-          Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+          Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (a.failOnError) {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
-
+          
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
-            case Some("QUERY") if (a.children.size == 3) =>
-              willNotWorkOnGpu("Part to extract QUERY with key is not supported on GPU")
+            // In Spark, the key in parse_url could act like a regex, but GPU will match the key 
+            // exactly. When key is literal, GPU will check if the key contains regex special and
+            // fallbcak to CPU if it does, but we are not able to fallback when key is column.
+            // see Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
+            case Some("QUERY") if (a.children.size == 3) => {
+              extractLit(a.children(2)).foreach { key =>
+                if (key.value != null) {
+                  val keyStr = key.value.asInstanceOf[UTF8String].toString
+                  if (regexMetaChars.exists(keyStr.contains(_))) {
+                    willNotWorkOnGpu(s"Key $keyStr could act like a regex which is not " + 
+                        "supported on GPU")
+                  }
+                }
+              }
+            }
             case Some(part) if GpuParseUrl.isSupportedPart(part) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
@@ -3649,7 +3650,8 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
       }
-    ),
+    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
+        "validated, and the output is not normalized the same as Spark"),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -3674,7 +3676,8 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
-          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
+          GpuJsonToStructs(a.schema, a.options, child, conf.isJsonMixedTypesAsStringEnabled,
+            a.timeZoneId)
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
     expr[StructsToJson](
@@ -3862,7 +3865,8 @@ object GpuOverrides extends Logging {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes,
-            conf.maxGpuColumnSizeBytes)
+            conf.maxGpuColumnSizeBytes,
+            conf.isJsonMixedTypesAsStringEnabled)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =

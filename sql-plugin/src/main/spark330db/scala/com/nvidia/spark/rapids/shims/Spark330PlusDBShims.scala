@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,15 +73,22 @@ trait Spark330PlusDBShims extends Spark321PlusDBShims {
     }
   }
 
+  /*
+   * Explicitly add in the CPU exchange for executor broadcast. Generally
+   * we expect the plan to be passed in to be a GPU columnar to row but
+   * we are not explicitly limiting it.
+   */
+  override def addExecBroadcastShuffle(p: SparkPlan): SparkPlan = {
+    ShuffleExchangeExec(SinglePartition, p, EXECUTOR_BROADCAST)
+  }
 
   override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
       sqse: ShuffleQueryStageExec): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
       case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
-        ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
-      case _ =>
-        c2r
+        addExecBroadcastShuffle(c2r)
+      case _ => c2r
     }
   }
 }

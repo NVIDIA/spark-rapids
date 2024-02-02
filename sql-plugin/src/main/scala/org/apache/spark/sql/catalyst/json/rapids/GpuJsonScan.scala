@@ -249,7 +249,8 @@ case class GpuJsonScan(
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    maxGpuColumnSizeBytes: Long)
+    maxGpuColumnSizeBytes: Long,
+    mixedTypesAsStringEnabled: Boolean)
   extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: JSONOptions = new JSONOptions(
@@ -272,7 +273,8 @@ case class GpuJsonScan(
 
     GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
+      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap,
+      mixedTypesAsStringEnabled)
   }
 
   override def withInputFile(): GpuScan = this
@@ -290,7 +292,8 @@ case class GpuJsonPartitionReaderFactory(
     maxReaderBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
+    @transient params: Map[String, String],
+    mixedTypesAsStringEnabled: Boolean) extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -300,7 +303,7 @@ case class GpuJsonPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val reader = new PartitionReaderWithBytesRead(new JsonPartitionReader(conf, partFile,
       dataSchema, readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes,
-      metrics))
+      metrics, mixedTypesAsStringEnabled))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
       maxGpuColumnSizeBytes)
   }
@@ -346,14 +349,18 @@ class JsonPartitionReader(
     parsedOptions: JSONOptions,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, GpuMetric])
+    execMetrics: Map[String, GpuMetric],
+    enableMixedTypesAsString: Boolean)
   extends GpuTextBasedPartitionReader[HostLineBufferer, HostLineBuffererFactory.type](conf,
     partFile, dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
     maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions = {
-    val builder = cudf.JSONOptions.builder().withRecoverWithNull(true)
-    builder.build
+    cudf.JSONOptions.builder()
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(enableMixedTypesAsString)
+      .withNormalizeSingleQuotes(true)
+      .build
   }
 
   /**

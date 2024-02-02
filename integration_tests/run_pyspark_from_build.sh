@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -226,6 +226,10 @@ else
     # time zone will be tested; use export TZ=time_zone_name before run this script
     TZ=${TZ:-UTC}
 
+    # Disable Spark UI by default since it is not needed for tests, and Spark can fail to start
+    # due to Spark UI port collisions, especially in a parallel test setup.
+    export PYSP_TEST_spark_ui_enabled=${PYSP_TEST_spark_ui_enabled:-false}
+
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
@@ -333,10 +337,15 @@ EOF
                 --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
                 --conf spark.executor.extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
             )
+        elif [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--packages "${PYSP_TEST_spark_jars_packages}")
         else
             SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
         fi
 
+        if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
+        fi
         # NOTE grep is used not only for checking the output but also
         # to workaround the fact that spark-shell catches all failures.
         # In this test it exits not because of the failure but because it encounters

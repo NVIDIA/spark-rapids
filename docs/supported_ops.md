@@ -6856,7 +6856,7 @@ are limited.
 <td rowSpan="3">GetJsonObject</td>
 <td rowSpan="3">`get_json_object`</td>
 <td rowSpan="3">Extracts a json object from path</td>
-<td rowSpan="3">None</td>
+<td rowSpan="3">This is disabled by default because escape sequences are not processed correctly, the input is not validated, and the output is not normalized the same as Spark</td>
 <td rowSpan="3">project</td>
 <td>json</td>
 <td> </td>
@@ -10817,7 +10817,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>only support partToExtract = PROTOCOL | HOST;<br/>Literal value only</em></td>
+<td><em>PS<br/>only support partToExtract = PROTOCOL | HOST | QUERY;<br/>Literal value only</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -10838,7 +10838,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Literal value only</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -98,7 +98,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   test("choice with repetition - regexp_find") {
     val patterns = Seq("b?|a", "b*|^\t", "b+|^\t", "a|b+", "a+|b+", "a{2,3}|b+", "a*|b+",
-        "[cat]{3}|dog")
+      "b*?|^\t", "b+?|^\t", "a|b+?", "a+?|b+?", "a{2,3}|b+?", "a*?|b+?", "[cat]{3}|dog")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("aaa", "bb", "a\tb", "aaaabbbb", "a\tb\ta\tb"))
   }
 
@@ -764,6 +764,14 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   test("regexp_split - character class repetition - ? and *") {
     val patterns = Set(raw"[a-z][0-9]?", raw"[a-z][0-9]*")
+    val data = Seq("a", "aa", "a1a1", "a1b2", "a1b")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("regexp_split - character class repetition - ? and * with reluctant quantifier") {
+    val patterns = Set(raw"[a-z][0-9]??", raw"[a-z][0-9]*?")
     val data = Seq("a", "aa", "a1a1", "a1b2", "a1b")
     for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
       doStringSplitTest(patterns, data, limit)

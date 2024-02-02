@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftAnti, LeftSemi}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -69,17 +69,32 @@ class GpuShuffledHashJoinMeta(
       (None, condition)
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-    val joinExec = GpuShuffledHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      buildSide,
-      joinCondition,
-      left,
-      right,
-      isSkewJoin = false)(
-      join.leftKeys,
-      join.rightKeys)
+    val joinExec = join.joinType match {
+      case Inner | FullOuter if conf.useShuffledSymmetricHashJoin =>
+        GpuShuffledSymmetricHashJoinExec(
+          join.joinType,
+          leftKeys.map(_.convertToGpu()),
+          rightKeys.map(_.convertToGpu()),
+          joinCondition,
+          left,
+          right,
+          conf.isGPUShuffle,
+          conf.gpuTargetBatchSizeBytes)(
+          join.leftKeys,
+          join.rightKeys)
+      case _ =>
+        GpuShuffledHashJoinExec(
+          leftKeys.map(_.convertToGpu()),
+          rightKeys.map(_.convertToGpu()),
+          join.joinType,
+          buildSide,
+          joinCondition,
+          left,
+          right,
+          isSkewJoin = false)(
+          join.leftKeys,
+          join.rightKeys)
+    }
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c,
@@ -112,8 +127,7 @@ case class GpuShuffledHashJoinExec(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -155,7 +169,6 @@ case class GpuShuffledHashJoinExec(
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
        .map(_ && RapidsConf.TEST_CONF.get(conf))
@@ -187,7 +200,7 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
-              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+              numOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>
@@ -197,8 +210,7 @@ case class GpuShuffledHashJoinExec(
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
-              numPartitions, numOutputRows, joinOutputRows, numOutputBatches,
-              opTime, joinTime)
+              numPartitions, numOutputRows, numOutputBatches, opTime, joinTime)
         }
       }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,8 +81,18 @@ case class GpuParseUrl(children: Seq[Expression])
       // return a null columnvector
       return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
     }
-    throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
-        s"Only PROTOCOL, HOST and QUERY without a key are supported")
+    val keyStr = key.getValue.asInstanceOf[UTF8String].toString
+    ParseURI.parseURIQueryWithLiteral(col.getBase, keyStr)
+  }
+
+  def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, 
+      key: GpuColumnVector): ColumnVector = {
+    val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
+    if (part != QUERY) {
+      // return a null columnvector
+      return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
+    }
+    ParseURI.parseURIQueryWithColumn(col.getBase, key.getBase)
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
@@ -109,6 +119,8 @@ case class GpuParseUrl(children: Seq[Expression])
             (urls, parts, keys) match {
               case (urlCv: GpuColumnVector, partScalar: GpuScalar, keyScalar: GpuScalar) =>
                 GpuColumnVector.from(doColumnar(urlCv, partScalar, keyScalar), dataType)
+              case (urlCv: GpuColumnVector, partScalar: GpuScalar, keyCv: GpuColumnVector) =>
+                GpuColumnVector.from(doColumnar(urlCv, partScalar, keyCv), dataType)
               case _ =>
                 throw new 
                     UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")

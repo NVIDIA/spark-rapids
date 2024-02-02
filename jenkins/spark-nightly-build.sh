@@ -30,7 +30,7 @@ WORKSPACE=${WORKSPACE:-$(pwd)}
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
-MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT}"
+MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
 
 DIST_PL="dist"
 function mvnEval {
