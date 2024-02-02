@@ -531,7 +531,6 @@ object GpuWindowExecMeta {
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
-    // TODO: CALEB:  Reclassify `collect_set()` here. Separate window-exec.
     BatchedOps(running.toSeq,
                unboundedToUnboundedAgg.toSeq,
                doublePass.toSeq,
