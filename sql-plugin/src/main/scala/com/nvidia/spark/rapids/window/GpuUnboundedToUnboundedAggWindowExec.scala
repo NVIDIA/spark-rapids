@@ -658,7 +658,7 @@ object GpuUnboundedToUnboundedAggWindowIterator {
     (aggregationsOutput, boundAggregations)
   }
 
-  private def repeatOps(aggregationsOutput: Seq[Attribute])
+  def repeatOps(aggregationsOutput: Seq[Attribute])
     : (GpuExpression, Seq[Attribute], Seq[GpuExpression]) = {
     // It is assumed that the last aggregation column is a count that we will use for repeat
     // If that ever changes, this code needs to be updated.
