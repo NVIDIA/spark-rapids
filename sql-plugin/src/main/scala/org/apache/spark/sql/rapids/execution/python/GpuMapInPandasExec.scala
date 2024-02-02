@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, PythonUDF}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.execution.python.MapInPandasExec
 
-class GpuMapInPandasExecMeta(
+class GpuMapInPandasExecMetaBase(
     mapPandas: MapInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -34,9 +34,9 @@ class GpuMapInPandasExecMeta(
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
-  private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
+  protected val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
     mapPandas.func.asInstanceOf[PythonUDF], conf, Some(this))
-  private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+  protected val resultAttrs: Seq[BaseExprMeta[Attribute]] =
     mapPandas.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = resultAttrs :+ udf
@@ -45,7 +45,8 @@ class GpuMapInPandasExecMeta(
     GpuMapInPandasExec(
       udf.convertToGpu(),
       resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-      childPlans.head.convertIfNeeded()
+      childPlans.head.convertIfNeeded(),
+      isBarrier = false,
     )
 }
 
@@ -60,7 +61,8 @@ class GpuMapInPandasExecMeta(
 case class GpuMapInPandasExec(
     func: Expression,
     output: Seq[Attribute],
-    child: SparkPlan) extends GpuMapInBatchExec {
+    child: SparkPlan,
+    override val isBarrier: Boolean) extends GpuMapInBatchExec {
 
   override protected val pythonEvalType: Int = PythonEvalType.SQL_MAP_PANDAS_ITER_UDF
 }

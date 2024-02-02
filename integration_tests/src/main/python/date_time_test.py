@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -286,41 +286,50 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
         spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
         "to_unix_timestamp(a, b)"),
         "ToUnixTimestamp")
+    
+supported_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
+unsupported_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
 
-@pytest.mark.parametrize('time_zone', ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-@tz_sensitive_test
-@allow_non_gpu(*non_utc_allow)
-def test_from_utc_timestamp(data_gen, time_zone):
+@pytest.mark.parametrize('time_zone', supported_timezones, ids=idfn)
+def test_from_utc_timestamp(time_zone):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
+        lambda spark: unary_op_df(spark, timestamp_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('time_zone', ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"], ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-@tz_sensitive_test
-def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
+@pytest.mark.parametrize('time_zone', unsupported_timezones, ids=idfn)
+def test_from_utc_timestamp_unsupported_timezone_fallback(time_zone):
     assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
+        lambda spark: unary_op_df(spark, timestamp_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
     'FromUTCTimestamp')
 
-@pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai", "EST", "MST", "VST"], ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-@tz_sensitive_test
-@allow_non_gpu(*non_utc_allow)
-def test_from_utc_timestamp_supported_timezones(data_gen, time_zone):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
-
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-def test_unsupported_fallback_from_utc_timestamp(data_gen):
+def test_unsupported_fallback_from_utc_timestamp():
     time_zone_gen = StringGen(pattern="UTC")
     assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, [("a", data_gen), ("tzone", time_zone_gen)]).selectExpr(
+        lambda spark: gen_df(spark, [("a", timestamp_gen), ("tzone", time_zone_gen)]).selectExpr(
             "from_utc_timestamp(a, tzone)"),
         'FromUTCTimestamp')
 
+@pytest.mark.parametrize('time_zone', supported_timezones, ids=idfn)
+def test_to_utc_timestamp(time_zone):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen).select(f.to_utc_timestamp(f.col('a'), time_zone)))
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('time_zone', unsupported_timezones, ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+def test_to_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.to_utc_timestamp(f.col('a'), time_zone)),
+    'ToUTCTimestamp')
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_to_utc_timestamp():
+    time_zone_gen = StringGen(pattern="UTC")
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [("a", timestamp_gen), ("tzone", time_zone_gen)]).selectExpr(
+            "to_utc_timestamp(a, tzone)"),
+        'ToUTCTimestamp')
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
@@ -402,7 +411,7 @@ def invalid_date_string_df(spark):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_utc_tz_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_string_to_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
@@ -416,7 +425,7 @@ def test_string_to_unix_timestamp_ansi_exception():
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@allow_non_gpu(*non_utc_tz_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_string_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),

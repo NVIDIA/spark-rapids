@@ -583,6 +583,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
+  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
+      .doc("Enable a chunked reader where possible for reading data that is smaller " +
+          "than the typical row group/page limit. Currently this only works for parquet.")
+      .booleanConf
+      .createWithDefault(false)
+
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
@@ -626,6 +632,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .booleanConf
       .createWithDefault(true)
+
+  val USE_SHUFFLED_SYMMETRIC_HASH_JOIN = conf("spark.rapids.sql.join.useShuffledSymmetricHashJoin")
+    .doc("Use the experimental shuffle symmetric hash join designed to improve handling of large " +
+      "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -785,7 +798,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("format_number with floating point types on the GPU returns results that have " +
       "a different precision than the default results of Spark.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
@@ -1195,6 +1208,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
     .doc("JSON reading is not 100% compatible when reading decimals.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_READ_JSON_MIXED_TYPES_AS_STRING =
+    conf("spark.rapids.sql.json.read.mixedTypesAsString.enabled")
+    .doc("JSON reading is not 100% compatible when reading mixed types as string.")
     .booleanConf
     .createWithDefault(false)
 
@@ -2138,7 +2157,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.02.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.04.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2303,6 +2322,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
+  lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
+
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isFileScanPrunePartitionEnabled: Boolean = get(FILE_SCAN_PRUNE_PARTITION_ENABLED)
@@ -2456,6 +2477,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+
+  lazy val chunkedSubPageReaderEnabled: Boolean = get(CHUNKED_SUBPAGE_READER)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
@@ -2621,6 +2644,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
+
+  lazy val isJsonMixedTypesAsStringEnabled: Boolean = get(ENABLE_READ_JSON_MIXED_TYPES_AS_STRING)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 

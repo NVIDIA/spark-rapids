@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1301,7 +1301,8 @@ object GpuCast {
   def convertDateOrNull(
       input: ColumnVector,
       regex: String,
-      cudfFormat: String): ColumnVector = {
+      cudfFormat: String,
+      failOnInvalid: Boolean = false): ColumnVector = {
 
     val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
     val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
@@ -1311,6 +1312,13 @@ object GpuCast {
     }
 
     withResource(isValidDate) { _ =>
+      if (failOnInvalid) {
+        withResource(isValidDate.all()) { all =>
+          if (all.isValid && !all.getBoolean) {
+            throw new DateTimeException("One or more values is not a valid date")
+          }
+        }
+      }
       withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { orElse =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           isValidDate.ifElse(asDays, orElse)
@@ -1393,7 +1401,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
     val result = castStringToDate(input)
     if (ansiMode) {
       // When ANSI mode is enabled, we need to throw an exception if any values could not be

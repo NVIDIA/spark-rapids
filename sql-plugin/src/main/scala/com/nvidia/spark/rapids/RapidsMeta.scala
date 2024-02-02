@@ -1154,7 +1154,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //|         Value          | needTimeZoneCheck |           isTimeZoneSupported           |
   //+------------------------+-------------------+-----------------------------------------+
   //| TimezoneAwareExpression| True              | False by default, True when implemented |
-  //| UTCTimestamp           | True              | False by default, True when implemented |
   //| Others                 | False             | N/A (will not be checked)               |
   //+------------------------+-------------------+-----------------------------------------+
   lazy val needTimeZoneCheck: Boolean = {
@@ -1171,7 +1170,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
         } else{
           true
         }
-      case _: UTCTimestamp => true
       case _ => false
     }
   }

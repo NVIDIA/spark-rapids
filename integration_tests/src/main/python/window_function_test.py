@@ -27,22 +27,22 @@ import warnings
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', IntegerGen()),
-    ('c', IntegerGen())]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', IntegerGen()),
-    ('c', IntegerGen())]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_dates = [
     ('a', RepeatSeqGen(LongGen(), length=2048)),
     ('b', DateGen(nullable=False, start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31))),
-    ('c', IntegerGen())]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_nullable_dates = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', DateGen(nullable=(True, 5.0), start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31))),
-    ('c', IntegerGen())]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_timestamps = [
     ('a', RepeatSeqGen(LongGen(), length=2048)),
@@ -57,17 +57,17 @@ _grpkey_longs_with_nullable_timestamps = [
 _grpkey_longs_with_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', DecimalGen(precision=18, scale=3, nullable=False)),
-    ('c', DecimalGen(precision=18, scale=3))]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_nullable_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', DecimalGen(precision=18, scale=10, nullable=True)),
-    ('c', DecimalGen(precision=18, scale=10, nullable=True))]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_nullable_larger_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', DecimalGen(precision=23, scale=10, nullable=True)),
-    ('c', DecimalGen(precision=23, scale=10, nullable=True))]
+    ('c', UniqueLongGen())]
 
 _grpkey_longs_with_nullable_largest_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
@@ -1784,6 +1784,8 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
         'FROM window_agg_table')
 
 
+@tz_sensitive_test
+@allow_non_gpu(*non_supported_tz_allow)
 @ignore_order(local=True)
 def test_to_date_with_window_functions():
     """

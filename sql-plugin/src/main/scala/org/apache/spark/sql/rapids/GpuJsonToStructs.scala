@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ case class GpuJsonToStructs(
     schema: DataType,
     options: Map[String, String],
     child: Expression,
+    enableMixedTypesAsString: Boolean,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
@@ -77,19 +78,23 @@ case class GpuJsonToStructs(
               withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
                 checkForNewline(cleaned, "\n", "line separator")
                 checkForNewline(cleaned, "\r", "carriage return")
-                // if the last entry in a column is incomplete or invalid, then cuDF
-                // will drop the row rather than replace with null if there is no newline, so we
-                // add a newline here to prevent that
-                val joined = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-                  cleaned.joinStrings(lineSep, emptyRow)
-                }
-                val concat = withResource(joined) { _ =>
-                  withResource(ColumnVector.fromStrings("\n")) { newline =>
-                    ColumnVector.stringConcatenate(Array[ColumnView](joined, newline))
+
+                // add a newline to each JSON line
+                val withNewline = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                  withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
+                    newLineCol =>
+                      ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
                   }
                 }
 
-                (isNullOrEmptyInput, concat)
+                // join all the JSON lines into one string
+                val joined = withResource(withNewline) { _ =>
+                  withResource(Scalar.fromString("")) { emptyString =>
+                    withNewline.joinStrings(emptyString, emptyRow)
+                  }
+                }
+
+                (isNullOrEmptyInput, joined)
               }
             }
           }
@@ -175,7 +180,11 @@ case class GpuJsonToStructs(
             val end = combinedHost.getEndListOffset(0)
             val length = end - start
 
-            val jsonOptions = cudf.JSONOptions.builder().withRecoverWithNull(true).build()
+            val jsonOptions = cudf.JSONOptions.builder()
+              .withRecoverWithNull(true)
+              .withMixedTypesAsStrings(enableMixedTypesAsString)
+              .withNormalizeSingleQuotes(true)
+              .build()
             withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames
               (names, tableWithMeta.releaseTable())

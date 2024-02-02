@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 
 set -ex
 
-CUDF_VER=${CUDF_VER:-24.02}
+CUDF_VER=${CUDF_VER:-24.04}
 CUDA_VER=${CUDA_VER:-11.8}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.

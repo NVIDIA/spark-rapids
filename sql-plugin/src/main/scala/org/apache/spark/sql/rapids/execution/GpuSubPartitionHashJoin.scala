@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -554,7 +554,6 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
       targetSize: Long,
       numPartitions: Int,
       numOutputRows: GpuMetric,
-      joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
@@ -594,7 +593,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
           }
           // Leverage the original join iterators
           val joinIter = doJoin(buildCb, streamIter, targetSize, 
-            numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+            numOutputRows, numOutputBatches, opTime, joinTime)
           Some(joinIter)
         }
       }
