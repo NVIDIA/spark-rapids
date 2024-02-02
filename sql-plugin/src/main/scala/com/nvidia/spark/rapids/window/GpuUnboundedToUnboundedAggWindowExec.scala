@@ -470,7 +470,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
         val completedAggResults =
           aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
 
-        val result = withRetryNoSplit(completedAggResults) { _ =>
+        val result = withRetryNoSplit(completedAggResults.toSeq) { completedAggResults =>
           withResource(concat(completedAggResults,
                               boundStages.groupingColumnTypes ++
                                 boundStages.aggResultTypes)) { concatAggResults =>
@@ -511,8 +511,8 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
       } else {
         opTime.ns {
           // No more input. All pending batches can now be assumed complete.
-          output = withRetryNoSplit(aggResultsPendingCompletion) { _ =>
-            withResource(concat(aggResultsPendingCompletion,
+          output = withRetryNoSplit(aggResultsPendingCompletion.toSeq) { aggResults =>
+            withResource(concat(aggResults,
                                 boundStages.groupingColumnTypes ++
                                   boundStages.aggResultTypes)) { concatAggResults =>
               withResource(groupByMerge(concatAggResults)) { mergedAggResults =>
