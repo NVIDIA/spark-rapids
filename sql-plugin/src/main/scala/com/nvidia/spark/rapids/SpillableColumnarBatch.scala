@@ -146,6 +146,9 @@ class SpillableColumnarBatchImpl (
 //      throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
 //    }
   }
+
+  override def toString: String =
+    s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
 }
 
 class JustRowsHostColumnarBatch(numRows: Int)

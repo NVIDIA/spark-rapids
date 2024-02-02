@@ -154,7 +154,8 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
         input,
         getPartitionSpecs,
-        getOrderSpecs)
+        getOrderSpecs,
+        conf)
     } else {
       new GpuWindowExec(
         fixedUpWindowOps,
@@ -269,12 +270,13 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
       cpuPartitionSpec: Seq[Expression],
-      cpuOrderSpec: Seq[SortOrder]): GpuExec =
+      cpuOrderSpec: Seq[SortOrder],
+      conf: RapidsConf): GpuExec =
     GpuUnboundedToUnboundedAggWindowExec(
       getUnboundedAggWithRunningAsPassthrough,
       gpuPartitionSpec,
       gpuOrderSpec,
-      child)(cpuPartitionSpec, cpuOrderSpec)
+      child)(cpuPartitionSpec, cpuOrderSpec, conf.gpuTargetBatchSizeBytes)
 
   private def getDoublePassWindowExec(
       gpuPartitionSpec: Seq[Expression],
@@ -305,7 +307,8 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
       cpuPartitionSpec: Seq[Expression],
-      cpuOrderSpec: Seq[SortOrder]): GpuExec = {
+      cpuOrderSpec: Seq[SortOrder],
+      conf: RapidsConf): GpuExec = {
     // The order of these matter so we can match the order of the parameters used to
     //  create the various aggregation functions
     var currentPlan = child
@@ -316,7 +319,7 @@ case class BatchedOps(running: Seq[NamedExpression],
 
     if (hasUnboundedAgg) {
       currentPlan = getUnboundedAggWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
-        cpuPartitionSpec, cpuOrderSpec)
+        cpuPartitionSpec, cpuOrderSpec, conf)
     }
 
     if (hasDoublePass) {
