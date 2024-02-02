@@ -52,6 +52,9 @@ case class FirstPassAggResult(rideAlongColumns: SpillableColumnarBatch,
   }
 }
 
+/**
+ * Utilities for conversion between SpillableColumnarBatch, ColumnarBatch, and cudf.Table.
+ */
 object TableAndBatchUtils {
   def toSpillableBatch(cb: ColumnarBatch): SpillableColumnarBatch = {
     SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
@@ -85,25 +88,6 @@ object TableAndBatchUtils {
       toSpillableBatch(GpuColumnVector.from(sliced, dataTypes.toArray))
     }
   }
-
-  // TODO: Remove, when merging the PR.
-  def debug(msg: String, scb: Option[SpillableColumnarBatch]): Unit = {
-    scb.foreach { scb =>
-      withResource(scb.getColumnarBatch()) { cb =>
-        System.err.println()
-        GpuColumnVector.debug(msg, cb)
-        System.err.println()
-        System.err.println()
-      }
-    }
-  }
-
-  def debug(msg: String, table: cudf.Table): Unit = {
-    System.err.println()
-    cudf.TableDebug.get.debug(msg, table)
-    System.err.println()
-    System.err.println()
-  }
 }
 
 class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
@@ -118,7 +102,9 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   }
 
   // "Fixes up" the count aggregate results, by casting up to INT64.
-  // TODO: This should not be required after fixing project after update.
+  // TODO (future):
+  //   Upscaling count results should happen via post aggregation projection.
+  //   Refer to `postUpdate` in GpuAggregationExec.
   private def upscaleCountResults(unfixed: cudf.Table): cudf.Table = {
     // The group "count" result is in the last column, with type INT32.
     // Cast this up to INT64.  Return the other columns unchanged.
@@ -602,7 +588,9 @@ case class GpuUnboundedToUnboundedAggStages(
   val aggInputProjections: Seq[Expression] = aggregateFunctions.flatMap{ _.inputProjection }
   val aggInputOrdinals: Seq[Int] = aggInputProjections.map {
     case GpuBoundReference(ordinal, _, _) => ordinal
-    // TODO: Cannot assume GpuLiteral is always for GpuCount. Maybe check agg type first.
+    // TODO (future):
+    //   Assuming GpuLiteral is always for GpuCount. Might be better to generate
+    //   a literals column, per operator that takes a literal.
     case GpuLiteral(_, _) => inputTypes.size // An all 1s column appended at the end.
     case _ => throw new IllegalStateException("Unexpected expression")
   }
