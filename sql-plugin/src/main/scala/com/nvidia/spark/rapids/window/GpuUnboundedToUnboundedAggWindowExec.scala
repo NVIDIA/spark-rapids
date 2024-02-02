@@ -322,16 +322,13 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
   override def hasNext: Boolean = (!rideAlongColumnsPendingCompletion.isEmpty) || input.hasNext
 
   private def removeGroupColumns(aggResults: SpillableColumnarBatch): SpillableColumnarBatch = {
-    withResource(aggResults.getColumnarBatch()) { cb =>
-      val numColumnsToSkip = boundStages.boundPartitionSpec.size
-      withResource(GpuColumnVector.from(cb)) { tbl =>
-        withResource(GpuColumnVector.from(
-          tbl, boundStages.aggResultTypes.toArray, numColumnsToSkip, tbl.getNumberOfColumns
-        )) { groupColumnsRemoved =>
-          SpillableColumnarBatch(groupColumnsRemoved, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-        }
-      }
+    val aggResultTable = withResource(aggResults.getColumnarBatch()) { toTable }
+    val numColumnsToSkip = boundStages.boundPartitionSpec.size
+    val groupResultsRemovedCB = withResource(aggResultTable) {
+      GpuColumnVector.from(_, boundStages.aggResultTypes.toArray, numColumnsToSkip,
+                           aggResultTable.getNumberOfColumns)
     }
+    SpillableColumnarBatch(groupResultsRemovedCB, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
   /**
@@ -374,14 +371,15 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     val cudfAggsOnColumns = cudfMergeAggregates.zipWithIndex.map {
       case (mergeAgg, ord) => mergeAgg.groupByAggregate.onColumn(ord + numGroupColumns)
     }
-    withResource(aggResultSCB.getColumnarBatch()) { aggResultCB =>
-      withResource(toTable(aggResultCB)) { aggResultTable =>
-        val mergeResults = aggResultTable.groupBy(groupByOptions,
-                                                  Range(0, numGroupColumns).toArray: _*)
-                                         .aggregate(cudfAggsOnColumns: _*)
-        toSpillableBatch(mergeResults,
-                         boundStages.groupingColumnTypes ++ boundStages.aggResultTypes)
-      }
+    val aggResultTable = withResource(aggResultSCB.getColumnarBatch()) { toTable }
+    val mergeResults = withResource(aggResultTable) {
+      _.groupBy(groupByOptions, Range(0, numGroupColumns).toArray: _*)
+       .aggregate(cudfAggsOnColumns: _*)
+    }
+    withResource(mergeResults) { _ =>
+      val mergeResultTypes = boundStages.groupingColumnTypes ++ boundStages.aggResultTypes
+      val cb = GpuColumnVector.from(mergeResults, mergeResultTypes.toArray)
+      SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
   }
 
@@ -418,8 +416,9 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
                 rideAlongColumnsPendingCompletion.clone // Cloned for exception/retry safety.
                   .asInstanceOf[util.LinkedList[SpillableColumnarBatch]]
               completedRideAlongBatches.add(partitioned.otherGroupRideAlong.get)
+              val groupsRemoved = removeGroupColumns(mergedAggResults)
               SecondPassAggResult(completedRideAlongBatches,
-                                  removeGroupColumns(mergedAggResults))
+                                  groupsRemoved)
             }
           }
         }
