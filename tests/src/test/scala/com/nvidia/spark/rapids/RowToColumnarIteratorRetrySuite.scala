@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{CpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types._
