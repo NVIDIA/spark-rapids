@@ -354,7 +354,9 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
       }
     }
 
-    toSpillableBatch(resultTable, schema)
+    withResource(resultTable) {
+      toSpillableBatch(_, schema)
+    }
   }
 
   private def groupByMerge(aggResultSCB: SpillableColumnarBatch) = {
