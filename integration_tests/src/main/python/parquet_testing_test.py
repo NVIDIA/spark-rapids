@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -88,7 +88,7 @@ def hdfs_glob(path, pattern):
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     stdout, stderr = process.communicate()
     if process.returncode != 0:
-        raise AssertionError('Failed to list files from hdfs: {}. Error: {}'.format(path_str, stderr))
+        raise AssertionError(f'Failed to list files from {path_str}. Error: {stderr}')
     
     paths = stdout.strip().split('\n')
 
