@@ -16,25 +16,25 @@
 
 package com.nvidia.spark.rapids.window
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.reflect.ClassTag
+
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillPriorities, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.window.TableAndBatchUtils.{adoptAndMakeSpillable, getTableSlice, sliceAndMakeSpillable, toSpillableBatch, toTable}
-
 import java.util
-import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression, GpuAggregateFunction, GpuCount}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 
 /**
