@@ -3648,7 +3648,7 @@ object GpuOverrides extends Logging {
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGetJsonObject(lhs, rhs)
+          GpuGetJsonObject(lhs, rhs, conf.testGetJsonObject, conf.testGetJsonObjectSavePathPrefix)
       }
     ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
         "validated, and the output is not normalized the same as Spark"),

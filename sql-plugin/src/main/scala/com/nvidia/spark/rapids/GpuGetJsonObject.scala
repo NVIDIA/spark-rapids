@@ -20,9 +20,11 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.rapids.test.CpuGetJsonObject
 import org.apache.spark.sql.types.{DataType, StringType}
 
-case class GpuGetJsonObject(json: Expression, path: Expression)
+case class GpuGetJsonObject(json: Expression, path: Expression, verifyBetweenCpuAndGpu: Boolean,
+    verifyDiffSavePath: String)
     extends GpuBinaryExpressionArgsAnyScalar
         with ExpectsInputTypes {
   override def left: Expression = json
@@ -33,7 +35,17 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   override def prettyName: String = "get_json_object"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    lhs.getBase().getJSONObject(rhs.getBase)
+    val fromGpu = lhs.getBase().getJSONObject(rhs.getBase)
+
+    // Below is only for testing purpose
+    if (verifyBetweenCpuAndGpu) { // enable verify diff between Cpu and Gpu
+      withResource(CpuGetJsonObject.getJsonObjectOnCpu(lhs, rhs)) { fromCpu =>
+        // verify result, save diffs if has
+        CpuGetJsonObject.verify(lhs.getBase, fromGpu, fromCpu, verifyDiffSavePath)
+      }
+    }
+
+    fromGpu
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
