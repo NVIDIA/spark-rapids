@@ -284,6 +284,7 @@ class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
   private val numRideAlongRows: Int = firstPassAggResult.rideAlongColumns.numRows()
 
   if (numGroups < 2) {
+    // This should not have been called if there was only one group.
     throw new IllegalStateException("Expected at least two result groups.")
   }
 
