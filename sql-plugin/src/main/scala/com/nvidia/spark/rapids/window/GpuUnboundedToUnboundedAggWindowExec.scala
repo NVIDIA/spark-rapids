@@ -261,8 +261,19 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
   }
 }
 
-case class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
-                                         boundStages: GpuUnboundedToUnboundedAggStages) {
+/**
+ * Partitions the aggregation results from the first pass into two groups:
+ *   1. The aggregation results (and the corresponding rows in the ride-along column)
+ *      belonging to the last group.  This group is deemed currently incomplete,
+ *      because the end of the group hasn't been encountered yet.
+ *   2. The aggregation results (and the corresponding rows in the ride-along column)
+ *      belonging to all the preceding groups. All those groups are deemed complete.
+ * Note that PartitionedFirstPassAggResult is not constructed from FirstPassAggResult
+ * unless there are at least two distinct groups. (If there's only one group, it
+ * couldn't possibly be complete yet.)
+ */
+class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
+                                    boundStages: GpuUnboundedToUnboundedAggStages) {
   var lastGroupAggResult: Option[SpillableColumnarBatch] = None
   var lastGroupRideAlong: Option[SpillableColumnarBatch] = None
   var otherGroupAggResult: Option[SpillableColumnarBatch] = None
@@ -457,15 +468,17 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
     }
     else {
       opTime.ns {
-        val partitioned = withRetryNoSplit(newData) {
-          PartitionedFirstPassAggResult(_, boundStages)
-        }
-        // There are at least two aggregation result rows.
+        // There are at least two aggregation result rows. i.e. At least 2 groups,
+        // implying that at least one group has seen completion.
+        // This may now be processed as follows:
+        //   1. Set aside the last agg result row (incomplete), and its rideAlong.
+        //   2. Append the rest of the results together.  Run agg merge.
+        //   3. Save last agg result and rideAlong as currently incomplete.
+        //   4. Return merge results as the result batch.
 
-        // 1. Set aside the last agg result row (incomplete), and its rideAlong.
-        // 2. Append the rest of the results together.  Run agg merge.
-        // 3. Save last agg result and rideAlong as currently incomplete.
-        // 4. Return merge results as the result batch.
+        val partitioned = withRetryNoSplit(newData) {
+          new PartitionedFirstPassAggResult(_, boundStages)
+        }
 
         val completedAggResults =
           aggResultsPendingCompletion ++ partitioned.otherGroupAggResult
