@@ -70,7 +70,7 @@ object CpuGetJsonObject {
     withResource(dataCv.copyToHost()) { dataHCV =>
       withResource(fromGpuCv.copyToHost()) { fromGpuHCV =>
         val savePath = savePathForVerify +
-            DateTimeFormatter.ofPattern("yyyyMMdd").format(LocalDate.now())
+            DateTimeFormatter.ofPattern("yyyyMMdd").format(LocalDate.now()) + ".csv"
         withResource(CsvWriterWrapper(savePath)) { csvWriter =>
           val pathStr = if (path == null) "null" else path.toString
           var currRow = 0
