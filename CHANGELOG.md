@@ -125,7 +125,7 @@ Generated on 2024-01-31
 |[#10123](https://github.com/NVIDIA/spark-rapids/pull/10123)|Change version to v23.12.1 [skip ci]|
 |[#10122](https://github.com/NVIDIA/spark-rapids/pull/10122)|Init changelog for v23.12.1 [skip ci]|
 |[#10121](https://github.com/NVIDIA/spark-rapids/pull/10121)|[DOC] update download page for db hot fix  [skip ci]|
-|[#10116](https://github.com/NVIDIA/spark-rapids/pull/10116)|Upgrade to 23.12.1|
+|[#10116](https://github.com/NVIDIA/spark-rapids/pull/10116)|Upgrade to 23.12.1-SNPASHOT|
 |[#9935](https://github.com/NVIDIA/spark-rapids/pull/9935)|Init 23.12 changelog [skip ci]|
 |[#9943](https://github.com/NVIDIA/spark-rapids/pull/9943)|[DOC] Update docs for 23.12.0 release [skip ci]|
 |[#10014](https://github.com/NVIDIA/spark-rapids/pull/10014)|Add documentation for how to run tests with a fixed datagen seed [skip ci]|

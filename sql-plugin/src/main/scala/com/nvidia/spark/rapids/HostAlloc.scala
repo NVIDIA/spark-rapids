@@ -16,16 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Comparator
+import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 
-import ai.rapids.cudf.{ColumnView, HostMemoryBuffer, HostMemoryReservation, MemoryBuffer, PinnedMemoryPool}
-import com.nvidia.spark.rapids.HostAlloc.align
+import org.apache.spark.internal.Logging
 
-import org.apache.spark.TaskContext
-
-private class HostAlloc(nonPinnedLimit: Long) {
+private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
-  private var currentNonPinnedReserved: Long = 0L
   private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes
   // For now we are going to assume that we are the only ones calling into the pinned pool
   // That is not really true, but should be okay.
@@ -33,52 +30,13 @@ private class HostAlloc(nonPinnedLimit: Long) {
   private val isUnlimited = nonPinnedLimit < 0
   private val isPinnedOnly = nonPinnedLimit == 0
 
-  private val compareBlocks = new Comparator[BlockedAllocation] {
-    override def compare(a: BlockedAllocation, b: BlockedAllocation): Int = {
-      java.lang.Long.compare(a.taskId, b.taskId)
-    }
-  }
-
-  /**
-   * Host memory allocations that are still pending.
-   */
-  private val pendingAllowedQueue = new HashedPriorityQueue[BlockedAllocation](100, compareBlocks)
-
-  /**
-   * An allocation that has not been completed yet. It is blocked waiting for more resources.
-   */
-  private class BlockedAllocation(val amount: Long, val taskId: Long) {
-    private var shouldWake = false
-
-    def isReady: Boolean = shouldWake
-
-    /**
-     * Wait until we should retry the allocation because it might succeed. It is not
-     * guaranteed though.
-     * It is required that the parent lock is held before this is called.
-     */
-    def waitUntilPossiblyReady(): Unit = {
-      while (!shouldWake) {
-        HostAlloc.this.wait(1000)
-      }
-    }
-
-    /**
-     * Wake up all threads that are blocked waiting for an allocation.
-     */
-    def wakeUpItMightBeWorthIt(): Unit = {
-      shouldWake = true
-      HostAlloc.this.notifyAll()
-    }
-  }
-
   /**
    * A callback class so we know when a non-pinned host buffer was released
    */
-  private class OnCloseCallback(amount: Long) extends MemoryBuffer.EventHandler {
+  private class OnCloseCallback(ptr: Long, amount: Long) extends MemoryBuffer.EventHandler {
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
-        releaseNonPinned(amount)
+        releaseNonPinned(ptr, amount)
       }
     }
   }
@@ -86,152 +44,26 @@ private class HostAlloc(nonPinnedLimit: Long) {
   /**
    * A callback so we know when a pinned host buffer was released.
    */
-  private class OnPinnedCloseCallback(amount: Long) extends MemoryBuffer.EventHandler {
+  private class OnPinnedCloseCallback(ptr: Long, amount: Long) extends MemoryBuffer.EventHandler {
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
-        releasePinned(amount)
+        releasePinned(ptr, amount)
       }
     }
   }
 
-  /**
-   * A wrapper around a pinned memory reservation so we can add in callbacks as needed.
-   */
-  private class WrappedPinnedReservation(val wrap: HostMemoryReservation)
-    extends HostMemoryReservation {
-
-    private def addEventHandlerAndUpdateMetrics(b: HostMemoryBuffer): HostMemoryBuffer =
-      synchronized {
-        val amount = b.getLength
-        currentPinnedAllocated += amount
-        // I need callbacks for the pinned
-        HostAlloc.addEventHandler(b, new OnPinnedCloseCallback(amount))
-        b
-      }
-
-    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
-      addEventHandlerAndUpdateMetrics(wrap.allocate(amount, preferPinned))
-
-    override def allocate(amount: Long): HostMemoryBuffer =
-      addEventHandlerAndUpdateMetrics(wrap.allocate(amount))
-
-    override def close(): Unit = wrap.close()
+  private def releasePinned(ptr: Long, amount: Long): Unit = {
+    synchronized {
+      currentPinnedAllocated -= amount
+    }
+    RmmSpark.cpuDeallocate(ptr, amount)
   }
 
-  /**
-   * A non-pinned host memory reservation.
-   */
-  private class NonPinnedReservation(var reservedAmount: Long) extends HostMemoryReservation {
-    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer = {
-      allocate(amount)
+  private def releaseNonPinned(ptr: Long, amount: Long): Unit = {
+    synchronized {
+      currentNonPinnedAllocated -= amount
     }
-
-    override def allocate(amount: Long): HostMemoryBuffer = synchronized {
-      if (amount > reservedAmount) {
-        throw new OutOfMemoryError("Could not allocate. Remaining memory reservation is " +
-          s"too small $amount out of $reservedAmount")
-      }
-      val buff = allocNonPinnedFromReserved(amount)
-      reservedAmount -= align(buff.getLength)
-      buff
-    }
-
-    override def close(): Unit = synchronized {
-      releaseNonPinnedReservation(reservedAmount)
-      reservedAmount = 0
-    }
-  }
-
-  /**
-   * A reservation for the special mode when there are no host memory limits.
-   */
-  private object UnlimitedReservation extends HostMemoryReservation {
-    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
-      HostAlloc.alloc(amount, preferPinned)
-
-    override def allocate(amount: Long): HostMemoryBuffer =
-      HostAlloc.alloc(amount)
-
-    override def close(): Unit = {
-      // NOOP
-    }
-  }
-
-  /**
-   * Wake up any blocked allocation that are still pending up to the amount that has been freed.
-   * Note that this assume that there is no fragmentation that might prevent an allocation from
-   * succeeding.
-   * @param amountLeftToWakeInput the amount of memory that is available in bytes.
-   * @return true if anything was woken up, else false.
-   */
-  private def wakeUpAsNeeded(amountLeftToWakeInput: Long): Boolean = synchronized {
-    var amountLeftToWake = amountLeftToWakeInput
-    var ret = false
-    while (amountLeftToWake > 0 && !pendingAllowedQueue.isEmpty) {
-      val peek = pendingAllowedQueue.peek()
-      if (peek.amount <= amountLeftToWake) {
-        val head = pendingAllowedQueue.poll()
-        amountLeftToWake -= head.amount
-        head.wakeUpItMightBeWorthIt()
-        ret = true
-      } else {
-        return ret
-      }
-    }
-    ret
-  }
-
-  private def wakeUpPinned(): Boolean = synchronized {
-    val amountLeftToWake = pinnedLimit - currentPinnedAllocated
-    wakeUpAsNeeded(amountLeftToWake)
-  }
-
-  private def wakeUpNonPinned(): Boolean = synchronized {
-    val amountLeftToWake = nonPinnedLimit - (currentNonPinnedAllocated + currentNonPinnedReserved)
-    wakeUpAsNeeded(amountLeftToWake)
-  }
-
-  private def releasePinned(amount: Long): Unit = synchronized {
-    currentPinnedAllocated -= amount
-    if (wakeUpPinned()) {
-      wakeUpNonPinned()
-    }
-  }
-
-  private def releaseNonPinned(amount: Long): Unit = synchronized {
-    currentNonPinnedAllocated -= amount
-    if (wakeUpNonPinned()) {
-      wakeUpPinned()
-    }
-  }
-
-  private def releaseNonPinnedReservation(reservedAmount: Long): Unit = synchronized {
-    currentNonPinnedReserved -= reservedAmount
-    if (wakeUpPinned()) {
-      wakeUpNonPinned()
-    }
-  }
-
-  private def tryReservePinned(amount: Long): Option[HostMemoryReservation] = {
-    val ret = Option(PinnedMemoryPool.tryReserve(amount))
-    ret.map { reservation =>
-      new WrappedPinnedReservation(reservation)
-    }
-  }
-
-  private def tryReserveNonPinned(amount: Long): Option[HostMemoryReservation] = {
-    if (isUnlimited) {
-      Some(UnlimitedReservation)
-    } else {
-      synchronized {
-        if ((currentNonPinnedAllocated + currentNonPinnedReserved + amount) <= nonPinnedLimit) {
-          currentNonPinnedReserved += amount
-          Some(new NonPinnedReservation(amount))
-        } else {
-          None
-        }
-      }
-    }
+    RmmSpark.cpuDeallocate(ptr, amount)
   }
 
   private def tryAllocPinned(amount: Long): Option[HostMemoryBuffer] = {
@@ -240,34 +72,20 @@ private class HostAlloc(nonPinnedLimit: Long) {
       synchronized {
         currentPinnedAllocated += amount
       }
-      HostAlloc.addEventHandler(b, new OnPinnedCloseCallback(amount))
+      HostAlloc.addEventHandler(b, new OnPinnedCloseCallback(b.getAddress, amount))
     }
     ret
   }
 
-  private def allocNonPinnedFromReserved(amount: Long): HostMemoryBuffer = {
-    val ret = if (isUnlimited) {
-      HostMemoryBuffer.allocate(amount, false)
-    } else {
-      synchronized {
-        currentNonPinnedReserved -= amount
-        currentNonPinnedAllocated += amount
-        HostMemoryBuffer.allocate(amount, false)
-      }
-    }
-    if (ret == null) {
-      throw new OutOfMemoryError(s"Internal Error: could not allocate non-pinned memory $amount")
-    }
-
-    HostAlloc.addEventHandler(ret, new OnCloseCallback(amount))
-  }
-
   private def tryAllocNonPinned(amount: Long): Option[HostMemoryBuffer] = {
     val ret = if (isUnlimited) {
+      synchronized {
+        currentNonPinnedAllocated += amount
+      }
       Some(HostMemoryBuffer.allocate(amount, false))
     } else {
       synchronized {
-        if ((currentNonPinnedAllocated + currentNonPinnedReserved + amount) <= nonPinnedLimit) {
+        if ((currentNonPinnedAllocated + amount) <= nonPinnedLimit) {
           currentNonPinnedAllocated += amount
           Some(HostMemoryBuffer.allocate(amount, false))
         } else {
@@ -276,130 +94,151 @@ private class HostAlloc(nonPinnedLimit: Long) {
       }
     }
     ret.foreach { b =>
-      HostAlloc.addEventHandler(b, new OnCloseCallback(amount))
+      HostAlloc.addEventHandler(b, new OnCloseCallback(b.getAddress, amount))
     }
     ret
   }
 
-  private def canNeverSucceed(amount: Long, preferPinned: Boolean): Boolean = {
+  private def canNeverSucceed(amount: Long, preferPinned: Boolean): Boolean = synchronized {
     val pinnedFailed = (isPinnedOnly || preferPinned) && (amount > pinnedLimit)
     val nonPinnedFailed = isPinnedOnly || (amount > nonPinnedLimit)
     !isUnlimited && pinnedFailed && nonPinnedFailed
   }
 
-  private def checkSize(amount: Long, preferPinned: Boolean): Unit = {
+  private def checkSize(amount: Long, preferPinned: Boolean): Unit = synchronized {
     if (canNeverSucceed(amount, preferPinned)) {
       throw new IllegalArgumentException(s"The amount requested $amount is larger than the " +
           s"maximum pool size ${math.max(pinnedLimit, nonPinnedLimit)}")
     }
   }
 
-  def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
-    checkSize(amount, preferPinned)
-    val firstPass = if (preferPinned) {
-      tryAllocPinned(amount)
+  private def spillAndCheckRetry(allocSize: Long, retryCount: Long): Boolean = {
+    // check arguments for good measure
+    require(allocSize >= 0,
+      s"spillAndCheckRetry invoked with invalid allocSize $allocSize")
+
+    require(retryCount >= 0,
+      s"spillAndCheckRetry invoked with invalid retryCount $retryCount")
+
+    val store = RapidsBufferCatalog.getHostStorage
+    val storeSize = store.currentSize
+    val storeSpillableSize = store.currentSpillableSize
+    val totalSize: Long = synchronized {
+      currentPinnedAllocated + currentNonPinnedAllocated
+    }
+
+    val attemptMsg = if (retryCount > 0) {
+      s"Attempt $retryCount"
     } else {
-      tryAllocNonPinned(amount)
+      "First attempt"
     }
-    firstPass.orElse {
-      if (preferPinned) {
-        tryAllocNonPinned(amount)
-      } else {
-        tryAllocPinned(amount)
+
+    logInfo(s"Host allocation of $allocSize bytes failed, host store has " +
+        s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
+    if (storeSpillableSize == 0) {
+      logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
+          s"Total host allocated is $totalSize bytes.")
+      false
+    } else {
+      val targetSize = Math.max(storeSpillableSize - allocSize, 0)
+      logDebug(s"Targeting host store size of $targetSize bytes")
+      // We could not make it work so try and spill enough to make it work
+      val maybeAmountSpilled =
+        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
+      maybeAmountSpilled.foreach { amountSpilled =>
+        logInfo(s"Spilled $amountSpilled bytes from the host store")
       }
+      true
     }
   }
 
-  def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = synchronized {
-    var ret: Option[HostMemoryBuffer] = None
-    var blocked: BlockedAllocation = null
-    do {
-      ret = tryAlloc(amount, preferPinned)
-      if (ret.isEmpty) {
-        blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId())
-        pendingAllowedQueue.offer(blocked)
-        var amountSpilled: Option[Long] = None
-        // None for amountSpilled means we need to retry because of a race.
-        // forall returns true for None in this case.
-        while(!blocked.isReady && amountSpilled.forall(_ > 0)) {
-          amountSpilled = RapidsBufferCatalog.synchronousSpill(
-            RapidsBufferCatalog.getHostStorage, amount)
-        }
-        // Wait until we think we are ready to allocate something
-        blocked.waitUntilPossiblyReady()
-      }
-    } while(ret.isEmpty)
-    ret.get
-  }
-
-  /**
-   * Allocate a buffer at the highest priority possible. If the allocation cannot happen
-   * for whatever reason a None is returned instead of blocking
-   */
-  def allocHighPriority(amount: Long,
-      preferPinned: Boolean = true): Option[HostMemoryBuffer] = synchronized {
-    var ret: Option[HostMemoryBuffer] = None
-    if (!canNeverSucceed(amount, preferPinned)) {
-      ret = tryAlloc(amount, preferPinned)
-      if (ret.isEmpty) {
-        val blocked = new BlockedAllocation(amount, Long.MinValue)
-        pendingAllowedQueue.offer(blocked)
-        var amountSpilled: Option[Long] = None
-        // None for amountSpilled means we need to retry because of a race.
-        // forall returns true for None in this case.
-        while (!blocked.isReady && amountSpilled.forall(_ > 0)) {
-          amountSpilled = RapidsBufferCatalog.synchronousSpill(
-            RapidsBufferCatalog.getHostStorage, amount)
-        }
-
-        if (blocked.isReady) {
-          ret = tryAlloc(amount, preferPinned)
+  private def tryAllocInternal(amount: Long,
+      preferPinned: Boolean,
+      blocking: Boolean): (Option[HostMemoryBuffer], Boolean) = {
+    var retryCount = 0L
+    var ret = Option.empty[HostMemoryBuffer]
+    var shouldRetry = false
+    var shouldRetryInternal = true
+    val isRecursive = RmmSpark.preCpuAlloc(amount, blocking)
+    var allocAttemptFinishedWithoutException = false
+    try {
+      do {
+        val firstPass = if (preferPinned) {
+          tryAllocPinned(amount)
         } else {
-          pendingAllowedQueue.remove(blocked)
+          tryAllocNonPinned(amount)
         }
+        ret = firstPass.orElse {
+          if (preferPinned) {
+            tryAllocNonPinned(amount)
+          } else {
+            tryAllocPinned(amount)
+          }
+        }
+        if (ret.isEmpty) {
+          // We could not make it work so try and spill enough to make it work
+          shouldRetryInternal = spillAndCheckRetry(amount, retryCount)
+          if (shouldRetryInternal) {
+            retryCount += 1
+          }
+        }
+      } while(ret.isEmpty && shouldRetryInternal && retryCount < 10)
+      allocAttemptFinishedWithoutException = true
+    } finally {
+      if (ret.isDefined) {
+        RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
+      } else {
+        // shouldRetry should indicate if spill did anything for us and we should try again.
+        shouldRetry = RmmSpark.postCpuAllocFailed(allocAttemptFinishedWithoutException,
+          blocking, isRecursive)
       }
+    }
+    (ret, shouldRetry)
+  }
+
+  def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
+    if (canNeverSucceed(amount, preferPinned)) {
+      return None
+    }
+    var shouldRetry = true
+    var ret = Option.empty[HostMemoryBuffer]
+    while (shouldRetry) {
+      val (r, sr) = tryAllocInternal(amount, preferPinned, blocking = false)
+      ret = r
+      shouldRetry = sr
     }
     ret
   }
 
-  def reserve(amount: Long, preferPinned: Boolean): HostMemoryReservation = synchronized {
-    var ret: Option[HostMemoryReservation] = None
-    var blocked: BlockedAllocation = null
-    do {
-      checkSize(amount, preferPinned)
-      val firstPass = if (preferPinned) {
-        tryReservePinned(amount)
-      } else {
-        tryReserveNonPinned(amount)
-      }
-      ret = firstPass.orElse {
-        if (preferPinned) {
-          tryReserveNonPinned(amount)
-        } else {
-          tryReservePinned(amount)
-        }
-      }
-      if (ret.isEmpty) {
-        if (blocked == null) {
-          blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId())
-        }
-        pendingAllowedQueue.offer(blocked)
-        blocked.waitUntilPossiblyReady()
-      }
-    } while (ret.isEmpty)
+  def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
+    checkSize(amount, preferPinned)
+    var ret = Option.empty[HostMemoryBuffer]
+    var count = 0
+    while (ret.isEmpty && count < 1000) {
+      val (r, _) = tryAllocInternal(amount, preferPinned, blocking = true)
+      ret = r
+      count += 1
+    }
+    if (ret.isEmpty) {
+      // This can happen if someone broke the rules and not all host memory is
+      // spillable when doing an allocation, like if not all of the code has
+      // been updated yet.
+      throw new CpuRetryOOM("Could not complete allocation after 1000 retries")
+    }
     ret.get
   }
+
+  override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
+    alloc(amount, preferPinned)
+
+  override def allocate(amount: Long): HostMemoryBuffer =
+    alloc(amount)
 }
 
 /**
  * A new API for host memory allocation. This can be used to limit the amount of host memory.
  */
 object HostAlloc {
-  private val ALIGNMENT = ColumnView.hostPaddingSizeInBytes
-  private def align(amount: Long): Long = {
-    ((amount + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT
-  }
-
   private var singleton: HostAlloc = new HostAlloc(-1)
 
   private def getSingleton: HostAlloc = synchronized {
@@ -408,6 +247,7 @@ object HostAlloc {
 
   def initialize(nonPinnedLimit: Long): Unit = synchronized {
     singleton = new HostAlloc(nonPinnedLimit)
+    DefaultHostMemoryAllocator.set(singleton)
   }
 
   def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
@@ -416,20 +256,6 @@ object HostAlloc {
 
   def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
     getSingleton.alloc(amount, preferPinned)
-  }
-
-  /**
-   * Allocate a HostMemoryBuffer, but at the highest priority. This will not block for a free. It
-   * may spill data to make room for the allocation, but it will do it at the highest priority.
-   * If we cannot make it work, then a None will be returned an whoever tries to use this needs
-   * a backup plan.
-   */
-  def allocHighPriority(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
-    getSingleton.allocHighPriority(amount, preferPinned)
-  }
-
-  def reserve(amount: Long, preferPinned: Boolean = true): HostMemoryReservation = {
-    getSingleton.reserve(amount, preferPinned)
   }
 
   def addEventHandler(buff: HostMemoryBuffer,

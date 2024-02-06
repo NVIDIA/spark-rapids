@@ -21,7 +21,7 @@ import java.nio.channels.WritableByteChannel
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
@@ -130,11 +130,17 @@ class ChunkedPacker(
     tableMeta
   }
 
-  override def hasNext: Boolean = {
-    !closed && chunkedPack.hasNext
+  override def hasNext: Boolean = synchronized {
+    if (closed) {
+      throw new IllegalStateException(s"ChunkedPacker for $id is closed")
+    }
+    chunkedPack.hasNext
   }
 
-  def next(): MemoryBuffer = {
+  def next(): MemoryBuffer = synchronized {
+    if (closed) {
+      throw new IllegalStateException(s"ChunkedPacker for $id is closed")
+    }
     val bytesWritten = chunkedPack.next(bounceBuffer)
     // we increment the refcount because the caller has no idea where
     // this memory came from, so it should close it.
@@ -171,7 +177,7 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
     extends Iterator[MemoryBuffer] with AutoCloseable with Logging {
 
   private val chunkedPacker: Option[ChunkedPacker] = if (buffer.supportsChunkedPacker) {
-    Some(buffer.getChunkedPacker)
+    Some(buffer.makeChunkedPacker)
   } else {
     None
   }
@@ -285,7 +291,10 @@ trait RapidsBuffer extends AutoCloseable {
 
   val supportsChunkedPacker: Boolean = false
 
-  def getChunkedPacker: ChunkedPacker = {
+  /**
+   * Makes a new chunked packer. It is the responsibility of the caller to close this.
+   */
+  def makeChunkedPacker: ChunkedPacker = {
     throw new NotImplementedError("not implemented for this store")
   }
 
@@ -310,6 +319,15 @@ trait RapidsBuffer extends AutoCloseable {
    * @note It is the responsibility of the caller to close the buffer.
    */
   def getDeviceMemoryBuffer: DeviceMemoryBuffer
+
+  /**
+   * Get the host memory buffer from the underlying storage. If the buffer currently resides
+   * outside of host memory, a new HostMemoryBuffer is created with the data copied over.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
+   */
+  def getHostMemoryBuffer: HostMemoryBuffer
 
   /**
    * Try to add a reference to this buffer to acquire it.
@@ -415,6 +433,9 @@ sealed class DegenerateRapidsBuffer(
 
   override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
+
+  override def getHostMemoryBuffer: HostMemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer has no host memory buffer")
 
   override def addReference(): Boolean = true
 

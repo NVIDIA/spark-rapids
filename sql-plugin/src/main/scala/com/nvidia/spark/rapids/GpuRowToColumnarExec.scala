@@ -787,7 +787,8 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |  // of a row at a time.
          |  @Override
          |  public int[] fillBatch(ai.rapids.cudf.HostMemoryBuffer dataBuffer,
-         |      ai.rapids.cudf.HostMemoryBuffer offsetsBuffer) {
+         |      ai.rapids.cudf.HostMemoryBuffer offsetsBuffer,
+         |      long dataLength, int numRows) {
          |    final long dataBaseAddress = dataBuffer.getAddress();
          |    final long endDataAddress = dataBaseAddress + dataLength;
          |
@@ -820,7 +821,7 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |      } else {
          |        currentRow += 1;
          |        dataOffset += numBytesUsedByRow;
-         |        done = !(currentRow < numRowsEstimate &&
+         |        done = !(currentRow < numRows &&
          |            dataOffset < dataLength &&
          |            input.hasNext());
          |      }

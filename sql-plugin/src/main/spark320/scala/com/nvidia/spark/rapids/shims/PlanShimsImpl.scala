@@ -30,9 +30,12 @@
 {"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
+{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "342"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -40,6 +43,7 @@ import com.nvidia.spark.rapids.{GpuAlias, PlanShims}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
 import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
+import org.apache.spark.sql.types.DataType
 
 class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
@@ -53,5 +57,9 @@ class PlanShimsImpl extends PlanShims {
     case Alias(e, _) => isAnsiCast(e)
     case GpuAlias(e, _) => isAnsiCast(e)
     case e => isAnsiCast(e)
+  }
+
+  def extractAnsiCastTypes(e: Expression): (DataType, DataType) = {
+    AnsiCastShim.extractAnsiCastTypes(e)
   }
 }

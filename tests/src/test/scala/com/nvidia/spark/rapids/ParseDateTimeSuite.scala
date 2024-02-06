@@ -16,11 +16,15 @@
 
 package com.nvidia.spark.rapids
 
+import java.sql.{Date, Timestamp}
+import java.time.{ZonedDateTime, ZoneId}
+import java.util.TimeZone
+
+import scala.collection.mutable.ListBuffer
+
 import ai.rapids.cudf.{ColumnVector, RegexProgram}
 import com.nvidia.spark.rapids.Arm.withResource
-import java.sql.{Date, Timestamp}
 import org.scalatest.BeforeAndAfterEach
-import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Row, SparkSession}
@@ -154,16 +158,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     }
   }
 
-  testSparkResultsAreEqual("to_unix_timestamp parse yyyy/MM (improvedTimeOps)",
-    timestampsAsStrings,
-    new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")
-        .set(RapidsConf.IMPROVED_TIMESTAMP_OPS.key, "true")) {
-    df => {
-      df.createOrReplaceTempView("df")
-      df.sqlContext.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
-    }
-  }
-
   testSparkResultsAreEqual("unix_timestamp parse timestamp",
       timestampsAsStrings,
       CORRECTED_TIME_PARSER_POLICY) {
@@ -278,6 +272,48 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     })
 
     assert(res)
+  }
+
+  test("literals: ensure time literals are correct with different timezones") {
+    testTimeWithDiffTimezones("Asia/Shanghai", "America/New_York")
+    testTimeWithDiffTimezones("Asia/Shanghai", "UTC")
+    testTimeWithDiffTimezones("UTC", "Asia/Shanghai")
+  }
+
+  private[this] def testTimeWithDiffTimezones(sessionTZStr: String, systemTZStr: String) = {
+    withTimeZones(sessionTimeZone = sessionTZStr, systemTimeZone = systemTZStr) { conf =>
+      val df = withGpuSparkSession(spark => {
+        spark.sql("SELECT current_date(), current_timestamp(), now() FROM RANGE(1, 10)")
+      }, conf)
+
+      val times = df.collect()
+      val zonedDateTime = ZonedDateTime.now(ZoneId.of("America/New_York"))
+      val res = times.forall(time => {
+        val diffDate = zonedDateTime.toLocalDate.toEpochDay - time.getLocalDate(0).toEpochDay
+        val diffTimestamp =
+          zonedDateTime.toInstant.getNano - time.getInstant(1).getNano
+        val diffNow =
+          zonedDateTime.toInstant.getNano - time.getInstant(2).getNano
+        // For date, at most 1 day difference when execution is crossing two days
+        // For timestamp or now, it should be less than 1 second allowing Spark's execution
+        diffDate.abs <= 1 & diffTimestamp.abs <= 1E9 & diffNow.abs <= 1E9
+      })
+      assert(res)
+    }
+  }
+
+  private def withTimeZones(sessionTimeZone: String,
+      systemTimeZone: String)(f: SparkConf => Unit): Unit = {
+    val conf = new SparkConf()
+    conf.set(SQLConf.SESSION_LOCAL_TIMEZONE.key, sessionTimeZone)
+    conf.set(SQLConf.DATETIME_JAVA8API_ENABLED.key, "true")
+    val originTimeZone = TimeZone.getDefault
+    try {
+      TimeZone.setDefault(TimeZone.getTimeZone(systemTimeZone))
+      f(conf)
+    } finally {
+      TimeZone.setDefault(originTimeZone)
+    }
   }
 
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {

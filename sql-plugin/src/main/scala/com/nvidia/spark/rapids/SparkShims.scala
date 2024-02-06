@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -140,6 +140,22 @@ trait SparkShims {
    */
   def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
       sqse: ShuffleQueryStageExec): SparkPlan = c2r
+
+  /*
+   * The following two functions are used to recognize when an executor broadcast
+   * is being used to feed into a join but a columnar to row gets inserted between
+   * the exchange and the join. This causes issues on some versions of Spark so we
+   * have to shim it.
+   */
+  def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
+      parent: Option[SparkPlan]): Boolean = false
+
+  def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = None
+
+  /**
+   * If the shim doesn't support executor broadcast, just return the plan passed in
+   */
+  def addExecBroadcastShuffle(p: SparkPlan): SparkPlan = p
 
   /**
    * Walk the plan recursively and return a list of operators that match the predicate

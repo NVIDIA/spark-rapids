@@ -18,9 +18,10 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
+{"spark": "342"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.rapids
 
 import scala.collection
@@ -165,7 +166,7 @@ class RapidsCachingReader[K, C](
 
         val cbArrayFromUcx: Iterator[(K, C)] = if (blocksForRapidsTransport.nonEmpty) {
           val rapidsShuffleIterator = new RapidsShuffleIterator(localId, rapidsConf, transport.get,
-            blocksForRapidsTransport.toArray, metricsUpdater, sparkTypes)
+            blocksForRapidsTransport.toArray, metricsUpdater, sparkTypes, context.taskAttemptId())
           rapidsShuffleIterator.map(cb => {
             (0, cb)
           }).asInstanceOf[Iterator[(K, C)]]

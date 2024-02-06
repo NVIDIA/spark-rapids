@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.time.DateTimeException
+import java.util
 import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
@@ -26,7 +27,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
-import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -372,18 +372,14 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
-  def dateFormat: String
+  def dateFormat: Option[String]
   def timestampFormat: String
 
   def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
-    castStringToDate(input, dt, failOnInvalid = true)
-  }
-
-  def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
-    val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
+    val cudfFormat = DateUtils.toStrf(dateFormat.getOrElse("yyyy-MM-dd"), parseString = true)
     withResource(input.strip()) { stripped =>
       withResource(stripped.isTimestamp(cudfFormat)) { isDate =>
-        if (failOnInvalid && GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
+        if (GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
           withResource(isDate.all()) { all =>
             if (all.isValid && !all.getBoolean) {
               throw new DateTimeException("One or more values is not a valid date")

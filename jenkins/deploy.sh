@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@
 #   POM_FILE:       Project pom file to be deployed
 #   OUT_PATH:       The path where jar files are
 #   CUDA_CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12"
+#   CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12,cuda11-arm64,cuda12-arm64"
 ###
 
 set -ex
@@ -48,6 +49,13 @@ ART_GROUP_ID=$(mvnEval $DIST_PL project.groupId)
 ART_VER=$(mvnEval $DIST_PL project.version)
 DEFAULT_CUDA_CLASSIFIER=$(mvnEval $DIST_PL cuda.version)
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"}
+CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"} # default as CUDA_CLASSIFIERS for compatibility
+SERVER_ID=${SERVER_ID:-"snapshots"}
+SERVER_URL=${SERVER_URL:-"file:/tmp/local-release-repo"}
+# Save to be deployed artifact list into the file, e.g.
+ARTIFACT_FILE=${ARTIFACT_FILE:-"/tmp/artifact-file"}
+# Clean rtifact list file befor saving
+rm -rf $ARTIFACT_FILE
 
 SQL_PL=${SQL_PL:-"sql-plugin"}
 POM_FILE=${POM_FILE:-"$DIST_PL/target/parallel-world/META-INF/maven/${ART_GROUP_ID}/${ART_ID}/pom.xml"}
@@ -57,12 +65,11 @@ SIGN_TOOL=${SIGN_TOOL:-"gpg"}
 FPATH="$OUT_PATH/$ART_ID-$ART_VER"
 DEPLOY_TYPES=''
 DEPLOY_FILES=''
-IFS=',' read -a CUDA_CLASSIFIERS_ARR <<< "$CUDA_CLASSIFIERS"
-DEPLOY_TYPES=$(echo $CUDA_CLASSIFIERS | sed -e 's;[^,]*;jar;g')
-DEPLOY_FILES=$(echo $CUDA_CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
+DEPLOY_TYPES=$(echo $CLASSIFIERS | sed -e 's;[^,]*;jar;g')
+DEPLOY_FILES=$(echo $CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
 
 # dist does not have javadoc and sources jars, use 'sql-plugin' instead
-source jenkins/version-def.sh >/dev/null 2&>1
+source jenkins/version-def.sh >/dev/null 2>&1
 echo $SPARK_BASE_SHIM_VERSION
 SQL_ART_ID=$(mvnEval $SQL_PL project.artifactId)
 SQL_ART_VER=$(mvnEval $SQL_PL project.version)
@@ -96,6 +103,10 @@ echo "Deploy CMD: $DEPLOY_CMD"
 ###### Deploy the parent pom file ######
 $DEPLOY_CMD -Dfile=./pom.xml -DpomFile=./pom.xml
 
+###### Deploy the jdk-profile pom file ######
+JDK_PROFILES=${JDK_PROFILES:-"jdk-profiles"}
+$DEPLOY_CMD -Dfile=$JDK_PROFILES/pom.xml -DpomFile=$JDK_PROFILES/pom.xml
+
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
             -Dfile=$FPATH-$DEFAULT_CUDA_CLASSIFIER.jar \
@@ -103,4 +114,11 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
             -Djavadoc=$FPATH-javadoc.jar \
             -Dfiles=$DEPLOY_FILES \
             -Dtypes=$DEPLOY_TYPES \
-            -Dclassifiers=$CUDA_CLASSIFIERS
+            -Dclassifiers=$CLASSIFIERS
+
+echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar" >> $ARTIFACT_FILE
+CLASSLIST="$CLASSIFIERS,sources,javadoc"
+CLASSLIST=(${CLASSLIST//','/' '})
+for class in ${CLASSLIST[@]}; do
+    echo "$ART_GROUP_ID:$ART_ID:$ART_VER:jar:$class" >> $ARTIFACT_FILE
+done

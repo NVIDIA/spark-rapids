@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
@@ -133,7 +133,7 @@ class GpuCoalesceBatchesRetrySuite
     allBatches.foreach(_.close())
   }
 
-  test("coalesce gpu batches splits in half with SplitAndRetryOOM") {
+  test("coalesce gpu batches splits in half with GpuSplitAndRetryOOM") {
     val iters = getIters(injectSplitAndRetry = 1)
     iters.foreach { iter =>
       withResource(iter.next()) { coalesced =>
@@ -148,7 +148,7 @@ class GpuCoalesceBatchesRetrySuite
     }
   }
 
-  test("coalesce gpu batches splits in quarters with SplitAndRetryOOM") {
+  test("coalesce gpu batches splits in quarters with GpuSplitAndRetryOOM") {
     val iters = getIters(injectSplitAndRetry = 2)
     iters.foreach { iter =>
       withResource(iter.next()) { coalesced =>
@@ -170,7 +170,7 @@ class GpuCoalesceBatchesRetrySuite
   test("coalesce gpu batches fails with OOM if it cannot split enough") {
     val iters = getIters(mockInjectSplitAndRetry = true)
     iters.foreach { iter =>
-      assertThrows[SplitAndRetryOOM] {
+      assertThrows[GpuSplitAndRetryOOM] {
         iter.next() // throws
       }
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
@@ -190,10 +190,10 @@ class GpuCoalesceBatchesRetrySuite
     }
   }
 
-  test("coalesce gpu batches throws if SplitAndRetryOOM with non-splittable goal") {
+  test("coalesce gpu batches throws if GpuSplitAndRetryOOM with non-splittable goal") {
     val iters = getIters(injectSplitAndRetry = 1, goal = RequireSingleBatch)
     iters.foreach { iter =>
-      assertThrows[SplitAndRetryOOM] {
+      assertThrows[GpuSplitAndRetryOOM] {
         iter.next()
       }
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
@@ -209,7 +209,7 @@ class GpuCoalesceBatchesRetrySuite
     override def numRows(): Int = 0
     override def setSpillPriority(priority: Long): Unit = {}
     override def getColumnarBatch(): ColumnarBatch = {
-      throw new SplitAndRetryOOM()
+      throw new GpuSplitAndRetryOOM()
     }
     override def sizeInBytes: Long = 0
     override def dataTypes: Array[DataType] = Array.empty
@@ -221,10 +221,12 @@ class GpuCoalesceBatchesRetrySuite
 
     def injectError(injectRetry: Int, injectSplitAndRetry: Int): Unit = {
       if (injectRetry > 0) {
-        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, injectRetry)
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, injectRetry,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
       }
       if (injectSplitAndRetry > 0) {
-        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, injectSplitAndRetry)
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, injectSplitAndRetry,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
       }
     }
 

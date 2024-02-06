@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed
+from conftest import skip_unless_precommit_tests, get_datagen_seed, is_not_utc, is_supported_time_zone
 import time
 import os
 from functools import lru_cache
@@ -329,19 +329,39 @@ class UniqueLongGen(DataGen):
         self._start(rand, lambda: self.next_val())
 
 class RepeatSeqGen(DataGen):
-    """Generate Repeated seq of `length` random items"""
-    def __init__(self, child, length):
-        super().__init__(child.data_type, nullable=False)
-        self.nullable = child.nullable
-        self._child = child
+    """Generate Repeated seq of `length` random items if child is a DataGen,
+    otherwise repeat the provided seq when child is a list.
+
+    When child is a list:
+        data_type must be specified
+        length must be <= length of child
+    When child is a DataGen:
+        length must be specified
+        data_type must be None or match child's
+    """
+    def __init__(self, child, length=None, data_type=None):
+        if isinstance(child, list):
+            super().__init__(data_type, nullable=False)
+            self.nullable = None in child
+            assert (length is None or length < len(child))
+            self._length = length if length is not None else len(child)
+            self._child = child[:length] if length is not None else child
+        else:
+            super().__init__(child.data_type, nullable=False)
+            self.nullable = child.nullable
+            assert(data_type is None or data_type != child.data_type)
+            assert(length is not None)
+            self._length = length
+            self._child = child
         self._vals = []
-        self._length = length
         self._index = 0
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child) + ')'
 
     def _cache_repr(self):
+        if isinstance(self._child, list):
+            return super()._cache_repr() + '(' + str(self._child) + ',' + str(self._length) + ')'
         return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + ')'
 
     def _loop_values(self):
@@ -351,9 +371,12 @@ class RepeatSeqGen(DataGen):
 
     def start(self, rand):
         self._index = 0
-        self._child.start(rand)
         self._start(rand, self._loop_values)
-        self._vals = [self._child.gen() for _ in range(0, self._length)]
+        if isinstance(self._child, list):
+            self._vals = self._child
+        else:
+            self._child.start(rand)
+            self._vals = [self._child.gen() for _ in range(0, self._length)]
 
 class SetValuesGen(DataGen):
     """A set of values that are randomly selected"""
@@ -584,19 +607,11 @@ class TimestampGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         if start is None:
-            # Spark supports times starting at
-            # "0001-01-01 00:00:00.000000"
-            # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days, even a month,
-            # just to be sure
-            start = datetime(1, 2, 1, tzinfo=tzinfo)
+            start = datetime(1, 1, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
-        # Spark supports time through: "9999-12-31 23:59:59.999999"
-        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
-        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
-        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
+        max_end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
             end = max_end
         elif isinstance(end, timedelta):
@@ -612,6 +627,10 @@ class TimestampGen(DataGen):
         self._start_time = self._to_us_since_epoch(start)
         self._end_time = self._to_us_since_epoch(end)
         self._tzinfo = tzinfo
+
+        self.with_special_case(start)
+        self.with_special_case(end)
+
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
@@ -690,7 +709,29 @@ class MapGen(DataGen):
         def make_dict():
             length = rand.randint(self._min_length, self._max_length)
             return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
-        self._start(rand, make_dict)
+        def make_dict_float():
+            # In Spark map, at most one key can be NaN. However, in Python dict, multiple NaN keys 
+            # are allowed because NaN != NaN. So we need to ensure that there is at most one NaN 
+            # key in the dict when generating map type data.
+            length = rand.randint(self._min_length, self._max_length)
+            count = 0
+            has_nan = False
+            result = {}
+            while count < length:
+                key = self._key_gen.gen()
+                if math.isnan(key):
+                    if has_nan:
+                        continue
+                    else:
+                        has_nan = True
+                result[key] = self._value_gen.gen()
+                count += 1
+            return result
+
+        if self._key_gen.data_type == FloatType() or self._key_gen.data_type == DoubleType():
+            self._start(rand, make_dict_float)
+        else:
+            self._start(rand, make_dict)
 
     def contains_ts(self):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()
@@ -1186,3 +1227,29 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
+
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+# This will be deprecated and replaced case specified non GPU allow list
+non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if is_not_utc() else []
+
+non_supported_tz_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if not is_supported_time_zone() else []
+
+
+# date related regexps for generating date strings within python's range limits
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{0,2}[01])-[0-3]?[0-9])-[0-5]?[0-9]'
+
+# regexp to generate year from 0002, format is yyyy
+yyyy_start_0002 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
+
+# regexp to generate year from 0001, format is yyyy
+yyyy_start_0001 = '([0-9]{3}[1-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_1_1 = yyyy_start_0001 + '-[0-9]{1,2}-[0-9]{1,2}'

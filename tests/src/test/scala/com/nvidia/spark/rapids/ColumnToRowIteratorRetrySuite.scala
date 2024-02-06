@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,8 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       attrs,
       Iterator(buildBatch),
       NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
       numRows += 1
@@ -53,7 +54,8 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       attrs,
       Iterator(buildBatch),
       NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
       numRows += 1

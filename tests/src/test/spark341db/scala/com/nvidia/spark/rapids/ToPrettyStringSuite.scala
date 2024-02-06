@@ -17,6 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
@@ -24,7 +25,6 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.shims.GpuToPrettyString
-import org.scalatest.exceptions.TestFailedException
 
 import org.apache.spark.sql.catalyst.expressions.{BoundReference, NamedExpression, ToPrettyString}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
@@ -78,15 +78,11 @@ class ToPrettyStringSuite extends GpuUnitTests {
   }
 
   test("test show() on floats") {
-    // This test is expected to fail until https://github.com/NVIDIA/spark-rapids/issues/4204
-    // is resolved
-    assertThrows[TestFailedException](testDataType(DataTypes.FloatType))
+    testDataType(DataTypes.FloatType)
   }
 
   test("test show() on doubles") {
-    // This test is expected to fail until https://github.com/NVIDIA/spark-rapids/issues/4204
-    // is resolved
-    assertThrows[TestFailedException](testDataType(DataTypes.DoubleType))
+    testDataType(DataTypes.DoubleType)
   }
 
   test("test show() on strings") {
