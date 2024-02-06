@@ -56,6 +56,8 @@ The plugin is tested on the following architectures:
 	
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
 
 *Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
 for your hardware's minimum driver version.
@@ -67,13 +69,23 @@ for your hardware's minimum driver version.
 The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
 
 ### Download RAPIDS Accelerator for Apache Spark v24.02.0
-- **Scala 2.12:**
-  - [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar)
-  - [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar.asc)
+- **x86**
+	- **Scala 2.12:**
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar)
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar.asc)
 
-- **Scala 2.13:**
-  - [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar)
-  - [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar.asc)
+	- **Scala 2.13:**
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar)
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar.asc)
+
+- **arm64**
+	- **Scala 2.12:**
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 arm64 jar]()
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 arm64 jar.asc]()
+
+	- **Scala 2.13:**
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 arm64 jar]()
+	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 arm64 jar.asc]()
 
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
