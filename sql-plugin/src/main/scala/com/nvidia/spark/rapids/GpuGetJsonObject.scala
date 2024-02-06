@@ -22,9 +22,14 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.rapids.test.CpuGetJsonObject
 import org.apache.spark.sql.types.{DataType, StringType}
+import org.apache.spark.unsafe.types.UTF8String
 
-case class GpuGetJsonObject(json: Expression, path: Expression, verifyBetweenCpuAndGpu: Boolean,
-    verifyDiffSavePath: String)
+case class GpuGetJsonObject(
+    json: Expression,
+    path: Expression,
+    verifyBetweenCpuAndGpu: Boolean,
+    savePathForVerify: String,
+    saveRowsForVerify: Int)
     extends GpuBinaryExpressionArgsAnyScalar
         with ExpectsInputTypes {
   override def left: Expression = json
@@ -39,9 +44,11 @@ case class GpuGetJsonObject(json: Expression, path: Expression, verifyBetweenCpu
 
     // Below is only for testing purpose
     if (verifyBetweenCpuAndGpu) { // enable verify diff between Cpu and Gpu
-      withResource(CpuGetJsonObject.getJsonObjectOnCpu(lhs, rhs)) { fromCpu =>
-        // verify result, save diffs if has
-        CpuGetJsonObject.verify(lhs.getBase, fromGpu, fromCpu, verifyDiffSavePath)
+      val path = rhs.getValue.asInstanceOf[UTF8String]
+      withResource(CpuGetJsonObject.getJsonObjectOnCpu(lhs, path)) { fromCpu =>
+        // verify result, save diffs if have
+        CpuGetJsonObject.verify(
+          lhs.getBase, path, fromGpu, fromCpu, savePathForVerify, saveRowsForVerify)
       }
     }
 

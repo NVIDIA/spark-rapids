@@ -16,106 +16,88 @@
 
 package org.apache.spark.sql.rapids.test
 
-import java.io.{ByteArrayOutputStream, StringWriter}
+import java.io.{ByteArrayOutputStream, FileWriter, StringWriter}
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Objects
 
-import scala.collection.mutable.ArrayBuffer
 import scala.util.parsing.combinator.RegexParsers
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.fasterxml.jackson.core.{JsonEncoding, JsonFactoryBuilder, JsonGenerator, JsonParser, JsonProcessingException, JsonToken}
 import com.fasterxml.jackson.core.json.JsonReadFeature
-import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuColumnVector
+import com.univocity.parsers.csv.{CsvWriter, CsvWriterSettings}
+import java.util
 
 import org.apache.spark.sql.catalyst.json.CreateJacksonParser
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.Utils
 
+case class CsvWriterWrapper(filePath: String) extends AutoCloseable {
+  // create file writer with append mode
+  val writer: FileWriter = new FileWriter(filePath, true)
+  val csvWriter: CsvWriter = new CsvWriter(writer, new CsvWriterSettings())
+
+  override def close(): Unit = {
+    if (csvWriter != null) {
+      csvWriter.close()
+    }
+    if (writer != null) {
+      writer.close()
+    }
+  }
+
+  def writeHeaders(headers: util.Collection[String]): Unit = {
+    csvWriter.writeHeaders(headers)
+  }
+
+  def writeRow(row: Array[String]): Unit = {
+    csvWriter.writeRow(row)
+  }
+}
+
 object CpuGetJsonObject {
-
-  private val maxRowsToSave = 1024 * 10
-
-  // verify results from Cpu and Gpu, save diffs if has
+  // verify results from Cpu and Gpu, save diffs if have
   def verify(
       dataCv: ColumnVector,
+      path: UTF8String,
       fromGpuCv: ColumnVector,
       fromCpuHCV: HostColumnVector,
-      verifyDiffSavePathPrefix: String): Unit = {
+      savePathForVerify: String,
+      saveRowsForVerify: Int): Unit = {
     withResource(dataCv.copyToHost()) { dataHCV =>
       withResource(fromGpuCv.copyToHost()) { fromGpuHCV =>
-        //1. compare Cpu and Gpu results, if not equal, record (data, cpu result, gpu result)
-        val diffs = new ArrayBuffer[String]
-        var currRow = 0
-        while (currRow < dataCv.getRowCount.toInt &&
-            diffs.size < maxRowsToSave * 3 // limit max rows to save to avoid memory foot print
-        ) {
-          val str = dataHCV.getJavaString(currRow)
-          val cpuStr = if (fromCpuHCV.isNull(currRow)) null else fromCpuHCV.getJavaString(currRow)
-          val gpuStr = if (fromGpuHCV.isNull(currRow)) null else fromGpuHCV.getJavaString(currRow)
-          if (!Objects.equals(cpuStr, gpuStr)) { // if have diff
-            diffs += str
-            diffs += cpuStr
-            diffs += gpuStr
-          }
-          currRow += 1
-        }
-
-        val diffNum = diffs.size / 3
-        if (diffNum > 0) {
-          // 2. create table to save diffs
-          val table = withResource(HostColumnVector.builder(DType.STRING, diffNum)) { dataBuilder =>
-            withResource(HostColumnVector.builder(DType.STRING, diffNum)) { cpuBuilder =>
-              withResource(HostColumnVector.builder(DType.STRING, diffNum)) { gpuBuilder =>
-                for (i <- 0 until diffNum) {
-                  val str = diffs(3 * i)
-                  val cpuStr = diffs(3 * i + 1)
-                  val gpuStr = diffs(3 * i + 2)
-                  append(dataBuilder, str)
-                  append(cpuBuilder, cpuStr)
-                  append(gpuBuilder, gpuStr)
-                }
-
-                withResource(dataBuilder.build()) { dataHCV =>
-                  withResource(cpuBuilder.build()) { cpuHCV =>
-                    withResource(gpuBuilder.build()) { gpuHCV =>
-                      withResource(dataHCV.copyToDevice()) { dataCv =>
-                        withResource(cpuHCV.copyToDevice()) { cpuCv =>
-                          withResource(gpuHCV.copyToDevice()) { gpuCv =>
-                            new Table(dataCv, cpuCv, gpuCv)
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
+        val savePath = savePathForVerify +
+            DateTimeFormatter.ofPattern("yyyyMMdd").format(LocalDate.now())
+        withResource(CsvWriterWrapper(savePath)) { csvWriter =>
+          val pathStr = if (path == null) "null" else path.toString
+          var currRow = 0
+          var diffRowsNum = 0
+          while (currRow < dataCv.getRowCount.toInt &&
+              diffRowsNum < saveRowsForVerify
+          ) {
+            val str = dataHCV.getJavaString(currRow)
+            val cpuStr = if (fromCpuHCV.isNull(currRow)) null else fromCpuHCV.getJavaString(currRow)
+            val gpuStr = if (fromGpuHCV.isNull(currRow)) null else fromGpuHCV.getJavaString(currRow)
+            if (!Objects.equals(cpuStr, gpuStr)) { // if have diff
+              diffRowsNum += 1
+              // write to csv file
+              csvWriter.writeRow(Array(pathStr, str, cpuStr, gpuStr))
             }
-          }
-
-          // 3. save table into a Parquet file
-          withResource(table) { _ =>
-            DumpUtils.dumpToParquetFile(table, verifyDiffSavePathPrefix)
+            currRow += 1
           }
         }
       }
     }
   }
 
-  private def append(builder: HostColumnVector.Builder, v: String): Unit = {
-    if (v == null) {
-      builder.appendNull()
-    } else {
-      builder.append(v)
-    }
-  }
-
   // get_json_object on Cpu
-  def getJsonObjectOnCpu(dataCv: GpuColumnVector, rhs: GpuScalar): HostColumnVector = {
+  def getJsonObjectOnCpu(dataCv: GpuColumnVector, path: UTF8String): HostColumnVector = {
     withResource(dataCv.copyToHost()) { dataHCV =>
       withResource(HostColumnVector.builder(DType.STRING, dataHCV.getRowCount.toInt)) {
         resultBuilder =>
-          val path = rhs.getValue.asInstanceOf[UTF8String]
           val cpuGetJsonObject = GetJsonObject(path)
           for (i <- 0 until dataHCV.getRowCount.toInt) {
             val s = dataHCV.getUTF8String(i)
