@@ -34,7 +34,7 @@ except Exception as e:
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
     pytestmark = pytest.mark.skip(reason=str(e))
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window

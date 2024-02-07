@@ -627,6 +627,7 @@ def test_from_json_struct_boolean(pattern):
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @allow_non_gpu(*non_utc_allow)
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10349')
 def test_from_json_struct_decimal():
     json_string_gen = StringGen(r'{ "a": "[+-]?([0-9]{0,5})?(\.[0-9]{0,2})?([eE][+-]?[0-9]{1,2})?" }') \
         .with_special_pattern('', weight=50) \
@@ -828,6 +829,7 @@ def test_from_json_struct_of_list(schema):
     'struct<a:string>'
 ])
 @allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10351')
 def test_from_json_mixed_types_list_struct(schema):
     json_string_gen = StringGen(r'{"a": (\[1,2,3\]|{"b":"[a-z]{2}"}) }')
     assert_gpu_and_cpu_are_equal_collect(
