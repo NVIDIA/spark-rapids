@@ -245,7 +245,9 @@ to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/140).
 
 The plugin supports reading `uncompressed`, `snappy`, `zlib` and `zstd` ORC files and writing
- `uncompressed` and `snappy` ORC files.  At this point, the plugin does not have the ability to fall
+ `uncompressed`, `snappy` and `zstd` ORC files.  At this point, the plugin does not have the 
+ability to 
+fall
  back to the CPU when reading an unsupported compression format, and will error out in that case.
 
 ### Push Down Aggregates for ORC
@@ -307,7 +309,8 @@ When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently i
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
 The plugin supports reading `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files and writing
-`uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
+`uncompressed`, `snappy` and `zstd` Parquet files.  At this point, the plugin does not have the 
+ability to
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
 
