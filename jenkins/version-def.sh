@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,11 +26,11 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"24.02.0-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"24.02.0"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
-PROJECT_VER=${PROJECT_VER:-"24.02.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"24.02.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"24.02.0"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"24.02.0"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
 # Make a best attempt to set the default value for the shuffle shim.
