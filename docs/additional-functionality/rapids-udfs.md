@@ -11,8 +11,8 @@ implementation alongside the CPU implementation, enabling the
 RAPIDS Accelerator to perform the user-defined operation on the GPU.
 
 Note that there are other potential solutions to performing user-defined
-operations on the GPU. See the
-[Frequently Asked Questions entry](../FAQ.md#how-can-i-run-custom-expressionsudfs-on-the-gpu)
+operations on the GPU. See the 
+[Frequently Asked Questions entry](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#how-can-i-run-custom-expressions-udfs-on-the-gpu)
 on UDFs for more details.
 
 ## UDF Obstacles To Query Acceleration
@@ -52,7 +52,7 @@ Other forms of Spark UDFs are not supported, such as:
 
 For supported UDFs, the RAPIDS Accelerator will detect a GPU implementation
 if the UDF class implements the
-[RapidsUDF](../../sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java)
+[RapidsUDF](../../sql-plugin-api/src/main/java/com/nvidia/spark/RapidsUDF.java)
 interface. Unlike the CPU UDF which processes data one row at a time, the
 GPU version processes a columnar batch of rows. This reduces invocation
 overhead and enables parallel processing of the data by the GPU.
@@ -219,7 +219,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.maxAllocFraction= 0.2 \
     ```
-    Similar to the [RMM pooling for JVM](../tuning-guide.md#pooled-memory) settings like
+    Similar to the [RMM pooling for JVM](https://docs.nvidia.com/spark-rapids/user-guide/latest/tuning-guide.html#pinned-memory) settings like
     `spark.rapids.memory.gpu.allocFraction` and `spark.rapids.memory.gpu.maxAllocFraction` except
     these specify the GPU pool size for the _Python processes_. Half of the GPU _available_ memory
     will be used by default if it is not specified.

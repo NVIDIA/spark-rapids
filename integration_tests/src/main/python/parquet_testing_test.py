@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_pre
 from data_gen import copy_and_update, non_utc_allow
 from marks import allow_non_gpu
 from pathlib import Path
+import subprocess
 import pytest
 from spark_session import is_before_spark_330, is_spark_350_or_later
 import warnings
@@ -72,6 +73,43 @@ else:
     _error_files["lz4_raw_compressed.parquet"] = "Exception"
     _error_files["lz4_raw_compressed_larger.parquet"] = "Exception"
 
+def hdfs_glob(path, pattern):
+    """
+    Finds hdfs files by checking the input path with glob pattern
+
+    :param path: hdfs path to check 
+    :type path: pathlib.Path 
+    :return: generator of matched files
+    """
+    path_str = path.as_posix()
+    full_pattern = path_str + '/' + pattern
+    cmd = ['hadoop', 'fs', '-ls', '-C', full_pattern]
+
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    stdout, stderr = process.communicate()
+    if process.returncode != 0:
+        raise AssertionError(f'Failed to list files from {path_str}. Error: {stderr}')
+    
+    paths = stdout.strip().split('\n')
+
+    for p in paths:
+        yield Path(p)
+
+def glob(path, pattern):
+    """
+    Finds files by checking the input path with glob pattern.
+    Support local file system and hdfs
+
+    :param path: input path to check 
+    :type path: pathlib.Path 
+    :return: generator of matched files
+    """
+    path_str = path.as_posix()
+    if not path_str.startswith('hdfs:'):
+        return path.glob(pattern)
+
+    return hdfs_glob(path, pattern)
+
 def locate_parquet_testing_files():
     """
     Finds the input files by first checking the standard input path,
@@ -88,7 +126,7 @@ def locate_parquet_testing_files():
     for p in places:
         files = []
         for pattern in glob_patterns:
-            files += p.glob(pattern)
+            files += glob(p, pattern)
         if files:
             return files
     locations = ", ".join([ p.joinpath(g).as_posix() for p in places for g in glob_patterns])
