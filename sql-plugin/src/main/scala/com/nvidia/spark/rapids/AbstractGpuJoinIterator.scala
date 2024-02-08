@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRestoreOnRetry, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
@@ -79,7 +79,8 @@ abstract class AbstractGpuJoinIterator(
    */
   protected def setupNextGatherer(): Option[JoinGatherer]
 
-  protected def getFinalBatch(): Option[ColumnarBatch] = None
+  /** Whether to automatically call close() on this iterator when it is exhausted. */
+  protected val shouldAutoCloseOnExhaust: Boolean = true
 
   override def hasNext: Boolean = {
     if (closed) {
@@ -107,12 +108,9 @@ abstract class AbstractGpuJoinIterator(
         }
       }
     }
-    if (nextCb.isEmpty) {
-      nextCb = getFinalBatch()
-      if (nextCb.isEmpty) {
-        // Nothing is left to return so close ASAP.
-        opTime.ns(close())
-      }
+    if (nextCb.isEmpty && shouldAutoCloseOnExhaust) {
+      // Nothing is left to return so close ASAP.
+      opTime.ns(close())
     }
     nextCb.isDefined
   }
@@ -144,11 +142,11 @@ abstract class AbstractGpuJoinIterator(
         // This withRetry block will always return an iterator with one ColumnarBatch.
         // The gatherer tracks how many rows we have used already.  The withRestoreOnRetry
         // ensures that we restart at the same place in the gatherer.  In the case of a
-        // SplitAndRetryOOM, we retry with a smaller (halved) targetSize, so we are taking
+        // GpuSplitAndRetryOOM, we retry with a smaller (halved) targetSize, so we are taking
         // less from the gatherer, but because the gatherer tracks how much is used, the
         // next call to this function will start in the right place.
         gather.checkpoint()
-        withRetry(targetSizeWrapper, splitTargetSizeInHalf) { attempt =>
+        withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
           withRestoreOnRetry(gather) {
             val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize)
             gather.gatherNext(nextRows)

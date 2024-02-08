@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
-import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -215,6 +214,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   protected val targetBatchSizeBytes: Long = rapidsConf.gpuTargetBatchSizeBytes
+  protected val subPageChunked: Boolean = rapidsConf.chunkedSubPageReaderEnabled
   protected val maxGpuColumnSizeBytes: Long = rapidsConf.maxGpuColumnSizeBytes
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
 
@@ -1026,13 +1026,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   }
 
   /**
-   * Set this to a splitter instance when chunked reading is supported
-   */
-  def chunkedSplit(buffer: HostMemoryBuffer): Seq[HostMemoryBuffer] = {
-    throw new SplitAndRetryOOM("Split is not currently supported")
-  }
-
-  /**
    * You can reset the target batch size if needed for splits...
    */
   def startNewBufferRetry: Unit = ()
@@ -1065,7 +1058,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
             startNewBufferRetry
-            RmmRapidsRetryIterator.withRetry(dataBuffer, chunkedSplit(_)) { _ =>
+            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
               // We don't want to actually close the host buffer until we know that we don't
               // want to retry more, so offset the close for now.
               dataBuffer.incRefCount()
@@ -1073,7 +1066,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
                 dataSize, currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
                 currentChunkMeta.extraInfo)
               CachedGpuBatchIterator(tableReader, colTypes)
-            }.flatten
+            }
           }
         }
       }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -217,15 +217,17 @@ object DateUtils {
   def tagAndGetCudfFormat(
       meta: RapidsMeta[_, _, _],
       sparkFormat: String,
-      parseString: Boolean): String = {
+      parseString: Boolean,
+      inputFormat: Option[String] = None): String = {
+    val formatToConvert = inputFormat.getOrElse(sparkFormat)
     var strfFormat: String = null
     if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
       try {
         // try and convert the format to cuDF format - this will throw an exception if
         // the format contains unsupported characters or words
-        strfFormat = toStrf(sparkFormat, parseString)
+        strfFormat = toStrf(formatToConvert, parseString)
         // format parsed ok but we have no 100% compatible formats in LEGACY mode
-        if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.contains(sparkFormat)) {
+        if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.contains(formatToConvert)) {
           // LEGACY support has a number of issues that mean we cannot guarantee
           // compatibility with CPU
           // - we can only support 4 digit years but Spark supports a wider range
@@ -249,9 +251,9 @@ object DateUtils {
       try {
         // try and convert the format to cuDF format - this will throw an exception if
         // the format contains unsupported characters or words
-        strfFormat = toStrf(sparkFormat, parseString)
+        strfFormat = toStrf(formatToConvert, parseString)
         // format parsed ok, so it is either compatible (tested/certified) or incompatible
-        if (!GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains(sparkFormat) &&
+        if (!GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains(formatToConvert) &&
           !meta.conf.incompatDateFormats) {
           meta.willNotWorkOnGpu(s"CORRECTED format '$sparkFormat' on the GPU is not guaranteed " +
             s"to produce the same results as Spark on CPU. Set " +

@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -939,7 +939,7 @@ def test_unsupported_fallback_regexp_extract_all():
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_unsupported_fallback_regexp_replace():
-    gen = mk_str_gen('[abcdef]{0,2}')
+    gen = StringGen('[abcdef]{0,2}').with_special_case('').with_special_pattern(r'[^\\$]{0,10}')
     regex_gen = StringGen(r'\[a-z\]\+')
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
@@ -1063,4 +1063,13 @@ def test_re_replace_all():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, ".*$", "PROD", 1)'),
+        conf=_regexp_conf)
+
+def test_lazy_quantifier():
+    gen = mk_str_gen('[a-z]{0,2} \"[a-z]{0,2}\" and \"[a-z]{0,3}\"')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'a', r'REGEXP_EXTRACT(a, "(\".??\")")',
+            r'REGEXP_EXTRACT(a, "(\".+?\")")',
+            r'REGEXP_EXTRACT(a, "(\".*?\")")'),
         conf=_regexp_conf)

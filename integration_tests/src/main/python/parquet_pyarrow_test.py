@@ -135,6 +135,7 @@ _common_rebase_conf = {
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@tz_sensitive_test
 def test_parquet_read_round_trip_for_pyarrow(
         spark_tmp_path,
         parquet_gens,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,8 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       val numRows = limit - offset
       var curValue = offset
       var pos = 0
-      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       assert(topNIter.hasNext)
       withResource(topNIter.next()) { scb =>
         withResource(scb.getColumnarBatch()) { cb =>
@@ -81,7 +82,8 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
         limit, offset, NoopMetric, NoopMetric, NoopMetric)
       var leftRows = if (limit > totalRows) totalRows - offset else limit - offset
       var curValue = offset
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       while(limitIter.hasNext) {
         var pos = 0
         withResource(limitIter.next()) { cb =>

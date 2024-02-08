@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,6 +83,29 @@ class GpuFileScanPrunePartitionSuite extends SparkQueryCompareTestSuite {
         }
         testGpuFileScanOutput(_.select("a", "c").filter("a != 1"), conf, "b")
         testGpuFileScanOutput(_.select("a").filter("a != 1"), conf, "b", "c")
+    }
+  }
+
+  test("Canonicalized GpuFileSourceScans with partition columns pruned should be equal") {
+    withTempPath { file =>
+      // Generate partitioned files.
+      withCpuSparkSession(spark => {
+        import spark.implicits._
+        Seq((1, 11, "s1"), (2, 22, "s2"), (3, 33, "s3"), (4, 44, "s4"), (5, 55, "s5"))
+          .toDF("a", "b", "c").write.partitionBy("b", "c").parquet(file.getCanonicalPath)
+      })
+
+      def getDF: DataFrame = withGpuSparkSession(spark =>
+        spark.read.parquet(file.toString).where("b == 33").select("a", "c"),
+        new SparkConf().set("spark.sql.sources.useV1SourceList", "parquet")
+      )
+
+      val plans = getDF.unionAll(getDF).queryExecution.executedPlan.collect {
+        case gfss: GpuFileSourceScanExec if gfss.requiredPartitionSchema.nonEmpty => gfss
+      }
+      assert(plans.length == 2, "Expect 2 GPU file scans")
+      assert(plans.head.canonicalized == plans.last.canonicalized,
+          "Canonicalized GPU file scans should be equal")
     }
   }
 }
