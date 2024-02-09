@@ -76,13 +76,12 @@ multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reade
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
-        'spark.rapids.sql.reader.chunked': True}
-coalesce_parquet_file_reader_multithread_filter_sub_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.reader.chunked': True,
+        'spark.rapids.sql.reader.chunked.subPage': True}
+coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
         'spark.rapids.sql.reader.chunked': True,
-        'spark.rapids.sql.reader.chunked.subPage': True,
-        #'spark.rapids.sql.parquet.debug.dumpPrefix': '/data/tmp/debug/'
-        }
+        'spark.rapids.sql.reader.chunked.subPage': False}
 coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
         'spark.rapids.sql.reader.chunked': False}
@@ -96,13 +95,12 @@ native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.rea
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
-        'spark.rapids.sql.reader.chunked': True}
-native_coalesce_parquet_file_reader_sub_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.reader.chunked': True,
+        'spark.rapids.sql.reader.chunked.subPage': True}
+native_coalesce_parquet_file_reader_sub_not_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True,
-        'spark.rapids.sql.reader.chunked.subPage': True,
-        #'spark.rapids.sql.parquet.debug.dumpPrefix': '/data/tmp/debug/'
-        }
+        'spark.rapids.sql.reader.chunked.subPage': False}
 combining_multithreaded_parquet_file_reader_conf_ordered = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
         'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
         'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
@@ -120,9 +118,9 @@ combining_multithreaded_parquet_file_reader_deprecated_conf_ordered = {
 reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded_parquet_file_reader_conf,
                     native_coalesce_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_multithread_filter_chunked_conf,
-                    coalesce_parquet_file_reader_multithread_filter_sub_chunked_conf,
+                    coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf,
                     native_coalesce_parquet_file_reader_chunked_conf,
-                    native_coalesce_parquet_file_reader_sub_chunked_conf]
+                    native_coalesce_parquet_file_reader_sub_not_chunked_conf]
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
@@ -136,7 +134,7 @@ reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 @pytest.mark.parametrize('read_func', [read_parquet_df])
 @pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
     coalesce_parquet_file_reader_multithread_filter_chunked_conf,
-    coalesce_parquet_file_reader_multithread_filter_sub_chunked_conf])
+    coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
