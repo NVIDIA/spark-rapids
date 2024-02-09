@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,12 @@ trait SpillableColumnarBatch extends AutoCloseable {
   def setSpillPriority(priority: Long): Unit
 
   /**
+   * Increment the reference count for this batch (if applicable) and
+   * return this for easy chaining.
+   */
+  def incRefCount(): SpillableColumnarBatch
+
+  /**
    * Get the columnar batch.
    * @note It is the responsibility of the caller to close the batch.
    * @note If the buffer is compressed data then the resulting batch will be built using
@@ -70,6 +76,9 @@ class JustRowsColumnarBatch(numRows: Int)
   override val sizeInBytes: Long = 0L
 
   override def dataTypes: Array[DataType] = Array.empty
+
+  // There is no off heap data and close is a noop so just return this
+  override def incRefCount(): SpillableColumnarBatch = this
 }
 
 /**
@@ -83,6 +92,7 @@ class SpillableColumnarBatchImpl (
     rowCount: Int,
     sparkTypes: Array[DataType])
     extends SpillableColumnarBatch {
+  private var refCount = 1
 
   override def dataTypes: Array[DataType] = sparkTypes
   /**
@@ -113,13 +123,32 @@ class SpillableColumnarBatchImpl (
     }
   }
 
+  override def incRefCount(): SpillableColumnarBatch = {
+    if (refCount <= 0) {
+      throw new IllegalStateException("Use after free on SpillableColumnarBatchImpl")
+    }
+    refCount += 1
+    this
+  }
+
   /**
    * Remove the `ColumnarBatch` from the cache.
    */
   override def close(): Unit = {
-    // closing my reference
-    handle.close()
+    refCount -= 1
+    if (refCount == 0) {
+      // closing my reference
+      handle.close()
+    }
+    // TODO this is causing problems so we need to look into this
+    //  https://github.com/NVIDIA/spark-rapids/issues/10161
+//    else if (refCount < 0) {
+//      throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
+//    }
   }
+
+  override def toString: String =
+    s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
 }
 
 class JustRowsHostColumnarBatch(numRows: Int)
@@ -135,6 +164,9 @@ class JustRowsHostColumnarBatch(numRows: Int)
   override val sizeInBytes: Long = 0L
 
   override def dataTypes: Array[DataType] = Array.empty
+
+  // There is no off heap data and close is a noop so just return this
+  override def incRefCount(): SpillableColumnarBatch = this
 }
 
 /**
@@ -149,6 +181,7 @@ class SpillableHostColumnarBatchImpl (
     sparkTypes: Array[DataType],
     catalog: RapidsBufferCatalog)
   extends SpillableColumnarBatch {
+  private var refCount = 1
 
   override def dataTypes: Array[DataType] = sparkTypes
 
@@ -180,12 +213,25 @@ class SpillableHostColumnarBatchImpl (
     }
   }
 
+  override def incRefCount(): SpillableColumnarBatch = {
+    if (refCount <= 0) {
+      throw new IllegalStateException("Use after free on SpillableHostColumnarBatchImpl")
+    }
+    refCount += 1
+    this
+  }
+
   /**
    * Remove the `ColumnarBatch` from the cache.
    */
   override def close(): Unit = {
-    // closing my reference
-    handle.close()
+    refCount -= 1
+    if (refCount == 0) {
+      // closing my reference
+      handle.close()
+    } else if (refCount < 0) {
+      throw new IllegalStateException("Double free on SpillableHostColumnarBatchImpl")
+    }
   }
 }
 
