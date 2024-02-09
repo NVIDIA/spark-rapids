@@ -69,23 +69,12 @@ for your hardware's minimum driver version.
 The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
 
 ### Download RAPIDS Accelerator for Apache Spark v24.02.0
-- **x86**
-	- **Scala 2.12:**
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar)
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar.asc)
-
-	- **Scala 2.13:**
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar)
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar.asc)
-
-- **arm64**
-	- **Scala 2.12:**
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 arm64 jar]()
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.12 arm64 jar.asc]()
-
-	- **Scala 2.13:**
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 arm64 jar]()
-	- [RAPIDS Accelerator for Apache Spark 24.02.0 - Scala 2.13 arm64 jar.asc]()
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator 2.12 v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator 2.13 v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator 2.12 v24.02.0](#) | [Signature](#) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator 2.13 v24.02.0](#) | [Signature](#) |
 
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
@@ -108,13 +97,13 @@ New functionality and performance improvements for this release include:
 * Set get_json_object functionality to disabled by default.
 * Implemented string comparison in AST expressions.
 * Expanded timezone support to include options beyond UTC.
-* Enhanced security by adding checksum for cached files in Filecache.
+* Optional checksums for cached files in the file cache.
 * Introduced support for Databricks 13.3 ML LTS.
 * Added support for parse_url functionality.
-* Qualification and Profiling tool:
-	* Enhanced qualification tool accuracy by incorporating penalties for executors/operators not linked with stages.
-	* Increased granularity in unsupported operators output within the Qualification Tool to understand potential fallback impacts better.
-	* Enhanced shuffle partitions recommendation heuristic for more effective Profiling Tool reports.
+* Introducing Lazy Quantifier support for regular expression functions.
+* Added support for the format_number function.
+* Enhanced batching support for row-based bounded window functions.
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
