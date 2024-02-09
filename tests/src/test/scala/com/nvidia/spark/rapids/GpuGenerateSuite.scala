@@ -278,6 +278,11 @@ class GpuGenerateSuite
     override def sizeInBytes: Long = spillable.sizeInBytes
     override def dataTypes: Array[DataType] = spillable.dataTypes
     override def close(): Unit = spillable.close()
+
+    override def incRefCount(): SpillableColumnarBatch = {
+      spillable.incRefCount()
+      this
+    }
   }
 
   trait TestGenerator extends GpuExplodeBase {
