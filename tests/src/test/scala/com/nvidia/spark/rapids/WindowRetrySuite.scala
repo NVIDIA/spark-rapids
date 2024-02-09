@@ -71,7 +71,7 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame)
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     withResource(it.next()) { batch =>
       assertResult(4)(batch.numRows())
       withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
@@ -93,7 +93,7 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame)
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     withResource(it.next()) { batch =>
       assertResult(4)(batch.numRows())
       withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
@@ -117,7 +117,7 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame, orderSpec = orderSpec)
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     withResource(it.next()) { batch =>
       assertResult(4)(batch.numRows())
       withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
@@ -139,7 +139,7 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame)
     val inputBatch = it.onDeck.get
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     assertThrows[GpuSplitAndRetryOOM] {
       it.next()
     }
@@ -156,7 +156,7 @@ class WindowRetrySuite
       Seq(GpuBoundReference(1, DataTypes.LongType, false)(ExprId.apply(0), "tbd")))
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     withResource(it.next()) { batch =>
       assertResult(4)(batch.numRows())
       withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
@@ -193,7 +193,7 @@ class WindowRetrySuite
       Seq(cb).iterator, Seq(GpuAlias(count, "count")()), boundPartSpec, boundOrderSpec,
       Array(LongType), NoopMetric, NoopMetric, NoopMetric)
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     // there should be two batches, each has two rows
     withResource(runningIter.next()) { first =>
       assertResult(1)(first.numCols())

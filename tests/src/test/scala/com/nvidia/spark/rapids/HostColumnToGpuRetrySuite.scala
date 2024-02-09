@@ -47,7 +47,7 @@ class HostColumnToGpuRetrySuite extends RmmSparkRetrySuiteBase {
           builder.copyColumnar(arrowColumn, 0, NUM_ROWS)
         }
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          RmmSpark.OomInjectionType.GPU, 0)
         RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
           builder.tryBuild(NUM_ROWS)
         }

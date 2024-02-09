@@ -239,11 +239,11 @@ class GpuCoalesceBatchesRetrySuite
     def injectError(injectRetry: Int, injectSplitAndRetry: Int): Unit = {
       if (injectRetry > 0) {
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, injectRetry,
-          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          RmmSpark.OomInjectionType.GPU, 0)
       }
       if (injectSplitAndRetry > 0) {
         RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, injectSplitAndRetry,
-          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          RmmSpark.OomInjectionType.GPU, 0)
       }
     }
 

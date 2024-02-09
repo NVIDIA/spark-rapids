@@ -31,7 +31,7 @@ class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
       StructField("b", IntegerType))))
     val opts = JSONOptions.builder().withLines(true).build()
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     val table = JsonPartitionReader.readToTable(bufferer, cudfSchema, NoopMetric,
       opts, "JSON", null)
     table.close()

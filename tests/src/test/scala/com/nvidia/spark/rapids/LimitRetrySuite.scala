@@ -54,7 +54,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       var curValue = offset
       var pos = 0
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       assert(topNIter.hasNext)
       withResource(topNIter.next()) { scb =>
         withResource(scb.getColumnarBatch()) { cb =>
@@ -83,7 +83,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       var leftRows = if (limit > totalRows) totalRows - offset else limit - offset
       var curValue = offset
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       while(limitIter.hasNext) {
         var pos = 0
         withResource(limitIter.next()) { cb =>

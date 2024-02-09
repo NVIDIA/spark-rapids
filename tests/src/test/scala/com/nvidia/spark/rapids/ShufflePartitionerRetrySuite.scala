@@ -41,7 +41,7 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       // batch will be closed within columnarEvalAny
       val batch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       var ret: Array[(ColumnarBatch, Int)] = null
       try {
         ret = rrp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
@@ -70,7 +70,7 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       // batch will be closed within columnarEvalAny
       val batch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       var ret: Array[(ColumnarBatch, Int)] = null
       try {
         ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]

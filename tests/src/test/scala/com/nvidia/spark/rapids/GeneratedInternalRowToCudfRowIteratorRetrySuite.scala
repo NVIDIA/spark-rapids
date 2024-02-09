@@ -57,7 +57,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
       // this forces a retry on the copy of the host column to a device column
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
           TestUtils.compareBatches(expected, devBatch)
@@ -79,7 +79,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         // we mock things this way due to code generation issues with mockito.
         // when we add a table we have
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 3,
-          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          RmmSpark.OomInjectionType.GPU, 0)
         rapidsBufferSpy = spy(res.asInstanceOf[RapidsBuffer])
         rapidsBufferSpy
       }
@@ -93,7 +93,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         ctriter, schema, TargetSize(Int.MaxValue),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       assertResult(0)(getAndResetNumRetryThrowCurrentTask)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
@@ -122,7 +122,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         // we mock things this way due to code generation issues with mockito.
         // when we add a table we have
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 3,
-          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+          RmmSpark.OomInjectionType.GPU, 0)
         rapidsBufferSpy = spy(res.asInstanceOf[RapidsBuffer])
         // at this point we have created a buffer in the Spill Framework
         // lets spill it
@@ -139,7 +139,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         ctriter, schema, TargetSize(Int.MaxValue),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       assertResult(0)(getAndResetNumRetryThrowCurrentTask)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
@@ -169,7 +169,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         ctriter, schema, TargetSize(1),
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       assertThrows[GpuSplitAndRetryOOM] {
         myIter.next()
       }
@@ -191,7 +191,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       assert(ctriter.hasNext)
       // this forces a retry on the allocation of the dataBuffer
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.CPU.ordinal, 0)
+        RmmSpark.OomInjectionType.CPU, 0)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
           TestUtils.compareBatches(expected, devBatch)
@@ -217,7 +217,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       assert(ctriter.hasNext)
       // this forces a retry on the allocation of the offsetBuffer
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.CPU.ordinal, 1)
+        RmmSpark.OomInjectionType.CPU, 1)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
           TestUtils.compareBatches(expected, devBatch)
@@ -243,7 +243,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       assert(ctriter.hasNext)
       // this forces a split retry on the allocation of the dataBuffer
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.CPU.ordinal, 0)
+        RmmSpark.OomInjectionType.CPU, 0)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
           TestUtils.compareBatches(expected, devBatch)
@@ -268,7 +268,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       assert(ctriter.hasNext)
       // this forces a split retry on the allocation of the offsetsBuffer
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.CPU.ordinal, 1)
+        RmmSpark.OomInjectionType.CPU, 1)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
           TestUtils.compareBatches(expected, devBatch)

@@ -52,7 +52,7 @@ class RangeRetrySuite extends RmmSparkRetrySuiteBase {
   test("GPU range iterator with split and retry OOM") {
     val rangeIter = new GpuRangeIterator(start, end, step, maxRows, null, NoopMetric)
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     // It should produce two batches, and rows numbers are
     // 10 (=20/2) after retry, and
     // 15 (25-10), the remaining ones.
