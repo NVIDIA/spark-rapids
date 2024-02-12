@@ -50,6 +50,19 @@ def test_get_json_object_quoted_index():
         f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b')),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
+def test_get_json_object_single_quotes():
+    schema = StructType([StructField("jsonStr", StringType())])
+    data = [[r'''{'a':'A'}'''],
+            [r'''{'b':'"B'}'''],
+            [r'''{"c":"'C"}''']]
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data,schema=schema).select(
+        f.get_json_object('jsonStr',r'''$['a']''').alias('sub_a'),
+        f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b'),
+        f.get_json_object('jsonStr',r'''$['c']''').alias('sub_c')),
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
+
 @pytest.mark.parametrize('query',["$.store.bicycle",
     "$['store'].bicycle",
     "$.store['bicycle']",
