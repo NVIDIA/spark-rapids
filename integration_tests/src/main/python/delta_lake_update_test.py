@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,8 +55,9 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
         gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
         assert_equal(cpu_result, gpu_result)
         # Databricks not guaranteed to write the same number of files due to optimized write when
-        # using partitions
-        if not is_databricks_runtime() or not partition_columns:
+        # using partitions. Using partition columns involves sorting, and there's no guarantees on
+        # the task partitioning due to random sampling.
+        if not is_databricks_runtime() and not partition_columns:
             with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql, checker,
                           partition_columns, enable_deletion_vectors)
