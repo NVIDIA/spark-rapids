@@ -637,7 +637,7 @@ class RowToColumnarIterator(
           val row = rowIter.next()
           withRetryNoSplit {
             // Sadly there is no good way to make the converters spillable in-between each use
-            // TODO add follow on issue here...
+            // https://github.com/NVIDIA/spark-rapids/issues/8887
             byteCount += converters.convert(row, builders)
           }
           rowCount += 1
@@ -662,7 +662,7 @@ class RowToColumnarIterator(
           RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
             // Same problem here ideally we will need a way to make the builder spillable before
             // going down this path.
-            // TODO add follow on issue here...
+            // https://github.com/NVIDIA/spark-rapids/issues/8887
             builders.tryBuild(rowCount)
           }
         }
