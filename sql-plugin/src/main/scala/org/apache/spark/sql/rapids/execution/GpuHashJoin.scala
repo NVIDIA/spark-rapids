@@ -522,9 +522,17 @@ class ConditionalHashJoinIterator(
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
           val maps = joinType match {
-            case _: InnerLike =>
+            case _: InnerLike if buildSide == GpuBuildRight =>
               Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality)
+            case _: InnerLike if buildSide == GpuBuildLeft =>
+              // Even though it's an inner join, we need to switch the join order since the
+              // condition has been compiled to expect the build side on the left and the stream
+              // side on the right.
+              // Reverse the output of the join, because we expect the right gather map to
+              // always be on the right.
+              Table.mixedInnerJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
+                compiledCondition, nullEquality).reverse
             case LeftOuter =>
               Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality)
@@ -1065,14 +1073,14 @@ trait GpuHashJoin extends GpuExec {
   }
 
   protected lazy val (numFirstConditionTableColumns, boundCondition) = {
-    val (joinLeft, joinRight) = joinType match {
-      case RightOuter => (right, left)
-      case _ => (left, right)
+    val (buildOutput, streamOutput) = buildSide match {
+      case GpuBuildRight => (right.output, left.output)
+      case GpuBuildLeft => (left.output, right.output)
     }
     val boundCondition = condition.map { c =>
-      GpuBindReferences.bindGpuReference(c, joinLeft.output ++ joinRight.output)
+      GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
     }
-    (joinLeft.output.size, boundCondition)
+    (streamOutput.size, boundCondition)
   }
 
   def doJoin(

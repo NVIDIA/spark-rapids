@@ -69,13 +69,15 @@ object GpuShuffledSymmetricHashJoinExec {
       val rightTypes = rightOutput.map(_.dataType).toArray
       val boundLeftKeys = GpuBindReferences.bindGpuReferences(leftKeys, leftOutput)
       val boundRightKeys = GpuBindReferences.bindGpuReferences(rightKeys, rightOutput)
-      val boundCondition = condition.map { c =>
-        GpuBindReferences.bindGpuReference(c, leftOutput ++ rightOutput)
-      }
-      val (boundBuildKeys, buildTypes, boundStreamKeys, streamTypes, streamOutput) =
+      val (boundBuildKeys, buildTypes, buildOutput, boundStreamKeys, streamTypes, streamOutput) =
         buildSide match {
-          case GpuBuildRight => (boundRightKeys, rightTypes, boundLeftKeys, leftTypes, leftOutput)
-          case GpuBuildLeft => (boundLeftKeys, leftTypes, boundRightKeys, rightTypes, rightOutput)
+          case GpuBuildRight =>
+            (boundRightKeys, rightTypes, rightOutput, boundLeftKeys, leftTypes, leftOutput)
+          case GpuBuildLeft =>
+            (boundLeftKeys, leftTypes, leftOutput, boundRightKeys, rightTypes, rightOutput)
+      }
+      val boundCondition = condition.map { c =>
+        GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
       }
       // For join types other than FullOuter, we simply set compareNullsEqual as true to adapt
       // struct keys with nullable children. Non-nested keys can also be correctly processed with
@@ -85,7 +87,7 @@ object GpuShuffledSymmetricHashJoinExec {
         GpuHashJoin.anyNullableStructChild(boundBuildKeys)
       val needNullFilter = compareNullsEqual && boundBuildKeys.exists(_.nullable)
       BoundJoinExprs(boundBuildKeys, buildTypes, boundStreamKeys, streamTypes, streamOutput,
-        boundCondition, leftOutput.size, compareNullsEqual, needNullFilter)
+        boundCondition, streamOutput.size, compareNullsEqual, needNullFilter)
     }
   }
 
@@ -731,11 +733,10 @@ class NullFilteredBatchIterator(
 
   override def hasNext: Boolean = {
     while (onDeck.isEmpty && iter.hasNext) {
-      val batch = withResource(iter.next()) { batch =>
-        opTime.ns {
-          val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-          GpuHashJoin.filterNullsWithRetryAndClose(spillable, boundKeys)
-        }
+      val rawBatch = iter.next()
+      val batch = opTime.ns {
+        val spillable = SpillableColumnarBatch(rawBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        GpuHashJoin.filterNullsWithRetryAndClose(spillable, boundKeys)
       }
       if (batch.numRows > 0) {
         onDeck = Some(batch)
