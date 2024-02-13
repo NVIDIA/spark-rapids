@@ -3679,8 +3679,9 @@ object GpuOverrides extends Logging {
           GpuJsonToStructs(a.schema, a.options, child, conf.isJsonMixedTypesAsStringEnabled,
             a.timeZoneId)
       }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
-      " Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) "+
-      "to determine whether you can enable this configuration for your use case"),
+      " Please consult the "+
+      "[compatibility documentation](../compatibility.md#json-supporting-types)"+
+      " to determine whether you can enable this configuration for your use case"),
     expr[StructsToJson](
       "Converts structs to JSON text format",
       ExprChecks.projectOnly(
@@ -3698,8 +3699,9 @@ object GpuOverrides extends Logging {
         ))),
       (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
         .disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
-      " Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) "+
-      "to determine whether you can enable this configuration for your use case"),
+      " Please consult the "+
+      "[compatibility documentation](../compatibility.md#json-supporting-types)"+
+      " to determine whether you can enable this configuration for your use case"),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
