@@ -3650,9 +3650,8 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
       }
-    ).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
-      " Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) "+
-      "to determine whether you can enable this configuration for your use case"),
+    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
+        "validated, and the output is not normalized the same as Spark"),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -3698,8 +3697,9 @@ object GpuOverrides extends Logging {
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
       (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
-        .disabledByDefault("to_json support is experimental. See compatibility " +
-          "guide for more information."),
+        .disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
+      " Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) "+
+      "to determine whether you can enable this configuration for your use case"),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
