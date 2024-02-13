@@ -224,7 +224,7 @@ else
     fi
 
     # time zone will be tested; use export TZ=time_zone_name before run this script
-    TZ=${TZ:-UTC}
+    export TZ=${TZ:-UTC}
 
     # Disable Spark UI by default since it is not needed for tests, and Spark can fail to start
     # due to Spark UI port collisions, especially in a parallel test setup.
