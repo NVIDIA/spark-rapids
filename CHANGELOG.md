@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-02-06
+Generated on 2024-02-13
 
 ## Release 24.02
 
@@ -21,13 +21,12 @@ Generated on 2024-02-06
 |[#9585](https://github.com/NVIDIA/spark-rapids/issues/9585)|[FEA] support ascii function|
 |[#9260](https://github.com/NVIDIA/spark-rapids/issues/9260)|[FEA] Create Spark 3.4.2 shim and build env|
 |[#10076](https://github.com/NVIDIA/spark-rapids/issues/10076)|[FEA] Add performance test framework for non-UTC time zone features.|
-|[#9258](https://github.com/NVIDIA/spark-rapids/issues/9258)|[FEA] Create spark 3.5.1 shim and build env|
 |[#9881](https://github.com/NVIDIA/spark-rapids/issues/9881)|[TASK] Remove `spark.rapids.sql.nonUTC.enabled` configuration option|
 |[#9801](https://github.com/NVIDIA/spark-rapids/issues/9801)|[FEA] Support DateFormat on GPU with a non-UTC timezone|
 |[#6834](https://github.com/NVIDIA/spark-rapids/issues/6834)|[FEA] Support GpuHour expression for timezones other than UTC|
 |[#6842](https://github.com/NVIDIA/spark-rapids/issues/6842)|[FEA] Support TimeZone aware operations for value extraction|
 |[#1860](https://github.com/NVIDIA/spark-rapids/issues/1860)|[FEA] Optimize row based window operations for BOUNDED ranges|
-|[#9606](https://github.com/NVIDIA/spark-rapids/issues/9606)|[FEA]Support unix_timestamp with CST(China Time Zone) support|
+|[#9606](https://github.com/NVIDIA/spark-rapids/issues/9606)|[FEA] Support unix_timestamp with CST(China Time Zone) support|
 |[#9815](https://github.com/NVIDIA/spark-rapids/issues/9815)|[FEA] Support ```unix_timestamp``` for non-DST timezones|
 |[#8807](https://github.com/NVIDIA/spark-rapids/issues/8807)|[FEA] support ‘yyyyMMdd’ format in from_unixtime function|
 |[#9605](https://github.com/NVIDIA/spark-rapids/issues/9605)|[FEA] Support from_unixtime with CST(China Time Zone) support|
@@ -35,8 +34,8 @@ Generated on 2024-02-06
 |[#9175](https://github.com/NVIDIA/spark-rapids/issues/9175)|[FEA] Support Databricks 13.3|
 |[#6881](https://github.com/NVIDIA/spark-rapids/issues/6881)|[FEA] Support RAPIDS Spark plugin on ARM|
 |[#9274](https://github.com/NVIDIA/spark-rapids/issues/9274)|[FEA] Regular deploy process to include arm artifacts|
-|[#9844](https://github.com/NVIDIA/spark-rapids/issues/9844)|[FEA]Let Gpu arrow python runners support writing one batch one time for the single threaded model.|
-|[#7309](https://github.com/NVIDIA/spark-rapids/issues/7309)|[FEA] see if we can detect multiple versions of the RAPIDS jar on the classpath at the same time|
+|[#9844](https://github.com/NVIDIA/spark-rapids/issues/9844)|[FEA] Let Gpu arrow python runners support writing one batch one time for the single threaded model.|
+|[#7309](https://github.com/NVIDIA/spark-rapids/issues/7309)|[FEA] Detect multiple versions of the RAPIDS jar on the classpath at the same time|
 
 ### Performance
 |||
@@ -47,6 +46,7 @@ Generated on 2024-02-06
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9974](https://github.com/NVIDIA/spark-rapids/issues/9974)|[BUG] host memory Leak in MultiFileCoalescingPartitionReaderBase in UTC time zone|
 |[#10359](https://github.com/NVIDIA/spark-rapids/issues/10359)|[BUG] Build failure on Databricks nightly run with `GpuMapInPandasExecMeta`|
 |[#10327](https://github.com/NVIDIA/spark-rapids/issues/10327)|[BUG] Unit test FAILED against : SPARK-24957: average with decimal followed by aggregation returning wrong result |
 |[#10324](https://github.com/NVIDIA/spark-rapids/issues/10324)|[BUG] hash_aggregate_test.py test FAILED:  Type conversion is not allowed from Table {...}|
@@ -120,6 +120,11 @@ Generated on 2024-02-06
 ### PRs
 |||
 |:---|:---|
+|[#10414](https://github.com/NVIDIA/spark-rapids/pull/10414)|[DOC] Fix 24.02.0 documentation errors [skip ci]|
+|[#10403](https://github.com/NVIDIA/spark-rapids/pull/10403)|Cherry-pick: Fix a memory leak in json tuple (#10360)|
+|[#10387](https://github.com/NVIDIA/spark-rapids/pull/10387)|[DOC] Update docs for 24.02.0 release [skip ci]|
+|[#10399](https://github.com/NVIDIA/spark-rapids/pull/10399)|Update NOTICE-binary|
+|[#10389](https://github.com/NVIDIA/spark-rapids/pull/10389)|Change version and branch to 24.02 in docs [skip ci]|
 |[#10309](https://github.com/NVIDIA/spark-rapids/pull/10309)|[DOC] add custom 404 page and fix some document issue [skip ci]|
 |[#10352](https://github.com/NVIDIA/spark-rapids/pull/10352)|xfail mixed type test|
 |[#10355](https://github.com/NVIDIA/spark-rapids/pull/10355)|Revert "Support barrier mode for mapInPandas/mapInArrow (#10343)"|
@@ -386,6 +391,7 @@ Generated on 2024-02-06
 ### PRs
 |||
 |:---|:---|
+|[#10384](https://github.com/NVIDIA/spark-rapids/pull/10384)|[DOC] Update docs for 23.12.2 release [skip ci] |
 |[#10341](https://github.com/NVIDIA/spark-rapids/pull/10341)|Update changelog for v23.12.2 [skip ci]|
 |[#10340](https://github.com/NVIDIA/spark-rapids/pull/10340)|Copyright to 2024 [skip ci]|
 |[#10323](https://github.com/NVIDIA/spark-rapids/pull/10323)|Upgrade version to 23.12.2-SNAPSHOT|
@@ -572,8 +578,6 @@ Generated on 2024-02-06
 |[#9373](https://github.com/NVIDIA/spark-rapids/pull/9373)|Fix auto merge conflict 9372|
 |[#9308](https://github.com/NVIDIA/spark-rapids/pull/9308)|Initiate arm64 CI support [skip ci]|
 |[#9292](https://github.com/NVIDIA/spark-rapids/pull/9292)|Init project version 23.12.0-SNAPSHOT|
-|[#9291](https://github.com/NVIDIA/spark-rapids/pull/9291)|Automerge from 23.10 to 23.12 [skip 
-ci]|
 
 ## Older Releases
 Changelog of older releases can be found at [docs/archives](/docs/archives)
