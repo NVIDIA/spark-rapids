@@ -3650,8 +3650,9 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
       }
-    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
-        "validated, and the output is not normalized the same as Spark"),
+    ).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
+      " Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) "+
+      "to determine whether you can enable this configuration for your use case"),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -3678,8 +3679,9 @@ object GpuOverrides extends Logging {
           // GPU implementation currently does not support duplicated json key names in input
           GpuJsonToStructs(a.schema, a.options, child, conf.isJsonMixedTypesAsStringEnabled,
             a.timeZoneId)
-      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
-      "should be considered beta quality right now."),
+      }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
+      " Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) "+
+      "to determine whether you can enable this configuration for your use case"),
     expr[StructsToJson](
       "Converts structs to JSON text format",
       ExprChecks.projectOnly(
