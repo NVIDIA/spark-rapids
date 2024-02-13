@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 import pyspark.sql.functions as f
 from marks import ignore_order
@@ -29,3 +29,19 @@ def test_expand_exec(data_gen):
             ('b', IntegerGen())], nullable=False), length=length).rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
     assert_gpu_and_cpu_are_equal_collect(op_df)
+
+
+# "cube" and "rollup" will not run into the pre-projection because of different
+# planning by Spark. But it is still good to test them to make sure no regressions.
+pre_pro_sqls = [
+    "select count(distinct (a+b)), count(distinct if((a+b)>100, c, null)) from pre_pro group by a",
+    "select count(b), count(c) from pre_pro group by cube((a+b), if((a+b)>100, c, null))",
+    "select count(b), count(c) from pre_pro group by rollup((a+b), if((a+b)>100, c, null))"]
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('sql', pre_pro_sqls, ids=["distinct_agg", "cube", "rollup"])
+def test_expand_pre_project(sql):
+    def get_df(spark):
+        return three_col_df(spark, short_gen, int_gen, string_gen)
+
+    assert_gpu_and_cpu_are_equal_sql(get_df, "pre_pro", sql)

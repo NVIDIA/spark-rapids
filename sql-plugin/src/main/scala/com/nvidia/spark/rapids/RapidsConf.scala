@@ -1100,6 +1100,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
+    .doc("When set to false disables the pre-projection for GPU Expand. " +
+      "Pre-projection leverages the tiered projection to evaluate expressions that " +
+      "semantically equal across Expand projection lists before expanding, to avoid " +
+      s"duplicate evaluations. '${ENABLE_TIERED_PROJECT.key}' should also set to true " +
+      "to enable this.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
     .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
@@ -2541,6 +2551,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
+  lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.
