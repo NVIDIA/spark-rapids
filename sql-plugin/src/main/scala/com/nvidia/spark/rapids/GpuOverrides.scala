@@ -26,7 +26,7 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims._
-import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
+import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowGroupLimitExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -58,7 +58,7 @@ import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
-import org.apache.spark.sql.execution.window.WindowExec
+import org.apache.spark.sql.execution.window.{WindowExec, WindowGroupLimitExec}
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
@@ -4149,6 +4149,11 @@ object GpuOverrides extends Logging {
             childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
         }
       }),
+    exec[WindowGroupLimitExec](
+      "Apply group-limits for row groups destined for rank-based window functions like " +
+      "row_number(), rank(), and dense_rank()",
+      ExecChecks(TypeSig.INT, TypeSig.INT),
+      (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r) ),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
