@@ -22,10 +22,10 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuOOM
+import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -968,13 +968,15 @@ class HashedExistenceJoinIterator(
   }
 }
 
-trait GpuHashJoin extends GpuExec {
-  def left: SparkPlan
-  def right: SparkPlan
+trait GpuJoinExec extends ShimBinaryExecNode with GpuExec {
   def joinType: JoinType
   def condition: Option[Expression]
   def leftKeys: Seq[Expression]
   def rightKeys: Seq[Expression]
+  def isSkewJoin: Boolean = false
+}
+
+trait GpuHashJoin extends GpuJoinExec {
   def buildSide: GpuBuildSide
 
   protected lazy val (buildPlan, streamedPlan) = buildSide match {

@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.GpuShuffledSymmetricHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
+import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.rapids.execution.{ConditionalHashJoinIterator, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase, HashFullJoinIterator, HashFullJoinStreamSideIterator, HashJoinIterator}
+import org.apache.spark.sql.rapids.execution.{ConditionalHashJoinIterator, GpuCustomShuffleReaderExec, GpuHashJoin, GpuJoinExec, GpuShuffleExchangeExecBase, HashFullJoinIterator, HashFullJoinStreamSideIterator, HashJoinIterator}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -358,9 +358,10 @@ case class GpuShuffledSymmetricHashJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     isGpuShuffle: Boolean,
-    gpuBatchSizeBytes: Long)(
+    gpuBatchSizeBytes: Long,
+    override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
-    cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuExec {
+    cpuRightKeys: Seq[Expression]) extends GpuJoinExec {
   import GpuShuffledSymmetricHashJoinExec._
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys)
@@ -610,6 +611,10 @@ case class GpuShuffledSymmetricHashJoinExec(
         case _ => false
       }
     }
+  }
+
+  override def nodeName: String = {
+    if (isSkewJoin) super.nodeName + "(skew=true)" else super.nodeName
   }
 }
 
