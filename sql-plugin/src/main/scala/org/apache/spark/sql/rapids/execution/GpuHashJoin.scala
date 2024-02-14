@@ -548,8 +548,7 @@ class ConditionalHashJoinIterator(
               Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality))
             case _ =>
-              throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
-                  s" supported")
+              throw new NotImplementedError(s"Join $joinType $buildSide is not currently supported")
           }
           makeGatherer(maps, leftData, rightData, joinType)
         }
