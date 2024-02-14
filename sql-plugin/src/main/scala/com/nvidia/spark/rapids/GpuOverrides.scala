@@ -3733,7 +3733,8 @@ object GpuOverrides extends Logging {
         }
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
-    ),
+    ).disabledByDefault("JsonTuple on the GPU does not support all of the normalization " +
+        "that the CPU supports."),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
