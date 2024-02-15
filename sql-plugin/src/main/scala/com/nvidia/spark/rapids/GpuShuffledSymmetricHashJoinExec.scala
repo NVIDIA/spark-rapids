@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.rapids.execution.{ConditionalHashJoinIterator, GpuCustomShuffleReaderExec, GpuHashJoin, GpuJoinExec, GpuShuffleExchangeExecBase, HashFullJoinIterator, HashFullJoinStreamSideIterator, HashJoinIterator}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -607,6 +608,7 @@ case class GpuShuffledSymmetricHashJoinExec(
         case _: GpuShuffleCoalesceExec =>
           throw new IllegalStateException("Should not have shuffle coalesce before this node")
         case _: GpuShuffleExchangeExecBase | _: GpuCustomShuffleReaderExec => true
+        case _: ReusedExchangeExec => true
         case _: ShuffleQueryStageExec => true
         case _ => false
       }
