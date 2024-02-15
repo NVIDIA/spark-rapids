@@ -3678,8 +3678,10 @@ object GpuOverrides extends Logging {
           // GPU implementation currently does not support duplicated json key names in input
           GpuJsonToStructs(a.schema, a.options, child, conf.isJsonMixedTypesAsStringEnabled,
             a.timeZoneId)
-      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
-      "should be considered beta quality right now."),
+      }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
+      " Please consult the "+
+      "[compatibility documentation](../compatibility.md#json-supporting-types)"+
+      " to determine whether you can enable this configuration for your use case"),
     expr[StructsToJson](
       "Converts structs to JSON text format",
       ExprChecks.projectOnly(
@@ -3696,8 +3698,10 @@ object GpuOverrides extends Logging {
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
       (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
-        .disabledByDefault("to_json support is experimental. See compatibility " +
-          "guide for more information."),
+        .disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
+      " Please consult the "+
+      "[compatibility documentation](../compatibility.md#json-supporting-types)"+
+      " to determine whether you can enable this configuration for your use case"),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
