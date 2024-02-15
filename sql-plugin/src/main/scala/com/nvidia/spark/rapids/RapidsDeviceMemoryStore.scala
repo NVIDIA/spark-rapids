@@ -234,14 +234,6 @@ class RapidsDeviceMemoryStore(
 
     override val supportsChunkedPacker: Boolean = true
 
-    private var initializedChunkedPacker: Boolean = false
-
-    lazy val chunkedPacker: ChunkedPacker = {
-      val packer = new ChunkedPacker(id, table, chunkedPackBounceBuffer)
-      initializedChunkedPacker = true
-      packer
-    }
-
     // This is the current size in batch form. It is to be used while this
     // table hasn't migrated to another store.
     private val unpackedSizeInBytes: Long = GpuColumnVector.getTotalDeviceMemoryUsed(table)
@@ -264,17 +256,20 @@ class RapidsDeviceMemoryStore(
       table.close()
     }
 
-    override def meta: TableMeta = {
-      chunkedPacker.getMeta
+    private lazy val (cachedMeta, cachedPackedSize) = {
+      withResource(makeChunkedPacker) { cp =>
+        (cp.getMeta, cp.getTotalContiguousSize)
+      }
     }
+
+    override def meta: TableMeta = cachedMeta
 
     override val memoryUsedBytes: Long = unpackedSizeInBytes
 
-    override def getPackedSizeBytes: Long = getChunkedPacker.getTotalContiguousSize
+    override def getPackedSizeBytes: Long = cachedPackedSize
 
-    override def getChunkedPacker: ChunkedPacker = {
-      chunkedPacker
-    }
+    override def makeChunkedPacker: ChunkedPacker =
+      new ChunkedPacker(id, table, chunkedPackBounceBuffer)
 
     /**
      * Mark a column as spillable
@@ -329,10 +324,6 @@ class RapidsDeviceMemoryStore(
       // lets remove our handler from the chain of handlers for each column
       removeOnCloseEventHandler()
       super.free()
-      if (initializedChunkedPacker) {
-        chunkedPacker.close()
-        initializedChunkedPacker = false
-      }
     }
 
     private def registerOnCloseEventHandler(): Unit = {
@@ -513,6 +504,7 @@ class RapidsDeviceMemoryStore(
       }
       written
     }
+
   }
   override def close(): Unit = {
     try {

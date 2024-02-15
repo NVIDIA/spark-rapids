@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import pytest
 
-from conftest import is_at_least_precommit_run, is_not_utc
+from conftest import is_at_least_precommit_run
 from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
@@ -84,7 +84,6 @@ def test_iterator_math_udf(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_pandas_scalar_udf_nested_type(data_gen):
     def nested_size(nested):
         return pd.Series([nested.size]).repeat(len(nested))
@@ -111,7 +110,6 @@ def test_single_aggregate_udf(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('double')
     def group_size_udf(to_process: pd.Series) -> float:
@@ -142,7 +140,6 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -219,6 +216,18 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
             .select([f.col('py_array').getItem(i) for i in range(0, 1)]),
         conf=arrow_udf_conf)
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', [byte_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf_array_input(data_gen, window):
+    @f.pandas_udf(returnType=LongType())
+    def pandas_size(to_process: pd.Series) -> int:
+        return to_process.size
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, data_gen, data_gen, ArrayGen(data_gen)).select(
+            pandas_size(f.col('c')).over(window).alias('size_col')),
+        conf=arrow_udf_conf)
 
 # ======= Test flat map group in Pandas =======
 
@@ -261,7 +270,6 @@ def test_group_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
@@ -289,7 +297,6 @@ def test_map_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_pandas_map_udf_nested_type(data_gen):
     # Supported UDF output types by plugin: (commonCudfTypes + ARRAY).nested() + STRUCT
     # STRUCT represents the whole dataframe in Map Pandas UDF, so no struct column in UDF output.

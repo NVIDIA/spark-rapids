@@ -24,7 +24,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -32,13 +32,22 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * A helper case class that contains the buffer we spilled from our current tier
- * and likely a new buffer created in a spill store tier, but it can be set to None.
- * If the buffer already exists in the target spill store, `newBuffer` will be None.
- * @param spilledBuffer a `RapidsBuffer` we spilled from this store
- * @param newBuffer an optional `RapidsBuffer` in the target spill store.
+ * Helper case classes that contain the buffer we spilled or unspilled from our current tier
+ * and likely a new buffer created in a target store tier, but it can be set to None.
+ * If the buffer already exists in the target store, `newBuffer` will be None.
+ * @param spillBuffer a `RapidsBuffer` we spilled or unspilled from this store
+ * @param newBuffer an optional `RapidsBuffer` in the target store.
  */
-case class BufferSpill(spilledBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
+trait SpillAction {
+  val spillBuffer: RapidsBuffer
+  val newBuffer: Option[RapidsBuffer]
+}
+
+case class BufferSpill(spillBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
+    extends SpillAction
+
+case class BufferUnspill(spillBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
+    extends SpillAction
 
 /**
  * Base class for all buffer store types.
@@ -307,7 +316,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
                     // as it has already spilled.
                     BufferSpill(nextSpillableBuffer, None)
                   }
-                  totalSpilled += bufferSpill.spilledBuffer.memoryUsedBytes
+                  totalSpilled += bufferSpill.spillBuffer.memoryUsedBytes
                   bufferSpills.append(bufferSpill)
                   catalog.updateTiers(bufferSpill)
                 }
@@ -333,7 +342,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
             // the buffer via events.
             // https://github.com/NVIDIA/spark-rapids/issues/8610
             Cuda.deviceSynchronize()
-            bufferSpills.foreach(_.spilledBuffer.safeFree())
+            bufferSpills.foreach(_.spillBuffer.safeFree())
           }
         }
       }
@@ -514,6 +523,31 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
         }
       }
+    }
+
+    override def getHostMemoryBuffer: HostMemoryBuffer = {
+      (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
+        catalog.acquireBuffer(id, HOST) match {
+          case Some(buffer) =>
+            withResource(buffer) { _ =>
+              return buffer.getHostMemoryBuffer
+            }
+          case _ =>
+            try {
+              logDebug(s"Unspilling $this $id to $HOST")
+              val newBuffer = catalog.unspillBufferToHostStore(
+                this,
+                Cuda.DEFAULT_STREAM)
+              withResource(newBuffer) { _ =>
+                return newBuffer.getHostMemoryBuffer
+              }
+            } catch {
+              case _: DuplicateBufferException =>
+                logDebug(s"Lost host buffer registration race for buffer $id, retrying...")
+            }
+        }
+      }
+      throw new IllegalStateException(s"Unable to get host memory buffer for ID: $id")
     }
 
     /**

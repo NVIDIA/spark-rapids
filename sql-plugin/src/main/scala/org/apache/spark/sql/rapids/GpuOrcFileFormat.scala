@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.time.ZoneId
+
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OrcShims
@@ -30,6 +32,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 object GpuOrcFileFormat extends Logging {
@@ -73,6 +76,19 @@ object GpuOrcFileFormat extends Logging {
     if (bloomFilterColumns.nonEmpty) {
       meta.willNotWorkOnGpu("Bloom filter write for ORC is not yet supported on GPU. " +
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
+    }
+
+    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
+    // timezone offset is considered when getting [[java.sql.date]] from
+    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
+    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
+    val types = schema.map(_.dataType).toSet
+    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
+      if (!GpuOverrides.isUTCTimezone()) {
+        meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+      }
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)

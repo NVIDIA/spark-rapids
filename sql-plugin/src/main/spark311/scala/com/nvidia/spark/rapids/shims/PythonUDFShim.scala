@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,12 +33,14 @@
 {"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
+{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "342"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuWindowExpression
+import com.nvidia.spark.rapids.window.GpuWindowExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF

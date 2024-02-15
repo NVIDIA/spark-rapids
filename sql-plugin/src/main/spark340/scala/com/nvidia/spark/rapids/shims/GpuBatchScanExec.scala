@@ -18,7 +18,9 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
+{"spark": "342"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -107,7 +109,7 @@ case class GpuBatchScanExec(
             throw new SparkException("During runtime filtering, data source must not report new " +
               "partition values that are not present in the original partitioning.")
           }
-          groupPartitions(newPartitions).get.map(_._2)
+          groupPartitions(newPartitions).getOrElse(Seq.empty).map(_._2)
 
         case _ =>
           // no validation is needed as the data source did not report any specific partitioning
@@ -151,7 +153,8 @@ case class GpuBatchScanExec(
                 s"${SQLConf.V2_BUCKETING_PARTIALLY_CLUSTERED_DISTRIBUTION_ENABLED.key} " +
                 "is enabled")
 
-            val groupedPartitions = groupPartitions(finalPartitions.map(_.head), true).get
+            val groupedPartitions = groupPartitions(finalPartitions.map(_.head), true)
+              .getOrElse(Seq.empty)
 
             // This means the input partitions are not grouped by partition values. We'll need to
             // check `groupByPartitionValues` and decide whether to group and replicate splits

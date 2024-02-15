@@ -108,8 +108,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         .setNameFormat("progress-thread-%d")
         .setDaemon(true)
         .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()))
+      null,
+      () => RmmSpark.removeAllCurrentThreadAssociation()))
 
   // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executor
   // task threads and [[progressThread]] will hand them to the UcpWorker thread.

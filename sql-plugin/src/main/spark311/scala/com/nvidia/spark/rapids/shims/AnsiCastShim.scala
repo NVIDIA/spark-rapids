@@ -31,12 +31,14 @@
 {"spark": "332"}
 {"spark": "332cdh"}
 {"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{GpuCast, GpuEvalMode}
 
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
+import org.apache.spark.sql.types.DataType
 
 object AnsiCastShim {
   def isAnsiCast(e: Expression): Boolean = e match {
@@ -58,5 +60,10 @@ object AnsiCastShim {
     val m = e.getClass.getDeclaredField("ansiEnabled")
     m.setAccessible(true)
     m.getBoolean(e)
+  }
+
+  def extractAnsiCastTypes(e: Expression): (DataType, DataType) = e match {
+    case c: AnsiCast => (c.child.dataType, c.dataType)
+    case _ => throw new UnsupportedOperationException(s"${e.getClass} is not AnsiCast type")
   }
 }

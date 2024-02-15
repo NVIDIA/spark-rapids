@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
@@ -52,7 +52,7 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
   }
 
   test("test adding partition values to batch with OOM split and retry - unhandled") {
-    // This test uses single-row partition values that should throw a SplitAndRetryOOM exception
+    // This test uses single-row partition values that should throw a GpuSplitAndRetryOOM exception
     // when a retry is forced.
     val maxGpuColumnSizeBytes = 1000L
     withGpuSparkSession(_ => {
@@ -60,9 +60,10 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
       closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
         val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
           Array(1), partValues.take(1), partSchema, maxGpuColumnSizeBytes)
-        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
         withResource(resultBatchIter) { _ =>
-          assertThrows[SplitAndRetryOOM] {
+          assertThrows[GpuSplitAndRetryOOM] {
             resultBatchIter.next()
           }
         }
@@ -85,7 +86,8 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
             val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
               partRows, partValues, partSchema, maxGpuColumnSizeBytes)
             withResource(resultBatchIter) { _ =>
-              RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+              RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+                RmmSpark.OomInjectionType.GPU.ordinal, 0)
               // Assert that the final count of rows matches expected batch
               // We also need to close each batch coming from `resultBatchIter`.
               val rowCounts = resultBatchIter.map(withResource(_){_.numRows()}).sum

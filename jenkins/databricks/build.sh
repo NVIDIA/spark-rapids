@@ -118,6 +118,7 @@ initialize()
     echo "Build Version                                 : ${BUILDVER}"
     echo "Skip Dependencies                             : ${SKIP_DEP_INSTALL}"
     echo "Include Default Spark Shim                    : ${WITH_DEFAULT_UPSTREAM_SHIM}"
+    echo "Extra environments                            : ${EXTRA_ENVS}"
     printf '+ %*s +\n' 100 '' | tr ' ' =
 }
 
@@ -136,6 +137,10 @@ install_dependencies()
 ##########################
 # Main script starts here
 ##########################
+## 'foo=abc,bar=123,...' to 'export foo=abc bar=123 ...'
+if [ -n "$EXTRA_ENVS" ]; then
+    export ${EXTRA_ENVS//','/' '}
+fi
 
 initialize
 if [[ $SKIP_DEP_INSTALL == "1" ]]
@@ -149,12 +154,6 @@ fi
 if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_OPT="ch.epfl.scala:bloop-maven-plugin:bloopInstall $MVN_OPT"
 fi
-
-# Disabling build for 341db until 24.02
-if [[ "$BUILDVER" == "341db" ]]; then
-    echo "Databricks 341 is not supported as of release 23.12\n"
-    exit 1
-fi 
 
 # Build the RAPIDS plugin by running package command for databricks
 $MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT

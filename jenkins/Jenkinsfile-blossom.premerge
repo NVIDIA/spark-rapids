@@ -74,7 +74,7 @@ pipeline {
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
-        CUDA_CLASSIFIER = 'cuda11'
+        CLASSIFIER = 'cuda11'
     }
 
     stages {

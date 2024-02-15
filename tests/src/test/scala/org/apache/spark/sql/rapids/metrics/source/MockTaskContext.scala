@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
 
   override private[spark] def killTaskIfInterrupted(): Unit = {}
 
-  override private[spark] def getKillReason() = None
+  override def getKillReason() = None
 
   override def taskMemoryManager() = null
 
@@ -96,4 +96,10 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
   def markTaskComplete(): Unit = {
     listeners.foreach(_.onTaskCompletion(this))
   }
+
+  /**
+   * This method was introduced in Spark-3.5.1. It's not shimmed and added to the common class by
+   * removing the override keyword.
+   */
+  def isFailed(): Boolean = false
 }

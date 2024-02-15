@@ -59,7 +59,7 @@ _write_gens = [_basic_gens, _struct_gens, _array_gens, _map_gens]
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", _write_gens, ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "nativeorc", "hiveorc"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
     data_table = spark_tmp_table_factory.get()
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]

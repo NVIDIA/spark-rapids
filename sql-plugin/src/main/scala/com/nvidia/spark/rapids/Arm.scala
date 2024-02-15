@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.ControlThrowable
 
@@ -68,6 +69,15 @@ object Arm extends ArmScalaSpecificImpl {
     }
   }
 
+  /** Executes the provided code block and then closes the queue of resources */
+  def withResource[T <: AutoCloseable, V](r: mutable.Queue[T])(block: mutable.Queue[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
+  }
+
   /** Executes the provided code block and then closes the value if it is AutoCloseable */
   def withResourceIfAllowed[T, V](r: T)(block: T => V): V = {
     try {
@@ -112,6 +122,21 @@ object Arm extends ArmScalaSpecificImpl {
 
   /** Executes the provided code block, closing the resources only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V](r: ArrayBuffer[T])(block: ArrayBuffer[T] => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
+      case t: Throwable =>
+        r.safeClose(t)
+        throw t
+    }
+  }
+
+
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: mutable.Queue[T])(block: mutable.Queue[T] => V): V = {
     try {
       block(r)
     } catch {

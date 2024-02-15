@@ -28,8 +28,9 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
+CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
-MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
+MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."
@@ -58,10 +59,12 @@ mvn_verify() {
               $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
               -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
         # build only for other versions
-        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
-            $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+        # elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
+        #     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
         fi
     done
+    # build base shim version for following test step with PREMERGE_PROFILES
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=$SPARK_BASE_SHIM_VERSION
 
     # enable UTF-8 for regular expression tests
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
@@ -75,7 +78,7 @@ mvn_verify() {
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
@@ -94,6 +97,15 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
+
+    # Test a portion of cases for non-UTC time zone because of limited GPU resources.
+    # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
+    # Nightly CIs will cover all the cases.
+    source "$(dirname "$0")"/test-timezones.sh
+    for tz in "${time_zones_test_cases[@]}"
+    do
+        TZ=$tz ./integration_tests/run_pyspark_from_build.sh -m tz_sensitive_test
+    done
 }
 
 rapids_shuffle_smoke_test() {
@@ -155,11 +167,6 @@ ci_2() {
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
     ./integration_tests/run_pyspark_from_build.sh
-
-    # Test a portion of cases for non-UTC time zone because of limited GPU resources.
-    # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
-    # Nightly CIs will cover all the cases.
-    TZ=Iran TEST='test_parquet_read_round_trip or test_read_round_trip or test_basic_csv_read or test_cast_string_ts_valid_format or test_unix_timestamp or test_from_utc_timestamp' ./integration_tests/run_pyspark_from_build.sh
 
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
@@ -234,7 +241,7 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
+PREMERGE_PROFILES="-Ppre-merge"
 
 # If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
 # Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.

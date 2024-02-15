@@ -38,8 +38,9 @@ object TimeStamp {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
+        override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)
+          GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -49,33 +50,35 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     }
   }
 
-  override def generate(inputBatch: ColumnarBatch,
+  override def generate(
+      inputBatches: Iterator[SpillableColumnarBatch],
       generatorOffset: Int,
-      outer: Boolean): ColumnarBatch = {
+      outer: Boolean): Iterator[ColumnarBatch] = {
+    withRetry(inputBatches, splitSpillableInHalfByRows) { attempt =>
+      withResource(attempt.getColumnarBatch()) { inputBatch =>
+        val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
+        val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
-    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
-    val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
+        val fieldScalars = fieldExpressions.safeMap { field =>
+          withResourceIfAllowed(field.columnarEvalAny(inputBatch)) {
+            case fieldScalar: GpuScalar =>
+              // Specials characters like '.', '[', ']' are not supported in field names
+              Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
+            case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
+          }
+        }
 
-    val fieldScalars = fieldExpressions.safeMap { field =>
-      withResourceIfAllowed(field.columnarEvalAny(inputBatch)) { fieldVal =>
-        fieldVal match {
-          case fieldScalar: GpuScalar =>
-            // Specials characters like '.', '[', ']' are not supported in field names
-            Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
-          case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
+        withResource(fieldScalars) { fieldScalars =>
+          withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
+            val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
+              case (col, dataType) => GpuColumnVector.from(col, dataType)
+            }
+            val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
+              inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
+            }
+            new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
+          }
         }
-      }
-    }
-
-    withResource(fieldScalars) { fieldScalars =>
-      withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
-        val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
-          case (col, dataType) => GpuColumnVector.from(col, dataType)
-        }
-        val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
-          inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
-        }
-        new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
       }
     }
   }

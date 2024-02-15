@@ -32,6 +32,7 @@
 {"spark": "332"}
 {"spark": "332cdh"}
 {"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
@@ -52,7 +53,7 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
 
     private var cpuWritingCommand: Option[InsertIntoHiveTable] = None
 
-    override def tagSelfForGpu(): Unit = {
+    override def tagSelfForGpuInternal(): Unit = {
 
       val spark = SparkSession.active
       val tableDesc = cmd.tableDesc // For the *new* table.

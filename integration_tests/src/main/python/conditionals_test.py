@@ -15,12 +15,14 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from conftest import is_not_utc
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
-from marks import datagen_overrides
+from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
+
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = pytest.mark.premerge_ci_1
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -45,7 +47,6 @@ if_struct_gens_sample = [if_struct_gen,
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_if_else(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -65,17 +66,14 @@ def test_if_else(data_gen):
 # Maps scalars are not really supported by Spark from python without jumping through a lot of hoops
 # so for now we are going to skip them
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_if_else_map(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
                 'IF(TRUE, b, c)',
                 'IF(a, b, c)'))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9685')
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_case_when(data_gen):
     num_cmps = 20
     s1 = with_cpu_session(
@@ -119,7 +117,6 @@ def test_nanvl(data_gen):
                 f.nanvl(f.lit(float('nan')).cast(data_type), f.col('b'))))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_nvl(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -137,15 +134,13 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9684')
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + map_gens_sample, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = with_cpu_session(
         lambda spark: gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen)))
     # we want lots of nulls
-    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0)) 
+    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0))
         for x in range(0, num_cols)], nullable=False)
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
     command_args.append(s1)
@@ -161,7 +156,6 @@ def test_coalesce_constant_output():
             lambda spark : spark.range(1, 100).selectExpr("4 + coalesce(5, id) as nine"))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_nvl2(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -175,7 +169,6 @@ def test_nvl2(data_gen):
                 'nvl2(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_nullif(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -189,7 +182,6 @@ def test_nullif(data_gen):
                 'nullif(a, {})'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_ifnull(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -219,13 +211,12 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
 @pytest.mark.skipif(not is_jvm_charset_utf8(), reason="regular expressions require UTF-8")
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9992')
 def test_conditional_with_side_effects_cast(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
-                'IF(a RLIKE "^[0-9]{1,5}\\z", CAST(a AS INT), 0)'),
+                'IF(a RLIKE "^[0-9]{5,}", CAST(SUBSTR(a, 0, 5) AS INT), 0)'),
             conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
@@ -236,13 +227,13 @@ def test_conditional_with_side_effects_case_when(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'CASE \
-                WHEN a RLIKE "^[0-9]{1,3}\\z" THEN CAST(a AS INT) \
-                WHEN a RLIKE "^[0-9]{4,6}\\z" THEN CAST(a AS INT) + 123 \
+                WHEN a RLIKE "^[0-9]{6}" THEN CAST(SUBSTR(a, 0, 6) AS INT) + 123 \
+                WHEN a RLIKE "^[0-9]{3}" THEN CAST(SUBSTR(a, 0, 3) AS INT) \
                 ELSE -1 END'),
                 conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -253,7 +244,7 @@ def test_conditional_with_side_effects_sequence(data_gen):
 
 @pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,17 @@
 
 import pytest
 
+from pyspark.sql.types import IntegerType
+
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later
 
+# non-positive values here can produce a degenerative join, so here we ensure that most values are
+# positive to ensure the join will produce rows. See https://github.com/NVIDIA/spark-rapids/issues/10147
+value_gen = RepeatSeqGen([None, INT_MIN, -1, 0, 1, INT_MAX], data_type=IntegerType())
 
 def create_dim_table(table_name, table_format, length=500):
     def fn(spark):
@@ -27,7 +32,7 @@ def create_dim_table(table_name, table_format, length=500):
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
             ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
             ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=3, special_cases=[])),
-            ('value', int_gen),
+            ('value', value_gen),
             # specify nullable=False for `filter` to avoid generating invalid SQL with
             # expression `filter = None` (https://github.com/NVIDIA/spark-rapids/issues/9817)
             ('filter', RepeatSeqGen(
@@ -37,7 +42,7 @@ def create_dim_table(table_name, table_format, length=500):
         df.write.format(table_format) \
             .mode("overwrite") \
             .saveAsTable(table_name)
-        return df.select('filter').first()[0]
+        return df.select('filter').where("value > 0").first()[0]
 
     return with_cpu_session(fn)
 
@@ -49,7 +54,7 @@ def create_fact_table(table_name, table_format, length=2000):
             ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
             # ex_key is not a partition column
             ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=3, special_cases=[])),
-            ('value', int_gen)], length)
+            ('value', value_gen)], length)
         df.write.format(table_format) \
             .mode("overwrite") \
             .partitionBy('key', 'skey') \

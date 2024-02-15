@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.TableWriter
 import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuBoundReference, GpuColumnVector, RapidsBufferCatalog, RapidsDeviceMemoryStore, ScalableTaskCompletion}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataOutputStream
 import org.apache.hadoop.mapred.TaskAttemptContext
@@ -502,7 +502,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         // throw once from bufferBatchAndClose to simulate an exception after we call the
         // stats tracker
         mockOutputWriter.throwOnNextBufferBatchAndClose(
-          new SplitAndRetryOOM("mocking a split and retry"))
+          new GpuSplitAndRetryOOM("mocking a split and retry"))
         val dynamicConcurrentWriter =
           prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
 
@@ -510,7 +510,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
           dynamicConcurrentWriter.commit()
         } else {
-          assertThrows[SplitAndRetryOOM] {
+          assertThrows[GpuSplitAndRetryOOM] {
             dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
             dynamicConcurrentWriter.commit()
           }
@@ -557,11 +557,11 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         when(mockJobDescription.statsTrackers)
             .thenReturn(Seq(jobTracker))
         when(statsTracker.newBatch(any(), any()))
-            .thenThrow(new RetryOOM("mocking a retry"))
+            .thenThrow(new GpuRetryOOM("mocking a retry"))
         val dynamicConcurrentWriter =
           prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
 
-        assertThrows[RetryOOM] {
+        assertThrows[GpuRetryOOM] {
           dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
           dynamicConcurrentWriter.commit()
         }

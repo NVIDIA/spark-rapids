@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.lang.reflect.InvocationTargetException
+import java.net.URL
 import java.time.ZoneId
 import java.util.Properties
 
@@ -25,6 +26,7 @@ import scala.sys.process._
 import scala.util.Try
 
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -111,6 +113,71 @@ object RapidsPluginUtils extends Logging {
       "https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#" +
       "automatic-translation-of-scala-udfs-to-apache-spark-operations" )
     }
+  }
+
+  private def detectMultipleJar(propName: String, jarName: String, conf: RapidsConf): Unit = {
+    val classloader = ShimLoader.getShimClassLoader()
+    val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
+      url => {
+        val urlPath = url.toString
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.02.0-spark341.jar,
+        // and files stored under subdirs of '!/', e.g. 
+        // rapids-4-spark_2.12-24.02.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // We only want to find the main jar, e.g.
+        // rapids-4-spark_2.12-24.02.0-cuda11.jar!/rapids4spark-version-info.properties
+        !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
+      }
+    }
+    val revisionRegex = "revision=(.*)".r
+    val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
+      val versionInfo = scala.io.Source.fromURL(url).getLines().toSeq
+      val revision = versionInfo
+        .collect { 
+          case revisionRegex(revision) => revision 
+        }
+        .headOption
+        .getOrElse("UNKNOWN")
+      (revision, url)
+    }.groupBy(_._1).mapValues(_.map(_._2)).toMap
+    lazy val rapidsJarsVersMsg = revisionMap.map {
+      case (revision, urls) => {
+        s"revison: $revision" + urls.map {
+          url => "\n\tjar URL: " + url.toString.split("!").head + "\n\t" + 
+              scala.io.Source.fromURL(url).getLines().toSeq.mkString("\n\t")
+        }.mkString + "\n"
+      }
+    }.mkString
+    lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
+        s"Please make sure there is only one $jarName jar in the classpath. "
+
+    require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
+
+    conf.allowMultipleJars match {
+      case AllowMultipleJars.ALWAYS =>
+        if (revisionMap.size != 1 || revisionMap.values.exists(_.size != 1)) {
+          logWarning(msg)
+        }
+      case AllowMultipleJars.SAME_REVISION =>
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+              s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS, but this " +
+              s"can cause unpredictable behavior as the plugin may pick up the wrong jar."
+        require(revisionMap.size == 1, msg + recommended)
+        if (revisionMap.values.exists(_.size != 1)) {
+          logWarning(msg + recommended)
+        }
+      case AllowMultipleJars.NEVER =>
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+            s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS." +
+            " But setting it to ALWAYS can cause unpredictable behavior as the plugin may pick " +
+            "up the wrong jar."
+        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
+    }
+  }
+
+  def detectMultipleJars(conf: RapidsConf): Unit = {
+    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", conf)
+    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", conf)
+    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", conf)
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
@@ -311,6 +378,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
+    RapidsPluginUtils.detectMultipleJars(conf)
     RapidsPluginUtils.logPluginMode(conf)
     GpuCoreDumpHandler.driverInit(sc, conf)
 
@@ -365,6 +433,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
+      // Fail if there are multiple plugin jars in the classpath.
+      RapidsPluginUtils.detectMultipleJars(conf)
+
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
@@ -376,13 +447,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         case Some(value) => ZoneId.of(value)
         case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
       }
-      if (TypeChecks.areTimestampsSupported(driverTimezone)) {
-        val executorTimezone = ZoneId.systemDefault()
-        if (executorTimezone.normalized() != driverTimezone.normalized()) {
-          throw new RuntimeException(s" Driver and executor timezone mismatch. " +
-              s"Driver timezone is $driverTimezone and executor timezone is " +
-              s"$executorTimezone. Set executor timezone to $driverTimezone.")
-        }
+      val executorTimezone = ZoneId.systemDefault()
+      if (executorTimezone.normalized() != driverTimezone.normalized()) {
+        throw new RuntimeException(s" Driver and executor timezone mismatch. " +
+          s"Driver timezone is $driverTimezone and executor timezone is " +
+          s"$executorTimezone. Set executor timezone to $driverTimezone.")
       }
 
       GpuCoreDumpHandler.executorInit(conf, pluginContext)

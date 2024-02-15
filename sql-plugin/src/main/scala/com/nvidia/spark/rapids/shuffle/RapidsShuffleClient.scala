@@ -56,6 +56,11 @@ trait RapidsShuffleFetchHandler {
    * @param errorMessage - a string containing an error message
    */
   def transferError(errorMessage: String, throwable: Throwable = null): Unit
+
+  /**
+   * Called to get the task attempt ids that this shuffle handler is for.
+   */
+  def getTaskIds: Array[Long]
 }
 
 /**

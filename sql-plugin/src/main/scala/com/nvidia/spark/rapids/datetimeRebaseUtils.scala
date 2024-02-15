@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,7 +72,8 @@ object DateTimeRebaseUtils {
   private def rebaseModeFromFileMeta(lookupFileMeta: String => String,
       modeByConfig: String,
       minVersion: String,
-      metadataKey: String): DateTimeRebaseMode = {
+      metadataKey: String,
+      hasDateTimeInReadSchema: Boolean =  true): DateTimeRebaseMode = {
 
     // If there is no version, we return the mode specified by the config.
     val mode = Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
@@ -95,7 +96,7 @@ object DateTimeRebaseUtils {
         // Use the default JVM time zone for backward compatibility
         TimeZone.getDefault.toZoneId
       }
-      if (fileTimeZoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+      if (hasDateTimeInReadSchema && fileTimeZoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
         throw new UnsupportedOperationException(
           "LEGACY datetime rebase mode is only supported for files written in UTC timezone. " +
             s"Actual file timezone: $fileTimeZoneId")
@@ -106,9 +107,10 @@ object DateTimeRebaseUtils {
   }
 
   def datetimeRebaseMode(lookupFileMeta: String => String,
-      modeByConfig: String): DateTimeRebaseMode = {
+      modeByConfig: String,
+      hasDateTimeInReadSchema: Boolean = true): DateTimeRebaseMode = {
     rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.0.0",
-      SPARK_LEGACY_DATETIME_METADATA_KEY)
+      SPARK_LEGACY_DATETIME_METADATA_KEY, hasDateTimeInReadSchema)
   }
 
   def int96RebaseMode(lookupFileMeta: String => String,

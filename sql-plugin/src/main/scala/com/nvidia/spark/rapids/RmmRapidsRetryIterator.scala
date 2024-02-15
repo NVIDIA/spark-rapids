@@ -24,7 +24,7 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark, RmmSparkThreadState}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -51,10 +51,10 @@ object RmmRapidsRetryIterator extends Logging {
    * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
    * while handling retries.
    *
-   * @param input an iterator of T
+   * @param input       an iterator of T
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
-   * @param fn the work to perform. Takes T and produces an output K
+   * @param fn          the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return an iterator of K
@@ -84,10 +84,10 @@ object RmmRapidsRetryIterator extends Logging {
    * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
    * while handling retries.
    *
-   * @param input a single item T
+   * @param input       a single item T
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
-   * @param fn the work to perform. Takes T and produces an output K
+   * @param fn          the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return an iterator of K
@@ -117,8 +117,8 @@ object RmmRapidsRetryIterator extends Logging {
    * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
    * while handling retries.
    *
-   * @param input       a single item T
-   * @param fn          the work to perform. Takes T and produces an output K
+   * @param input a single item T
+   * @param fn    the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return a single item of type K
@@ -148,8 +148,8 @@ object RmmRapidsRetryIterator extends Logging {
    * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
    * while handling retries.
    *
-   * @param input       a single item T
-   * @param fn          the work to perform. Takes T and produces an output K
+   * @param input a single item T
+   * @param fn    the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return a single item of type K
@@ -186,33 +186,37 @@ object RmmRapidsRetryIterator extends Logging {
   }
 
   /**
-   * Returns a tuple of (shouldRetry, shouldSplit) depending the exception
+   * Returns a tuple of (shouldRetry, shouldSplit, isFromGpuOom) depending the exception
    * passed
    */
-  private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean) = {
+  private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean, Boolean) = {
     ex match {
-      case _: RetryOOM => (true, false)
-      case _: SplitAndRetryOOM => (true, true)
-      case _ => (false, false)
+      case _: GpuRetryOOM => (true, false, true)
+      case _: CpuRetryOOM => (true, false, false)
+      case _: GpuSplitAndRetryOOM => (true, true, true)
+      case _: CpuSplitAndRetryOOM => (true, true, false)
+      case _ => (false, false, false)
     }
   }
 
   /**
-   * Returns a tuple of (causedByRetry, causedBySplit) depending the exception
+   * Returns a tuple of (causedByRetry, causedBySplit, ifFromGpuoom) depending the exception
    * passed
    */
-  private def causedByRetryOrSplit(ex: Throwable): (Boolean, Boolean) = {
+  private def causedByRetryOrSplit(ex: Throwable): (Boolean, Boolean, Boolean) = {
     var current = ex
     var causedByRetry = false
     var causedBySplit = false
+    var isFromGpuOom = false
     // check if there is a hidden retry or split OOM
     while (current != null && !causedByRetry) {
       current = current.getCause()
-      val (isRetry, isSplit) = isRetryOrSplitAndRetry(current)
+      val (isRetry, isSplit, isGpuOom) = isRetryOrSplitAndRetry(current)
       causedByRetry = isRetry
       causedBySplit = causedBySplit || isSplit
+      isFromGpuOom = isGpuOom
     }
-    (causedByRetry, causedBySplit)
+    (causedByRetry, causedBySplit, isFromGpuOom)
   }
 
   private def isColumnSizeOverflow(ex: Throwable): Boolean =
@@ -242,7 +246,7 @@ object RmmRapidsRetryIterator extends Logging {
     } catch {
       case ex: Throwable =>
         // Only restore on retry exceptions
-        val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
+        val (topLevelIsRetry, _, _) = isRetryOrSplitAndRetry(ex)
         if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.restore()
         }
@@ -269,7 +273,7 @@ object RmmRapidsRetryIterator extends Logging {
     } catch {
       case ex: Throwable =>
         // Only restore on retry exceptions
-        val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
+        val (topLevelIsRetry, _, _) = isRetryOrSplitAndRetry(ex)
         if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.foreach(_.restore())
         }
@@ -292,11 +296,12 @@ object RmmRapidsRetryIterator extends Logging {
 
   /**
    * AutoCloseable wrapper on Seq[T], returning a Seq[T] that can be closed.
+   *
    * @param ts the Seq to wrap
    * @tparam T the type of the items in `ts`
    */
   private case class AutoCloseableSeqInternal[T <: AutoCloseable](ts: Seq[T])
-      extends Seq[T] with AutoCloseable{
+      extends Seq[T] with AutoCloseable {
     override def close(): Unit = {
       ts.foreach(_.safeClose())
     }
@@ -311,18 +316,22 @@ object RmmRapidsRetryIterator extends Logging {
   /**
    * An iterator of a single item that is able to close if .next
    * has not been called on it.
+   *
    * @param ts the AutoCloseable item to close if this iterator hasn't been drained
    * @tparam T the type of `ts`, must be AutoCloseable
    */
   private case class SingleItemAutoCloseableIteratorInternal[T <: AutoCloseable](ts: T)
-    extends Iterator[T] with AutoCloseable {
+      extends Iterator[T] with AutoCloseable {
 
     private var wasCalledSuccessfully = false
+
     override def hasNext: Boolean = !wasCalledSuccessfully
+
     override def next(): T = {
       wasCalledSuccessfully = true
       ts
     }
+
     override def close(): Unit = {
       if (!wasCalledSuccessfully) {
         ts.close()
@@ -342,14 +351,18 @@ object RmmRapidsRetryIterator extends Logging {
     override def hasNext: Boolean
 
     /**
-     * Split is a function that is invoked by `RmmRapidsRetryIterator` when `SplitAndRetryOOM`
+     * Split is a function that is invoked by `RmmRapidsRetryIterator` when `GpuSplitAndRetryOOM`
+     * or `CpuSplitAndRetryOOM`
      * is thrown. This function is implemented by `Spliterator` classes to attempt to handle
      * this exception by reducing the size of attempts (the thing that `.next` is
      * using as an input), usually by splitting a batch in half by number of rows, or
      * splitting a collection of batches into smaller collections to be attempted separately,
      * likely reducing GPU memory that needs to be manifested while calling `.next`.
+     *
+     * @param isFromGpuOom true if the split happened because of a GPU OOM. Otherwise it was a
+     *                     CPU off heap OOM.
      */
-    def split(): Unit
+    def split(isFromGpuOom: Boolean): Unit
 
     override def next(): K
 
@@ -359,6 +372,7 @@ object RmmRapidsRetryIterator extends Logging {
   /**
    * A spliterator that doesn't take any inputs, hence it is "empty", and it doesn't know
    * how to split. It allows the caller to call the function `fn` once on `next`.
+   *
    * @param fn the work to perform. It is a function that takes nothing and produces K
    * @tparam K the resulting type
    */
@@ -367,8 +381,12 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = !wasCalledSuccessfully
 
-    override def split(): Unit = {
-      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+    override def split(isFromGpuOom: Boolean): Unit = {
+      if (isFromGpuOom) {
+        throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+      } else {
+        throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+      }
     }
 
     override def next(): K = {
@@ -402,8 +420,8 @@ object RmmRapidsRetryIterator extends Logging {
    *
    * @tparam T element type that must be AutoCloseable
    * @tparam K `fn` result type
-   * @param input an iterator of T
-   * @param fn a function that takes T and produces K
+   * @param input       an iterator of T
+   * @param fn          a function that takes T and produces K
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
    */
@@ -431,12 +449,16 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
 
-    override def split(): Unit = {
+    override def split(isFromGpuOom: Boolean): Unit = {
       // If `split` OOMs, we are already the last thread standing
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+        if (isFromGpuOom) {
+          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+        } else {
+          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+        }
       }
       // splitPolicy must take ownership of the argument
       val splitted = splitPolicy(attemptStack.pop())
@@ -513,8 +535,10 @@ object RmmRapidsRetryIterator extends Logging {
    */
   class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
       extends Iterator[K] {
+    // We want to be sure that retry will work in all cases
+    TaskRegistryTracker.registerThreadForRetry()
     // used to figure out if we should inject an OOM (only for tests)
-    private val config = new RapidsConf(SQLConf.get)
+    private val config = Option(SQLConf.get).map(new RapidsConf(_))
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
@@ -526,7 +550,8 @@ object RmmRapidsRetryIterator extends Logging {
     private def clearInjectedOOMIfNeeded(): Unit = {
       if (injectedOOM && !injectedOOMCleared) {
         val threadId = RmmSpark.getCurrentThreadId
-        // if for some reason we don't throw, or we throw something that isn't a RetryOOM
+        // if for some reason we don't throw, or we throw something that isn't a GpuRetryOOM
+        // or CpuRetryOOM
         // we want to remove the retry we registered before we leave the withRetry block.
         // If the thread is in an UNKNOWN state, then it is already cleared.
         if (RmmSpark.getStateOf(threadId) != RmmSparkThreadState.UNKNOWN) {
@@ -543,43 +568,64 @@ object RmmRapidsRetryIterator extends Logging {
       var firstAttempt: Boolean = true
       var result: Option[K] = None
       var doSplit = false
+      var isFromGpuOom = true
       while (result.isEmpty && attemptIter.hasNext) {
         if (!firstAttempt) {
           // call thread block API
           try {
             RmmSpark.blockThreadUntilReady()
           } catch {
-            case _: SplitAndRetryOOM => doSplit = true
+            case _: GpuSplitAndRetryOOM =>
+              doSplit = true
+              isFromGpuOom = true
+            case _: CpuSplitAndRetryOOM =>
+              doSplit = true
+              isFromGpuOom = false
           }
         }
         firstAttempt = false
         if (doSplit) {
-          attemptIter.split()
+          attemptIter.split(isFromGpuOom)
         }
         doSplit = false
         try {
           // call the user's function
-          if (config.testRetryOOMInjectionEnabled && !injectedOOM) {
-            injectedOOM = true
-            // ensure we have associated our thread with the running task, as
-            // `forceRetryOOM` requires a prior association.
-            RmmSpark.associateCurrentThreadWithTask(TaskContext.get().taskAttemptId())
-            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+          config.foreach {
+            case rapidsConf if !injectedOOM && rapidsConf.testRetryOOMInjectionMode.numOoms > 0 =>
+              injectedOOM = true
+              // ensure we have associated our thread with the running task, as
+              // `forceRetryOOM` requires a prior association.
+              RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              val injectConf = rapidsConf.testRetryOOMInjectionMode
+              if (injectConf.withSplit) {
+                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                          injectConf.numOoms,
+                          injectConf.oomInjectionFilter.ordinal,
+                          injectConf.skipCount)
+              } else {
+                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                  injectConf.numOoms,
+                  injectConf.oomInjectionFilter.ordinal,
+                  injectConf.skipCount)
+              }
+            case _ => ()
           }
           result = Some(attemptIter.next())
           clearInjectedOOMIfNeeded()
         } catch {
           case ex: Throwable =>
             // handle a retry as the top-level exception
-            val (topLevelIsRetry, topLevelIsSplit) = isRetryOrSplitAndRetry(ex)
+            val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
             doSplit = topLevelIsSplit
+            isFromGpuOom = isGpuOom
 
             // handle any retries that are wrapped in a different top-level exception
             var causedByRetry = false
             if (!topLevelIsRetry) {
-              val (cbRetry, cbSplit) = causedByRetryOrSplit(ex)
+              val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
               causedByRetry = cbRetry
               doSplit = doSplit || cbSplit
+              isFromGpuOom = isGpuOom
             }
 
             clearInjectedOOMIfNeeded()
@@ -600,7 +646,7 @@ object RmmRapidsRetryIterator extends Logging {
                 throw lastException
               }
             }
-            // else another exception wrapped a retry. So we are going to try again
+          // else another exception wrapped a retry. So we are going to try again
         }
       }
       if (result.isEmpty) {
@@ -614,7 +660,8 @@ object RmmRapidsRetryIterator extends Logging {
   /**
    * Common split function from a single SpillableColumnarBatch to a sequence of them,
    * that tries to split the input into two chunks. If the input cannot be split in two,
-   * because we are down to 1 row, this function throws `SplitAndRetryOOM`.
+   * because we are down to 1 row, this function throws `GpuSplitAndRetryOOM` or
+   * `CpuSplitAndRetryOOM`.
    *
    * Note how this function closes the input `spillable` that is passed in.
    *
@@ -625,7 +672,7 @@ object RmmRapidsRetryIterator extends Logging {
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {
-          throw new SplitAndRetryOOM(
+          throw new GpuSplitAndRetryOOM(
             s"GPU OutOfMemory: a batch of $toSplitRows cannot be split!")
         }
         val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
@@ -655,31 +702,55 @@ object RmmRapidsRetryIterator extends Logging {
     }
   }
 
+  private def splitTargetSizeInHalfInternal(
+      target: AutoCloseableTargetSize, isGpu: Boolean): Seq[AutoCloseableTargetSize] = {
+    withResource(target) { _ =>
+      val newTarget = target.targetSize / 2
+      if (newTarget < target.minSize) {
+        if (isGpu) {
+          throw new GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: targetSize: ${target.targetSize} cannot be split further!" +
+                s" minimum: ${target.minSize}")
+        } else {
+          throw new CpuSplitAndRetryOOM(
+            s"CPU OutOfMemory: targetSize: ${target.targetSize} cannot be split further!" +
+                s" minimum: ${target.minSize}")
+        }
+      }
+      Seq(AutoCloseableTargetSize(newTarget, target.minSize))
+    }
+  }
+
   /**
    * A common split function for an AutoCloseableTargetSize, which just divides the target size
    * in half, and creates a seq with just one element representing the new target size.
    * @return a Seq[AutoCloseableTargetSize] with 1 element.
+   * @throws GpuSplitAndRetryOOM if it reaches the split limit.
    */
-  def splitTargetSizeInHalf: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
+  def splitTargetSizeInHalfGpu: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
     (target: AutoCloseableTargetSize) => {
-      withResource(target) { _ =>
-        val newTarget = target.targetSize / 2
-        if (newTarget < target.minSize) {
-          throw new SplitAndRetryOOM(
-            s"GPU OutOfMemory: targetSize: ${target.targetSize} cannot be split further!" +
-                s" minimum: ${target.minSize}")
-        }
-        Seq(AutoCloseableTargetSize(newTarget, target.minSize))
-      }
+      splitTargetSizeInHalfInternal(target, true)
+  }
+
+  /**
+   * A common split function for an AutoCloseableTargetSize, which just divides the target size
+   * in half, and creates a seq with just one element representing the new target size.
+   *
+   * @return a Seq[AutoCloseableTargetSize] with 1 element.
+   * @throws CpuSplitAndRetryOOM if it reaches the split limit.
+   */
+  def splitTargetSizeInHalfCpu: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
+    (target: AutoCloseableTargetSize) => {
+      splitTargetSizeInHalfInternal(target, false)
   }
 }
 
 /**
  * This is a wrapper that turns a target size into an autocloseable to allow it to be used
  * in withRetry blocks.  It is intended to be used to help with cases where the split calculation
- * happens inside the retry block, and depends on the target size.  On a SplitAndRetryOOM,
- * a split policy like `splitTargetSizeInHalf` can be used to retry the block with a smaller target
- * size.
+ * happens inside the retry block, and depends on the target size.  On a `GpuSplitAndRetryOOM` or
+ * `CpuSplitAndRetryOOM`, a split policy like `splitTargetSizeInHalfGpu` or
+ * `splitTargetSizeInHalfCpu` can be used to retry the block with a smaller target size.
  */
 case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
   override def close(): Unit = ()

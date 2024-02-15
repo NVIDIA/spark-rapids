@@ -22,6 +22,7 @@ import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.ShuffleMetadata
 import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
+import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -70,12 +71,17 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("successful metadata fetch") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val contigBuffSize = 100000
     val numBatches = 3
     val (tableMetas, response) =
       RapidsShuffleTestHelper.mockMetaResponse(mockTransaction, contigBuffSize, numBatches)
+
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
 
     // initialize metadata fetch
     client.doFetch(shuffleRequests.map(_._1).toSeq, mockHandler)
@@ -104,11 +110,16 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("successful degenerate metadata fetch") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val numBatches = 3
 
     RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransaction, numBatches)
+
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
 
     // initialize metadata fetch
     client.doFetch(shuffleRequests.map(_._1).toSeq, mockHandler)
@@ -128,6 +139,11 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   private def doTestErrorOrCancelledMetadataFetch(status: TransactionStatus.Value): Unit = {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
+
     when(mockTransaction.getStatus).thenReturn(status)
     when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
 
@@ -159,6 +175,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("exception in metadata fetch escalates to handler"){
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
 
@@ -178,6 +198,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("successful buffer fetch") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 
     val numRows = 25001
@@ -250,6 +274,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("successful buffer fetch - but handler rejected it") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     when(mockHandler.batchReceived(any())).thenReturn(false) // reject incoming batches
 
@@ -294,6 +322,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("successful buffer fetch multi-buffer") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 
     val numRows = 500
@@ -346,6 +378,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("successful buffer fetch multi-buffer, larger than a single bounce buffer") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 
     val numRows = 500
@@ -399,6 +435,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   private def doTestErrorOrCancelledBufferFetch(status: TransactionStatus.Value): Unit = {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(status)
     when(mockTransaction.getErrorMessage).thenReturn(Some(s"Status is: ${status}"))
 
@@ -450,6 +490,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     val mockTable = RapidsShuffleTestHelper.mockTableMeta(numRows)
     when(ptr.getLength).thenReturn(mockTable.bufferMeta().size())
     when(ptr.tableMeta).thenReturn(mockTable)
+    when(ptr.handler).thenReturn(mockHandler)
     val buff = HostMemoryBuffer.allocate(mockTable.bufferMeta().size())
     fillBuffer(buff)
     (ptr, buff, mockTable)
@@ -476,6 +517,10 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   def endToEndTest(buff: BounceBuffer,
                    expected: Seq[ReceivedBufferWindow],
                    ptrBuffs: Seq[(PendingTransferRequest, HostMemoryBuffer, TableMeta)]): Unit = {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
+    when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     withResource(ptrBuffs.map(_._2)) { sources =>
       withResource(new BufferReceiveState(123, buff, ptrBuffs.map(_._1), () => {})) { br =>
         val blocks = sources.map(x => new MockBlock(x))
@@ -623,6 +668,9 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("on endpoint failure the iterator is notified if it is registered") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val metaResp = ShuffleMetadata.buildMetaResponse(Seq.empty)
     when(mockTransaction.releaseMessage()).thenReturn(
@@ -637,6 +685,9 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("on endpoint failure the iterator is not notified if it is done (unregistered)") {
+    // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
+    // thread, so we have to fix it for all of the tests
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val metaResp = ShuffleMetadata.buildMetaResponse(Seq.empty)
     when(mockTransaction.releaseMessage()).thenReturn(

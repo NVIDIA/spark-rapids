@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuJsonToStructsShim, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -113,16 +113,15 @@ object GpuJsonScan {
 
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
     if (hasDates) {
-      GpuJsonUtils.optionalDateFormatInRead(parsedOptions) match {
-        case None | Some("yyyy-MM-dd") =>
-          // this is fine
-        case dateFormat =>
-          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
-      }
+      GpuJsonToStructsShim.tagDateFormatSupport(meta,
+        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
     }
 
     val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])
     if (hasTimestamps) {
+      GpuJsonToStructsShim.tagTimestampFormatSupport(meta,
+        GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions))
+
       GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions) match {
         case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
           // this is fine
@@ -163,13 +162,35 @@ object GpuJsonScan {
     tagSupportOptions(parsedOptions, meta)
 
     val types = readSchema.map(_.dataType)
-    if (types.contains(DateType)) {
+
+    val hasDates = TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[DateType])
+    if (hasDates) {
+
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
+
+      GpuJsonToStructsShim.tagDateFormatSupportFromScan(meta,
+        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
+
+      // For date type, timezone needs to be checked also. This is because JVM timezone is used
+      // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
+      //
+      // In details, for Json data format, Spark uses dateFormatter to parse string as date data
+      // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. For Json format, it
+      // uses [[LegacyFastDateFormatter]] which is based on Apache Commons FastDateFormat. It parse
+      // string into Java util.Date base on JVM default timezone. From Java util.Date, it's
+      // converted into java.sql.Date type. By leveraging [[JavaDateTimeUtils]], it finally do
+      // `rebaseJulianToGregorianDays` considering its offset to UTC timezone.
+      if(!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)){
+        meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
+      }
     }
 
-    if (types.contains(TimestampType)) {
-      meta.checkTimeZoneId(parsedOptions.zoneId)
+    if (types.contains(TimestampType) || types.contains(DateType)) {
+      if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
+        meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
+      }
+
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
@@ -228,7 +249,8 @@ case class GpuJsonScan(
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    maxGpuColumnSizeBytes: Long)
+    maxGpuColumnSizeBytes: Long,
+    mixedTypesAsStringEnabled: Boolean)
   extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: JSONOptions = new JSONOptions(
@@ -251,7 +273,8 @@ case class GpuJsonScan(
 
     GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
+      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap,
+      mixedTypesAsStringEnabled)
   }
 
   override def withInputFile(): GpuScan = this
@@ -269,7 +292,8 @@ case class GpuJsonPartitionReaderFactory(
     maxReaderBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
+    @transient params: Map[String, String],
+    mixedTypesAsStringEnabled: Boolean) extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -279,7 +303,7 @@ case class GpuJsonPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val reader = new PartitionReaderWithBytesRead(new JsonPartitionReader(conf, partFile,
       dataSchema, readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes,
-      metrics))
+      metrics, mixedTypesAsStringEnabled))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
       maxGpuColumnSizeBytes)
   }
@@ -325,14 +349,18 @@ class JsonPartitionReader(
     parsedOptions: JSONOptions,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, GpuMetric])
+    execMetrics: Map[String, GpuMetric],
+    enableMixedTypesAsString: Boolean)
   extends GpuTextBasedPartitionReader[HostLineBufferer, HostLineBuffererFactory.type](conf,
     partFile, dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
     maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions = {
-    val builder = cudf.JSONOptions.builder().withRecoverWithNull(true)
-    builder.build
+    cudf.JSONOptions.builder()
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(enableMixedTypesAsString)
+      .withNormalizeSingleQuotes(true)
+      .build
   }
 
   /**
@@ -430,6 +458,10 @@ class JsonPartitionReader(
     }
   }
 
+  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat)
+  }
+
   /**
    * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
    *
@@ -474,6 +506,6 @@ class JsonPartitionReader(
     }
   }
 
-  override def dateFormat: String = GpuJsonUtils.dateFormatInRead(parsedOptions)
+  override def dateFormat: Option[String] = GpuJsonUtils.optionalDateFormatInRead(parsedOptions)
   override def timestampFormat: String = GpuJsonUtils.timestampFormatInRead(parsedOptions)
 }

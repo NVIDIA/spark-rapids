@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -283,6 +283,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.getMaxGpuColumnSizeBytes(), task.useChunkedReader(),
+          task.useSubPageChunked(),
           task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
           task.getNumThreads(), task.getMaxNumFileProcessed(),
           useMultiThread, ff, metrics, queryUsesInputFile);
@@ -293,7 +294,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
     BatchReader(ReadTask task, scala.collection.immutable.Map<String, GpuMetric> metrics) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(), task.useChunkedReader(),
+          task.getTargetBatchSizeBytes(), task.useChunkedReader(), task.useSubPageChunked(),
           task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(), metrics);
     }
   }
@@ -304,6 +305,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
     private final String expectedSchemaString;
     private final boolean caseSensitive;
     private final boolean useChunkedReader;
+    private final boolean useSubPageChunked;
     private final Broadcast<SerializableConfiguration> confBroadcast;
     private final int maxBatchSizeRows;
     private final long maxBatchSizeBytes;
@@ -341,6 +343,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
       this.numThreads = rapidsConf.multiThreadReadNumThreads();
       this.maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel();
       this.useChunkedReader = rapidsConf.chunkedReaderEnabled();
+      this.useSubPageChunked = rapidsConf.chunkedSubPageReaderEnabled();
     }
 
     @Override
@@ -405,6 +408,10 @@ abstract class GpuSparkScan extends GpuScanWrapper
 
     public boolean useChunkedReader() {
       return useChunkedReader;
+    }
+
+    public boolean useSubPageChunked() {
+      return useSubPageChunked;
     }
   }
 }

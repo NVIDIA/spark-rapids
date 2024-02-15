@@ -21,6 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.charset.StandardCharsets
+import java.time.ZoneId
 import java.util
 import java.util.concurrent.{Callable, TimeUnit}
 import java.util.regex.Pattern
@@ -37,6 +38,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.CountingOutputStream
@@ -152,6 +154,19 @@ object GpuOrcScan {
 
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(schema)) {
       meta.willNotWorkOnGpu("GpuOrcScan does not support default values in schema")
+    }
+
+    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
+    // timezone offset is considered when getting [[java.sql.date]] from
+    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
+    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
+    val types = schema.map(_.dataType).toSet
+    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
+      if (!GpuOverrides.isUTCTimezone()) {
+        meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+      }
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)
@@ -336,12 +351,11 @@ object GpuOrcScan {
         col.castTo(toDt)
 
       // float/double to string
-      // cuDF keep 9 decimal numbers after the decimal point, and CPU keeps more than 10.
-      // So when casting float/double to string, the result of GPU is different from CPU.
+      // When casting float/double to string, the result of GPU is different from CPU.
       // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
       // enable or not.
       case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
-        GpuCast.castFloatingTypeToString(col)
+        CastStrings.fromFloat(col)
 
       // float/double -> timestamp
       case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>
@@ -349,17 +363,39 @@ object GpuOrcScan {
         //     val doubleMillis = doubleValue * 1000,
         //     val milliseconds = Math.round(doubleMillis)
         //     if (noOverflow) { milliseconds } else { null }
+
+        // java.lang.Math.round is a true half up, meaning rounding towards positive infinity
+        // even for negative numbers
+        //   assert(Math.round(-1.5) = -1
+        //   assert(Math.round(1.5) = 2
+        //
+        // libcudf, Spark implement it half up in a half away from zero fashion
+        // >> sql("SELECT ROUND(-1.5D, 0), ROUND(-0.5D, 0), ROUND(0.5D, 0)").show(truncate=False)
+        // +--------------+--------------+-------------+
+        // |round(-1.5, 0)|round(-0.5, 0)|round(0.5, 0)|
+        // +--------------+--------------+-------------+
+        // |-2.0          |-1.0          |1.0          |
+        // +--------------+--------------+-------------+
+        //
+        // Math.round half up can be implemented in terms of floor
+        // Math.round(x) = n iff x is in [n-0.5, n+0.5) iff x+0.5 is in [n,n+1) iff floor(x+0.5) = n
+        //
         val milliseconds = withResource(Scalar.fromDouble(DateTimeConstants.MILLIS_PER_SECOND)) {
           thousand =>
           // ORC assumes value is in seconds
           withResource(col.mul(thousand, DType.FLOAT64)) { doubleMillis =>
-            withResource(doubleMillis.round()) { millis =>
-              withResource(getOverflowFlags(doubleMillis, millis)) { overflowFlags =>
-                millis.copyWithBooleanColumnAsValidity(overflowFlags)
+            withResource(Scalar.fromDouble(0.5)) { half =>
+              withResource(doubleMillis.add(half)) { doubleMillisPlusHalf =>
+                withResource(doubleMillisPlusHalf.floor()) { millis =>
+                  withResource(getOverflowFlags(doubleMillis, millis)) { overflowFlags =>
+                    millis.copyWithBooleanColumnAsValidity(overflowFlags)
+                  }
+                }
               }
             }
           }
         }
+
         // Cast milli-seconds to micro-seconds
         // We need to pay attention that when convert (milliSeconds * 1000) to INT64, there may be
         // INT64-overflow.

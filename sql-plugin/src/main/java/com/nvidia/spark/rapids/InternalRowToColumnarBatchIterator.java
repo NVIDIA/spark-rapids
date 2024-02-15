@@ -21,7 +21,9 @@ import java.util.Collections;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
+import com.nvidia.spark.Retryable;
 import scala.Option;
+import scala.Tuple2;
 import scala.collection.Iterator;
 
 import ai.rapids.cudf.ColumnVector;
@@ -53,8 +55,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 public abstract class InternalRowToColumnarBatchIterator implements Iterator<ColumnarBatch> {
   protected final Iterator<InternalRow> input;
   protected UnsafeRow pending = null;
-  protected final int numRowsEstimate;
-  protected final long dataLength;
+  protected int numRowsEstimate = 1;
+  protected final int sizePerRowEstimate;
   protected final DType[] rapidsTypes;
   protected final DataType[] outputTypes;
   protected final GpuMetric streamTime;
@@ -73,10 +75,8 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
       GpuMetric numOutputRows,
       GpuMetric numOutputBatches) {
     this.input = input;
-    int sizePerRowEstimate = CudfUnsafeRow.getRowSizeEstimate(schema);
-    numRowsEstimate = (int)Math.max(1,
-        Math.min(Integer.MAX_VALUE - 1, goal.targetSizeBytes() / sizePerRowEstimate));
-    dataLength = ((long) sizePerRowEstimate) * numRowsEstimate;
+    sizePerRowEstimate = CudfUnsafeRow.getRowSizeEstimate(schema);
+    numRowsEstimate = calcNumRowsEstimate(goal.targetSizeBytes());
     rapidsTypes = new DType[schema.length];
     outputTypes = new DataType[schema.length];
 
@@ -89,6 +89,20 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     this.numInputRows = numInputRows;
     this.numOutputRows = numOutputRows;
     this.numOutputBatches = numOutputBatches;
+  }
+
+  private int calcNumRowsEstimate(long targetBytes) {
+    return Math.max(1,
+        Math.min(Integer.MAX_VALUE - 1, (int) (targetBytes / sizePerRowEstimate)));
+  }
+
+  private long calcDataLengthEstimate(int numRows) {
+    return ((long) sizePerRowEstimate) * numRows;
+  }
+
+  private long calcOffsetLengthEstimate(int numRows) {
+    int BYTES_PER_OFFSET = DType.INT32.getSizeInBytes();
+    return (long)(numRows + 1) * BYTES_PER_OFFSET;
   }
 
   @Override
@@ -108,72 +122,162 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     if (!hasNext()) {
       throw new NoSuchElementException();
     }
-    final int BYTES_PER_OFFSET = DType.INT32.getSizeInBytes();
+
 
     long collectStart = System.nanoTime();
+    Tuple2<SpillableColumnarBatch, NvtxRange> batchAndRange;
+    AutoCloseableTargetSize numRowsWrapper =
+        new AutoCloseableTargetSize(numRowsEstimate, 1);
+    Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize> bufsAndNumRows;
 
-    SpillableColumnarBatch batchWithColumnToConvert;
-    NvtxRange buildRange;
     // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
     // don't do a great job from a performance standpoint with building this type of data structure
     // and we want this to be as efficient as possible so we are going to allocate two host memory
     // buffers.  One will be for the byte data and the second will be for the offsets. We will then
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
-    try (HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
-         HostMemoryBuffer offsetsBuffer =
-             HostMemoryBuffer.allocate(((long)numRowsEstimate + 1) * BYTES_PER_OFFSET)) {
+    bufsAndNumRows =
+        // Starting with initial num rows estimate, this retry block will recalculate the buffer
+        // sizes from the rows estimate, which is split in half if we get a split and retry oom,
+        // until we succeed or hit the min of 1 row.
+        RmmRapidsRetryIterator.withRetry(numRowsWrapper,
+            RmmRapidsRetryIterator.splitTargetSizeInHalfCpu(), (numRows) -> {
+          return allocBuffersWithRestore(numRows);
+        }).next();
+    // Update our estimate for number of rows with the final size used to allocate the buffers.
+    numRowsEstimate = (int) bufsAndNumRows._2.targetSize();
+    long dataLength = calcDataLengthEstimate(numRowsEstimate);
+    int used[];
+    try (SpillableHostBuffer spillableDataBuffer = bufsAndNumRows._1[0];
+        SpillableHostBuffer spillableOffsetsBuffer = bufsAndNumRows._1[1];
+    ) {
+      HostMemoryBuffer[] hBufs =
+          getHostBuffersWithRetry(spillableDataBuffer, spillableOffsetsBuffer);
+      try(HostMemoryBuffer dataBuffer = hBufs[0];
+          HostMemoryBuffer offsetsBuffer = hBufs[1];
+      ) {
+        used = fillBatch(dataBuffer, offsetsBuffer, dataLength, numRowsEstimate);
+        int dataOffset = used[0];
+        int currentRow = used[1];
+        // We don't want to loop forever trying to copy nothing
+        assert (currentRow > 0);
+        if (numInputRows != null) {
+          numInputRows.add(currentRow);
+        }
+        if (numOutputRows != null) {
+          numOutputRows.add(currentRow);
+        }
+        if (numOutputBatches != null) {
+          numOutputBatches.add(1);
+        }
+        // Now that we have filled the buffers with the data, we need to turn them into a
+        // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
+        // To do this we first need to make a HostColumnCoreVector for the data, and then
+        // put that into a HostColumnVector as its child.  This the basics of building up
+        // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
+        // APIs.
+        dataBuffer.incRefCount();
+        offsetsBuffer.incRefCount();
+        try (HostColumnVectorCore dataCv =
+                 new HostColumnVectorCore(DType.INT8, dataOffset, Optional.of(0L),
+                     dataBuffer, null, null, new ArrayList<>());
+             HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
+                 currentRow, Optional.of(0L), null, null,
+                 offsetsBuffer, Collections.singletonList(dataCv))) {
 
-      int[] used = fillBatch(dataBuffer, offsetsBuffer);
+          long ct = System.nanoTime() - collectStart;
+          streamTime.add(ct);
 
-      int dataOffset = used[0];
-      int currentRow = used[1];
-      // We don't want to loop forever trying to copy nothing
-      assert (currentRow > 0);
-      if (numInputRows != null) {
-        numInputRows.add(currentRow);
-      }
-      if (numOutputRows != null) {
-        numOutputRows.add(currentRow);
-      }
-      if (numOutputBatches != null) {
-        numOutputBatches.add(1);
-      }
-      // Now that we have filled the buffers with the data, we need to turn them into a
-      // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
-      // To do this we first need to make a HostColumnCoreVector for the data, and then
-      // put that into a HostColumnVector as its child.  This the basics of building up
-      // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
-      // APIs.
-      dataBuffer.incRefCount();
-      offsetsBuffer.incRefCount();
-      try (HostColumnVectorCore dataCv =
-               new HostColumnVectorCore(DType.INT8, dataOffset, Optional.of(0L),
-                   dataBuffer, null, null, new ArrayList<>());
-           HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
-               currentRow, Optional.of(0L), null, null,
-               offsetsBuffer, Collections.singletonList(dataCv))) {
-
-        long ct = System.nanoTime() - collectStart;
-        streamTime.add(ct);
-
-        // Grab the semaphore because we are about to put data onto the GPU.
-        GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
-        buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(opTime));
-        ColumnVector devColumn =
-            RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
-        batchWithColumnToConvert = makeSpillableBatch(devColumn);
+          // Grab the semaphore because we are about to put data onto the GPU.
+          GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
+          NvtxRange range = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN,
+              Option.apply(opTime));
+          ColumnVector devColumn =
+              RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
+          batchAndRange = Tuple2.apply(makeSpillableBatch(devColumn), range);
+        }
       }
     }
-    try (NvtxRange ignored = buildRange;
+    try (NvtxRange ignored = batchAndRange._2;
          Table tab =
-           RmmRapidsRetryIterator.withRetryNoSplit(batchWithColumnToConvert, (attempt) -> {
+           RmmRapidsRetryIterator.withRetryNoSplit(batchAndRange._1, (attempt) -> {
              try (ColumnarBatch cb = attempt.getColumnarBatch()) {
                return convertFromRowsUnderRetry(cb);
              }
            })) {
       return GpuColumnVector.from(tab, outputTypes);
     }
+  }
+
+  private HostMemoryBuffer[] getHostBuffersWithRetry(
+      SpillableHostBuffer spillableDataBuffer, SpillableHostBuffer spillableOffsetsBuffer) {
+    return RmmRapidsRetryIterator.withRetryNoSplit( () -> {
+      try (HostMemoryBuffer dataBuffer = spillableDataBuffer.getHostBuffer();
+           HostMemoryBuffer offsetsBuffer = spillableOffsetsBuffer.getHostBuffer();
+          ) {
+        // Increment these to keep them.
+        dataBuffer.incRefCount();
+        offsetsBuffer.incRefCount();
+        return new HostMemoryBuffer[] { dataBuffer, offsetsBuffer };
+      }
+    });
+  }
+
+  private Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize>
+  allocBuffers(SpillableHostBuffer[] sBufs, AutoCloseableTargetSize numRowsWrapper) {
+    HostMemoryBuffer[] hBufs = new HostMemoryBuffer[]{ null, null };
+    try {
+      long dataBytes = calcDataLengthEstimate((int) numRowsWrapper.targetSize());
+      long offsetBytes = calcOffsetLengthEstimate((int) numRowsWrapper.targetSize());
+      hBufs[0] = HostAlloc$.MODULE$.alloc(dataBytes, true);
+      sBufs[0] = SpillableHostBuffer$.MODULE$.apply(hBufs[0], hBufs[0].getLength(),
+          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
+          RapidsBufferCatalog$.MODULE$.singleton());
+      hBufs[0] = null; // Was closed by spillable
+      hBufs[1] = HostAlloc$.MODULE$.alloc(offsetBytes, true);
+      sBufs[1] = SpillableHostBuffer$.MODULE$.apply(hBufs[1], hBufs[1].getLength(),
+          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
+          RapidsBufferCatalog$.MODULE$.singleton());
+      hBufs[1] = null;  // Was closed by spillable
+      return Tuple2.apply(sBufs, numRowsWrapper);
+    } finally {
+      // Make sure host buffers are always closed
+      for (int i = 0; i < hBufs.length; i++) {
+        if (hBufs[i] != null) {
+          hBufs[i].close();
+          hBufs[i] = null;
+        }
+      }
+      // If the second spillable buffer is null, we must have thrown,
+      // so we need to close the first one in case this is not a retry exception.
+      // Restore on retry is handled by the caller.
+      if ((sBufs[1] == null) && (sBufs[0] != null)) {
+        sBufs[0].close();
+        sBufs[0] = null;
+      }
+    }
+  }
+
+  private Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize>
+  allocBuffersWithRestore(AutoCloseableTargetSize numRows) {
+    SpillableHostBuffer[] spillableBufs = new SpillableHostBuffer[]{ null, null};
+    Retryable retryBufs = new Retryable() {
+      @Override
+      public void checkpoint() {}
+      @Override
+      public void restore() {
+        for (int i = 0; i < spillableBufs.length; i++) {
+          if (spillableBufs[i] != null) {
+            spillableBufs[i].close();
+            spillableBufs[i] = null;
+          }
+        }
+      }
+    };
+
+    return RmmRapidsRetryIterator.withRestoreOnRetry(retryBufs, () -> {
+      return allocBuffers(spillableBufs, numRows);
+    });
   }
 
   /**
@@ -218,8 +322,11 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
    * virtual function call per batch instead of one per row.
    * @param dataBuffer the data buffer to populate
    * @param offsetsBuffer the offsets buffer to populate
+   * @param dataLength the data length corresponding to the current rows estimate.
+   * @param numRows the number of rows we can fill
    * @return an array of ints where the first index is the amount of data in bytes copied into
    * the data buffer and the second index is the number of rows copied into the buffers.
    */
-  public abstract int[] fillBatch(HostMemoryBuffer dataBuffer, HostMemoryBuffer offsetsBuffer);
+  public abstract int[] fillBatch(HostMemoryBuffer dataBuffer, HostMemoryBuffer offsetsBuffer,
+      long dataLength, int numRows);
 }

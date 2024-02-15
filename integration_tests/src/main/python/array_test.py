@@ -16,8 +16,8 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from conftest import is_databricks_runtime, is_not_utc
-from marks import incompat
+from conftest import is_databricks_runtime
+from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
@@ -103,13 +103,11 @@ array_index_gens = [byte_array_index_gen, short_array_index_gen, int_array_index
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 @pytest.mark.parametrize('index_gen', array_index_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_item(data_gen, index_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, data_gen, index_gen).selectExpr('a[b]'))
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_item_lit_ordinal(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -147,7 +145,6 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
 
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_item_ansi_fail_invalid_index(index):
     message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
@@ -174,7 +171,6 @@ def test_array_item_ansi_not_fail_all_null_data():
                          decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit, binary_gen,
                          StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
                          StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_make_array(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -187,7 +183,6 @@ def test_make_array(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
@@ -217,7 +212,6 @@ def test_orderby_array_of_structs(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
     literal = with_cpu_session(lambda spark: gen_scalar(data_gen, force_no_nulls=True))
@@ -245,7 +239,6 @@ def test_array_contains_for_nans(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, data_gen, array_no_zero_index_gen).selectExpr(
@@ -310,7 +303,6 @@ def test_array_element_at_zero_index_fail(index, ansi_enabled):
 
 
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_transform(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
@@ -340,12 +332,24 @@ def test_array_transform(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is supported for sequence
+@allow_non_gpu(*non_utc_allow_for_sequence)
+def test_array_transform_non_deterministic():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(1).selectExpr("transform(sequence(0, cast(rand(5)*10 as int) + 1), x -> x * 22) as t"),
+            conf={'spark.rapids.sql.castFloatToIntegralTypes.enabled': True})
+
+@allow_non_gpu(*non_utc_allow_for_sequence)
+def test_array_transform_non_deterministic_second_param():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : debug_df(spark.range(1).selectExpr("transform(sequence(0, cast(rand(5)*10 as int) + 1), (x, i) -> x + i) as t")),
+            conf={'spark.rapids.sql.castFloatToIntegralTypes.enabled': True})
+
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_min_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
@@ -370,7 +374,6 @@ def test_array_concat_decimal(data_gen):
             'concat(a, a)')))
 
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_repeat_with_count_column(data_gen):
     cnt_gen = IntegerGen(min_val=-5, max_val=5, special_cases=[])
     cnt_not_null_gen = IntegerGen(min_val=-5, max_val=5, special_cases=[], nullable=False)
@@ -384,7 +387,6 @@ def test_array_repeat_with_count_column(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_repeat_with_count_scalar(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -414,7 +416,6 @@ def test_sql_array_scalars(query):
 
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + nested_gens_sample, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_get_array_struct_fields(data_gen):
     array_struct_gen = ArrayGen(
         StructGen([['child0', data_gen], ['child1', int_gen]]),
@@ -453,7 +454,6 @@ array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_len
 
 
 @pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_arrays_zip(data_gen):
     gen = StructGen(
         [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
@@ -486,7 +486,6 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 @pytest.mark.skipif(is_before_spark_313() or is_spark_330() or is_spark_330cdh(), reason="NaN equality is only handled in Spark 3.1.3+ and SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
 def test_array_intersect(data_gen):
     gen = StructGen(
@@ -528,7 +527,6 @@ def test_array_intersect_spark330(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
 @pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_intersect_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -549,7 +547,6 @@ def test_array_intersect_before_spark313(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_union(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -570,7 +567,6 @@ def test_array_union(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
 @pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_union_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -591,7 +587,6 @@ def test_array_union_before_spark313(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_except(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -612,7 +607,6 @@ def test_array_except(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
 @pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_except_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -633,7 +627,6 @@ def test_array_except_before_spark313(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_arrays_overlap(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -655,7 +648,6 @@ def test_arrays_overlap(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
 @pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_arrays_overlap_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -693,7 +685,6 @@ def test_array_remove_scalar(data_gen):
                                       FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]), 
                                       DoubleGen(special_cases=_non_neg_zero_double_special_cases + [-0.0]),
                                       StringGen(pattern='[0-9]{1,5}'), boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_array_remove(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -708,7 +699,6 @@ def test_array_remove(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in array_gens_sample], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_flatten_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')

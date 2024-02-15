@@ -254,7 +254,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-23.12.2-tests.jar,rapids-4-spark-integration-tests_2.12-23.12.2-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-24.02.0-tests.jar,rapids-4-spark-integration-tests_2.12-24.02.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -277,7 +277,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.12.2-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-24.02.0-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -343,6 +343,38 @@ integration tests. For example:
 $ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
 ```
 
+Tests can override the seed used using the test marker: 
+
+```
+@datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`. 
+```
+
+This marker has the following arguments: 
+- `seed`: a hard coded datagen seed to use. 
+- `condition`: is used to gate when the override is appropriate, usually used to say that specific shims
+               need the special override.
+- `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
+
+### Running with non-UTC time zone
+For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
+The non-UTC nightly CIs are verifing all cases with non-UTC time zone.
+But only a small amout of cases are verifing with non-UTC time zone in the pre-merge CI due to limited GPU resources.
+When adding cases, should also check non-UTC is working besides the default UTC time zone.
+Please test the following time zones:
+```shell
+$ TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh
+$ TZ=America/Los_Angeles ./integration_tests/run_pyspark_from_build.sh
+```
+`Asia/Shanghai` is non-DST(Daylight Savings Time) time zone and `America/Los_Angeles` is DST time zone.
+
+If the new added cases failed with non-UTC, then should allow the operator(does not support non-UTC) fallback,
+For example, add the following annotation to the case:
+```python
+non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is supported for sequence
+@allow_non_gpu(*non_utc_allow_for_sequence)
+test_my_new_added_case_for_sequence_operator()
+```
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
@@ -389,7 +421,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.12.2-cuda11.jar,rapids-4-spark-tests_2.12-23.12.2.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.12.2-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.12.2-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-24.02.0-cuda11.jar,rapids-4-spark-tests_2.12-24.02.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-24.02.0-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-24.02.0-cuda11.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,14 +30,18 @@
 {"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
+{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
+{"spark": "342"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuLiteral, GpuSpecifiedWindowFrameMetaBase, GpuWindowExpressionMetaBase, ParsedBoundary, RangeBoundaryValue, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuLiteral, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.window.{GpuSpecifiedWindowFrameMetaBase, GpuWindowExpressionMetaBase, ParsedBoundary, RangeBoundaryValue}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecifiedWindowFrame, WindowExpression}
 import org.apache.spark.sql.rapids.shims.Spark32XShimsUtils

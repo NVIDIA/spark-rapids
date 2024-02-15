@@ -33,3 +33,4 @@ delta_lake = pytest.mark.delta_lake
 large_data_test = pytest.mark.large_data_test
 pyarrow_test = pytest.mark.pyarrow_test
 datagen_overrides = pytest.mark.datagen_overrides
+tz_sensitive_test = pytest.mark.tz_sensitive_test

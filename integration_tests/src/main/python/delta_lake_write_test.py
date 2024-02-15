@@ -424,7 +424,7 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
-    gen = TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc),
+    gen = TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
                        end=datetime(2000, 1, 1, tzinfo=timezone.utc)).with_special_case(
         datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)
     data_path = spark_tmp_path + "/DELTA_DATA"

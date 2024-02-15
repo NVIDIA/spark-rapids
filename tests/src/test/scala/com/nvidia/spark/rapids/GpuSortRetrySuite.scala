@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
@@ -53,12 +53,12 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU out-of-core sort with retry when first-pass-sort RetryOOM") {
+  test("GPU out-of-core sort with retry when first-pass-sort GpuRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
       targetSize = 1024,
-      firstPassSortExp = new RetryOOM())
+      firstPassSortExp = new GpuRetryOOM())
     withResource(outCoreIter) { _ =>
       withResource(outCoreIter.next()) { cb =>
         // only one batch
@@ -68,12 +68,12 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU out-of-core sort with retry when first-pass-sort SplitAndRetryOOM") {
+  test("GPU out-of-core sort with retry when first-pass-sort GpuSplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
       targetSize = 1024,
-      firstPassSortExp = new SplitAndRetryOOM())
+      firstPassSortExp = new GpuSplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
       withResource(outCoreIter.next()) { cb =>
         // only one batch
@@ -83,12 +83,12 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU out-of-core sort with retry when first-pass-split RetryOOM") {
+  test("GPU out-of-core sort with retry when first-pass-split GpuRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
       targetSize = 1024,
-      firstPassSplitExp = new RetryOOM())
+      firstPassSplitExp = new GpuRetryOOM())
     withResource(outCoreIter) { _ =>
       withResource(outCoreIter.next()) { cb =>
         // only one batch
@@ -98,25 +98,25 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU out-of-core sort throws when first-pass-split SplitAndRetryOOM") {
+  test("GPU out-of-core sort throws when first-pass-split GpuSplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
       targetSize = 1024,
-      firstPassSplitExp = new SplitAndRetryOOM())
+      firstPassSplitExp = new GpuSplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
-      assertThrows[SplitAndRetryOOM] {
+      assertThrows[GpuSplitAndRetryOOM] {
         outCoreIter.next()
       }
     }
   }
 
-  test("GPU out-of-core sort with retry when merge-sort-split RetryOOM") {
+  test("GPU out-of-core sort with retry when merge-sort-split GpuRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
       targetSize = 400,
-      mergeSortExp = new RetryOOM())
+      mergeSortExp = new GpuRetryOOM())
     withResource(outCoreIter) { _ =>
       var numRows = 0
       while(outCoreIter.hasNext) {
@@ -128,25 +128,25 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU out-of-core sort throws when merge-sort-split SplitAndRetryOOM") {
+  test("GPU out-of-core sort throws when merge-sort-split GpuSplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
       targetSize = 400,
-      mergeSortExp = new SplitAndRetryOOM())
+      mergeSortExp = new GpuSplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
-      assertThrows[SplitAndRetryOOM] {
+      assertThrows[GpuSplitAndRetryOOM] {
         outCoreIter.next()
       }
     }
   }
 
-  test("GPU out-of-core sort with retry when concat-output RetryOOM") {
+  test("GPU out-of-core sort with retry when concat-output GpuRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
       targetSize = 400,
-      concatOutExp = new RetryOOM())
+      concatOutExp = new GpuRetryOOM())
     withResource(outCoreIter) { _ =>
       var numRows = 0
       while (outCoreIter.hasNext) {
@@ -158,14 +158,14 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU out-of-core sort throws when concat-output SplitAndRetryOOM") {
+  test("GPU out-of-core sort throws when concat-output GpuSplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
       targetSize = 400,
-      concatOutExp = new SplitAndRetryOOM())
+      concatOutExp = new GpuSplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
-      assertThrows[SplitAndRetryOOM] {
+      assertThrows[GpuSplitAndRetryOOM] {
         outCoreIter.next()
       }
     }
@@ -206,12 +206,13 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU each batch sort with RetryOOM") {
+  test("GPU each batch sort with GpuRetryOOM") {
     val eachBatchIter = new GpuSortEachBatchIterator(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
       singleBatch = false)
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
     while (eachBatchIter.hasNext) {
       var pos = 0
       var curValue = 0
@@ -228,14 +229,15 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
     }
   }
 
-  test("GPU each batch sort throws SplitAndRetryOOM") {
+  test("GPU each batch sort throws GpuSplitAndRetryOOM") {
     val inputIter = Iterator(buildBatch, buildBatch)
     val eachBatchIter = new GpuSortEachBatchIterator(
       inputIter,
       gpuSorter,
       singleBatch = false)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
-    assertThrows[SplitAndRetryOOM] {
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    assertThrows[GpuSplitAndRetryOOM] {
       eachBatchIter.next()
     }
     inputIter.foreach(_.close())

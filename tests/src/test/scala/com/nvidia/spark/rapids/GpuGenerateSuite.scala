@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,22 @@ package com.nvidia.spark.rapids
 
 import java.util
 
+import scala.collection.JavaConverters.seqAsJavaListConverter
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, Table}
-import ai.rapids.cudf.HostColumnVector.{BasicType, ListType}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Table}
+import ai.rapids.cudf.HostColumnVector.{BasicType, ListType, StructType}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 
-import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuGenerateSuite
-  extends SparkQueryCompareTestSuite {
+  extends RmmSparkRetrySuiteBase
+    with SparkQueryCompareTestSuite {
   val rapidsConf = new RapidsConf(Map.empty[String, String])
 
   def makeListColumn(
@@ -50,12 +55,42 @@ class GpuGenerateSuite
       rows: _*)
   }
 
+  def makeMapColumn(
+      numRows: Int,
+      mapSize: Int,
+      includeNulls: Boolean,
+      allNulls: Boolean): ColumnVector = {
+    val structType: StructType = new HostColumnVector.StructType(
+      true,
+      new HostColumnVector.BasicType(true, DType.INT32),
+      new HostColumnVector.BasicType(true, DType.INT32))
+
+    val rows = (0 until numRows).map { r =>
+      if (allNulls || includeNulls && r % 2 == 0) {
+        null
+      } else {
+        (0 until mapSize).map { k =>
+          if (allNulls || includeNulls && k % 2 == 0) {
+            null
+          } else {
+            new HostColumnVector.StructData(Integer.valueOf(k), Integer.valueOf(k + 1))
+          }
+        }
+      }.asJava
+    }
+
+    ColumnVector.fromLists(
+      new HostColumnVector.ListType(true, structType),
+      rows: _*)
+  }
+
   def makeBatch(
       numRows: Int,
       includeRepeatColumn: Boolean = true,
       includeNulls: Boolean = false,
       listSize: Int = 4,
-      allNulls: Boolean = false): (ColumnarBatch, Long) = {
+      allNulls: Boolean = false,
+      carryAlongColumnCount: Int = 1): (ColumnarBatch, Long) = {
     var inputSize: Long = 0L
     withResource(makeListColumn(numRows, listSize, includeNulls, allNulls)) { cvList =>
       inputSize +=
@@ -63,23 +98,77 @@ class GpuGenerateSuite
           _.getDeviceMemorySize
         }
       val batch = if (includeRepeatColumn) {
-        val dt: Array[DataType] = Seq(IntegerType, ArrayType(IntegerType)).toArray
-        val secondColumn = (0 until numRows).map { x =>
-          val i = Int.box(x)
-          if (allNulls || includeNulls && i % 2 == 0) {
-            null
-          } else {
-            i
-          }
+        val carryAlongColumnTypes = (0 until carryAlongColumnCount).map(_ => IntegerType)
+        val dt: Array[DataType] = (carryAlongColumnTypes ++ Seq(ArrayType(IntegerType))).toArray
+        val carryAlongColumns = (0 until carryAlongColumnCount).safeMap { c =>
+          val elements = (0 until numRows).map { x =>
+            // + c to add some differences per columnn
+            val i = Int.box(x + c)
+            if (allNulls || includeNulls && i % 2 == 0) {
+              null
+            } else {
+              i
+            }
+          }.toSeq
+          ColumnVector.fromBoxedInts(elements:_*)
         }
-        withResource(ColumnVector.fromBoxedInts(secondColumn: _*)) { repeatCol =>
-          inputSize += listSize * repeatCol.getDeviceMemorySize
-          withResource(new Table(repeatCol, cvList)) { tbl =>
+        withResource(carryAlongColumns) { _ =>
+          carryAlongColumns.foreach { rc =>
+            inputSize += listSize * rc.getDeviceMemorySize
+          }
+          withResource(new Table((carryAlongColumns :+ cvList): _*)) { tbl =>
             GpuColumnVector.from(tbl, dt)
           }
         }
       } else {
         val dt: Array[DataType] = Seq(ArrayType(IntegerType)).toArray
+        withResource(new Table(cvList)) { tbl =>
+          GpuColumnVector.from(tbl, dt)
+        }
+      }
+      (batch, inputSize)
+    }
+  }
+
+  def makeMapBatch(
+      numRows: Int,
+      includeRepeatColumn: Boolean = true,
+      includeNulls: Boolean = false,
+      mapSize: Int = 4,
+      allNulls: Boolean = false,
+      carryAlongColumnCount: Int = 1): (ColumnarBatch, Long) = {
+    var inputSize: Long = 0L
+    withResource(makeMapColumn(numRows, mapSize, includeNulls, allNulls)) { cvList =>
+      inputSize +=
+          withResource(cvList.getChildColumnView(0)) {
+            _.getDeviceMemorySize
+          }
+      val batch = if (includeRepeatColumn) {
+        val carryAlongColumnTypes = (0 until carryAlongColumnCount).map(_ => IntegerType)
+        val dt: Array[DataType] =
+          (carryAlongColumnTypes ++ Seq(MapType(IntegerType, IntegerType))).toArray
+        val carryAlongColumns = (0 until carryAlongColumnCount).safeMap { c =>
+          val elements = (0 until numRows).map { x =>
+            // + c to add some differences per columnn
+            val i = Int.box(x + c)
+            if (allNulls || includeNulls && i % 2 == 0) {
+              null
+            } else {
+              i
+            }
+          }.toSeq
+          ColumnVector.fromBoxedInts(elements: _*)
+        }
+        withResource(carryAlongColumns) { _ =>
+          carryAlongColumns.foreach { rc =>
+            inputSize += mapSize * rc.getDeviceMemorySize
+          }
+          withResource(new Table((carryAlongColumns :+ cvList): _*)) { tbl =>
+            GpuColumnVector.from(tbl, dt)
+          }
+        }
+      } else {
+        val dt: Array[DataType] = Seq(MapType(IntegerType, IntegerType)).toArray
         withResource(new Table(cvList)) { tbl =>
           GpuColumnVector.from(tbl, dt)
         }
@@ -171,6 +260,230 @@ class GpuGenerateSuite
       splits = e.inputSplitIndices(batch, generatorOffset = 1 , true, 1)
       assertResult(0)(splits.length)
       checkSplits(splits, batch)
+    }
+  }
+
+  class SpillableColumnarBatchException(
+      spillable: SpillableColumnarBatch,
+      var forceOOM: Boolean) extends SpillableColumnarBatch {
+    override def numRows(): Int = spillable.numRows()
+    override def setSpillPriority(priority: Long): Unit = spillable.setSpillPriority(priority)
+    override def getColumnarBatch(): ColumnarBatch = {
+      if (forceOOM) {
+        forceOOM = false
+        throw new GpuSplitAndRetryOOM(s"mock split and retry")
+      }
+      spillable.getColumnarBatch()
+    }
+    override def sizeInBytes: Long = spillable.sizeInBytes
+    override def dataTypes: Array[DataType] = spillable.dataTypes
+    override def close(): Unit = spillable.close()
+  }
+
+  trait TestGenerator extends GpuExplodeBase {
+    private var forceNumOOMs: Int = 0
+
+    def doForceSplitAndRetry(numOOMs: Int): Unit = {
+      forceNumOOMs = numOOMs
+    }
+
+    private def getTestBatchIterator(
+        inputBatches: Iterator[SpillableColumnarBatch]): Iterator[SpillableColumnarBatch] = {
+      inputBatches.map { ib =>
+        if (forceNumOOMs > 0) {
+          forceNumOOMs -= 1
+          new SpillableColumnarBatchException(ib, true);
+        } else {
+          ib
+        }
+      }
+    }
+
+    override def generate(
+        inputBatches: Iterator[SpillableColumnarBatch],
+        generatorOffset: Int,
+        outer: Boolean): Iterator[ColumnarBatch] = {
+      super.generate(getTestBatchIterator(inputBatches), generatorOffset, outer)
+    }
+  }
+
+  class TestExplode(child: Expression) extends GpuExplode(child) with TestGenerator
+  class TestPosExplode(child: Expression) extends GpuPosExplode(child) with TestGenerator
+
+  def doGenerateWithSplitAndRetry(
+      generate: GpuGenerator,
+      failingGenerate: TestGenerator,
+      makeBatchFn:
+        (Int, Boolean) => (ColumnarBatch, Long) =
+          makeBatch(_, includeRepeatColumn = true, _, carryAlongColumnCount=2),
+      outer: Boolean = false,
+      includeNulls: Boolean = false) = {
+    // numRows = 1: exercises the split code trying to save a 1-row scenario where
+    // we are running OOM.
+    // numRows = 2: is the regular split code
+    val generatorOffset = 2 // 0 and 1 are carry-along columns, 2 == collection to explode
+
+    (1 until 3).foreach { numRows =>
+      val (expected, _) = makeBatchFn(numRows, includeNulls)
+      val itNoFailures = new GpuGenerateIterator(
+        Seq(SpillableColumnarBatch(expected, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)),
+        generator = generate,
+        generatorOffset,
+        outer,
+        NoopMetric,
+        NoopMetric,
+        NoopMetric)
+      val expectedExploded = itNoFailures.next()
+      withResource(expectedExploded) { _ =>
+        assertResult(false)(itNoFailures.hasNext)
+        // with numRows > 1, we follow regular split semantics, else
+        // we split the exploding column.
+        // - numRows = 1, numOOMs = 1:
+        //   2 batches each with 2 rows (4 items in the original array).
+        // - numRows = 1, numOOMs = 2:
+        //   3 batches (two 1-row batches, and the last batch has 2 rows).
+        // - numRows = 2, numOOMs = 1:
+        //   2 batches, each with 4 rows
+        // - numRows = 2, numOOMs = 2:
+        //   3 batches (2-row, 2-row and a 4-row)
+        (1 until 3).foreach { numOOMs =>
+          val (actual, _) = makeBatchFn(numRows, includeNulls)
+          val actualSpillable =
+            SpillableColumnarBatch(actual, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+
+          val it = new GpuGenerateIterator(
+            Seq(actualSpillable),
+            generator = failingGenerate,
+            generatorOffset,
+            outer,
+            NoopMetric,
+            NoopMetric,
+            NoopMetric)
+
+          failingGenerate.doForceSplitAndRetry(numOOMs)
+
+          // this should return 2 batches, each with half the output
+          val results = new ArrayBuffer[ColumnarBatch]()
+          if (includeNulls && numRows == 1) {
+            // if we have 1 row and we specified outer,
+            // we are going to generate a null list/map row.
+            // We cannot handle this because we cannot split a null, but this
+            // tests our special case.
+            assertThrows[GpuSplitAndRetryOOM] {
+              closeOnExcept(results) { _ =>
+                while (it.hasNext) {
+                  results.append(it.next())
+                }
+              }
+            }
+          } else {
+            closeOnExcept(results) { _ =>
+              while (it.hasNext) {
+                results.append(it.next())
+              }
+            }
+
+            withResource(results) { _ =>
+              withResource(results.map(GpuColumnVector.from)) { resultTbls =>
+                // toSeq is required for scala 2.13 here
+                withResource(Table.concatenate(resultTbls.toSeq: _*)) { res =>
+                  withResource(GpuColumnVector.from(expectedExploded)) { expectedTbl =>
+                    TestUtils.compareTables(expectedTbl, res)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  test("explode: splitAndRetry try to split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        new TestExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("explode (outer): splitAndRetry try to split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        new TestExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        outer = true,
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("posexplode: splitAndRetry try split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuPosExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        new TestPosExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("posexplode (outer): splitAndRetry try split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuPosExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        new TestPosExplode(AttributeReference("foo", ArrayType(IntegerType))()),
+        outer = true,
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("explode map: on splitAndRetry try split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        new TestExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        makeBatchFn = makeMapBatch(_, includeRepeatColumn = true, _, carryAlongColumnCount=2),
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("explode map (outer): splitAndRetry try split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        new TestExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        makeBatchFn = makeMapBatch(_, includeRepeatColumn = true, _, carryAlongColumnCount=2),
+        outer = true,
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("posexplode map: splitAndRetry try split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuPosExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        new TestPosExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        makeBatchFn = makeMapBatch(_, includeRepeatColumn = true, _, carryAlongColumnCount=2),
+        includeNulls = includeNulls
+      )
+    }
+  }
+
+  test("posexplode map (outer): splitAndRetry try split by rows else split the exploding column") {
+    Seq(false, true).foreach { includeNulls =>
+      doGenerateWithSplitAndRetry(
+        GpuPosExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        new TestPosExplode(AttributeReference("foo", MapType(IntegerType, IntegerType))()),
+        makeBatchFn = makeMapBatch(_, includeRepeatColumn = true, _, carryAlongColumnCount=2),
+        outer = true,
+        includeNulls = includeNulls
+      )
     }
   }
 

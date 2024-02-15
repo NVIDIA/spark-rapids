@@ -29,4 +29,7 @@ object FileUtils {
     try f(path) finally Utils.deleteRecursively(path)
   }
 
+  def deleteRecursively(path: File): Unit = {
+    Utils.deleteRecursively(path)
+  }
 }

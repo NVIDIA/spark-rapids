@@ -18,11 +18,19 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.types.DataType
 
 trait PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
   def isAnsiCast(e: Expression): Boolean
   def isAnsiCastOptionallyAliased(e: Expression): Boolean
+
+  /**
+   * Extra Ansi Cast's source's data type and target's data type
+   * @param e should be AnsiCast type or Cast under Ansi mode
+   * @return (source data type, target data type)
+   */
+  def extractAnsiCastTypes(e: Expression): (DataType, DataType)
 }
 
 object PlanShims {
@@ -35,7 +43,12 @@ object PlanShims {
   def isAnsiCast(e: Expression): Boolean = {
     shims.isAnsiCast(e)
   }
+
   def isAnsiCastOptionallyAliased(e: Expression): Boolean = {
     shims.isAnsiCastOptionallyAliased(e)
+  }
+
+  def extractAnsiCastTypes(e: Expression): (DataType, DataType) = {
+    shims.extractAnsiCastTypes(e)
   }
 }
