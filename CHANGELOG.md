@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-02-13
+Generated on 2024-02-15
 
 ## Release 24.02
 
@@ -72,7 +72,6 @@ Generated on 2024-02-13
 |[#10154](https://github.com/NVIDIA/spark-rapids/issues/10154)|[BUG] 'spark-test.sh' integration tests FAILED on 'ps: command not found" in Rocky Docker environment|
 |[#10175](https://github.com/NVIDIA/spark-rapids/issues/10175)|[BUG] string_test.py::test_format_number_float_special FAILED : AssertionError 'NaN' == |
 |[#10166](https://github.com/NVIDIA/spark-rapids/issues/10166)|Detect Undeclared Shim in POM.xml|
-|[#10147](https://github.com/NVIDIA/spark-rapids/issues/10147)|[BUG] test_dpp_reuse_broadcast_exchange failed|
 |[#10170](https://github.com/NVIDIA/spark-rapids/issues/10170)|[BUG] `test_cast_timestamp_to_date` fails with `TZ=Asia/Hebron`|
 |[#10149](https://github.com/NVIDIA/spark-rapids/issues/10149)|[BUG] GPU illegal access detected during delta_byte_array.parquet read|
 |[#9905](https://github.com/NVIDIA/spark-rapids/issues/9905)|[BUG] GpuJsonScan incorrect behavior when parsing dates|
@@ -120,6 +119,7 @@ Generated on 2024-02-13
 ### PRs
 |||
 |:---|:---|
+|[#10367](https://github.com/NVIDIA/spark-rapids/pull/10367)|Update rapids JNI and private version to release 24.02.0|
 |[#10414](https://github.com/NVIDIA/spark-rapids/pull/10414)|[DOC] Fix 24.02.0 documentation errors [skip ci]|
 |[#10403](https://github.com/NVIDIA/spark-rapids/pull/10403)|Cherry-pick: Fix a memory leak in json tuple (#10360)|
 |[#10387](https://github.com/NVIDIA/spark-rapids/pull/10387)|[DOC] Update docs for 24.02.0 release [skip ci]|
