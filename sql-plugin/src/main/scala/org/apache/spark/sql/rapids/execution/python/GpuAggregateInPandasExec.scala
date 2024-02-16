@@ -22,6 +22,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -140,7 +141,9 @@ case class GpuAggregateInPandasExec(
 
     // Start processing
     child.executeColumnar().mapPartitionsInternal { inputIter =>
+      val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
+      onTaskCompletion(queue.close())
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
@@ -161,47 +164,51 @@ case class GpuAggregateInPandasExec(
       }
 
       // Second splits into separate group batches.
-      val miniAttrs = (gpuGroupingExpressions ++ allInputs).asInstanceOf[Seq[Attribute]]
-      val keyConverter = (groupedBatch: ColumnarBatch) => {
-        // No `safeMap` because here does not increase the ref count.
-        // (`Seq.indices.map()` is NOT lazy, so it is safe to be used to slice the columns.)
-        val keyCudfColumns = groupingRefs.indices.map(
-          groupedBatch.column(_).asInstanceOf[GpuColumnVector].getBase)
-        if (keyCudfColumns.isEmpty) {
-          // No grouping columns, then the whole batch is a group. Returns the dedicated batch
-          // as the group key.
-          // This batch means there is only one empty row, just like the 'new UnsafeRow()'
-          // used in Spark. The row number setting to 1 is because Python returns only one row
-          // as the aggregate result for the whole batch, and 'CombiningIterator' requires the
-          // the same row number for both the key batch and the result batch to be combined.
-          new ColumnarBatch(Array(), 1)
-        } else {
-          // Uses `cudf.Table.gather` to pick the first row in each group as the group key.
-          // Doing this is because
-          //   - The Python worker produces only one row as the aggregate result,
-          //   - The key rows in a group are equal to each other.
-          //
-          // (Now this is done group by group, so the performance would not be good when
-          //  there are too many small groups.)
-          withResource(new cudf.Table(keyCudfColumns: _*)) { table =>
-            withResource(cudf.ColumnVector.fromInts(0)) { gatherMap =>
-              withResource(table.gather(gatherMap)) { oneRowTable =>
-                GpuColumnVector.from(oneRowTable, groupingRefs.map(_.dataType).toArray)
+      val miniAttrs = gpuGroupingExpressions ++ allInputs
+      val pyInputIter = BatchGroupedIterator(miniIter, miniAttrs.asInstanceOf[Seq[Attribute]],
+          groupingRefs.indices)
+        .map { groupedBatch =>
+          // Resolves the group key and the python input from a grouped batch. Then
+          //  - Caches the key to be combined with the Python output later. And
+          //  - Returns the python input to be sent to Python later.
+          withResource(groupedBatch) { grouped =>
+            // key batch.
+            // No `safeMap` because here does not increase the ref count.
+            // (`Seq.indices.map()` is NOT lazy, so it is safe to be used to slice the columns.)
+            val keyCudfColumns = groupingRefs.indices.map(
+              grouped.column(_).asInstanceOf[GpuColumnVector].getBase)
+            val keyBatch = if (keyCudfColumns.isEmpty) {
+              // No grouping columns, then the whole batch is a group. Returns the dedicated batch
+              // as the group key.
+              // This batch means there is only one empty row, just like the 'new UnsafeRow()'
+              // used in Spark. The row number setting to 1 is because Python returns only one row
+              // as the aggregate result for the whole batch, and 'CombiningIterator' requires the
+              // the same row number for both the key batch and the result batch to be combined.
+              new ColumnarBatch(Array(), 1)
+            } else {
+              // Uses `cudf.Table.gather` to pick the first row in each group as the group key.
+              // Doing this is because
+              //   - The Python worker produces only one row as the aggregate result,
+              //   - The key rows in a group are equal to each other.
+              //
+              // (Now this is done group by group, so the performance would not be good when
+              //  there are too many small groups.)
+              withResource(new cudf.Table(keyCudfColumns: _*)) { table =>
+                withResource(cudf.ColumnVector.fromInts(0)) { gatherMap =>
+                  withResource(table.gather(gatherMap)) { oneRowTable =>
+                    GpuColumnVector.from(oneRowTable, groupingRefs.map(_.dataType).toArray)
+                  }
+                }
               }
             }
-          }
-        }
-      }
+            queue.add(keyBatch)
 
-      val batchProducer = new BatchProducer(
-        BatchGroupedIterator(miniIter, miniAttrs, groupingRefs.indices), Some(keyConverter))
-      val pyInputIter = batchProducer.asIterator.map { batch =>
-        withResource(batch) { _ =>
-          val pyInputColumns = pyInputRefs.indices.safeMap { idx =>
-            batch.column(idx + groupingRefs.size).asInstanceOf[GpuColumnVector].incRefCount()
+            // Python input batch
+            val pyInputColumns = pyInputRefs.indices.safeMap { idx =>
+              grouped.column(idx + groupingRefs.size).asInstanceOf[GpuColumnVector].incRefCount()
+            }
+            new ColumnarBatch(pyInputColumns.toArray, groupedBatch.numRows())
           }
-          new ColumnarBatch(pyInputColumns.toArray, batch.numRows())
-        }
       }
 
       // Third, sends to Python to execute the aggregate and returns the result.
@@ -216,15 +223,16 @@ case class GpuAggregateInPandasExec(
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
-          DataTypeUtilsShim.fromAttributes(pyOutAttributes))
+          DataTypeUtilsShim.fromAttributes(pyOutAttributes),
+          () => queue.finish())
 
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 
         val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
         val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
         // Gets the combined batch for each group and projects for the output.
-        new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator, pyRunner,
-            mNumOutputRows, mNumOutputBatches).map { combinedBatch =>
+        new CombiningIterator(queue, pyOutputIterator, pyRunner, mNumOutputRows,
+            mNumOutputBatches).map { combinedBatch =>
           withResource(combinedBatch) { batch =>
             GpuProjectExec.project(batch, resultRefs)
           }

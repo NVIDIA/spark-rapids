@@ -21,29 +21,46 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
-{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
-{"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions}
+import org.apache.spark.api.python._
+import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class GpuBasePythonRunner[IN](
-    funcs: Seq[ChainedPythonFunctions],
-    evalType: Int,
-    argOffsets: Array[Array[Int]],
-    jobArtifactUUID: Option[String] // Introduced after 341
-) extends BasePythonRunner[IN, ColumnarBatch](funcs, evalType, argOffsets)
+case class GpuArrowPythonRunnerShims(
+  conf: org.apache.spark.sql.internal.SQLConf,
+  chainedFunc: Seq[ChainedPythonFunctions],
+  argOffsets: Array[Array[Int]],
+  dedupAttrs: StructType,
+  pythonOutputSchema: StructType) {
+  val sessionLocalTimeZone = conf.sessionLocalTimeZone
+  val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
+
+  def getRunner(): GpuPythonRunnerBase[ColumnarBatch] = {
+    new GpuArrowPythonRunner(
+      chainedFunc,
+      PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+      argOffsets,
+      dedupAttrs,
+      sessionLocalTimeZone,
+      pythonRunnerConf,
+      // The whole group data should be written in a single call, so here is unlimited
+      Int.MaxValue,
+      pythonOutputSchema)
+  }
+}

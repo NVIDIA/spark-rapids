@@ -26,6 +26,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.TaskContext
@@ -33,7 +34,7 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchProducer, CombiningIterator, GpuPythonHelper, GpuWindowInPandasExecBase, GroupingIterator}
+import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuPythonHelper, GpuPythonUDF, GpuWindowInPandasExecBase, GroupingIterator}
 import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
@@ -110,7 +111,9 @@ case class GpuWindowInPandasExec(
 
     // 2) Extract window functions, here should be Python (Pandas) UDFs
     val allWindowExpressions = expressionsWithFrameIndex.map(_._1)
-    val udfExpressions = PythonUDFShim.getUDFExpressions(allWindowExpressions)
+    val udfExpressions = allWindowExpressions.map {
+      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuPythonUDF]
+    }
     // We shouldn't be chaining anything here.
     // All chained python functions should only contain one function.
     val (pyFuncs, inputs) = udfExpressions.map(collectFunctions).unzip
@@ -193,19 +196,24 @@ case class GpuWindowInPandasExec(
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
+      val queue: BatchQueue = new BatchQueue()
+      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val batchProducer = new BatchProducer(
-        new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
-      val pyInputIterator = batchProducer.asIterator.map { batch =>
-        withResource(batch) { _ =>
-          withResource(GpuProjectExec.project(batch, boundDataRefs)) { projectedCb =>
-            // Compute the window bounds and insert to the head of each row for one batch
-            insertWindowBounds(projectedCb)
-          }
+      val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
+        numInputRows, numInputBatches)
+      val pyInputIterator = groupedIterator.map { batch =>
+        // We have to do the project before we add the batch because the batch might be closed
+        // when it is added
+        val projectedBatch = GpuProjectExec.project(batch, boundDataRefs)
+        // Compute the window bounds and insert to the head of each row for one batch
+        val inputBatch = withResource(projectedBatch) { projectedCb =>
+          insertWindowBounds(projectedCb)
         }
+        queue.add(batch)
+        inputBatch
       }
 
       if (isPythonOnGpuEnabled) {
@@ -223,11 +231,12 @@ case class GpuWindowInPandasExec(
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          pythonOutputSchema)
+          pythonOutputSchema,
+          () => queue.finish())
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        new CombiningIterator(batchProducer.getBatchQueue, outputIterator, pyRunner,
-            numOutputRows, numOutputBatches).map(projectResult)
+        new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
+          numOutputBatches).map(projectResult(_))
       } else {
         // Empty partition, return the input iterator directly
         inputIter

@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql.rapids.execution.python
 
-import scala.collection.JavaConverters.seqAsJavaListConverter
+/*** spark-rapids-shim-json-lines
+{"spark": "341db"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids.execution.python
 
 import ai.rapids.cudf
 import ai.rapids.cudf.Table
@@ -60,8 +62,6 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
     val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
     val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val localOutput = output
-    val localBatchSize = batchSize
-    val localEvalType = pythonEvalType
 
     // Start process
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -77,7 +77,8 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
       }
 
       val pyInputIterator = new RebatchingRoundoffIterator(inputIter, pyInputTypes,
-        localBatchSize, numInputRows, numInputBatches).map { batch =>
+          batchSize, numInputRows, numInputBatches)
+        .map { batch =>
           // Here we wrap it via another column so that Python sides understand it
           // as a DataFrame.
           withResource(batch) { b =>
@@ -87,16 +88,15 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
               new ColumnarBatch(Array(gpuColumn), b.numRows())
             }
           }
-        }
+      }
       val pyRunner = new GpuArrowPythonRunner(
           chainedFunc,
-          localEvalType,
+          pythonEvalType,
           argOffsets,
           pyInputSchema,
           sessionLocalTimeZone,
           pythonRunnerConf,
-          localBatchSize,
-          GpuColumnVector.structFromAttributes(localOutput.asJava)) {
+          batchSize) {
         override def toBatch(table: Table): ColumnarBatch = {
           BatchGroupedIterator.extractChildren(table, localOutput)
         }

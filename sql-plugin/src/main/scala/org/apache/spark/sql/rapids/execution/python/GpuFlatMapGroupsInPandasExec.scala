@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
-import org.apache.spark.sql.rapids.execution.python.shims.GpuGroupedPythonRunnerFactory
+import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -122,8 +122,11 @@ case class GpuFlatMapGroupsInPandasExec(
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
         resolveArgOffsets(child, groupingAttributes)
 
-    val runnerFactory = GpuGroupedPythonRunnerFactory(conf, chainedFunc, Array(argOffsets),
-        DataTypeUtilsShim.fromAttributes(dedupAttrs), pythonOutputSchema)
+    val runnerShims = GpuArrowPythonRunnerShims(conf,
+                        chainedFunc,
+                        Array(argOffsets),
+                        DataTypeUtilsShim.fromAttributes(dedupAttrs),
+                        pythonOutputSchema)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -139,7 +142,7 @@ case class GpuFlatMapGroupsInPandasExec(
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        val pyRunner = runnerFactory.getRunner()
+        val pyRunner = runnerShims.getRunner()
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
         // Empty partition, return it directly

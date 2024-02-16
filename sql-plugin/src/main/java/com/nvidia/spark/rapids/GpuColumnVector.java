@@ -490,7 +490,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new StructType(fields);
   }
 
-  public static StructType structFromAttributes(List<Attribute> format) {
+  private static StructType structFromAttributes(List<Attribute> format) {
     StructField[] fields = new StructField[format.size()];
     int i = 0;
     for (Attribute attribute: format) {

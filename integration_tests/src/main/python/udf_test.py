@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run, is_not_utc
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_340_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -42,6 +42,12 @@ import pyspark.sql.functions as f
 import pandas as pd
 import pyarrow
 from typing import Iterator, Tuple
+
+
+if is_databricks_runtime() and is_spark_340_or_later():
+    # Databricks 13.3 does not use separate reader/writer threads for Python UDFs
+    # which can lead to hangs. Skipping these tests until the Python UDF handling is updated.
+    pytestmark = pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
@@ -176,10 +182,7 @@ pre_cur_win = Window\
 
 low_upper_win = Window.partitionBy('a').orderBy('b').rowsBetween(-3, 3)
 
-running_win_param = pytest.param(pre_cur_win, marks=pytest.mark.xfail(
-    condition=is_databricks_runtime() and is_spark_341(),
-    reason='DB13.3 wrongly uses RunningWindowFunctionExec to evaluate a PythonUDAF and it will fail even on CPU'))
-udf_windows = [no_part_win, unbounded_win, cur_follow_win, running_win_param, low_upper_win]
+udf_windows = [no_part_win, unbounded_win, cur_follow_win, pre_cur_win, low_upper_win]
 window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Preceding',
               'Lower_Upper']
 
@@ -335,8 +338,8 @@ def create_df(spark, data_gen, left_length, right_length):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ShortGen(nullable=False)], ids=idfn)
 def test_cogroup_apply_udf(data_gen):
-    def asof_join(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
-        return pd.merge_ordered(left, right)
+    def asof_join(l, r):
+        return pd.merge_asof(l, r, on='a', by='b')
 
     def do_it(spark):
         left, right = create_df(spark, data_gen, 500, 500)

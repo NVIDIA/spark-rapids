@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -171,151 +171,62 @@ class RebatchingRoundoffIterator(
 }
 
 /**
- * A trait provides dedicated APIs for GPU reading batches from python.
- * This is also for easy type declarations since it is implemented by an inner class
- * of BatchProducer.
+ * A simple queue that holds the pending batches that need to line up with
+ * and combined with batches coming back from python
  */
-trait BatchQueue {
-  /** Return and remove the first batch in the cache. Caller should close it. */
-  def remove(): SpillableColumnarBatch
+class BatchQueue extends AutoCloseable {
+  private val queue: mutable.Queue[SpillableColumnarBatch] =
+    mutable.Queue[SpillableColumnarBatch]()
+  private var isSet = false
 
-  /** Get the number of rows in the next batch, without actually getting the batch. */
-  def peekBatchNumRows(): Int
-}
+  def add(batch: ColumnarBatch): Unit = synchronized {
+    queue.enqueue(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+    if (!isSet) {
+      // Wake up anyone waiting for the first batch.
+      isSet = true
+      notifyAll()
+    }
+  }
 
-/**
- * It accepts an iterator as input and will cache the batches when pulling them in from
- * the input for later combination with batches coming back from python by the reader.
- * It also supports an optional converter to convert input batches and put the converted
- * result to the cache queue. This is for GpuAggregateInPandas to build and cache key
- * batches.
- *
- * Call "getBatchQueue" to get the internal cache queue and specify it to the output
- * combination iterator.
- * To access the batches from input, call "asIterator" to get the output iterator.
- */
-class BatchProducer(
-    input: Iterator[ColumnarBatch],
-    converter: Option[ColumnarBatch => ColumnarBatch] = None
-) extends AutoCloseable { producer =>
+  def finish(): Unit = synchronized {
+    if (!isSet) {
+      // Wake up anyone waiting for the first batch.
+      isSet = true
+      notifyAll()
+    }
+  }
 
-  Option(TaskContext.get()).foreach(onTaskCompletion(_)(close()))
-
-  // A queue that holds the pending batches that need to line up with and combined
-  // with batches coming back from python.
-  private[this] val batchQueue = new BatchQueueImpl
-
-  /** Get the internal BatchQueue */
-  def getBatchQueue: BatchQueue = batchQueue
-
-  // The cache that holds the pending batches pulled in by the "produce" call for
-  // the reader peeking the next rows number when the "batchQueue" is empty, and
-  // consumed by the iterator returned from "asIterator".
-  // (In fact, there is usually only ONE batch. But using a queue here is because in
-  // theory "produce" can be called multiple times, then more than one batch can be
-  // pulled in.)
-  private[this] val pendingOutput = mutable.Queue[SpillableColumnarBatch]()
-
-  private def produce(): ColumnarBatch = {
-    if (input.hasNext) {
-      val cb = input.next()
-      // Need to duplicate this batch for "next"
-      pendingOutput.enqueue(SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-      cb
-    } else {
+  def remove(): ColumnarBatch = synchronized {
+    if (queue.isEmpty) {
       null
-    }
-  }
-
-  /** Return an iterator to access the batches from the input */
-  def asIterator: Iterator[ColumnarBatch] = {
-    new Iterator[ColumnarBatch] {
-
-      override def hasNext: Boolean = producer.synchronized {
-        pendingOutput.nonEmpty || input.hasNext
-      }
-
-      override def next(): ColumnarBatch = producer.synchronized {
-        if (!hasNext) {
-          throw new NoSuchElementException()
-        }
-        if (pendingOutput.nonEmpty) {
-          withResource(pendingOutput.dequeue()) { scb =>
-            scb.getColumnarBatch()
-          }
-        } else {
-          closeOnExcept(input.next()) { cb =>
-            // Need to duplicate it for later combination with Python output
-            batchQueue.add(GpuColumnVector.incRefCounts(cb))
-            cb
-          }
-        }
+    } else {
+      withResource(queue.dequeue()) { scp =>
+        scp.getColumnarBatch()
       }
     }
   }
 
-  override def close(): Unit = producer.synchronized {
-    batchQueue.close()
-    while (pendingOutput.nonEmpty) {
-      pendingOutput.dequeue().close()
+  def hasNext: Boolean = synchronized {
+    if (!isSet) {
+      wait()
     }
+    queue.nonEmpty
   }
 
-  // Put this batch queue inside the BatchProducer to share the same lock with the
-  // output iterator returned by "asIterator" and make sure the batch movement from
-  // input iterator to this queue is an atomic operation.
-  // In a two-threaded Python runner, using two locks to protect the batch pulling
-  // from the input and the batch queue separately can not ensure batches in the
-  // queue has the same order as they are pulled in from the input. Because there is
-  // a race when the reader and the writer append batches to the queue.
-  // One possible case is:
-  //   1) the writer thread gets a batch A, but next it pauses.
-  //   2) then the reader thread gets the next Batch B, and appends it to the queue.
-  //   3) the writer thread restores and appends batch A to the queue.
-  // Therefore, batch A and B have the reversed order in the queue now, leading to data
-  // corruption when doing the combination.
-  private class BatchQueueImpl extends BatchQueue with AutoCloseable {
-    private val queue = mutable.Queue[SpillableColumnarBatch]()
+  /**
+   * Get the number of rows in the next batch, without actually getting the batch.
+   */
+  def peekBatchSize: Int = synchronized {
+    queue.head.numRows()
+  }
 
-    /** Add a batch to the queue, the input batch will be taken over, do not use it anymore */
-    private[python] def add(batch: ColumnarBatch): Unit = {
-      val cb = converter.map { convert =>
-        withResource(batch)(convert)
-      }.getOrElse(batch)
-      queue.enqueue(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+  override def close(): Unit = synchronized {
+    if (!isSet) {
+      isSet = true
+      notifyAll()
     }
-
-    /** Return and remove the first batch in the cache. Caller should close it */
-    override def remove(): SpillableColumnarBatch = producer.synchronized {
-      if (queue.isEmpty) {
-        null
-      } else {
-        queue.dequeue()
-      }
-    }
-
-    /** Get the number of rows in the next batch, without actually getting the batch. */
-    override def peekBatchNumRows(): Int = producer.synchronized {
-      // Try to pull in the next batch for peek
-      if (queue.isEmpty) {
-        val cb = produce()
-        if (cb != null) {
-          add(cb)
-        }
-      }
-
-      if (queue.nonEmpty) {
-        queue.head.numRows()
-      } else {
-        0 // Should not go here but just in case.
-      }
-    }
-
-    override def close(): Unit = producer.synchronized {
-      while (queue.nonEmpty) {
-        queue.dequeue().close()
-      }
+    while(queue.nonEmpty) {
+      queue.dequeue().close()
     }
   }
 }
@@ -374,7 +285,10 @@ case class GpuArrowEvalPythonExec(
 
     val inputRDD = child.executeColumnar()
     inputRDD.mapPartitions { iter =>
+      val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
+      onTaskCompletion(context)(queue.close())
+
       val (pyFuncs, inputs) = udfs.map(collectFunctions).unzip
 
       // Not sure why we are doing this in every task.  It is not going to change, but it might
@@ -404,11 +318,14 @@ case class GpuArrowEvalPythonExec(
       }.toArray)
 
       val boundReferences = GpuBindReferences.bindReferences(allInputs.toSeq, childOutput)
-      val batchProducer = new BatchProducer(
-        new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize, numInputRows,
-          numInputBatches))
-      val pyInputIterator = batchProducer.asIterator.map { batch =>
-        withResource(batch)(GpuProjectExec.project(_, boundReferences))
+      val batchedIterator = new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize,
+        numInputRows, numInputBatches)
+      val pyInputIterator = batchedIterator.map { batch =>
+        // We have to do the project before we add the batch because the batch might be closed
+        // when it is added
+        val ret = GpuProjectExec.project(batch, boundReferences)
+        queue.add(batch)
+        ret
       }
 
       if (isPythonOnGpuEnabled) {
@@ -425,10 +342,11 @@ case class GpuArrowEvalPythonExec(
           timeZone,
           runnerConf,
           targetBatchSize,
-          pythonOutputSchema)
+          pythonOutputSchema,
+          () => queue.finish())
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        new CombiningIterator(batchProducer.getBatchQueue, outputIterator, pyRunner, numOutputRows,
+        new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
           numOutputBatches)
       } else {
         // Empty partition, return it directly

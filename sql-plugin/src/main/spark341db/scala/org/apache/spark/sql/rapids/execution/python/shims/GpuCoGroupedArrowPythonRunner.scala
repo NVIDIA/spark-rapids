@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,39 +15,18 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "350"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import java.io.DataOutputStream
-import java.net.Socket
 
 import ai.rapids.cudf.{ArrowIPCWriterOptions, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuSemaphore}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD}
+import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD, PythonWorker}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types.StructType
@@ -61,25 +40,25 @@ import org.apache.spark.util.Utils
  * and receive it back in JVM as batches of single DataFrame.
  */
 class GpuCoGroupedArrowPythonRunner(
-    funcs: Seq[ChainedPythonFunctions],
-    evalType: Int,
-    argOffsets: Array[Array[Int]],
-    leftSchema: StructType,
-    rightSchema: StructType,
-    timeZoneId: String,
-    conf: Map[String, String],
-    batchSize: Int,
-    pythonOutSchema: StructType)
+                                     funcs: Seq[ChainedPythonFunctions],
+                                     evalType: Int,
+                                     argOffsets: Array[Array[Int]],
+                                     leftSchema: StructType,
+                                     rightSchema: StructType,
+                                     timeZoneId: String,
+                                     conf: Map[String, String],
+                                     batchSize: Int,
+                                     pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[(ColumnarBatch, ColumnarBatch)](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
 
-  protected override def newWriterThread(
-      env: SparkEnv,
-      worker: Socket,
-      inputIterator: Iterator[(ColumnarBatch, ColumnarBatch)],
-      partitionIndex: Int,
-      context: TaskContext): WriterThread = {
-    new WriterThread(env, worker, inputIterator, partitionIndex, context) {
+  protected override def newWriter(
+                                    env: SparkEnv,
+                                    worker: PythonWorker,
+                                    inputIterator: Iterator[(ColumnarBatch, ColumnarBatch)],
+                                    partitionIndex: Int,
+                                    context: TaskContext): Writer = {
+    new Writer(env, worker, inputIterator, partitionIndex, context) {
 
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
 
@@ -93,24 +72,27 @@ class GpuCoGroupedArrowPythonRunner(
         PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
       }
 
-      protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
+      override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
         // For each we first send the number of dataframes in each group then send
         // first df, then send second df.  End of data is marked by sending 0.
+        var wrote = false
         while (inputIterator.hasNext) {
+          wrote = false
           dataOut.writeInt(2)
           val (leftGroupBatch, rightGroupBatch) = inputIterator.next()
           withResource(Seq(leftGroupBatch, rightGroupBatch)) { _ =>
-            writeGroupBatch(leftGroupBatch, leftSchema, dataOut)
-            writeGroupBatch(rightGroupBatch, rightSchema, dataOut)
+            wrote = writeGroupBatch(leftGroupBatch, leftSchema, dataOut)
+            wrote = writeGroupBatch(rightGroupBatch, rightSchema, dataOut)
           }
         }
         // The iterator can grab the semaphore even on an empty batch
         GpuSemaphore.releaseIfNecessary(TaskContext.get())
         dataOut.writeInt(0)
+        wrote
       }
 
       private def writeGroupBatch(groupBatch: ColumnarBatch, batchSchema: StructType,
-          dataOut: DataOutputStream): Unit = {
+                                  dataOut: DataOutputStream): Boolean = {
         val writer = {
           val builder = ArrowIPCWriterOptions.builder()
           builder.withMaxChunkSize(batchSize)
@@ -128,16 +110,18 @@ class GpuCoGroupedArrowPythonRunner(
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
-
+        var wrote = false
         Utils.tryWithSafeFinally {
           withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
             // The callback will handle closing table and releasing the semaphore
             writer.write(GpuColumnVector.from(groupBatch))
+            wrote = true
           }
         } {
           writer.close()
           dataOut.flush()
         }
+        wrote
       } // end of writeGroup
     }
   } // end of newWriterThread
