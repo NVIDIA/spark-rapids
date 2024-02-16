@@ -18,6 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
+from spark_session import is_databricks113_or_later, is_databricks_runtime
 
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -50,6 +51,8 @@ def test_get_json_object_quoted_index():
         f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b')),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks113_or_later(), reason="get_json_object on \
+                    DB 10.4 shows incorrect behaviour with single quotes")
 def test_get_json_object_single_quotes():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'''{'a':'A'}'''],
