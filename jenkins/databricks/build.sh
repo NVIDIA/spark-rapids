@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,7 +52,13 @@ declare -A artifacts
 initialize()
 {
     # install rsync to be used for copying onto the databricks nodes
-    sudo apt install -y maven rsync
+    sudo apt install -y rsync
+
+    if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
+        wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /tmp
+        tar xf /tmp/apache-maven-3.6.3-bin.tar.gz -C $HOME
+        sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
+    fi
 
     # Archive file location of the plugin repository
     SPARKSRCTGZ=${SPARKSRCTGZ:-''}
