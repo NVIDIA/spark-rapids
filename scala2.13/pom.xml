@@ -79,6 +79,7 @@
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
         <module>tests</module>
+        <module>tools</module>
         <module>udf-compiler</module>
 
         <!--

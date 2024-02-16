@@ -114,7 +114,7 @@ object ConfHelper {
       }
       functionsByClass.update(className, fnSeq :+ s"`$fnCleaned`")
     }
-    functionsByClass.toMap
+    functionsByClass.mapValues(_.sorted).toMap
   }
 }
 
