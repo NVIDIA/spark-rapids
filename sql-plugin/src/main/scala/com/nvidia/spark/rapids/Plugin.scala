@@ -59,6 +59,7 @@ object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
   val JNI_PROPS_FILENAME = "spark-rapids-jni-version-info.properties"
   val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
+  private val PRIVATE_PROPS_FILENAME = "rapids4spark-private-version-info.properties"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
@@ -74,15 +75,19 @@ object RapidsPluginUtils extends Logging {
   private val SPARK_MASTER = "spark.master"
 
   {
-    val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
+    val pluginProps = loadProps(PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
-    val jniProps = loadProps(RapidsPluginUtils.JNI_PROPS_FILENAME)
+    val jniProps = loadProps(JNI_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator JNI build: $jniProps")
-    val cudfProps = loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
+    val cudfProps = loadProps(CUDF_PROPS_FILENAME)
     logInfo(s"cudf build: $cudfProps")
+    val privateProps = loadProps(PRIVATE_PROPS_FILENAME)
+    logInfo(s"RAPIDS Accelerator Private ${privateProps}")
     val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
     val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
-    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion.")
+    val privateRev = privateProps.getProperty("revision", "UNKNOWN")
+    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf ${cudfVersion}, " +
+      s"private revision ${privateRev}")
   }
 
   val extraPlugins = getExtraPlugins
@@ -121,7 +126,7 @@ object RapidsPluginUtils extends Logging {
       url => {
         val urlPath = url.toString
         // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.04.0-spark341.jar,
-        // and files stored under subdirs of '!/', e.g. 
+        // and files stored under subdirs of '!/', e.g.
         // rapids-4-spark_2.12-24.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
         // rapids-4-spark_2.12-24.04.0-cuda11.jar!/rapids4spark-version-info.properties
@@ -132,8 +137,8 @@ object RapidsPluginUtils extends Logging {
     val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
       val versionInfo = scala.io.Source.fromURL(url).getLines().toSeq
       val revision = versionInfo
-        .collect { 
-          case revisionRegex(revision) => revision 
+        .collect {
+          case revisionRegex(revision) => revision
         }
         .headOption
         .getOrElse("UNKNOWN")
@@ -142,7 +147,7 @@ object RapidsPluginUtils extends Logging {
     lazy val rapidsJarsVersMsg = revisionMap.map {
       case (revision, urls) => {
         s"revison: $revision" + urls.map {
-          url => "\n\tjar URL: " + url.toString.split("!").head + "\n\t" + 
+          url => "\n\tjar URL: " + url.toString.split("!").head + "\n\t" +
               scala.io.Source.fromURL(url).getLines().toSeq.mkString("\n\t")
         }.mkString + "\n"
       }
@@ -513,13 +518,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   private def checkCudfVersion(conf: RapidsConf): Unit = {
     try {
       val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
-      logInfo(s"RAPIDS Accelerator build: $pluginProps")
       val expectedCudfVersion = Option(pluginProps.getProperty("cudf_version")).getOrElse {
         throw CudfVersionMismatchException("Could not find cudf version in " +
             RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
       }
       val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
-      logInfo(s"cudf build: $cudfProps")
       val cudfVersion = Option(cudfProps.getProperty("version")).getOrElse {
         throw CudfVersionMismatchException("Could not find cudf version in " +
             RapidsPluginUtils.CUDF_PROPS_FILENAME)
