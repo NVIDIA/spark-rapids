@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-02-15
+Generated on 2024-02-17
 
 ## Release 24.02
 
@@ -119,6 +119,8 @@ Generated on 2024-02-15
 ### PRs
 |||
 |:---|:---|
+|[#10439](https://github.com/NVIDIA/spark-rapids/pull/10439)|Reverts NVIDIA/spark-rapids#10232 and fixes the plugin build on Databricks 11.3|
+|[#10380](https://github.com/NVIDIA/spark-rapids/pull/10380)|Init changelog 24.02 [skip ci]|
 |[#10367](https://github.com/NVIDIA/spark-rapids/pull/10367)|Update rapids JNI and private version to release 24.02.0|
 |[#10414](https://github.com/NVIDIA/spark-rapids/pull/10414)|[DOC] Fix 24.02.0 documentation errors [skip ci]|
 |[#10403](https://github.com/NVIDIA/spark-rapids/pull/10403)|Cherry-pick: Fix a memory leak in json tuple (#10360)|
