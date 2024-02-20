@@ -2,8 +2,9 @@ package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf
 import ai.rapids.cudf.GroupByOptions
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExec, GpuExpression, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExec, GpuExpression, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta, SpillPriorities, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.internal.Logging
@@ -73,7 +74,7 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
     _.child
   }
 
-  private def readInputBatch = {
+  private def readInputBatch: SpillableColumnarBatch = {
     def optionallySetInputTypes(inputCB: ColumnarBatch): Unit = {
       if (inputTypes.isEmpty) {
         inputTypes = Some(GpuColumnVector.extractTypes(inputCB))
@@ -82,34 +83,46 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
 
     val inputCB = input.next()
     optionallySetInputTypes(inputCB)
-    inputCB
+    SpillableColumnarBatch(inputCB, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
+
+  private var subIterator: Option[Iterator[ColumnarBatch]] = None
 
   override def next(): ColumnarBatch = {
 
-    // TODO: 1. Make input columns spillable.
     // TODO: 2. Use opTime with NvtxWithMetrics. Refer to GpuBatchedBoundedWindowExec.
 
     if (!hasNext) {
       throw new NoSuchElementException()
     }
 
-    withResource(readInputBatch) { inputCB =>
-      val filterMap = withResource(calculateRank(rankFunction, inputCB)) { ranks =>
-        withResource(cudf.Scalar.fromInt(limit)) { limitScalar =>
-          // For a query with `WHERE rank < n`, the limit passed to the exec
-          // is `n - 1`.  The comparison should be `LESS_EQUAL`.
-          ranks.binaryOp(cudf.BinaryOp.LESS_EQUAL, limitScalar, cudf.DType.BOOL8)
-        }
-      }
+    if (subIterator.exists(_.hasNext)) {
+      subIterator.map(_.next).get
+    }
+    else {
 
-      withResource(filterMap) { _ =>
-        withResource(GpuColumnVector.from(inputCB)) { inputTable =>
-          withResource(inputTable.filter(filterMap)) {
-            GpuColumnVector.from(_, inputTypes.get)
+      val iter = withRetry(readInputBatch, splitSpillableInHalfByRows) { spillableInputCB =>
+        withResource(spillableInputCB.getColumnarBatch()) { inputCB =>
+          val filterMap = withResource(calculateRank(rankFunction, inputCB)) { ranks =>
+            withResource(cudf.Scalar.fromInt(limit)) { limitScalar =>
+              // For a query with `WHERE rank < n`, the limit passed to the exec
+              // is `n - 1`.  The comparison should be `LESS_EQUAL`.
+              ranks.binaryOp(cudf.BinaryOp.LESS_EQUAL, limitScalar, cudf.DType.BOOL8)
+            }
+          }
+
+          withResource(filterMap) { _ =>
+            withResource(GpuColumnVector.from(inputCB)) { inputTable =>
+              withResource(inputTable.filter(filterMap)) {
+                GpuColumnVector.from(_, inputTypes.get)
+              }
+            }
           }
         }
       }
+      val result = iter.next()
+      subIterator = Some(iter)
+      result
     }
   }
 
@@ -183,7 +196,7 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
     val scanAggregation = rankFunction.scanAggregation(isRunningBatched = false).head.agg
     withResource(extractSortColumn(inputCB, sortColumnProjection)) { sortColumn =>
       sortColumn.scan(scanAggregation, cudf.ScanType.INCLUSIVE,
-                      cudf.NullPolicy.INCLUDE) // TODO: Check behaviour when sortBy has nulls.
+                      cudf.NullPolicy.INCLUDE)
     }
   }
 }
