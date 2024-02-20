@@ -51,7 +51,7 @@ mvn_verify() {
         echo "Spark version: $version"
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
-        if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
+        #if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
             #env -u SPARK_HOME \
             #  $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' -DskipTests
             # Run filecache tests
@@ -61,7 +61,7 @@ mvn_verify() {
         # build only for other versions
         # elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
         #     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
-        fi
+        #fi
     done
     # build base shim version for following test step with PREMERGE_PROFILES
     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$SPARK_BASE_SHIM_VERSION
