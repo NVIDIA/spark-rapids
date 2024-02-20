@@ -180,7 +180,7 @@ date. Typically, one that overflowed.
 
 ### CSV Floating Point
 
-Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -219,7 +219,7 @@ Hive text files are very similar to CSV, but not exactly the same.
 
 ### Hive Text File Floating Point
 
-Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -402,7 +402,7 @@ Known issues are:
 
 ### JSON Floating Point
 
-Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
 Prior to Spark 3.3.0, reading JSON strings such as `"+Infinity"` when specifying that the data type is `FloatType`
 or `DoubleType` caused these values to be parsed even when `allowNonNumericNumbers` is set to false. Also, Spark
