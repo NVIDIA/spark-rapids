@@ -2,7 +2,7 @@ package com.nvidia.spark.rapids.window
 
 import ai.rapids.cudf
 import ai.rapids.cudf.GroupByOptions
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExec, GpuExpression, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta, SpillPriorities, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -57,7 +57,9 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
                                      boundPartitionSpec: Seq[GpuExpression],
                                      boundOrderSpec: Seq[SortOrder],
                                      rankFunction: RankFunctionType,
-                                     limit: Int)
+                                     limit: Int,
+                                     numOutputBatches: GpuMetric,
+                                     numOutputRows: GpuMetric)
   extends Iterator[ColumnarBatch]
   with Logging {
 
@@ -90,8 +92,6 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
 
   override def next(): ColumnarBatch = {
 
-    // TODO: 2. Use opTime with NvtxWithMetrics. Refer to GpuBatchedBoundedWindowExec.
-
     if (!hasNext) {
       throw new NoSuchElementException()
     }
@@ -100,7 +100,6 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
       subIterator.map(_.next).get
     }
     else {
-
       val iter = withRetry(readInputBatch, splitSpillableInHalfByRows) { spillableInputCB =>
         withResource(spillableInputCB.getColumnarBatch()) { inputCB =>
           val filterMap = withResource(calculateRank(rankFunction, inputCB)) { ranks =>
@@ -110,7 +109,6 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
               ranks.binaryOp(cudf.BinaryOp.LESS_EQUAL, limitScalar, cudf.DType.BOOL8)
             }
           }
-
           withResource(filterMap) { _ =>
             withResource(GpuColumnVector.from(inputCB)) { inputTable =>
               withResource(inputTable.filter(filterMap)) {
@@ -122,6 +120,8 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
       }
       val result = iter.next()
       subIterator = Some(iter)
+      numOutputBatches += 1
+      numOutputRows += result.numRows()
       result
     }
   }
@@ -219,10 +219,8 @@ case class GpuWindowGroupLimitExec(
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    // TODO: Populate metrics.
-    //    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
-    //    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
-    //    val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
 
     val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
     val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
@@ -232,7 +230,9 @@ case class GpuWindowGroupLimitExec(
                                          boundPartitionSpec,
                                          boundOrderSpec,
                                          getRankFunctionType(rankLikeFunction),
-                                         limit)
+                                         limit,
+                                         numOutputBatches,
+                                         numOutputRows)
     }
   }
 
