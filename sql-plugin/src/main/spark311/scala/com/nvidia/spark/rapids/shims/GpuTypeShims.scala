@@ -74,7 +74,7 @@ object GpuTypeShims {
    */
   def columnarCopy(
       cv: ColumnVector,
-      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+      b: RapidsHostColumnBuilder,
       dataType: DataType,
       rows: Int): Unit = {
     throw new UnsupportedOperationException(s"Converting to GPU for $dataType is not supported yet")
