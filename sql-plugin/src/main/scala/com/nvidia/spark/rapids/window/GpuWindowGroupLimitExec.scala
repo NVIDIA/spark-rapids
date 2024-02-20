@@ -66,8 +66,12 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
   private var inputTypes: Option[Array[DataType]] = None
 
   private val partByPositions: Array[Int] =
-    boundPartitionSpec.map {_.asInstanceOf[GpuBoundReference].ordinal}.toArray
-  private val sortColumns: Seq[Expression] = boundOrderSpec.map { _.child }
+    boundPartitionSpec.map {
+      _.asInstanceOf[GpuBoundReference].ordinal
+    }.toArray
+  private val sortColumns: Seq[Expression] = boundOrderSpec.map {
+    _.child
+  }
 
   private def readInputBatch = {
     def optionallySetInputTypes(inputCB: ColumnarBatch): Unit = {
@@ -75,6 +79,7 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
         inputTypes = Some(GpuColumnVector.extractTypes(inputCB))
       }
     }
+
     val inputCB = input.next()
     optionallySetInputTypes(inputCB)
     inputCB
@@ -90,8 +95,7 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
     }
 
     withResource(readInputBatch) { inputCB =>
-      val filterMap = withResource(calculateRankWithGroupByScan(rankFunction,
-                                                                inputCB)) { ranks =>
+      val filterMap = withResource(calculateRank(rankFunction, inputCB)) { ranks =>
         withResource(cudf.Scalar.fromInt(limit)) { limitScalar =>
           // For a query with `WHERE rank < n`, the limit passed to the exec
           // is `n - 1`.  The comparison should be `LESS_EQUAL`.
@@ -109,44 +113,77 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
     }
   }
 
-  private def calculateRankWithGroupByScan(rankFunctionType: RankFunctionType,
-                                           inputCB: ColumnarBatch): cudf.ColumnVector = {
-    // For multiple order-by columns order-by columns, the group-scan's input projection
-    // is a single STRUCT column (containing the order-by columns as members).
-    val rankFunction = rankFunctionType match {
+  private def hasGroupingColumns: Boolean = partByPositions.nonEmpty
+
+  private def getRankFunction(rankFunctionType: RankFunctionType) = {
+    rankFunctionType match {
       case RankFunction => GpuRank(sortColumns)
       case DenseRankFunction => GpuDenseRank(sortColumns)
       case _ => throw new IllegalArgumentException("Unexpected ranking function")
     }
-    val sortColumnProjection = rankFunction.scanInputProjection(isRunningBatched = false)
+  }
+
+  private def calculateRank(rankFunctionType: RankFunctionType,
+                            inputCB: ColumnarBatch): cudf.ColumnVector = {
+    if (hasGroupingColumns) {
+      calculateRankWithGroupByScan(rankFunctionType, inputCB)
+    }
+    else {
+      calculateRankWithScan(rankFunctionType, inputCB)
+    }
+  }
+
+  private def extractSortColumn(inputCB: ColumnarBatch, sortColumnProjection: Seq[Expression]) =
+    withResource(GpuProjectExec.project(inputCB, sortColumnProjection)) {
+      sortColumnCB =>
+        withResource(GpuColumnVector.from(sortColumnCB)) { sortColumnTable =>
+          require(sortColumnTable.getNumberOfColumns == 1,
+            "Expected single (consolidated) sort-by column.")
+          sortColumnTable.getColumn(0).incRefCount()
+        }
+    }
+
+  private def calculateRankWithGroupByScan(rankFunctionType: RankFunctionType,
+                                           inputCB: ColumnarBatch): cudf.ColumnVector = {
+    // For multiple order-by columns order-by columns, the group-scan's input projection
+    // is a single STRUCT column (containing the order-by columns as members).
+    val rankFunction = getRankFunction(rankFunctionType)
+    val sortColumnProjection = rankFunction.groupByScanInputProjection(isRunningBatched = false)
 
     // Append the projected sort-column to the end of the input table.
     val gbyScanInputTable = withResource(GpuColumnVector.from(inputCB)) { inputTable =>
-      val sortColumn = withResource(GpuProjectExec.project(inputCB, sortColumnProjection)) {
-        sortColumnCB => withResource(GpuColumnVector.from(sortColumnCB)) { sortColumnTable =>
-          require(sortColumnTable.getNumberOfColumns == 1,
-                  "Expected single (consolidated) sort-by column.")
-          sortColumnTable.getColumn(0).incRefCount()
-        }
-      }
-      withResource(sortColumn) { _ =>
+      withResource(extractSortColumn(inputCB, sortColumnProjection)) { sortColumn =>
         val columnsWithSortByAdded = Range(0, inputTable.getNumberOfColumns).map {
-                                        inputTable.getColumn
-                                      }.toArray :+ sortColumn
+          inputTable.getColumn
+        }.toArray :+ sortColumn
         new cudf.Table(columnsWithSortByAdded: _*)
       }
     }
 
     // Now, perform groupBy-scan:
-    val sortColumnIndex = inputCB.numCols()
+    val sortColumnIndex = gbyScanInputTable.getNumberOfColumns - 1 // Last column.
     val gbyScanAggregation = rankFunction.groupByScanAggregation(isRunningBatched = false).head.agg
     val sortedGroupByOptions = GroupByOptions.builder().withKeysSorted(true).build
     withResource(gbyScanInputTable) { _ =>
       withResource(gbyScanInputTable.groupBy(sortedGroupByOptions, partByPositions: _*)
-                   .scan(gbyScanAggregation.onColumn(sortColumnIndex))) { gbyScanOutput =>
+        .scan(gbyScanAggregation.onColumn(sortColumnIndex))) { gbyScanOutput =>
         // The last column should be the grouped ranks.
         gbyScanOutput.getColumn(gbyScanOutput.getNumberOfColumns - 1).incRefCount()
       }
+    }
+  }
+
+  private def calculateRankWithScan(rankFunctionType: RankFunctionType,
+                                    inputCB: ColumnarBatch): cudf.ColumnVector = {
+
+    // For multiple order-by columns order-by columns, the group-scan's input projection
+    // is a single STRUCT column (containing the order-by columns as members).
+    val rankFunction = getRankFunction(rankFunctionType)
+    val sortColumnProjection = rankFunction.scanInputProjection(isRunningBatched = false)
+    val scanAggregation = rankFunction.scanAggregation(isRunningBatched = false).head.agg
+    withResource(extractSortColumn(inputCB, sortColumnProjection)) { sortColumn =>
+      sortColumn.scan(scanAggregation, cudf.ScanType.INCLUSIVE,
+                      cudf.NullPolicy.INCLUDE) // TODO: Check behaviour when sortBy has nulls.
     }
   }
 }
