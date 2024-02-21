@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,7 +128,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     Tuple2<SpillableColumnarBatch, NvtxRange> batchAndRange;
     AutoCloseableTargetSize numRowsWrapper =
         new AutoCloseableTargetSize(numRowsEstimate, 1);
-    Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize> bufsAndNumRows;
+    Tuple2<SpillableHostBuffer, AutoCloseableTargetSize> sBufAndNumRows;
 
     // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
     // don't do a great job from a performance standpoint with building this type of data structure
@@ -136,23 +136,24 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     // buffers.  One will be for the byte data and the second will be for the offsets. We will then
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
-    bufsAndNumRows =
+    sBufAndNumRows =
         // Starting with initial num rows estimate, this retry block will recalculate the buffer
         // sizes from the rows estimate, which is split in half if we get a split and retry oom,
-        // until we succeed or hit the min of 1 row.
+        // until we succeed or hit the min of 1 row.  It allocates one spillable host buffer for
+        // both data and offsets.
         RmmRapidsRetryIterator.withRetry(numRowsWrapper,
             RmmRapidsRetryIterator.splitTargetSizeInHalfCpu(), (numRows) -> {
-          return allocBuffersWithRestore(numRows);
+          return allocBuffer(numRows);
         }).next();
     // Update our estimate for number of rows with the final size used to allocate the buffers.
-    numRowsEstimate = (int) bufsAndNumRows._2.targetSize();
+    numRowsEstimate = (int) sBufAndNumRows._2.targetSize();
     long dataLength = calcDataLengthEstimate(numRowsEstimate);
+    long offsetLength = calcOffsetLengthEstimate(numRowsEstimate);
     int used[];
-    try (SpillableHostBuffer spillableDataBuffer = bufsAndNumRows._1[0];
-        SpillableHostBuffer spillableOffsetsBuffer = bufsAndNumRows._1[1];
+    try (SpillableHostBuffer spillableBuffer = sBufAndNumRows._1;
     ) {
       HostMemoryBuffer[] hBufs =
-          getHostBuffersWithRetry(spillableDataBuffer, spillableOffsetsBuffer);
+          getHostBuffersWithRetry(spillableBuffer, dataLength, offsetLength);
       try(HostMemoryBuffer dataBuffer = hBufs[0];
           HostMemoryBuffer offsetsBuffer = hBufs[1];
       ) {
@@ -210,11 +211,14 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
   }
 
   private HostMemoryBuffer[] getHostBuffersWithRetry(
-      SpillableHostBuffer spillableDataBuffer, SpillableHostBuffer spillableOffsetsBuffer) {
+      SpillableHostBuffer spillableBuffer, long dataLength, long offsetLength) {
     return RmmRapidsRetryIterator.withRetryNoSplit( () -> {
-      try (HostMemoryBuffer dataBuffer = spillableDataBuffer.getHostBuffer();
-           HostMemoryBuffer offsetsBuffer = spillableOffsetsBuffer.getHostBuffer();
-          ) {
+      // One SpillableHostBuffer is used for both data and offsets.  Slice it into the
+      // two separate HostMemoryBuffers.
+      try (HostMemoryBuffer dataOffsetBuffer = spillableBuffer.getHostBuffer();
+           HostMemoryBuffer dataBuffer = dataOffsetBuffer.slice(0, dataLength);
+           HostMemoryBuffer offsetsBuffer = dataOffsetBuffer.slice(dataLength, offsetLength);
+      ) {
         // Increment these to keep them.
         dataBuffer.incRefCount();
         offsetsBuffer.incRefCount();
@@ -223,61 +227,23 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     });
   }
 
-  private Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize>
-  allocBuffers(SpillableHostBuffer[] sBufs, AutoCloseableTargetSize numRowsWrapper) {
-    HostMemoryBuffer[] hBufs = new HostMemoryBuffer[]{ null, null };
+  private Tuple2<SpillableHostBuffer, AutoCloseableTargetSize>
+  allocBuffer(AutoCloseableTargetSize numRowsWrapper) {
+    long dataBytes = calcDataLengthEstimate((int) numRowsWrapper.targetSize());
+    long offsetBytes = calcOffsetLengthEstimate((int) numRowsWrapper.targetSize());
+    HostMemoryBuffer hBuf = null;
     try {
-      long dataBytes = calcDataLengthEstimate((int) numRowsWrapper.targetSize());
-      long offsetBytes = calcOffsetLengthEstimate((int) numRowsWrapper.targetSize());
-      hBufs[0] = HostAlloc$.MODULE$.alloc(dataBytes, true);
-      sBufs[0] = SpillableHostBuffer$.MODULE$.apply(hBufs[0], hBufs[0].getLength(),
+      hBuf = HostAlloc$.MODULE$.alloc((dataBytes + offsetBytes),true);
+      SpillableHostBuffer sBuf = SpillableHostBuffer$.MODULE$.apply(hBuf, hBuf.getLength(),
           SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
           RapidsBufferCatalog$.MODULE$.singleton());
-      hBufs[0] = null; // Was closed by spillable
-      hBufs[1] = HostAlloc$.MODULE$.alloc(offsetBytes, true);
-      sBufs[1] = SpillableHostBuffer$.MODULE$.apply(hBufs[1], hBufs[1].getLength(),
-          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
-          RapidsBufferCatalog$.MODULE$.singleton());
-      hBufs[1] = null;  // Was closed by spillable
-      return Tuple2.apply(sBufs, numRowsWrapper);
+      hBuf = null;  // taken over by spillable host buffer
+      return Tuple2.apply(sBuf, numRowsWrapper);
     } finally {
-      // Make sure host buffers are always closed
-      for (int i = 0; i < hBufs.length; i++) {
-        if (hBufs[i] != null) {
-          hBufs[i].close();
-          hBufs[i] = null;
-        }
-      }
-      // If the second spillable buffer is null, we must have thrown,
-      // so we need to close the first one in case this is not a retry exception.
-      // Restore on retry is handled by the caller.
-      if ((sBufs[1] == null) && (sBufs[0] != null)) {
-        sBufs[0].close();
-        sBufs[0] = null;
+      if (hBuf != null) {
+        hBuf.close();
       }
     }
-  }
-
-  private Tuple2<SpillableHostBuffer[], AutoCloseableTargetSize>
-  allocBuffersWithRestore(AutoCloseableTargetSize numRows) {
-    SpillableHostBuffer[] spillableBufs = new SpillableHostBuffer[]{ null, null};
-    Retryable retryBufs = new Retryable() {
-      @Override
-      public void checkpoint() {}
-      @Override
-      public void restore() {
-        for (int i = 0; i < spillableBufs.length; i++) {
-          if (spillableBufs[i] != null) {
-            spillableBufs[i].close();
-            spillableBufs[i] = null;
-          }
-        }
-      }
-    };
-
-    return RmmRapidsRetryIterator.withRestoreOnRetry(retryBufs, () -> {
-      return allocBuffers(spillableBufs, numRows);
-    });
   }
 
   /**
