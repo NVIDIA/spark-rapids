@@ -241,6 +241,12 @@ def is_spark_332cdh():
 def is_spark_cdh():
     return is_spark_321cdh() or is_spark_330cdh() or is_spark_332cdh()
 
+def is_spark_emr():
+    return is_spark_350emr()
+
+def is_spark_350emr():
+    return "3.5.0-amzn" in spark_version()
+
 def is_databricks_version_or_later(major, minor):
     spark = get_spark_i_know_what_i_am_doing()
     version = spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "0.0")

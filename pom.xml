@@ -597,6 +597,27 @@
             </modules>
         </profile>
         <profile>
+            <id>release350emr</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>350emr</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>350emr</buildver>
+                <spark.version>${spark350emr.version}</spark.version>
+                <spark.test.version>${spark350emr.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>shim-deps/emr</module>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release351</id>
             <activation>
                 <property>
@@ -783,6 +804,7 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
+        <spark350emr.version>3.5.0-amzn-0</spark350emr.version>
         <spark351.version>3.5.1-SNAPSHOT</spark351.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
@@ -832,7 +854,8 @@
             340,
             341,
             342,
-            350
+            350,
+            350emr
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             351
