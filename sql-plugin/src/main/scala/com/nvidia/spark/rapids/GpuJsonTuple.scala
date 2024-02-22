@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{GetJsonObjectOptions,Scalar}
+import ai.rapids.cudf.{CudfException,GetJsonObjectOptions,Scalar}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
@@ -69,8 +69,16 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
         }
 
         withResource(fieldScalars) { fieldScalars =>
-          withResource(fieldScalars.safeMap(field => json.getJSONObject(field, 
-          GetJsonObjectOptions.builder().allowSingleQuotes(true).build()))) { resultCols =>
+          withResource(fieldScalars.safeMap(field => {
+            try {
+              json.getJSONObject(field, 
+                  GetJsonObjectOptions.builder().allowSingleQuotes(true).build())
+            }
+            catch {
+              case _: CudfException => GpuColumnVector.columnVectorFromNull(
+                  json.getRowCount().toInt, StringType)
+            }
+          })) { resultCols =>
             val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
               case (col, dataType) => GpuColumnVector.from(col, dataType)
             }
