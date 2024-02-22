@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "311"}
 {"spark": "312"}
@@ -25,7 +26,6 @@
 {"spark": "330"}
 {"spark": "330cdh"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
