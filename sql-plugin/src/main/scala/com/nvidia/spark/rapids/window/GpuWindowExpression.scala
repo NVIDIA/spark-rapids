@@ -1711,6 +1711,7 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
   override def close(): Unit = {
     previousRank.foreach(_.close())
     previousRank = None
+    rowNumFixer.close()
   }
 }
 
