@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector,GetJsonObjectOptions}
+import ai.rapids.cudf.{ColumnVector, GetJsonObjectOptions, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
@@ -32,8 +32,22 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   override def nullable: Boolean = true
   override def prettyName: String = "get_json_object"
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {    
-    lhs.getBase().getJSONObject(rhs.getBase, 
+  def normalizeJsonPath(path: GpuScalar): Scalar = {
+    val pathStr = if (path.isValid) {
+      path.getValue.toString()
+    } else {
+      throw new IllegalArgumentException("Invalid path")
+    }
+    // remove all leading whitespaces before names
+    // so we erase all whitespaces after . or ['
+    val normalizedPath = pathStr.replaceAll("""\.(\s+)""", ".").replaceAll("""\['(\s+)""", "['")
+    Scalar.fromString(normalizedPath)
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {   
+    // get the base rhs and erase all whitespaces from it
+    val normalizedScalar = normalizeJsonPath(rhs)
+    lhs.getBase().getJSONObject(normalizedScalar, 
     GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
   }
 
