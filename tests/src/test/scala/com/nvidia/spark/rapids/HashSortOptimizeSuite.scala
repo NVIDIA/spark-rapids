@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023 NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024 NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,8 +89,8 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val plan = rdf.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
-      val joinNode = findOperator(plan, _.isInstanceOf[GpuShuffledHashJoinExec])
-      assert(joinNode.isDefined, "No broadcast join node found")
+      val joinNode = findOperator(plan, _.isInstanceOf[GpuShuffledSymmetricHashJoinExec])
+      assert(joinNode.isDefined, "No shuffled hash join node found")
       // should not have sort, because of not have GpuDataWritingCommandExec
       val sortNode = findOperator(plan, _.isInstanceOf[GpuSortExec])
       assert(sortNode.isEmpty)

@@ -22,10 +22,10 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuOOM
+import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -522,9 +522,17 @@ class ConditionalHashJoinIterator(
       withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
         withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
           val maps = joinType match {
-            case _: InnerLike =>
+            case _: InnerLike if buildSide == GpuBuildRight =>
               Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality)
+            case _: InnerLike if buildSide == GpuBuildLeft =>
+              // Even though it's an inner join, we need to switch the join order since the
+              // condition has been compiled to expect the build side on the left and the stream
+              // side on the right.
+              // Reverse the output of the join, because we expect the right gather map to
+              // always be on the right.
+              Table.mixedInnerJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
+                compiledCondition, nullEquality).reverse
             case LeftOuter =>
               Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality)
@@ -540,8 +548,7 @@ class ConditionalHashJoinIterator(
               Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality))
             case _ =>
-              throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
-                  s" supported")
+              throw new NotImplementedError(s"Join $joinType $buildSide is not currently supported")
           }
           makeGatherer(maps, leftData, rightData, joinType)
         }
@@ -960,13 +967,15 @@ class HashedExistenceJoinIterator(
   }
 }
 
-trait GpuHashJoin extends GpuExec {
-  def left: SparkPlan
-  def right: SparkPlan
+trait GpuJoinExec extends ShimBinaryExecNode with GpuExec {
   def joinType: JoinType
   def condition: Option[Expression]
   def leftKeys: Seq[Expression]
   def rightKeys: Seq[Expression]
+  def isSkewJoin: Boolean = false
+}
+
+trait GpuHashJoin extends GpuJoinExec {
   def buildSide: GpuBuildSide
 
   protected lazy val (buildPlan, streamedPlan) = buildSide match {
@@ -1065,14 +1074,14 @@ trait GpuHashJoin extends GpuExec {
   }
 
   protected lazy val (numFirstConditionTableColumns, boundCondition) = {
-    val (joinLeft, joinRight) = joinType match {
-      case RightOuter => (right, left)
-      case _ => (left, right)
+    val (buildOutput, streamOutput) = buildSide match {
+      case GpuBuildRight => (right.output, left.output)
+      case GpuBuildLeft => (left.output, right.output)
     }
     val boundCondition = condition.map { c =>
-      GpuBindReferences.bindGpuReference(c, joinLeft.output ++ joinRight.output)
+      GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
     }
-    (joinLeft.output.size, boundCondition)
+    (streamOutput.size, boundCondition)
   }
 
   def doJoin(

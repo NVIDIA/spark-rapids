@@ -80,7 +80,8 @@ class GpuShuffledHashJoinMeta(
           left,
           right,
           conf.isGPUShuffle,
-          conf.gpuTargetBatchSizeBytes)(
+          conf.gpuTargetBatchSizeBytes,
+          isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys)
       case _ =>
@@ -111,7 +112,7 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
-    isSkewJoin: Boolean)(
+    override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
   with GpuSubPartitionHashJoin {

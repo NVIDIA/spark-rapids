@@ -638,7 +638,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
     .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
