@@ -38,14 +38,12 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
     } else {
       throw new IllegalArgumentException("Invalid path")
     }
-    // remove all leading whitespaces before names
-    // so we erase all whitespaces after . or ['
+    // Remove all leading whitespaces before names, so we erase all whitespaces after . or ['
     val normalizedPath = pathStr.replaceAll("""\.(\s+)""", ".").replaceAll("""\['(\s+)""", "['")
     Scalar.fromString(normalizedPath)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {   
-    // get the base rhs and erase all whitespaces from it
     val normalizedScalar = normalizeJsonPath(rhs)
     lhs.getBase().getJSONObject(normalizedScalar, 
     GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
