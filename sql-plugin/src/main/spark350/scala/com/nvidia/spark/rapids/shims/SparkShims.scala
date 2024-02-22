@@ -83,7 +83,10 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
       GpuOverrides.exec[WindowGroupLimitExec](
         "Apply group-limits for row groups destined for rank-based window functions like " +
           "row_number(), rank(), and dense_rank()",
-        ExecChecks(TypeSig.INT, TypeSig.INT),
+        ExecChecks( // Similar to WindowExec.
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+           TypeSig.STRUCT +  TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.all),
         (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ shimExecs
