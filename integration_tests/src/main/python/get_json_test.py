@@ -132,7 +132,6 @@ def test_get_json_object_normalize_non_string_output():
             f.get_json_object('jsonStr', '$')),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-# @pytest.mark.xfail(reason="https://issues.apache.org/jira/browse/SPARK-46761")
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"?":"QUESTION"}']]
@@ -221,7 +220,6 @@ def test_get_json_object_invalid_path():
             ),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10213")
 def test_get_json_object_top_level_array_notation():
     # This is a special version of invalid path. It is something that the GPU supports
     # but the CPU thinks is invalid
@@ -239,7 +237,6 @@ def test_get_json_object_top_level_array_notation():
             ),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10214")
 def test_get_json_object_unquoted_array_notation():
     # This is a special version of invalid path. It is something that the GPU supports
     # but the CPU thinks is invalid
