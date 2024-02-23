@@ -93,7 +93,7 @@ def test_get_json_object_single_quotes():
     "$.fb:testid",
     pytest.param("$.a",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10196')),
     "$.non_exist_key",
-    pytest.param("$..no_recursive", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10212')),
+    "$..no_recursive",
     "$.store.book[0].non_exist_key",
     "$.store.basket[*].non_exist_key"])
 def test_get_json_object_spark_unit_tests(query):
@@ -132,7 +132,7 @@ def test_get_json_object_normalize_non_string_output():
             f.get_json_object('jsonStr', '$')),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://issues.apache.org/jira/browse/SPARK-46761")
+# @pytest.mark.xfail(reason="https://issues.apache.org/jira/browse/SPARK-46761")
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"?":"QUESTION"}']]
@@ -221,7 +221,7 @@ def test_get_json_object_invalid_path():
             ),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10213")
+# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10213")
 def test_get_json_object_top_level_array_notation():
     # This is a special version of invalid path. It is something that the GPU supports
     # but the CPU thinks is invalid
@@ -239,7 +239,7 @@ def test_get_json_object_top_level_array_notation():
             ),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10214")
+# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10214")
 def test_get_json_object_unquoted_array_notation():
     # This is a special version of invalid path. It is something that the GPU supports
     # but the CPU thinks is invalid
@@ -269,7 +269,8 @@ def test_get_json_object_white_space_removal():
             ['{" a":"b","a.a":"c","b":{"a":"ab"}}'],
             ['{" a":"b"," a. a":"c","b":{"a":"ab"}}'],
             ['{" a":"b","a .a ":"c","b":{"a":"ab"}}'],
-            ['{" a":"b"," a . a ":"c","b":{"a":"ab"}}'],]
+            ['{" a":"b"," a . a ":"c","b":{"a":"ab"}}']
+            ]
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
@@ -278,7 +279,6 @@ def test_get_json_object_white_space_removal():
             f.get_json_object('jsonStr', '$. a').alias('dot_space_a'),
             f.get_json_object('jsonStr', '$.\ta').alias('dot_tab_a'),
             f.get_json_object('jsonStr', '$.    a').alias('dot_spaces_a3'),
-            f.get_json_object('jsonStr', '$. a').alias('dot_space_a'),
             f.get_json_object('jsonStr', '$.a ').alias('dot_a_space'),
             f.get_json_object('jsonStr', '$. a ').alias('dot_space_a_space'),
             f.get_json_object('jsonStr', "$['b']").alias('dot_b'),
