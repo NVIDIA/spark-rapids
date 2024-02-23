@@ -24,6 +24,7 @@ import org.apache.spark.sql.rapids.execution.python.{GpuMapInPandasExec, GpuMapI
 
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
+{"spark": "350emr"}
 {"spark": "351"}
 spark-rapids-shim-json-lines ***/
 class GpuMapInPandasExecMeta(

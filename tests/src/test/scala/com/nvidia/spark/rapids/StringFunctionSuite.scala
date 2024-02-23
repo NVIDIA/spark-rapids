@@ -272,13 +272,13 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
 
         val codepoint = TestCodepoints.validCodepointIndices(i)
         print(f"(${codepoint.toChar.toString} $codepoint[$codepoint%04x]) ($cpu_str ")
-        print(f"${cpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
+        print(f"${cpu_str.map(c => "%d".format(c.toInt)).mkString(",")}")
         print("[")
-        print(f"${cpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
+        print(f"${cpu_str.map(c => "%04x".format(c.toInt)).mkString(",")}")
         print(f"]) ($gpu_str ")
-        print(f"${gpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
+        print(f"${gpu_str.map(c => "%d".format(c.toInt)).mkString(",")}")
         print("[");
-        print(f"${gpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
+        print(f"${gpu_str.map(c => "%04x".format(c.toInt)).mkString(",")}")
         println("])");
       }
     }
