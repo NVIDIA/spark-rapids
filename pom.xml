@@ -261,31 +261,6 @@
             </modules>
         </profile>
         <profile>
-            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=321db -->
-            <id>release321db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321db</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>321db</buildver>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
-                <spark.version.classifier>spark321db</spark.version.classifier>
-                <spark.version>${spark321db.version}</spark.version>
-                <spark.test.version>${spark321db.version}</spark.test.version>
-                <hadoop.client.version>3.3.1</hadoop.client.version>
-                <rat.consoleOutput>true</rat.consoleOutput>
-                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-            </properties>
-            <modules>
-                <module>shim-deps/databricks</module>
-                <module>delta-lake/delta-spark321db</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release330</id>
             <activation>
                 <!-- #if scala-2.13 --><!--
@@ -765,7 +740,6 @@
         <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
         <spark321cdh.version>3.2.1.3.2.7171000.0-3</spark321cdh.version>
-        <spark321db.version>3.2.1-databricks</spark321db.version>
         <spark322.version>3.2.2</spark322.version>
         <spark323.version>3.2.3</spark323.version>
         <spark324.version>3.2.4</spark324.version>

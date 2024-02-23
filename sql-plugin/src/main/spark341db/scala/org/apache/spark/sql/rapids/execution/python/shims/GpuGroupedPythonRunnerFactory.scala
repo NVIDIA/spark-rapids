@@ -24,7 +24,7 @@ import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-//TODO is this needed? we already have a similar version in spark321db
+//TODO is this needed? we already have a similar version in spark330db
 case class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
   chainedFunc: Seq[ChainedPythonFunctions],
