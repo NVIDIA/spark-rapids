@@ -1314,6 +1314,7 @@ def test_spark_from_json_date_with_locale(data, locale):
         'ProjectExec',
         conf = { 'spark.rapids.sql.expression.JsonToStructs': True })
 
+@pytest.mark.skipif(is_before_spark_320(), reason="only dd/MM/yyyy is supported prior to 3.2.0")
 def test_spark_from_json_date_with_format():
     data = [["""{"time": "26/08/2015"}"""]]
     schema = StructType([StructField("d", DateType())])
