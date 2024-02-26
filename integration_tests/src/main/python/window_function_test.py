@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
+from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version, with_cpu_session, with_gpu_session
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -2040,6 +2040,60 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
     # query runs *with* batching, i.e. `GpuBatchedBoundedWindowExec`.
     conf_200 = get_conf_with_extent(200)
     assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
+
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      pytest.param(_grpkey_longs_with_nullable_larger_decimals,
+                                                   marks=pytest.mark.skipif(
+                                                       condition=spark_bugs_in_decimal_sorting(),
+                                                       reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+                                      ],
+                         ids=idfn)
+def test_window_group_limits_partitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    # def gen_df_and_persist(spark):
+    #     df = gen_df(spark, data_gen, length=8192)
+    #     df.repartition(1).write.mode("overwrite").parquet("/tmp/input_data")
+    #     return df
+
+    # def create_table(spark):
+    #     df = gen_df_and_persist(spark)
+    #     df.createOrReplaceTempView("window_agg_table")
+
+    # with_cpu_session(create_table)
+
+    query = """
+        SELECT * FROM (
+          SELECT *, RANK() OVER (PARTITION BY a ORDER BY b) AS rnk
+          FROM window_agg_table
+        )
+        WHERE rnk < 3
+     """
+
+    # def explain(spark):
+    #     spark.sql(query).explain(True)
+
+    # with_cpu_session(explain)
+    # with_gpu_session(explain)
+
+    # with_cpu_session(lambda spark: spark.sql("drop table window_agg_table"))
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=8192),
+        "window_agg_table",
+        query,
+        conf = conf)
 
 
 def test_lru_cache_datagen():
