@@ -515,16 +515,6 @@ def test_json_tuple_dec_locale(std_input_path):
         conf =_enable_json_tuple_conf)
 
 
-TEST_FILES = ["int_formatted.json",
-        "float_formatted.json",
-        "sci_formatted.json",
-        "int_formatted_strings.json",
-        "float_formatted_strings.json",
-        "sci_formatted_strings.json",
-        "decimal_locale_formatted_strings.json",
-        "single_quoted_strings.json",
-        "boolean_formatted.json"]
-
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
     "float_formatted.json",
