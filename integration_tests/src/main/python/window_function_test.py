@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_350, is_databricks113_or_later, spark_version, with_cpu_session
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -2042,6 +2042,7 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
     assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
 
 
+@pytest.mark.skipif(is_before_spark_350())
 @ignore_order(local=True)
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
