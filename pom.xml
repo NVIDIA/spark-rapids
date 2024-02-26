@@ -888,6 +888,7 @@
             350
         </noSnapshotScala213.buildvers>
         <snapshotScala213.buildvers>
+            351
         </snapshotScala213.buildvers>
         <allScala213.buildvers>
             ${noSnapshotScala213.buildvers}
