@@ -2042,7 +2042,6 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
     assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
 
 
-
 @ignore_order(local=True)
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
@@ -2058,39 +2057,32 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
                                                        reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
                                       ],
                          ids=idfn)
-def test_window_group_limits_partitioned(data_gen, batch_size):
+@pytest.mark.parametrize('rank_clause', [
+                            'RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'DENSE_RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'RANK() OVER (ORDER BY a,b,c) ',
+                            'DENSE_RANK() OVER (ORDER BY a,b,c) ',
+                        ])
+def test_window_group_limits_partitioned(data_gen, batch_size, rank_clause):
+    """
+    This test verifies that window group limits are applied for queries with ranking-function based
+    row filters.
+    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
+    clauses.
+    """
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
 
-    # def gen_df_and_persist(spark):
-    #     df = gen_df(spark, data_gen, length=8192)
-    #     df.repartition(1).write.mode("overwrite").parquet("/tmp/input_data")
-    #     return df
-
-    # def create_table(spark):
-    #     df = gen_df_and_persist(spark)
-    #     df.createOrReplaceTempView("window_agg_table")
-
-    # with_cpu_session(create_table)
-
     query = """
         SELECT * FROM (
-          SELECT *, RANK() OVER (PARTITION BY a ORDER BY b) AS rnk
+          SELECT *, {} AS rnk
           FROM window_agg_table
         )
         WHERE rnk < 3
-     """
-
-    # def explain(spark):
-    #     spark.sql(query).explain(True)
-
-    # with_cpu_session(explain)
-    # with_gpu_session(explain)
-
-    # with_cpu_session(lambda spark: spark.sql("drop table window_agg_table"))
+     """.format(rank_clause)
 
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: gen_df(spark, data_gen, length=8192),
+        lambda spark: gen_df(spark, data_gen, length=4096),
         "window_agg_table",
         query,
         conf = conf)
