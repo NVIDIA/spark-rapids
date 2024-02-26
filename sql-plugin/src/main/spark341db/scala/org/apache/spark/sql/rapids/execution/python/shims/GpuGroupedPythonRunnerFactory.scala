@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-//TODO is this needed? we already have a similar version in spark321db
+//TODO is this needed? we already have a similar version in spark330db
 case class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
   chainedFunc: Seq[ChainedPythonFunctions],

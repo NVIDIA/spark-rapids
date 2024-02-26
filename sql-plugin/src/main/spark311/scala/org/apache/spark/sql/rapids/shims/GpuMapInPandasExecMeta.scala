@@ -14,13 +14,6 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
-
-import com.nvidia.spark.rapids._
-
-import org.apache.spark.sql.execution.python.MapInPandasExec
-import org.apache.spark.sql.rapids.execution.python.GpuMapInPandasExecMetaBase
-
 /*** spark-rapids-shim-json-lines
 {"spark": "311"}
 {"spark": "312"}
@@ -28,7 +21,6 @@ import org.apache.spark.sql.rapids.execution.python.GpuMapInPandasExecMetaBase
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
@@ -46,6 +38,13 @@ import org.apache.spark.sql.rapids.execution.python.GpuMapInPandasExecMetaBase
 {"spark": "341db"}
 {"spark": "342"}
 spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids.shims
+
+import com.nvidia.spark.rapids._
+
+import org.apache.spark.sql.execution.python.MapInPandasExec
+import org.apache.spark.sql.rapids.execution.python.GpuMapInPandasExecMetaBase
+
 class GpuMapInPandasExecMeta(
     mapPandas: MapInPandasExec,
     conf: RapidsConf,

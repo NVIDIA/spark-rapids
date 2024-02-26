@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "350"}
+{"spark": "351"}
+spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import com.nvidia.spark.rapids._
@@ -22,10 +26,6 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute}
 import org.apache.spark.sql.execution.python.MapInPandasExec
 import org.apache.spark.sql.rapids.execution.python.{GpuMapInPandasExec, GpuMapInPandasExecMetaBase}
 
-/*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-spark-rapids-shim-json-lines ***/
 class GpuMapInPandasExecMeta(
     mapPandas: MapInPandasExec,
     conf: RapidsConf,
