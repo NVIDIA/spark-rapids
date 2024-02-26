@@ -52,6 +52,8 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
   private val orderSpec: Seq[BaseExprMeta[SortOrder]] =
     limitExec.orderSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+  private val rankFunction = GpuOverrides.wrapExpr(limitExec.rankLikeFunction, conf, Some(this))
+
   override def tagPlanForGpu(): Unit = {
     wrapped.rankLikeFunction match {
       case DenseRank(_) =>
@@ -66,7 +68,7 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
   override def convertToGpu(): GpuExec = {
     GpuWindowGroupLimitExec(partitionSpec.map(_.convertToGpu()),
                             orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-                            limitExec.rankLikeFunction,
+                            rankFunction.convertToGpu(),
                             limitExec.limit,
                             limitExec.mode,
                             childPlans.head.convertIfNeeded())
@@ -232,8 +234,8 @@ case class GpuWindowGroupLimitExec(
   override def output: Seq[Attribute] = child.output
 
   private def getRankFunctionType(expr: Expression): RankFunctionType = expr match {
-    case Rank(_) => RankFunction
-    case DenseRank(_) => DenseRankFunction
+    case GpuRank(_) => RankFunction
+    case GpuDenseRank(_) => DenseRankFunction
     case _ =>
       throw new UnsupportedOperationException("Only Rank() is currently supported for group limits")
   }
