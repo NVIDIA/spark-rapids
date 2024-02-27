@@ -32,7 +32,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, DenseRank, Expression, Rank, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.window.{WindowGroupLimitExec, WindowGroupLimitMode}
+import org.apache.spark.sql.execution.window.{Final, Partial, WindowGroupLimitExec, WindowGroupLimitMode}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -61,6 +61,12 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
       // case RowNumber() => // TODO: Future.
       case _ => willNotWorkOnGpu("Only Rank() and DenseRank() are " +
                                  "currently supported for window group limits")
+    }
+
+    wrapped.mode match {
+      case Partial =>
+      case Final =>
+      case _ => willNotWorkOnGpu(s"Unsupported WindowGroupLimitMode: ${wrapped.mode.getClass.getName}")
     }
   }
 
