@@ -66,8 +66,8 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
     wrapped.mode match {
       case Partial =>
       case Final =>
-      case _ => willNotWorkOnGpu(s"Unsupported WindowGroupLimitMode:
-                                   ${wrapped.mode.getClass.getName}")
+      case _ => willNotWorkOnGpu("Unsupported WindowGroupLimitMode: " +
+                                 s"${wrapped.mode.getClass.getName}")
     }
   }
 
@@ -250,8 +250,9 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
  * == Physical Plan ==
  * *(3) Filter (rnk#22 < 5)
  *      +- Window [rank(b#1) windowspecdefinition(a#0L, b#1 ASC NULLS FIRST,
- *                                                specifiedwindowframe(RowFrame, unboundedpreceding$(),
- *                                                                     currentrow$())) AS rnk#22],
+ *                                                specifiedwindowframe(RowFrame,
+                                                    unboundedpreceding$(),
+ *                                                  currentrow$())) AS rnk#22],
  *                [a#0L],
  *                [b#1 ASC NULLS FIRST]
  *         +- WindowGroupLimit [a#0L], [b#1 ASC NULLS FIRST], rank(b#1), 4, Final
@@ -263,22 +264,23 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
  *                           +- FileScan parquet [a#0L,b#1,c#2L] ...
  * </pre>
  *
- * WindowGroupLimitExec works by using an appropriate row-wise iterator to go row-by-row, keeping track
- * of the current rank, and skipping over the rows that do not satisfy the rank predicate (i.e. "< 5").
-
- * GpuWindowGroupLimitExec differs slightly from Apache Spark in that it cannot go row-by-row. Instead,
- * it calculates the ranks for all the rows in the column, together, and then filters out any that
- * do not satisfy the predicate.
+ * WindowGroupLimitExec works by using an appropriate row-wise iterator to go row-by-row, keeping
+ * track of the current rank, and skipping over the rows that do not satisfy the rank predicate
+ * (i.e. "< 5").
+ *
+ * GpuWindowGroupLimitExec differs slightly from Apache Spark in that it cannot go row-by-row.
+ * Instead, it calculates the ranks for all the rows in the column, together, and then filters out
+ * any that do not satisfy the predicate.
  *
  * The performance speedup comes from two sources:
- * 1. Preventing `WindowGroupLimit` from falling off the GPU, thereby eliminating *two* row-column-row
- *    transpose operations.
+ * 1. Preventing `WindowGroupLimit` from falling off the GPU, thereby eliminating *two*
+ *    row-column-row transpose operations.
  * 2. Basic rank computations via cudf.ColumnVector scan operations, which tend to be fast.
  *
- * Note: No "running window" optimizations are required.  Each column batch is filtered independently.
- * If the rank-limit is `5`, only 5 ranks per group are permitted per column batch. The final window
- * aggregation and the subsequent filter will produce the right result downstream, but without the costly
- * shuffles.
+ * Note: No "running window" optimizations are required.  Each column batch is filtered
+ * independently. If the rank-limit is `5`, only 5 ranks per group are permitted per column batch.
+ * The final window aggregation and the subsequent filter will produce the right result downstream,
+ * but without the costly shuffles.
  */
 case class GpuWindowGroupLimitExec(
     gpuPartitionSpec: Seq[Expression],
