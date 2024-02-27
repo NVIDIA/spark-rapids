@@ -230,6 +230,56 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
   }
 }
 
+/**
+ * Analog of o.a.s.s.e.window.WindowGroupLimitExec.  Responsible for top-k limit push-down,
+ * for queries that contain boolean filter predicates on the result of ranking window functions
+ * such as `RANK()`, `DENSE_RANK()`, and `ROW_NUMBER()`.
+ *
+ * @see <a href="https://issues.apache.org/jira/browse/SPARK-37099">SPARK-37099</a>
+ *
+ * Consider this query:
+ * <pre>{@code
+ * SELECT * FROM (
+ *   SELECT *, RANK() OVER (PARTITION BY a ORDER BY b) rnk
+ *   FROM input_table
+ * ) WHERE rnk < 5;
+ * }</pre>
+ *
+ * This translates to the following plan:
+ * <pre>
+ * == Physical Plan ==
+ * *(3) Filter (rnk#22 < 5)
+ *      +- Window [rank(b#1) windowspecdefinition(a#0L, b#1 ASC NULLS FIRST,
+ *                                                specifiedwindowframe(RowFrame, unboundedpreceding$(),
+ *                                                                     currentrow$())) AS rnk#22],
+ *                [a#0L],
+ *                [b#1 ASC NULLS FIRST]
+ *         +- WindowGroupLimit [a#0L], [b#1 ASC NULLS FIRST], rank(b#1), 4, Final
+ *            +- *(2) Sort [a#0L ASC NULLS FIRST, b#1 ASC NULLS FIRST], false, 0
+ *               +- Exchange hashpartitioning(a#0L, 1), ENSURE_REQUIREMENTS, [plan_id=113]
+ *                  +- WindowGroupLimit [a#0L], [b#1 ASC NULLS FIRST], rank(b#1), 4, Partial
+ *                     +- *(1) Sort [a#0L ASC NULLS FIRST, b#1 ASC NULLS FIRST], false, 0
+ *                        +- *(1) ColumnarToRow
+ *                           +- FileScan parquet [a#0L,b#1,c#2L] ...
+ * </pre>
+ *
+ * WindowGroupLimitExec works by using an appropriate row-wise iterator to go row-by-row, keeping track
+ * of the current rank, and skipping over the rows that do not satisfy the rank predicate (i.e. "< 5").
+
+ * GpuWindowGroupLimitExec differs slightly from Apache Spark in that it cannot go row-by-row. Instead,
+ * it calculates the ranks for all the rows in the column, together, and then filters out any that
+ * do not satisfy the predicate.
+ *
+ * The performance speedup comes from two sources:
+ * 1. Preventing `WindowGroupLimit` from falling off the GPU, thereby eliminating *two* row-column-row
+ *    transpose operations.
+ * 2. Basic rank computations via cudf.ColumnVector scan operations, which tend to be fast.
+ *
+ * Note: No "running window" optimizations are required.  Each column batch is filtered independently.
+ * If the rank-limit is `5`, only 5 ranks per group are permitted per column batch. The final window
+ * aggregation and the subsequent filter will produce the right result downstream, but without the costly
+ * shuffles.
+ */
 case class GpuWindowGroupLimitExec(
     gpuPartitionSpec: Seq[Expression],
     gpuOrderSpec: Seq[SortOrder],
