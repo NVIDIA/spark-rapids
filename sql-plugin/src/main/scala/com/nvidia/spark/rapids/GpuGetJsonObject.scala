@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector,CudfException,GetJsonObjectOptions}
+import ai.rapids.cudf.{ColumnVector,GetJsonObjectOptions}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
@@ -33,14 +33,8 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   override def prettyName: String = "get_json_object"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {    
-    try {
-        lhs.getBase().getJSONObject(rhs.getBase, 
-            GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
-    }
-    catch {
-        case _: CudfException => GpuColumnVector.columnVectorFromNull(
-          lhs.getRowCount().toInt, StringType);
-    }
+      lhs.getBase().getJSONObject(rhs.getBase, 
+      GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
