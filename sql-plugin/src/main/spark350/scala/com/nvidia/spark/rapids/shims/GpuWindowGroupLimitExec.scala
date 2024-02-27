@@ -66,7 +66,8 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
     wrapped.mode match {
       case Partial =>
       case Final =>
-      case _ => willNotWorkOnGpu(s"Unsupported WindowGroupLimitMode: ${wrapped.mode.getClass.getName}")
+      case _ => willNotWorkOnGpu(s"Unsupported WindowGroupLimitMode:
+                                   ${wrapped.mode.getClass.getName}")
     }
   }
 
