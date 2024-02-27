@@ -106,21 +106,28 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   override def nullable: Boolean = true
   override def prettyName: String = "get_json_object"
 
-  def normalizeJsonPath(path: GpuScalar): Option[Scalar] = {
+  private var cachedNormalizedPath: Option[Option[String]] = None
+
+  def normalizeJsonPath(path: GpuScalar): Option[String] = {
     val pathStr = if (path.isValid) {
       path.getValue.toString()
     } else {
       throw new IllegalArgumentException("Invalid path")
     }
-    JsonPathParser.normalize(pathStr) map {
-      Scalar.fromString(_)
-    }
+    JsonPathParser.normalize(pathStr)
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {   
-    normalizeJsonPath(rhs) match {
-      case Some(scalar) => lhs.getBase().getJSONObject(scalar, 
-          GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    cachedNormalizedPath.getOrElse {
+      val normalized = normalizeJsonPath(rhs)
+      cachedNormalizedPath = Some(normalized)
+      normalized
+    } match {
+      case Some(normalized) => 
+        withResource(Scalar.fromString(normalized)) { scalar =>
+          lhs.getBase().getJSONObject(scalar, 
+              GetJsonObjectOptions.builder().allowSingleQuotes(true).build())
+        }
       case None => GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
     }
   }
