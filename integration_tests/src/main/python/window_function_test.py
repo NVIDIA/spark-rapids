@@ -2090,6 +2090,38 @@ def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_cl
         conf = conf)
 
 
+@allow_non_gpu('WindowGroupLimitExec')
+@pytest.mark.skipif(condition=is_before_spark_350(),
+                    reason="WindowGroupLimit not available for spark.version < 3.5")
+@ignore_order(local=True)
+@approximate_float
+def test_window_group_limits_fallback_for_row_number():
+    """
+    This test verifies that window group limits are applied for queries with ranking-function based
+    row filters.
+    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
+    clauses.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': '1g',
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    data_gen = _grpkey_longs_with_no_nulls
+    query = """
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b) AS rnk
+          FROM window_agg_table
+        )
+        WHERE rnk < 3
+     """
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=512),
+        cpu_fallback_class_name="WindowGroupLimitExec",
+        table_name="window_agg_table",
+        sql=query,
+        conf=conf)
+
+
 def test_lru_cache_datagen():
     # log cache info at the end of integration tests, not related to window functions
     info = gen_df_help.cache_info()
