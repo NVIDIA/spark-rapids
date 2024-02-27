@@ -21,9 +21,12 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Objects
 
+import scala.collection.mutable
+import scala.util.Random
+
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuColumnVector
 import com.univocity.parsers.csv.{CsvWriter, CsvWriterSettings}
 
 import org.apache.spark.sql.catalyst.expressions.{GetJsonObject, Literal}
@@ -31,16 +34,13 @@ import org.apache.spark.sql.types.StringType
 import org.apache.spark.unsafe.types.UTF8String
 
 case class CsvWriterWrapper(filePath: String) extends AutoCloseable {
-  // create file writer with append mode
-  private val writer: FileWriter = new FileWriter(filePath, true)
-  private val csvWriter: CsvWriter = new CsvWriter(writer, new CsvWriterSettings())
+  private val appendableFileWriter: FileWriter = new FileWriter(filePath, true)
+  private val csvWriter: CsvWriter = new CsvWriter(appendableFileWriter, new CsvWriterSettings())
 
   override def close(): Unit = {
     if (csvWriter != null) {
+      // csv writer will close under file writer
       csvWriter.close()
-    }
-    if (writer != null) {
-      writer.close()
     }
   }
 
@@ -49,55 +49,102 @@ case class CsvWriterWrapper(filePath: String) extends AutoCloseable {
   }
 }
 
+/**
+ * Used to mask customer data to avoid customer data leakage.
+ */
 object GetJsonObjectMask {
 
   /**
    * Used by mask data
    */
-  private val RETAIN_CHARS_FOR_JSON = Set[Char](
-    '{', '}', '[', ']', ',', ':', '"', '\'',
-    '\\', '/', 'b', 'f', 'n', 'r', 't', 'u',
-    '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
-    'u', 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f',
-    't', 'r', 'u', 'e',
-    'f', 'a', 'l', 's', 'e',
-    'n', 'u', 'l', 'l'
-  )
-
-  /**
-   * Mask data. RAPIDS Accelerator should now dump the original Customer data.
-   * This dump tool only care about the functionality of get-json-object, so just replace
-   * characters to a const 's' except the following cases:
-   *     { } [ ] , : " ' :  JSON structure chars, should not replace
-   *     \  :  escape char, should not replace
-   *     / b f n r t u : can follow \, should not replace
-   *     - :  used by number, should not replace
-   *     0-9  : used by number, should not replace
-   *     e E  : used by number, e,g,: 1.0E-3, should not replace
-   *     u A-F a-f : used by unicode: \u HEX HEX HEX HEX, should not replace
-   *     true :  should not replace
-   *     false :  should not replace
-   *     null :  should not replace
-   * To simplify more,
-   * Replace all the chars to 's' except above chars, including chars in true, false, null.
-   *
-   * @param jsonStr original JSON data
-   * @return Desensitized data
-   */
-  def maskData(jsonStr: String): String = {
-    replaceIfNotRetain(jsonStr, RETAIN_CHARS_FOR_JSON)
+  private def getRetainChars: Set[Char] = {
+    val s = mutable.Set[Char]()
+    for (i <- 0 to 32) {
+      s += i.toChar
+    }
+    val others = Array[Char](
+      '{', '}', '[', ']', ',', ':', '"', '\'',
+      '\\', '/', 'b', 'f', 'n', 'r', 't', 'u',
+      '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
+      'u', 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f',
+      't', 'r', 'u', 'e',
+      'f', 'a', 'l', 's', 'e',
+      'n', 'u', 'l', 'l',
+      '$', '[', ']', '.', '*', '\'', '?'
+    )
+    s ++= others
+    s.toSet
   }
 
-  // used by mask path
-  private val RETAIN_CHARS_FOR_PATH = Set[Char]('$', '[', ']', '*', '.')
+  private val RETAIN_CHARS = getRetainChars
+
+  private def getCharsForKey: Set[Char] = {
+    val buf = new mutable.ArrayBuffer[Char]
+    for (c <- 'A' to 'Z') {
+      buf.append(c)
+    }
+    for (c <- 'a' to 'z') {
+      buf.append(c)
+    }
+    for (c <- '0' to '9') {
+      buf.append(c)
+    }
+    buf.toSet
+  }
+
+  private val oneToOneMappingChars: Set[Char] = getCharsForKey -- RETAIN_CHARS
 
   /**
-   * mask path
-   * @param pathStr original path
-   * @return masked path
+   * Mask data. RAPIDS Accelerator should not dump the original Customer data.
+   * This dump tool only care about the functionality of get-json-object, the masked data should
+   * reproduce issues if original data/path can reproduce issues. The mask is to find a way to
+   * mask data and reproduce issues by using masked data.
+   *
+   * Special/retain chars, the following chars will not be masked:
+   *     ASCII chars [0, 31] including space char
+   *     { } [ ] , : " ' :  JSON structure chars, should not mask
+   *     \  :  escape char, should not mask
+   *     / b f n r t u : can follow \, should not mask
+   *     - :  used by number, should not mask
+   *     0-9  : used by number, should not mask
+   *     e E  : used by number, e.g.: 1.0E-3, should not mask
+   *     u A-F a-f : used by JSON string by unicode, e.g.: \u1e2F
+   *     true :  should not mask
+   *     false :  should not mask
+   *     null :  should not mask
+   *     $ [ ] . * '  : used by path, should not mask
+   *     ?  : json path supports although Spark does not support, also add this because has no side
+   *     effect
+   * Above special/retain chars should not be masked, or the JSON will be invalid.
+   *
+   * Mask logic:
+   *     - Assume path only contains a-z, A-Z, '-' and [0-9]
+   *     - For char set [a-z, A-Z] minus special/retain chars like [eE1-9], create a random one to
+   *       one mapping to mask data. e.g.: a -> b, b -> c, ..., z -> a
+   *     - For other chars, e.g.: Chinese chars, map to a const char 's'
+   *
+   * @param jsonOrPath original JSON data or original Path
+   * @return masked data
    */
-  def maskPath(pathStr: String): String = {
-    replaceIfNotRetain(pathStr, RETAIN_CHARS_FOR_PATH)
+  def mask(jsonOrPath: String): String = {
+    // one to one map
+    val random = new Random
+    val map = getMap(random.nextInt())
+    println(RETAIN_CHARS)
+    println(oneToOneMappingChars)
+    println(map)
+    replaceIfNotRetain(jsonOrPath, RETAIN_CHARS, map)
+  }
+
+  private def getMap(seed: Int): Map[Char, Char] = {
+    val random = new Random(seed)
+    val charsFrom = random.shuffle(oneToOneMappingChars.toList)
+    val charsTo = random.shuffle(oneToOneMappingChars.toList)
+    val map = mutable.Map[Char, Char]()
+    for( i <- charsFrom.indices) {
+      map(charsFrom(i)) = charsTo(i)
+    }
+    map.toMap
   }
 
   /**
@@ -106,16 +153,25 @@ object GetJsonObjectMask {
    * @param retainChars retain chars
    * @return masked string
    */
-  private def replaceIfNotRetain(originStr: String, retainChars: Set[Char] ): String = {
+  private def replaceIfNotRetain(
+      originStr: String,
+      retainChars: Set[Char],
+      oneToOneMap: Map[Char, Char]): String = {
     if (originStr != null) {
       val buf = new StringBuffer(originStr.length)
       var idx = 0
       while (idx < originStr.length) {
-        if (!retainChars.contains(originStr(idx))) {
-          // if it's not a retain char, replace to a const char 's'
-          buf.append('s')
+        val originChar = originStr(idx)
+        if (oneToOneMappingChars.contains(originChar)) {
+          val toChar = oneToOneMap(originChar)
+          buf.append(toChar)
         } else {
-          buf.append(originStr(idx))
+          if (!retainChars.contains(originChar)) {
+            // if it's not a retain char, replace to a const char 's'
+            buf.append('s')
+          } else {
+            buf.append(originChar)
+          }
         }
         idx += 1
       }
@@ -162,10 +218,10 @@ object CpuGetJsonObject {
               diffRowsNum += 1
 
               // mask customer data
-              val maskedPath = GetJsonObjectMask.maskPath(pathStr)
-              val maskedOriginJson = GetJsonObjectMask.maskData(str)
-              val maskedCpuRet = GetJsonObjectMask.maskData(cpuStr)
-              val maskedGpuRet = GetJsonObjectMask.maskData(gpuStr)
+              val maskedPath = GetJsonObjectMask.mask(pathStr)
+              val maskedOriginJson = GetJsonObjectMask.mask(str)
+              val maskedCpuRet = GetJsonObjectMask.mask(cpuStr)
+              val maskedGpuRet = GetJsonObjectMask.mask(gpuStr)
 
               // append to csv file: yyyyMMdd.csv
               csvWriter.writeRow(Array(maskedPath, maskedOriginJson, maskedCpuRet, maskedGpuRet))
@@ -180,14 +236,13 @@ object CpuGetJsonObject {
   /**
    * Run get-json-object on CPU
    * @param dataCv original JSON data
-   * @param pathScalar path scalar
+   * @param path path scalar
    * @return CPU result of get-json-object
    */
-  def getJsonObjectOnCpu(dataCv: GpuColumnVector, pathScalar: GpuScalar): HostColumnVector = {
+  def getJsonObjectOnCpu(dataCv: GpuColumnVector, path: UTF8String): HostColumnVector = {
     withResource(dataCv.copyToHost()) { dataHCV =>
       withResource(HostColumnVector.builder(DType.STRING, dataHCV.getRowCount.toInt)) {
         resultBuilder =>
-          val path = pathScalar.getValue.asInstanceOf[UTF8String]
           val pathLiteral = Literal.create(path, StringType)
           for (i <- 0 until dataHCV.getRowCount.toInt) {
             val json = dataHCV.getUTF8String(i)
