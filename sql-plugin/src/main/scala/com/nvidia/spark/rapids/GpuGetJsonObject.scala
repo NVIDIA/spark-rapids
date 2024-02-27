@@ -119,12 +119,12 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     cachedNormalizedPath.getOrElse {
-      val normalized = normalizeJsonPath(rhs)
-      cachedNormalizedPath = Some(normalized)
-      normalized
+      val normalizedPath: Option[String] = normalizeJsonPath(rhs)
+      cachedNormalizedPath = Some(normalizedPath)
+      normalizedPath
     } match {
-      case Some(normalized) => 
-        withResource(Scalar.fromString(normalized)) { scalar =>
+      case Some(normalizedStr) => 
+        withResource(Scalar.fromString(normalizedStr)) { scalar =>
           lhs.getBase().getJSONObject(scalar, 
               GetJsonObjectOptions.builder().allowSingleQuotes(true).build())
         }
