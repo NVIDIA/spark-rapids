@@ -2042,7 +2042,8 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
     assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
 
 
-@pytest.mark.skipif(is_before_spark_350())
+@pytest.mark.skipif(condition=is_before_spark_350(),
+                    reason="WindowGroupLimit not available for spark.version < 3.5")
 @ignore_order(local=True)
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
@@ -2064,7 +2065,7 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
                             'RANK() OVER (ORDER BY a,b,c) ',
                             'DENSE_RANK() OVER (ORDER BY a,b,c) ',
                         ])
-def test_window_group_limits_partitioned(data_gen, batch_size, rank_clause):
+def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_clause):
     """
     This test verifies that window group limits are applied for queries with ranking-function based
     row filters.
