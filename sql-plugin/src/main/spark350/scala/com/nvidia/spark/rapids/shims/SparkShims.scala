@@ -30,7 +30,6 @@ import org.apache.spark.sql.types.StringType
 
 object SparkShimImpl extends Spark340PlusNonDBShims {
 
-  // HERE!
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[ToPrettyString]("An internal expressions which is used to " +
