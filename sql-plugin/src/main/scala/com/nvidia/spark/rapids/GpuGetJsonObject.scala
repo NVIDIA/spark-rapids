@@ -33,9 +33,9 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   override def prettyName: String = "get_json_object"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {    
-      lhs.getBase().getJSONObject(rhs.getBase, 
-      GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
-  }
+     lhs.getBase().getJSONObject(rhs.getBase, 
+     GetJsonObjectOptions.builder().allowSingleQuotes(true).build());
+   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
