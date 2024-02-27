@@ -3647,6 +3647,18 @@ object GpuOverrides extends Logging {
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // fallback to CPU if the path if JSON path contains [*]
+          // see https://github.com/NVIDIA/spark-rapids/issues/10216
+          GpuOverrides.extractLit(childExprs(1).wrapped.asInstanceOf[Expression]) match {
+            case Some(Literal(path, _)) =>
+              if (path != null && path.toString.contains("[*]")) {
+                willNotWorkOnGpu("get_json_object on GPU does not support wildcard [*] in path")
+              }
+            case _ =>
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
       }

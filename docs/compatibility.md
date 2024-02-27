@@ -484,9 +484,6 @@ The following is a list of bugs in either the GPU version or arguably in Apache 
      supported
    * https://github.com/NVIDIA/spark-rapids/issues/10215 leading spaces can be stripped from named
      keys.
-   * https://github.com/NVIDIA/spark-rapids/issues/10216 It appears that Spark is flattening some
-     output, which is different from other implementations including the GPU version.
-   * https://github.com/NVIDIA/spark-rapids/issues/10217 a JSON path execution bug
    * https://issues.apache.org/jira/browse/SPARK-46761 Apache Spark does not allow the `?` character in
      a quoted JSON path string.
 
