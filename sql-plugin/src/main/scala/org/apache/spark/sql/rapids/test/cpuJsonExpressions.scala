@@ -126,14 +126,21 @@ object GetJsonObjectMask {
    * @param jsonOrPath original JSON data or original Path
    * @return masked data
    */
-  def mask(jsonOrPath: String): String = {
-    // one to one map
+  def mask(
+      pathStr: String,
+      jsonStr: String,
+      cpuResult: String,
+      gpuResult: String): Array[String] = {
     val random = new Random
+    // generate one to one map
+    // Note: path/json/result should use the same mask way
     val map = getMap(random.nextInt())
-    println(RETAIN_CHARS)
-    println(oneToOneMappingChars)
-    println(map)
-    replaceIfNotRetain(jsonOrPath, RETAIN_CHARS, map)
+    Array(
+      doMask(pathStr, RETAIN_CHARS, map),
+      doMask(jsonStr, RETAIN_CHARS, map),
+      doMask(cpuResult, RETAIN_CHARS, map),
+      doMask(gpuResult, RETAIN_CHARS, map)
+    )
   }
 
   private def getMap(seed: Int): Map[Char, Char] = {
@@ -148,12 +155,13 @@ object GetJsonObjectMask {
   }
 
   /**
-   * Replace chars not in `retainChars` to const char 's' to mask data
-   * @param originStr origin string
-   * @param retainChars retain chars
+   * Mask chars
+   * @param originStr origin json/path/result string
+   * @param retainChars retain chars, should not be masked
+   * @param oneToOneMap char to char map for masking
    * @return masked string
    */
-  private def replaceIfNotRetain(
+  private def doMask(
       originStr: String,
       retainChars: Set[Char],
       oneToOneMap: Map[Char, Char]): String = {
@@ -216,15 +224,10 @@ object CpuGetJsonObject {
             val gpuStr = if (fromGpuHCV.isNull(currRow)) null else fromGpuHCV.getJavaString(currRow)
             if (!Objects.equals(cpuStr, gpuStr)) { // if have diff
               diffRowsNum += 1
-
               // mask customer data
-              val maskedPath = GetJsonObjectMask.mask(pathStr)
-              val maskedOriginJson = GetJsonObjectMask.mask(str)
-              val maskedCpuRet = GetJsonObjectMask.mask(cpuStr)
-              val maskedGpuRet = GetJsonObjectMask.mask(gpuStr)
-
+              val masked = GetJsonObjectMask.mask(pathStr, str, cpuStr, gpuStr)
               // append to csv file: yyyyMMdd.csv
-              csvWriter.writeRow(Array(maskedPath, maskedOriginJson, maskedCpuRet, maskedGpuRet))
+              csvWriter.writeRow(masked)
             }
             currRow += 1
           }
