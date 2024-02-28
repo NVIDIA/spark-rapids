@@ -96,6 +96,23 @@ private[this] object JsonPathParser extends RegexParsers {
   }
 }
 
+class GpuGetJsonObjectMeta(
+    expr: GetJsonObject,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule
+  ) extends BinaryExprMeta[GpuGetJsonObject](expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    if (expr.right.dataType != StringType) {
+      willNotWorkOnGpu("Only StringType is supported for path")
+    }
+  }
+
+  override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+    GpuGetJsonObject(lhs, rhs)
+}
+
 case class GpuGetJsonObject(json: Expression, path: Expression)
     extends GpuBinaryExpressionArgsAnyScalar
         with ExpectsInputTypes {
