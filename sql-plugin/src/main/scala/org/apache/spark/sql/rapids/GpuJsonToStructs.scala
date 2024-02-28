@@ -270,14 +270,9 @@ case class GpuJsonToStructs(
                   }
                 }
 
-                // join all the JSON lines into one string
-                val joined = withResource(withNewline) { _ =>
-                  withResource(Scalar.fromString("")) { emptyString =>
-                    withNewline.joinStrings(emptyString, emptyRow)
-                  }
-                }
-
-                (isNullOrEmptyInput, joined)
+                // We technically don't need to join the strings together as we just want the buffer
+                // which should be the same either way.
+                (isNullOrEmptyInput, withNewline)
               }
             }
           }
