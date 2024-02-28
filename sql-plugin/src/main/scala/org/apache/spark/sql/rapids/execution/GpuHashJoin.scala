@@ -475,7 +475,7 @@ class HashJoinIterator(
       } else {
         val maps = joinType match {
           case LeftOuter if isDistinctJoin =>
-            leftKeys.leftDistinctJoinGatherMaps(rightKeys, compareNullsEqual)
+            Array(leftKeys.leftDistinctJoinGatherMap(rightKeys, compareNullsEqual))
           case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
           case RightOuter =>
             // Reverse the output of the join, because we expect the right gather map to
