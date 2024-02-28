@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.shims.GpuJsonToStructsShim
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.types._
 
 class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
@@ -193,6 +194,18 @@ case class GpuJsonToStructs(
     }
   }
 
+  private lazy val jsonOptions = {
+    val parsedOptions = new JSONOptions(
+      options,
+      timeZoneId.get,
+      "")
+    cudf.JSONOptions.builder()
+        .withRecoverWithNull(true)
+        .withMixedTypesAsStrings(enableMixedTypesAsString)
+        .withNormalizeSingleQuotes(parsedOptions.allowSingleQuotes)
+        .build()
+  }
+
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
       case _: MapType =>
@@ -209,11 +222,6 @@ case class GpuJsonToStructs(
           // Step 3: setup a datasource
           val (names, rawTable) = withResource(new JsonDeviceDataSource(combined)) { ds =>
             // Step 4: Have cudf parse the JSON data
-            val jsonOptions = cudf.JSONOptions.builder()
-              .withRecoverWithNull(true)
-              .withMixedTypesAsStrings(enableMixedTypesAsString)
-              .withNormalizeSingleQuotes(true)
-              .build()
             withResource(
               cudf.Table.readAndInferJSON(jsonOptions, ds)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames
