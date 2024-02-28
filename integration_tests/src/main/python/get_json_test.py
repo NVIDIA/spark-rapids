@@ -85,8 +85,7 @@ def test_get_json_object_single_quotes():
     pytest.param("$.a",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10196')),
     "$.non_exist_key",
     "$..no_recursive",
-    "$.store.book[0].non_exist_key",
-    "$.store.basket[*].non_exist_key"])
+    "$.store.book[0].non_exist_key"])
 def test_get_json_object_spark_unit_tests(query):
     schema = StructType([StructField("jsonStr", StringType())])
     data = [

@@ -21,8 +21,9 @@ import scala.util.parsing.combinator.RegexParsers
 import ai.rapids.cudf.{ColumnVector, GetJsonObjectOptions, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, GetJsonObject}
 import org.apache.spark.sql.types.{DataType, StringType}
+import org.apache.spark.unsafe.types.UTF8String
 
 // Copied from Apache Spark org/apache/spark/sql/catalyst/expressions/jsonExpressions.scala
 private[this] sealed trait PathInstruction
@@ -82,17 +83,24 @@ private[this] object JsonPathParser extends RegexParsers {
     }
   }
 
-  def normalize(str: String): Option[String] = {
-    // convert List[PathInstruction] to String
-    parse(str).map {
-      "$" + _.map {
-        case Subscript | Key => ""
-        case Wildcard => "[*]"
-        case Index(index) => s"[$index]"
-        case Named(name) => s"['$name']"
-        case _ => throw new IllegalArgumentException(s"Invalid instruction in path: $str")
-      }.mkString
+  def containsUnsupportedPath(instructions: List[PathInstruction]): Boolean = {
+    // Gpu GetJsonObject is not supported if JSON path contains wildcard [*]
+    // see https://github.com/NVIDIA/spark-rapids/issues/10216
+    instructions.exists {
+      case Wildcard => true
+      case _ => false
     }
+  }
+
+  def normalize(instructions: List[PathInstruction]): String = {
+    // convert List[PathInstruction] to String
+    "$" + instructions.map {
+      case Subscript | Key => ""
+      case Wildcard => "[*]"
+      case Index(index) => s"[$index]"
+      case Named(name) => s"['$name']"
+      case _ => throw new IllegalArgumentException(s"Invalid instruction in path")
+    }.mkString
   }
 }
 
@@ -101,15 +109,19 @@ class GpuGetJsonObjectMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule
-  ) extends BinaryExprMeta[GpuGetJsonObject](expr, conf, parent, rule) {
+  ) extends BinaryExprMeta[GetJsonObject](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
-    if (expr.right.dataType != StringType) {
-      willNotWorkOnGpu("Only StringType is supported for path")
+    val lit = GpuOverrides.extractLit(expr.right)
+    lit.map { l =>
+      val instructions = JsonPathParser.parse(l.value.asInstanceOf[UTF8String].toString)
+      if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {
+        willNotWorkOnGpu("get_json_object on GPU does not support wildcard [*] in path")
+      }
     }
   }
 
-  override def convertToGpu(lhs: GpuExpression, rhs: GpuExpression): GpuExpression =
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
     GpuGetJsonObject(lhs, rhs)
 }
 
@@ -126,12 +138,12 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   private var cachedNormalizedPath: Option[Option[String]] = None
 
   def normalizeJsonPath(path: GpuScalar): Option[String] = {
-    val pathStr = if (path.isValid) {
-      path.getValue.toString()
+    if (path.isValid) {
+      val pathStr = path.getValue.toString()
+      JsonPathParser.parse(pathStr).map(JsonPathParser.normalize)
     } else {
-      throw new IllegalArgumentException("Invalid path")
+      None
     }
-    JsonPathParser.normalize(pathStr)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
