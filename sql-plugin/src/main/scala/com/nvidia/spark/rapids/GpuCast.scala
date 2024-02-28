@@ -1299,7 +1299,7 @@ object GpuCast {
 
   /** This method does not close the `input` ColumnVector. */
   def convertDateOrNull(
-      input: ColumnVector,
+      input: ColumnView,
       regex: String,
       cudfFormat: String,
       failOnInvalid: Boolean = false): ColumnVector = {

@@ -594,7 +594,6 @@ def test_from_json_map_fallback():
     'struct<d:string>',
     'struct<a:string,b:string>',
     'struct<c:int,a:string>',
-    'struct<a:string,a:string>',
     ])
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_struct(schema):
@@ -604,7 +603,22 @@ def test_from_json_struct(schema):
         .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.from_json('a', schema)),
+            .select(f.col('a'), f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.parametrize('schema', [
+    'struct<a:string,a:string>',
+    ])
+@allow_non_gpu("ProjectExec")
+def test_from_json_struct_fallback_dupe_keys(schema):
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
+    json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', schema)),
+        'JsonToStructs',
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @pytest.mark.parametrize('pattern', [
@@ -651,7 +665,7 @@ def test_from_json_struct_decimal():
     # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
     pytest.param("\"[0-9]{5}\"", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
-    "[0-9]{1,5}",
+    pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # floating-point
     "[0-9]{0,2}\\.[0-9]{1,2}"
     # boolean

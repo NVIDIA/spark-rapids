@@ -20,7 +20,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuCast, GpuOverrides, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 
@@ -36,7 +36,7 @@ object GpuJsonToStructsShim {
     }
   }
 
-  def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
+  def castJsonStringToDate(input: ColumnView, options: Map[String, String]): ColumnVector = {
     GpuJsonUtils.optionalDateFormatInRead(options) match {
       case None | Some("yyyy-MM-dd") =>
         withResource(Scalar.fromString(" ")) { space =>
@@ -54,7 +54,7 @@ object GpuJsonToStructsShim {
     tagDateFormatSupport(meta, dateFormat)
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+  def castJsonStringToDateFromScan(input: ColumnView, dt: DType,
       dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None | Some("yyyy-MM-dd") =>
@@ -71,7 +71,7 @@ object GpuJsonToStructsShim {
   def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
     timestampFormat: Option[String]): Unit = {}
 
-  def castJsonStringToTimestamp(input: ColumnVector,
+  def castJsonStringToTimestamp(input: ColumnView,
       options: Map[String, String]): ColumnVector = {
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>

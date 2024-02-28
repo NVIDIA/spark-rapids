@@ -537,8 +537,8 @@ def test_scan_json_bytes(std_input_path, read_func, spark_tmp_table_factory, inp
     "int_formatted.json",
     pytest.param("float_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
     pytest.param("sci_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
-    pytest.param("int_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("float_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
@@ -572,10 +572,10 @@ def test_scan_json_shorts(std_input_path, read_func, spark_tmp_table_factory, in
     "int_formatted.json",
     pytest.param("float_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
     pytest.param("sci_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
-    pytest.param("int_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("float_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
     "sci_formatted_strings.json",
-    pytest.param("decimal_locale_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
     "boolean_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
@@ -607,10 +607,10 @@ def test_scan_json_ints(std_input_path, read_func, spark_tmp_table_factory, inpu
     "int_formatted.json",
     pytest.param("float_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
     pytest.param("sci_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
-    pytest.param("int_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("float_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
     "sci_formatted_strings.json",
-    pytest.param("decimal_locale_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
     "boolean_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
@@ -642,10 +642,10 @@ def test_scan_json_longs(std_input_path, read_func, spark_tmp_table_factory, inp
     "int_formatted.json",
     pytest.param("float_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
     pytest.param("sci_formatted.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10460')),
-    pytest.param("int_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("float_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
     "sci_formatted_strings.json",
-    pytest.param("decimal_locale_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
     "boolean_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
@@ -819,10 +819,10 @@ def test_scan_json_floats(std_input_path, read_func, spark_tmp_table_factory, in
     "int_formatted.json",
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
     "sci_formatted.json",
-    pytest.param("int_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "int_formatted_strings.json",
     pytest.param("float_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("sci_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("decimal_locale_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
     "boolean_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
@@ -856,10 +856,10 @@ def test_scan_json_doubles(std_input_path, read_func, spark_tmp_table_factory, i
     "int_formatted.json",
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
     "sci_formatted.json",
-    pytest.param("int_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "int_formatted_strings.json",
     pytest.param("float_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("sci_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
-    pytest.param("decimal_locale_formatted_strings.json",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10468')),
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
     "boolean_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453

@@ -3663,10 +3663,28 @@ object GpuOverrides extends Logging {
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        def hasDuplicateFieldNames(dt: DataType): Boolean = dt match {
+          case st: StructType =>
+            val fn = st.fieldNames
+            if (fn.length != fn.distinct.length) {
+              true
+            } else {
+              st.fields.exists(f => hasDuplicateFieldNames(f.dataType))
+            }
+          case ArrayType(ct, _) => hasDuplicateFieldNames(ct)
+          case MapType(kt, vt, _) => hasDuplicateFieldNames(kt) || hasDuplicateFieldNames(vt)
+          case _ => false
+        }
+
         override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
-            case _: StructType => ()
+            case st: StructType =>
+              if (hasDuplicateFieldNames(st)) {
+                willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
+                    "names in a struct")
+              }
+              ()
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
