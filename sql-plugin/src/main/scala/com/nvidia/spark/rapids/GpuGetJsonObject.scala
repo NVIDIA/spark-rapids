@@ -88,6 +88,7 @@ private[this] object JsonPathParser extends RegexParsers {
     // see https://github.com/NVIDIA/spark-rapids/issues/10216
     instructions.exists {
       case Wildcard => true
+      case Named(name) if name == "*" => true
       case _ => false
     }
   }
