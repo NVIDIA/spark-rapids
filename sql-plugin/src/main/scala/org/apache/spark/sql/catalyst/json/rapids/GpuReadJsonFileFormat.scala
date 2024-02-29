@@ -87,6 +87,7 @@ object GpuReadJsonFileFormat {
     val fsse = meta.wrapped
     GpuJsonScan.tagSupport(
       SparkShimImpl.sessionFromPlan(fsse),
+      "JsonFileFormat",
       fsse.relation.dataSchema,
       fsse.output.toStructType,
       fsse.relation.options,

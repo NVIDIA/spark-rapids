@@ -23,9 +23,7 @@ import ai.rapids.cudf.{NvtxColor, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression, RangeFrame, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
@@ -49,7 +47,7 @@ class GpuRunningWindowIterator(
     val outputTypes: Array[DataType],
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
+    opTime: GpuMetric) extends GpuColumnarBatchIterator(true) with BasicWindowCalc {
   import GpuBatchedWindowIteratorUtils._
 
   override def isRunningBatched: Boolean = true
@@ -60,10 +58,7 @@ class GpuRunningWindowIterator(
   private var cachedBatch: Option[SpillableColumnarBatch] = None
   private var lastParts: Array[Scalar] = Array.empty
   private var lastOrder: Array[Scalar] = Array.empty
-  private var isClosed: Boolean = false
   private var maybeSplitIter: Iterator[ColumnarBatch] = Iterator.empty
-
-  Option(TaskContext.get()).foreach(tc => onTaskCompletion(tc)(close()))
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -75,15 +70,12 @@ class GpuRunningWindowIterator(
     lastOrder = newLastOrder
   }
 
-  def close(): Unit = {
-    if (!isClosed) {
-      isClosed = true
-      fixerIndexMap.values.foreach(_.close())
-      saveLastParts(Array.empty)
-      saveLastOrder(Array.empty)
-      cachedBatch.foreach(_.close())
-      cachedBatch = None
-    }
+  override def doClose(): Unit = {
+    fixerIndexMap.values.foreach(_.close())
+    saveLastParts(Array.empty)
+    saveLastOrder(Array.empty)
+    cachedBatch.foreach(_.close())
+    cachedBatch = None
   }
 
   private lazy val fixerIndexMap: Map[Int, BatchedRunningWindowFixer] =
