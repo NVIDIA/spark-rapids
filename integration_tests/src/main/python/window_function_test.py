@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
+from spark_session import is_before_spark_320, is_before_spark_350, is_databricks113_or_later, spark_version, with_cpu_session
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -2040,6 +2040,86 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
     # query runs *with* batching, i.e. `GpuBatchedBoundedWindowExec`.
     conf_200 = get_conf_with_extent(200)
     assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
+
+
+@pytest.mark.skipif(condition=is_before_spark_350(),
+                    reason="WindowGroupLimit not available for spark.version < 3.5")
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      pytest.param(_grpkey_longs_with_nullable_larger_decimals,
+                                                   marks=pytest.mark.skipif(
+                                                       condition=spark_bugs_in_decimal_sorting(),
+                                                       reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+                                      ],
+                         ids=idfn)
+@pytest.mark.parametrize('rank_clause', [
+                            'RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'DENSE_RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'RANK() OVER (ORDER BY a,b,c) ',
+                            'DENSE_RANK() OVER (ORDER BY a,b,c) ',
+                        ])
+def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_clause):
+    """
+    This test verifies that window group limits are applied for queries with ranking-function based
+    row filters.
+    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
+    clauses.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    query = """
+        SELECT * FROM (
+          SELECT *, {} AS rnk
+          FROM window_agg_table
+        )
+        WHERE rnk < 3
+     """.format(rank_clause)
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=4096),
+        "window_agg_table",
+        query,
+        conf = conf)
+
+
+@allow_non_gpu('WindowGroupLimitExec')
+@pytest.mark.skipif(condition=is_before_spark_350(),
+                    reason="WindowGroupLimit not available for spark.version < 3.5")
+@ignore_order(local=True)
+@approximate_float
+def test_window_group_limits_fallback_for_row_number():
+    """
+    This test verifies that window group limits are applied for queries with ranking-function based
+    row filters.
+    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
+    clauses.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': '1g',
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    data_gen = _grpkey_longs_with_no_nulls
+    query = """
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b) AS rnk
+          FROM window_agg_table
+        )
+        WHERE rnk < 3
+     """
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=512),
+        cpu_fallback_class_name="WindowGroupLimitExec",
+        table_name="window_agg_table",
+        sql=query,
+        conf=conf)
 
 
 def test_lru_cache_datagen():
