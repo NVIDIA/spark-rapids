@@ -86,9 +86,6 @@ object GetJsonObjectMask {
     for (c <- 'a' to 'z') {
       buf.append(c)
     }
-    for (c <- '0' to '9') {
-      buf.append(c)
-    }
     buf.toSet
   }
 
@@ -106,7 +103,7 @@ object GetJsonObjectMask {
    *     \  :  escape char, should not mask
    *     / b f n r t u : can follow \, should not mask
    *     - :  used by number, should not mask
-   *     0-9  : used by number, should not mask
+   *     0-9  : used by number, it's special char, mask method refers to the following
    *     e E  : used by number, e.g.: 1.0E-3, should not mask
    *     u A-F a-f : used by JSON string by unicode, e.g.: \u1e2F
    *     true :  should not mask
@@ -118,12 +115,14 @@ object GetJsonObjectMask {
    * Above special/retain chars should not be masked, or the JSON will be invalid.
    *
    * Mask logic:
-   *     - Assume path only contains a-z, A-Z, '-' and [0-9]
+   *     - Assume path only contains a-z, A-Z, '_' and [0-9]
+   *     - For digits [1-9] create a random one to one mapping and replace, note do not touch '0'
+   *       Because 00 number is invalid.
+   *     - For above special/retain chars do not change
    *     - For char set [a-z, A-Z] minus special/retain chars like [eE1-9], create a random one to
    *       one mapping to mask data. e.g.: a -> b, b -> c, ..., z -> a
    *     - For other chars, e.g.: Chinese chars, map to a const char 's'
    *
-   * @param jsonOrPath original JSON data or original Path
    * @return masked data
    */
   def mask(
@@ -134,18 +133,20 @@ object GetJsonObjectMask {
     val random = new Random
     // generate one to one map
     // Note: path/json/result should use the same mask way
-    val map = getMap(random.nextInt())
+    val randomInt = random.nextInt()
+    val charMap = getMap(randomInt)
+    val digitMap = getDigitMap(randomInt)
     Array(
-      doMask(pathStr, RETAIN_CHARS, map),
-      doMask(jsonStr, RETAIN_CHARS, map),
-      doMask(cpuResult, RETAIN_CHARS, map),
-      doMask(gpuResult, RETAIN_CHARS, map)
+      doMask(pathStr, RETAIN_CHARS, charMap, digitMap),
+      doMask(jsonStr, RETAIN_CHARS, charMap, digitMap),
+      doMask(cpuResult, RETAIN_CHARS, charMap, digitMap),
+      doMask(gpuResult, RETAIN_CHARS, charMap, digitMap)
     )
   }
 
   private def getMap(seed: Int): Map[Char, Char] = {
     val random = new Random(seed)
-    val charsFrom = random.shuffle(oneToOneMappingChars.toList)
+    val charsFrom = oneToOneMappingChars.toList
     val charsTo = random.shuffle(oneToOneMappingChars.toList)
     val map = mutable.Map[Char, Char]()
     for( i <- charsFrom.indices) {
@@ -153,6 +154,19 @@ object GetJsonObjectMask {
     }
     map.toMap
   }
+
+  private def getDigitMap(seed: Int): Map[Int, Int] = {
+    val random = new Random(seed)
+    val digits = 1 to 9
+    val from = digits.toList
+    val to = random.shuffle(digits.toList)
+    val map = mutable.Map[Int, Int]()
+    for (i <- from.indices) {
+      map(from(i)) = to(i)
+    }
+    map.toMap
+  }
+
 
   /**
    * Mask chars
@@ -164,24 +178,34 @@ object GetJsonObjectMask {
   private def doMask(
       originStr: String,
       retainChars: Set[Char],
-      oneToOneMap: Map[Char, Char]): String = {
+      oneToOneMap: Map[Char, Char],
+      digitMap: Map[Int, Int]): String = {
     if (originStr != null) {
       val buf = new StringBuffer(originStr.length)
       var idx = 0
       while (idx < originStr.length) {
         val originChar = originStr(idx)
-        if (oneToOneMappingChars.contains(originChar)) {
-          val toChar = oneToOneMap(originChar)
-          buf.append(toChar)
+        if (originChar >= '1' && originChar <= '9') {
+          // digits need to one to one map
+          val toDigit = digitMap(originChar)
+          buf.append(toDigit)
         } else {
-          if (!retainChars.contains(originChar)) {
-            // if it's not a retain char, replace to a const char 's'
-            buf.append('s')
+          // not in [1-9]
+          if (oneToOneMappingChars.contains(originChar)) {
+            // chars need one to one map
+            val toChar = oneToOneMap(originChar)
+            buf.append(toChar)
           } else {
-            buf.append(originChar)
+            if (!retainChars.contains(originChar)) {
+              // if it's not a retain char, replace to a const char 's'
+              buf.append('s')
+            } else {
+              // retain char, do not change
+              buf.append(originChar)
+            }
           }
+          idx += 1
         }
-        idx += 1
       }
       buf.toString
     } else {
