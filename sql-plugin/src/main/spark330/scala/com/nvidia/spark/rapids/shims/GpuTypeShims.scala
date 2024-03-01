@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.{ColumnarCopyHelper, TypeSig}
+import com.nvidia.spark.rapids.{ColumnarCopyHelper, RapidsHostColumnBuilder, TypeSig}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
@@ -137,7 +137,7 @@ object GpuTypeShims {
    */
   def columnarCopy(
       cv: ColumnVector,
-      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+      b: RapidsHostColumnBuilder,
       dataType: DataType,
       rows: Int): Unit = dataType match {
     case DayTimeIntervalType(_, _) =>
