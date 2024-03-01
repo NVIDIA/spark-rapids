@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -126,7 +126,9 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   }
 
   override def convertToCpu(): SparkPlan = {
-    wrapped.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+    val cpu = wrapped.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+    cpu.copyTagsFrom(wrapped)
+    cpu
   }
 
   override def convertToGpu(): GpuExec = {
