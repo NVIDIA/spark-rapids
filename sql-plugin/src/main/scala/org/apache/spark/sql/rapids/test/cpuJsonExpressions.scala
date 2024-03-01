@@ -155,12 +155,12 @@ object GetJsonObjectMask {
     map.toMap
   }
 
-  private def getDigitMap(seed: Int): Map[Int, Int] = {
+  private def getDigitMap(seed: Int): Map[Char, Char] = {
     val random = new Random(seed)
-    val digits = 1 to 9
+    val digits = '1' to '9'
     val from = digits.toList
     val to = random.shuffle(digits.toList)
-    val map = mutable.Map[Int, Int]()
+    val map = mutable.Map[Char, Char]()
     for (i <- from.indices) {
       map(from(i)) = to(i)
     }
@@ -179,12 +179,13 @@ object GetJsonObjectMask {
       originStr: String,
       retainChars: Set[Char],
       oneToOneMap: Map[Char, Char],
-      digitMap: Map[Int, Int]): String = {
+      digitMap: Map[Char, Char]): String = {
     if (originStr != null) {
       val buf = new StringBuffer(originStr.length)
       var idx = 0
       while (idx < originStr.length) {
         val originChar = originStr(idx)
+        idx += 1
         if (originChar >= '1' && originChar <= '9') {
           // digits need to one to one map
           val toDigit = digitMap(originChar)
@@ -204,7 +205,6 @@ object GetJsonObjectMask {
               buf.append(originChar)
             }
           }
-          idx += 1
         }
       }
       buf.toString
