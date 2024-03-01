@@ -893,7 +893,6 @@
             ${snapshotScala213.buildvers}
         </allScala213.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
-        <shimplify.skip.shims.check>351</shimplify.skip.shims.check>
         <cpd.sourceType>main</cpd.sourceType>
         <!-- SPARK-36796 for JDK-17 test-->
         <extraJavaTestArgs>
