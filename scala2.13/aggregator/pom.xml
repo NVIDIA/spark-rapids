@@ -745,5 +745,22 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <id>release351</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>351</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
     </profiles>
 </project>
