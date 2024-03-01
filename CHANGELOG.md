@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-02-17
+Generated on 2024-03-01
 
 ## Release 24.02
 
@@ -46,6 +46,9 @@ Generated on 2024-02-17
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#10464](https://github.com/NVIDIA/spark-rapids/issues/10464)|[BUG] spark334 and spark342 shims missed in scala2.13 dist jar|
+|[#10473](https://github.com/NVIDIA/spark-rapids/issues/10473)|[BUG] Leak when running RANK query|
+|[#10432](https://github.com/NVIDIA/spark-rapids/issues/10432)|Plug-in Build Failing for Databricks 11.3 |
 |[#9974](https://github.com/NVIDIA/spark-rapids/issues/9974)|[BUG] host memory Leak in MultiFileCoalescingPartitionReaderBase in UTC time zone|
 |[#10359](https://github.com/NVIDIA/spark-rapids/issues/10359)|[BUG] Build failure on Databricks nightly run with `GpuMapInPandasExecMeta`|
 |[#10327](https://github.com/NVIDIA/spark-rapids/issues/10327)|[BUG] Unit test FAILED against : SPARK-24957: average with decimal followed by aggregation returning wrong result |
@@ -119,6 +122,12 @@ Generated on 2024-02-17
 ### PRs
 |||
 |:---|:---|
+|[#10465](https://github.com/NVIDIA/spark-rapids/pull/10465)|Add missed shims for scala2.13|
+|[#10511](https://github.com/NVIDIA/spark-rapids/pull/10511)|Update rapids jni and private dependency version to 24.02.1|
+|[#10475](https://github.com/NVIDIA/spark-rapids/pull/10475)|Fix scalar leak in RankFixer|
+|[#10461](https://github.com/NVIDIA/spark-rapids/pull/10461)|Preserve tags on FileSourceScanExec|
+|[#10459](https://github.com/NVIDIA/spark-rapids/pull/10459)|[DOC] Fix table rendering issue in github.io download UI page on branch-24.02 [skip ci] |
+|[#10443](https://github.com/NVIDIA/spark-rapids/pull/10443)|Update change log for v24.02.0 release [skip ci]|
 |[#10439](https://github.com/NVIDIA/spark-rapids/pull/10439)|Reverts NVIDIA/spark-rapids#10232 and fixes the plugin build on Databricks 11.3|
 |[#10380](https://github.com/NVIDIA/spark-rapids/pull/10380)|Init changelog 24.02 [skip ci]|
 |[#10367](https://github.com/NVIDIA/spark-rapids/pull/10367)|Update rapids JNI and private version to release 24.02.0|
