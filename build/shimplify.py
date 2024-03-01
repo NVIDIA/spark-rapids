@@ -189,6 +189,8 @@ __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
 __all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
 
+__skip_shims_check = sorted(__csv_ant_prop_as_arr('shimplify.skip.shims.check'))
+
 __log = logging.getLogger('shimplify')
 __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
 __ch = logging.StreamHandler()
@@ -310,6 +312,7 @@ def task_impl():
 #           shimplify.move=%s
 #           shimplify.overwrite=%s
 #           shimplify.shims=%s
+#           shimplify.skip.shims.check=%s
 #           shimplify.trace=%s"""
     __log.info(config_format,
                __src_basedir,
@@ -320,6 +323,7 @@ def task_impl():
                __should_move_files,
                __should_overwrite,
                __shims_arr,
+               __skip_shims_check,
                __should_trace)
     __log.info("review changes and `git restore` if necessary")
     buildvers_from_dirs = []
@@ -372,7 +376,8 @@ def __generate_symlinks():
 
 def __map_version_array(shim_json_string):
     shim_ver = str(json.loads(shim_json_string).get('spark'))
-    assert shim_ver in __all_shims_arr, "all.buildvers in pom.xml does not contain %s" % shim_ver
+    if (shim_ver not in __skip_shims_check):
+        assert shim_ver in __all_shims_arr, "all.buildvers in pom.xml does not contain %s" % shim_ver
     return shim_ver
 
 def __traverse_source_tree_of_all_shims(src_type, func):
