@@ -78,9 +78,11 @@ case class GpuExpandExec(
     useTieredProject.asInstanceOf[java.lang.Boolean],
     preprojectEnabled.asInstanceOf[java.lang.Boolean])
 
+  private val PRE_PROJECT_TIME = "preprojectTime"
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    PRE_PROJECT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, "pre-projection time"),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
@@ -109,8 +111,10 @@ case class GpuExpandExec(
         // We got some nested expressions, so pre-projection is good to enable.
         projectionsForBind = preprojectedProjections
         attributesForBind = preprojectionList.map(_.toAttribute)
+        val opMetric = metricsMap(OP_TIME)
+        val preproMetric = metricsMap(PRE_PROJECT_TIME)
         preprojectIter = (iter: Iterator[ColumnarBatch]) => iter.map(cb =>
-          metricsMap(OP_TIME).ns {
+          GpuMetric.ns(opMetric, preproMetric) {
             boundPreprojections.projectAndCloseWithRetrySingleBatch(
               SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
