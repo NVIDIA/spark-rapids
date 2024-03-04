@@ -391,6 +391,53 @@ def test_read_valid_json(spark_tmp_table_factory, std_input_path, read_func, fil
                   {}),
         conf=conf)
 
+@pytest.mark.parametrize('filename', ['nested-structs.ndjson'])
+@pytest.mark.parametrize('schema', [
+    StructType([StructField('teacher', StringType())]),
+    StructType([
+        StructField('student', StructType([
+            StructField('name', StringType()),
+            StructField('age', IntegerType())
+        ]))
+    ]),
+    StructType([
+        StructField('teacher', StringType()),
+        StructField('student', StructType([
+            StructField('name', StringType()),
+            StructField('age', IntegerType())
+        ]))
+    ]),
+])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_read_nested_struct(spark_tmp_table_factory, std_input_path, read_func, filename, schema, v1_enabled_list):
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+                  schema,
+                  spark_tmp_table_factory,
+                  {}),
+        conf=conf)
+
+@pytest.mark.parametrize('filename', ['optional-fields.ndjson'])
+@pytest.mark.parametrize('schema', [
+    StructType([StructField('teacher', StringType())]),
+    StructType([StructField('student', StringType())]),
+    StructType([
+        StructField('teacher', StringType()),
+        StructField('student', StringType())
+    ]),
+])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_read_optional_fields(spark_tmp_table_factory, std_input_path, read_func, filename, schema, v1_enabled_list):
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+                  schema,
+                  spark_tmp_table_factory,
+                  {}),
+        conf=conf)
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
 not_utc_json_scan_allow=['FileSourceScanExec'] if is_not_utc() else []
@@ -813,9 +860,11 @@ def test_from_json_struct_timestamp_fallback_non_default_format(timestamp_gen, t
         'ProjectExec',
         conf=conf)
 
-@pytest.mark.parametrize('schema', ['struct<teacher:string>',
-                                    'struct<student:struct<name:string,age:int>>',
-                                    'struct<teacher:string,student:struct<name:string,age:int>>'])
+@pytest.mark.parametrize('schema', [
+    'struct<teacher:string>',
+    'struct<student:struct<name:string,age:int>>',
+    'struct<teacher:string,student:struct<name:string,age:int>>'
+])
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_of_struct(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
