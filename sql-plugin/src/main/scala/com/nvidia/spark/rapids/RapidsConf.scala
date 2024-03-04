@@ -2132,6 +2132,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createOptional
 
+  val MIN_CUDA_COMPUTE_CAPABILITY_SUPPORTED = conf("spark.rapids.minCudaComputeCapabilitySupported")
+    .internal()
+    .startupOnly()
+    .doc("Config to store the minimum CUDA compute capability supported by the RAPIDS plugin")
+    .integerConf
+    .createWithDefault(7)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2894,6 +2901,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
+
+  lazy val minCudaComputeCapabilitySupported: Int = get(MIN_CUDA_COMPUTE_CAPABILITY_SUPPORTED)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
