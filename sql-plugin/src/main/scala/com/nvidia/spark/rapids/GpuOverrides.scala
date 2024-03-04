@@ -3646,10 +3646,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGetJsonObject(lhs, rhs)
-      }
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)
     ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
         "validated, and the output is not normalized the same as Spark"),
     expr[JsonToStructs](
@@ -3663,10 +3660,23 @@ object GpuOverrides extends Logging {
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        def hasDuplicateFieldNames(dt: DataType): Boolean =
+          TrampolineUtil.dataTypeExistsRecursively(dt, {
+            case st: StructType =>
+              val fn = st.fieldNames
+              fn.length != fn.distinct.length
+            case _ => false
+          })
+
         override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
-            case _: StructType => ()
+            case st: StructType =>
+              if (hasDuplicateFieldNames(st)) {
+                willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
+                    "names in a struct")
+              }
+              ()
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")

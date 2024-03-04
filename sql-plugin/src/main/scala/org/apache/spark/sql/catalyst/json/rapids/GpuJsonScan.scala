@@ -52,54 +52,56 @@ object GpuJsonScan {
     val scan = scanMeta.wrapped
     tagSupport(
       scan.sparkSession,
+      "JsonScan",
       scan.dataSchema,
       scan.readDataSchema,
       scan.options.asScala.toMap,
       scanMeta)
   }
 
-  def tagSupportOptions(options: JSONOptionsInRead,
+  def tagSupportOptions(opName: String,
+                        options: JSONOptionsInRead,
                         meta: RapidsMeta[_, _, _]): Unit = {
     if (options.multiLine) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
+      meta.willNotWorkOnGpu(s"$opName does not support multiLine")
     }
 
     // {"name": /* hello */ "Reynold Xin"} is not supported by CUDF
     if (options.allowComments) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowComments")
+      meta.willNotWorkOnGpu(s"$opName does not support allowComments")
     }
 
     // {name: 'Reynold Xin'} is not supported by CUDF
     if (options.allowUnquotedFieldNames) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowUnquotedFieldNames")
+      meta.willNotWorkOnGpu(s"$opName does not support allowUnquotedFieldNames")
     }
 
-    // {'name': 'Reynold Xin'} is not supported by CUDF
-    if (options.parameters.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowSingleQuotes")
+    // {'name': 'Reynold Xin'} turning single quotes off is not supported by CUDF
+    if (!options.allowSingleQuotes) {
+      meta.willNotWorkOnGpu(s"$opName does not support disabling allowSingleQuotes")
     }
 
     // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
     if (options.allowBackslashEscapingAnyCharacter) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowBackslashEscapingAnyCharacter")
+      meta.willNotWorkOnGpu(s"$opName does not support allowBackslashEscapingAnyCharacter")
     }
 
     // {"a":null, "b":1, "c":3.0}, Spark will drop column `a` if dropFieldIfAllNull is enabled.
     if (options.dropFieldIfAllNull) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support dropFieldIfAllNull")
+      meta.willNotWorkOnGpu(s"$opName does not support dropFieldIfAllNull")
     }
 
     if (options.parseMode != PermissiveMode) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
+      meta.willNotWorkOnGpu(s"$opName only supports Permissive JSON parsing")
     }
 
     if (options.lineSeparator.getOrElse("\n") != "\n") {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
+      meta.willNotWorkOnGpu(opName + " only supports \"\\n\" as a line separator")
     }
 
     options.encoding.foreach(enc =>
       if (enc != StandardCharsets.UTF_8.name() && enc != StandardCharsets.US_ASCII.name()) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
+      meta.willNotWorkOnGpu(s"$opName only supports UTF8 or US-ASCII encoded data")
     })
   }
 
@@ -134,10 +136,11 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
     }
 
-    tagSupportOptions(parsedOptions, meta)
+    tagSupportOptions("JsonToStructs", parsedOptions, meta)
   }
 
   def tagSupport(sparkSession: SparkSession,
+                 opName: String,
                  dataSchema: StructType,
                  readSchema: StructType,
                  options: Map[String, String],
@@ -159,7 +162,7 @@ object GpuJsonScan {
         s"infer the schema")
     }
 
-    tagSupportOptions(parsedOptions, meta)
+    tagSupportOptions(opName, parsedOptions, meta)
 
     val types = readSchema.map(_.dataType)
 
@@ -359,7 +362,7 @@ class JsonPartitionReader(
     cudf.JSONOptions.builder()
       .withRecoverWithNull(true)
       .withMixedTypesAsStrings(enableMixedTypesAsString)
-      .withNormalizeSingleQuotes(true)
+      .withNormalizeSingleQuotes(parsedOptions.allowSingleQuotes)
       .build
   }
 

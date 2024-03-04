@@ -1606,6 +1606,8 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   override def close(): Unit = {
     previousResult.foreach(_.close())
     previousResult = None
+    previousOverflow.foreach(_.close())
+    previousOverflow = None
   }
 }
 
