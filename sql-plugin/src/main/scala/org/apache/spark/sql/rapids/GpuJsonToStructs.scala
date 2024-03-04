@@ -80,7 +80,6 @@ object GpuJsonToStructs {
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
     case _ =>
-      // TODO do we need to read all of the leaf nodes as strings???
       builder.addColumn(DType.STRING, name)
   }
 

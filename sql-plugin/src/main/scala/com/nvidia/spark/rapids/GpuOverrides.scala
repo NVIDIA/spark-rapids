@@ -3660,18 +3660,13 @@ object GpuOverrides extends Logging {
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
-        def hasDuplicateFieldNames(dt: DataType): Boolean = dt match {
-          case st: StructType =>
-            val fn = st.fieldNames
-            if (fn.length != fn.distinct.length) {
-              true
-            } else {
-              st.fields.exists(f => hasDuplicateFieldNames(f.dataType))
-            }
-          case ArrayType(ct, _) => hasDuplicateFieldNames(ct)
-          case MapType(kt, vt, _) => hasDuplicateFieldNames(kt) || hasDuplicateFieldNames(vt)
-          case _ => false
-        }
+        def hasDuplicateFieldNames(dt: DataType): Boolean =
+          TrampolineUtil.dataTypeExistsRecursively(dt, {
+            case st: StructType =>
+              val fn = st.fieldNames
+              fn.length != fn.distinct.length
+            case _ => false
+          })
 
         override def tagExprForGpu(): Unit = {
           a.schema match {
