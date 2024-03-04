@@ -326,7 +326,7 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
 @pytest.mark.parametrize('allow_non_numeric_numbers', ['true', 'false'])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', [
     'true',
-    pytest.param('false', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9588')),
+    'false'
 ])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @allow_non_gpu(*not_utc_allow_for_test_json_scan)
@@ -645,7 +645,7 @@ def test_from_json_map_fallback():
     ])
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_struct(schema):
-    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/10534
     json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
@@ -659,7 +659,7 @@ def test_from_json_struct(schema):
     ])
 @allow_non_gpu("ProjectExec")
 def test_from_json_struct_fallback_dupe_keys(schema):
-    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/10534
     json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
@@ -789,7 +789,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
     pytest.param("\"" + optional_whitespace_regex + "[0-9]{5}" + optional_whitespace_regex + "\"", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
-    pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9588")),
+    pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/4940")),
     pytest.param("[1-9]{1,8}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/4940")),
     # floating-point
     "[0-9]{0,2}\.[0-9]{1,2}"
