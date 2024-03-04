@@ -23,7 +23,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 
@@ -35,7 +35,7 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
+  def castJsonStringToDate(input: ColumnView, options: Map[String, String]): ColumnVector = {
     GpuJsonUtils.optionalDateFormatInRead(options) match {
       case None =>
         // legacy behavior
@@ -53,7 +53,7 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+  def castJsonStringToDateFromScan(input: ColumnView, dt: DType,
       dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None =>
@@ -68,7 +68,7 @@ object GpuJsonToStructsShim {
     }
   }
 
-  private def jsonStringToDate(input: ColumnVector, dateFormatPattern: String,
+  private def jsonStringToDate(input: ColumnView, dateFormatPattern: String,
       failOnInvalid: Boolean): ColumnVector = {
     val regexRoot = dateFormatPattern
       .replace("yyyy", raw"\d{4}")
@@ -84,7 +84,7 @@ object GpuJsonToStructsShim {
     timestampFormat.foreach(f => meta.willNotWorkOnGpu(s"Unsupported timestampFormat: $f"))
   }
 
-  def castJsonStringToTimestamp(input: ColumnVector,
+  def castJsonStringToTimestamp(input: ColumnView,
       options: Map[String, String]): ColumnVector = {
     options.get("timestampFormat") match {
       case None =>
