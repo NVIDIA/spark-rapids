@@ -21,7 +21,7 @@ import java.math.RoundingMode
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
+import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf, RapidsHostColumnBuilder}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.shims.GpuBatchScanExec
 
@@ -203,7 +203,7 @@ class DecimalUnitTest extends GpuUnitTests {
         DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
       val dt = new HostColumnVector.BasicType(false,
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
-      withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
+      withResource(new RapidsHostColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
           HostColumnarToGpu.columnarCopy(hostCV, builder, cv.dataType(), cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
@@ -227,7 +227,7 @@ class DecimalUnitTest extends GpuUnitTests {
         DecimalType(DType.DECIMAL64_MAX_PRECISION, 9))) { cv =>
       val dt = new HostColumnVector.BasicType(true,
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
-      withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
+      withResource(new RapidsHostColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
           HostColumnarToGpu.columnarCopy(hostCV, builder, cv.dataType(), cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
