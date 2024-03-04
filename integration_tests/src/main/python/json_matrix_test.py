@@ -305,6 +305,7 @@ WITH_NONNUMERIC_NUMBERS_SCHEMA = StructType([
 
 @approximate_float()
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')
 def test_scan_json_allow_nonnumeric_numbers_off(std_input_path, read_func, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + WITH_NONNUMERIC_NUMBERS_FILE,
@@ -698,7 +699,7 @@ def test_from_json_decs(std_input_path, input_file, dt):
     "float_formatted_strings.json",
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(),reason='https://github.com/NVIDIA/spark-rapids/issues/10495')),
+    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://github.com/NVIDIA/spark-rapids/issues/10495')),
     pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10479')),
     pytest.param("invalid_ridealong_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10534'))])
 @pytest.mark.parametrize('read_func', [read_json_df])
@@ -784,7 +785,7 @@ def test_from_json_bools(std_input_path, input_file):
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
     "sci_formatted.json",
     "int_formatted_strings.json",
-    "float_formatted_strings.json",
+    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
@@ -803,7 +804,7 @@ def test_scan_json_floats(std_input_path, read_func, spark_tmp_table_factory, in
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
     "sci_formatted.json",
     "int_formatted_strings.json",
-    "float_formatted_strings.json",
+    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
@@ -821,7 +822,7 @@ def test_from_json_floats(std_input_path, input_file):
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
     "sci_formatted.json",
     "int_formatted_strings.json",
-    "float_formatted_strings.json",
+    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
@@ -840,7 +841,7 @@ def test_scan_json_doubles(std_input_path, read_func, spark_tmp_table_factory, i
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
     "sci_formatted.json",
     "int_formatted_strings.json",
-    "float_formatted_strings.json",
+    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
