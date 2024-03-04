@@ -54,22 +54,21 @@ _hive_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), 
 _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive_map_gens]
 
 
-@allow_non_gpu('HiveTableScanExec', *non_utc_allow)
+@allow_non_gpu(*non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_ctas", [True, False], ids=['CTAS', 'CTTW'])
 @pytest.mark.parametrize("gens", _hive_write_gens, ids=idfn)
-def test_write_parquet_into_hive_table(spark_tmp_table_factory, gens, is_ctas):
-    # Generate hive table in Parquet format
-    def gen_hive_table(spark):
+def test_write_parquet_into_hive_table(spark_tmp_table_factory, is_ctas, gens):
+
+    def gen_table(spark):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+        types_sql_str = ','.join('{} {}'.format(
+            name, gen.data_type.simpleString()) for name, gen in gen_list)
         data_table = spark_tmp_table_factory.get()
         gen_df(spark, gen_list).createOrReplaceTempView(data_table)
-        hive_table = spark_tmp_table_factory.get()
-        spark.sql("CREATE TABLE {} STORED AS PARQUET AS SELECT * FROM {}".format(
-            hive_table, data_table))
-        return hive_table
+        return data_table, types_sql_str
 
-    input_table = with_cpu_session(gen_hive_table)
+    (input_table, input_schema) = with_cpu_session(gen_table)
 
     def write_to_hive_sql(spark, output_table):
         if is_ctas:
@@ -81,7 +80,7 @@ def test_write_parquet_into_hive_table(spark_tmp_table_factory, gens, is_ctas):
         else:
             # Create Table Then Write
             return [
-                "CREATE TABLE {} LIKE {}".format(output_table, input_table),
+                "CREATE TABLE {} ({}) STORED AS PARQUET".format(output_table, input_schema),
                 "INSERT OVERWRITE TABLE {} SELECT * FROM {}".format(output_table, input_table)
             ]
 
@@ -91,12 +90,12 @@ def test_write_parquet_into_hive_table(spark_tmp_table_factory, gens, is_ctas):
         _write_to_hive_conf)
 
 
-@allow_non_gpu('HiveTableScanExec', *non_utc_allow)
+@allow_non_gpu(*non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_static", [True, False], ids=['Static_Partition', 'Dynamic_Partition'])
 def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_static):
     # Generate hive table in Parquet format
-    def gen_hive_table(spark):
+    def gen_table(spark):
         # gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
         dates = [date(2024, 2, 28), date(2024, 2, 27), date(2024, 2, 26)]
         gen_list = [('a', int_gen),
@@ -106,12 +105,9 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
                     ('part', SetValuesGen(DateType(), dates))]
         data_table = spark_tmp_table_factory.get()
         gen_df(spark, gen_list).createOrReplaceTempView(data_table)
-        hive_table = spark_tmp_table_factory.get()
-        spark.sql("CREATE TABLE {} STORED AS PARQUET AS SELECT * FROM {}".format(
-            hive_table, data_table))
-        return hive_table
+        return data_table
 
-    input_table = with_cpu_session(gen_hive_table)
+    input_table = with_cpu_session(gen_table)
 
     def partitioned_write_to_hive_sql(spark, output_table):
         sql_create_part_table = (
@@ -141,27 +137,29 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
         all_confs)
 
 
-@allow_non_gpu('HiveTableScanExec', *non_utc_allow)
+@allow_non_gpu(*non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'ZSTD', 'SNAPPY'])
 def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type):
     # Generate hive table in Parquet format
-    def gen_hive_table(spark):
+    def gen_table(spark):
         gens = _hive_basic_gens + _hive_struct_gens + _hive_array_gens + _hive_map_gens
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+        types_sql_str = ','.join('{} {}'.format(
+            name, gen.data_type.simpleString()) for name, gen in gen_list)
         data_table = spark_tmp_table_factory.get()
         gen_df(spark, gen_list).createOrReplaceTempView(data_table)
-        hive_table = spark_tmp_table_factory.get()
-        spark.sql("CREATE TABLE {} STORED AS PARQUET AS SELECT * FROM {}".format(
-            hive_table, data_table))
-        return hive_table
+        return data_table, types_sql_str
 
-    input_table = with_cpu_session(gen_hive_table)
+    input_table, schema_str = with_cpu_session(gen_table)
 
     def write_to_hive_sql(spark, output_table):
         return [
-            "CREATE TABLE {} LIKE {} TBLPROPERTIES ('parquet.compression'='{}')".format(
-                output_table, input_table, comp_type),
+            # Create table with compression type
+            "CREATE TABLE {} ({}) STORED AS PARQUET "
+            "TBLPROPERTIES ('parquet.compression'='{}')".format(
+                output_table, schema_str, comp_type),
+            # Insert into table
             "INSERT OVERWRITE TABLE {} SELECT * FROM {}".format(output_table, input_table)
         ]
 
