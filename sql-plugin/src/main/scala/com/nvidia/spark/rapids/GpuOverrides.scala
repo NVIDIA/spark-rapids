@@ -36,6 +36,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
+import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReaderType
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -856,6 +857,10 @@ object GpuOverrides extends Logging {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
+  val jsonStructReadTypes: TypeSig = (TypeSig.STRUCT + TypeSig.ARRAY +
+      TypeSig.STRING + TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN +
+      TypeSig.DATE + TypeSig.TIMESTAMP).nested()
+
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -894,7 +899,7 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
-      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfRead = jsonStructReadTypes,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())),
@@ -3652,9 +3657,7 @@ object GpuOverrides extends Logging {
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
-        TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.integral +
-          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN + TypeSig.DATE +
-          TypeSig.TIMESTAMP) +
+        TypeSig.STRUCT.nested(jsonStructReadTypes) +
           TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
           "MAP only supports keys and values that are of STRING type"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
@@ -3681,7 +3684,8 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
           }
-          GpuJsonScan.tagJsonToStructsSupport(a.options, a.dataType, this)
+          GpuJsonScan.tagSupport(SQLConf.get, JsonToStructsReaderType, a.dataType, a.dataType,
+            a.options, this)
         }
 
         override def convertToGpu(child: Expression): GpuExpression =
