@@ -1217,9 +1217,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
-    .doc("JSON reading is not 100% compatible when reading decimals.")
+    .doc("When reading a quoted string as a decimal Spark supports reading non-ascii " +
+        "unicode digits, and the RAPIDS Accelerator does not.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_MIXED_TYPES_AS_STRING =
     conf("spark.rapids.sql.json.read.mixedTypesAsString.enabled")
