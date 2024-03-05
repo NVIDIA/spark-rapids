@@ -31,13 +31,18 @@
 {"spark": "332cdh"}
 {"spark": "333"}
 {"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "342"}
+{"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 
@@ -49,7 +54,11 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+    val preferAst = join.joinType match {
+      case _: InnerLike => conf.preferAstJoin
+      case _ => true
+    }
+    val (joinCondition, filterCondition) = if (preferAst && conditionMeta.forall(_.canThisBeAst)) {
       (condition, None)
     } else {
       (None, condition)

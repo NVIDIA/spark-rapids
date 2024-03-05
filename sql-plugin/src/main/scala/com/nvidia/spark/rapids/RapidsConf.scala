@@ -640,6 +640,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val PREFER_AST_JOIN = conf("spark.rapids.sql.join.preferAst")
+      .doc("Prefer the use of AST for non-equality portions of a join")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
           "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
@@ -2333,6 +2339,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
   lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
+
+  lazy val preferAstJoin: Boolean = get(PREFER_AST_JOIN)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
