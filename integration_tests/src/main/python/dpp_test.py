@@ -183,7 +183,6 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
     create_fact_table(fact_table, store_format, length=10000)
     filter_val, ex_key_val = create_dim_table(dim_table, store_format, length=2000)
     statement = _statements[s_index].format(fact_table, dim_table, filter_val, ex_key_val)
-    print(filter_val, ex_key_val)
     
     if is_databricks113_or_later() and aqe_enabled == 'true':
         # SubqueryBroadcastExec is unoptimized in Databricks 11.3 with EXECUTOR_BROADCAST
