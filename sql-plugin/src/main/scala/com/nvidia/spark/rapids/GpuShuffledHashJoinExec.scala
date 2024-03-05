@@ -21,6 +21,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -79,7 +80,8 @@ class GpuShuffledHashJoinMeta(
           left,
           right,
           conf.isGPUShuffle,
-          conf.gpuTargetBatchSizeBytes)(
+          conf.gpuTargetBatchSizeBytes,
+          isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys)
       case _ =>
@@ -110,7 +112,7 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
-    isSkewJoin: Boolean)(
+    override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
   with GpuSubPartitionHashJoin {
@@ -370,7 +372,7 @@ object GpuShuffledHashJoinExec extends Logging {
         logDebug("Return multiple batches as the build side data for the following " +
           "sub-partitioning join in null-filtering mode.")
         val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf.toSeq).map { sp =>
-          withResource(sp)(_.getColumnarBatch())
+          withRetryNoSplit(sp)(_.getColumnarBatch())
         } ++ filteredIter
         Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
       } else {

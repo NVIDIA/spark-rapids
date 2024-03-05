@@ -24,6 +24,7 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
 import scala.util.{Left, Right}
 
@@ -1605,6 +1606,8 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   override def close(): Unit = {
     previousResult.foreach(_.close())
     previousResult = None
+    previousOverflow.foreach(_.close())
+    previousOverflow = None
   }
 }
 
@@ -1715,8 +1718,9 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
   }
 
   override def close(): Unit = {
-    previousRank.foreach(_.close())
+    previousRank.foreach(_.safeClose())
     previousRank = None
+    rowNumFixer.close()
   }
 }
 

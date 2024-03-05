@@ -114,7 +114,7 @@ object ConfHelper {
       }
       functionsByClass.update(className, fnSeq :+ s"`$fnCleaned`")
     }
-    functionsByClass.toMap
+    functionsByClass.mapValues(_.sorted).toMap
   }
 }
 
@@ -587,7 +587,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("Enable a chunked reader where possible for reading data that is smaller " +
           "than the typical row group/page limit. Currently this only works for parquet.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
@@ -638,7 +638,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
     .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -1097,6 +1097,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
     .doc("When set to false disables orc output acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
+    .doc("When set to false disables the pre-projection for GPU Expand. " +
+      "Pre-projection leverages the tiered projection to evaluate expressions that " +
+      "semantically equal across Expand projection lists before expanding, to avoid " +
+      s"duplicate evaluations. '${ENABLE_TIERED_PROJECT.key}' should also set to true " +
+      "to enable this.")
+    .internal()
     .booleanConf
     .createWithDefault(true)
 
@@ -2541,6 +2551,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
+  lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.

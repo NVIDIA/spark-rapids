@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
@@ -30,6 +29,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
+import com.nvidia.spark.rapids.RapidsHostColumnBuilder
 import com.nvidia.spark.rapids.TypeSig
 
 import org.apache.spark.sql.types.DataType
@@ -75,7 +75,7 @@ object GpuTypeShims {
    */
   def columnarCopy(
       cv: ColumnVector,
-      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+      b: RapidsHostColumnBuilder,
       dataType: DataType,
       rows: Int): Unit = {
     throw new UnsupportedOperationException(s"Converting to GPU for $dataType is not supported yet")

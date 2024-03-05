@@ -180,7 +180,7 @@ date. Typically, one that overflowed.
 
 ### CSV Floating Point
 
-Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -219,7 +219,7 @@ Hive text files are very similar to CSV, but not exactly the same.
 
 ### Hive Text File Floating Point
 
-Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
 They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
@@ -402,7 +402,7 @@ Known issues are:
 
 ### JSON Floating Point
 
-Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
 Prior to Spark 3.3.0, reading JSON strings such as `"+Infinity"` when specifying that the data type is `FloatType`
 or `DoubleType` caused these values to be parsed even when `allowNonNumericNumbers` is set to false. Also, Spark
@@ -479,16 +479,6 @@ The following is a list of known differences.
 
 The following is a list of bugs in either the GPU version or arguably in Apache Spark itself.
    * https://github.com/NVIDIA/spark-rapids/issues/10219 non-matching quotes in quoted strings
-   * https://github.com/NVIDIA/spark-rapids/issues/10213 array index notation works without root
-   * https://github.com/NVIDIA/spark-rapids/issues/10214 unquoted array index notation is not
-     supported
-   * https://github.com/NVIDIA/spark-rapids/issues/10215 leading spaces can be stripped from named
-     keys.
-   * https://github.com/NVIDIA/spark-rapids/issues/10216 It appears that Spark is flattening some
-     output, which is different from other implementations including the GPU version.
-   * https://github.com/NVIDIA/spark-rapids/issues/10217 a JSON path execution bug
-   * https://issues.apache.org/jira/browse/SPARK-46761 Apache Spark does not allow the `?` character in
-     a quoted JSON path string.
 
 ## Avro
 

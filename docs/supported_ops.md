@@ -4229,7 +4229,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Ceil</td>
-<td rowSpan="2">`ceiling`, `ceil`</td>
+<td rowSpan="2">`ceil`, `ceiling`</td>
 <td rowSpan="2">Ceiling of a number</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
@@ -5497,7 +5497,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">DayOfMonth</td>
-<td rowSpan="2">`dayofmonth`, `day`</td>
+<td rowSpan="2">`day`, `dayofmonth`</td>
 <td rowSpan="2">Returns the day of the month from a date or timestamp</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
@@ -6030,7 +6030,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="6">EqualTo</td>
-<td rowSpan="6">`=`, `==`</td>
+<td rowSpan="6">`==`, `=`</td>
 <td rowSpan="6">Check if the values are equal</td>
 <td rowSpan="6">None</td>
 <td rowSpan="3">project</td>
@@ -6278,7 +6278,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Explode</td>
-<td rowSpan="2">`explode`, `explode_outer`</td>
+<td rowSpan="2">`explode_outer`, `explode`</td>
 <td rowSpan="2">Given an input array produces a sequence of rows for each value in the array</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
@@ -8149,7 +8149,7 @@ are limited.
 <td rowSpan="2">JsonToStructs</td>
 <td rowSpan="2">`from_json`</td>
 <td rowSpan="2">Returns a struct value with the given `jsonStr` and `schema`</td>
-<td rowSpan="2">This is disabled by default because parsing JSON from a column has a large number of issues and should be considered beta quality right now.</td>
+<td rowSpan="2">This is disabled by default because it is currently in beta and undergoes continuous enhancements. Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) to determine whether you can enable this configuration for your use case</td>
 <td rowSpan="2">project</td>
 <td>jsonStr</td>
 <td> </td>
@@ -8222,7 +8222,7 @@ are limited.
 <td rowSpan="3">JsonTuple</td>
 <td rowSpan="3">`json_tuple`</td>
 <td rowSpan="3">Returns a tuple like the function get_json_object, but it takes multiple names. All the input parameters and output column types are string.</td>
-<td rowSpan="3">None</td>
+<td rowSpan="3">This is disabled by default because JsonTuple on the GPU does not support all of the normalization that the CPU supports.</td>
 <td rowSpan="3">project</td>
 <td>json</td>
 <td> </td>
@@ -8748,7 +8748,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Length</td>
-<td rowSpan="2">`length`, `character_length`, `char_length`</td>
+<td rowSpan="2">`char_length`, `character_length`, `length`</td>
 <td rowSpan="2">String character length or binary byte length</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
@@ -9483,7 +9483,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Lower</td>
-<td rowSpan="2">`lower`, `lcase`</td>
+<td rowSpan="2">`lcase`, `lower`</td>
 <td rowSpan="2">String lowercase operator</td>
 <td rowSpan="2">This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.</td>
 <td rowSpan="2">project</td>
@@ -11649,7 +11649,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Rand</td>
-<td rowSpan="2">`random`, `rand`</td>
+<td rowSpan="2">`rand`, `random`</td>
 <td rowSpan="2">Generate a random column with i.i.d. uniformly distributed values in [0, 1)</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
@@ -13142,7 +13142,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Size</td>
-<td rowSpan="2">`size`, `cardinality`</td>
+<td rowSpan="2">`cardinality`, `size`</td>
 <td rowSpan="2">The size of an array or a map</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
@@ -13833,7 +13833,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="4">StringLocate</td>
-<td rowSpan="4">`position`, `locate`</td>
+<td rowSpan="4">`locate`, `position`</td>
 <td rowSpan="4">Substring search operator</td>
 <td rowSpan="4">None</td>
 <td rowSpan="4">project</td>
@@ -14693,7 +14693,7 @@ are limited.
 <td rowSpan="2">StructsToJson</td>
 <td rowSpan="2">`to_json`</td>
 <td rowSpan="2">Converts structs to JSON text format</td>
-<td rowSpan="2">This is disabled by default because to_json support is experimental. See compatibility guide for more information.</td>
+<td rowSpan="2">This is disabled by default because it is currently in beta and undergoes continuous enhancements. Please consult the [compatibility documentation](../compatibility.md#json-supporting-types) to determine whether you can enable this configuration for your use case</td>
 <td rowSpan="2">project</td>
 <td>struct</td>
 <td>S</td>
@@ -16113,7 +16113,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="2">Upper</td>
-<td rowSpan="2">`upper`, `ucase`</td>
+<td rowSpan="2">`ucase`, `upper`</td>
 <td rowSpan="2">String uppercase operator</td>
 <td rowSpan="2">This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.</td>
 <td rowSpan="2">project</td>
@@ -16659,7 +16659,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="8">ApproximatePercentile</td>
-<td rowSpan="8">`percentile_approx`, `approx_percentile`</td>
+<td rowSpan="8">`approx_percentile`, `percentile_approx`</td>
 <td rowSpan="8">Approximate percentile</td>
 <td rowSpan="8">This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark</td>
 <td rowSpan="4">aggregation</td>
@@ -17550,7 +17550,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="6">Last</td>
-<td rowSpan="6">`last`, `last_value`</td>
+<td rowSpan="6">`last_value`, `last`</td>
 <td rowSpan="6">last aggregate operator</td>
 <td rowSpan="6">None</td>
 <td rowSpan="2">aggregation</td>
@@ -18440,7 +18440,7 @@ are limited.
 </tr>
 <tr>
 <td rowSpan="6">StddevSamp</td>
-<td rowSpan="6">`stddev_samp`, `std`, `stddev`</td>
+<td rowSpan="6">`std`, `stddev_samp`, `stddev`</td>
 <td rowSpan="6">Aggregation computing sample standard deviation</td>
 <td rowSpan="6">None</td>
 <td rowSpan="2">aggregation</td>

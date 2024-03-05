@@ -370,23 +370,6 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release321db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321db</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-spark321db_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>release322</id>
             <activation>
                 <property>
@@ -751,6 +734,23 @@
                 <property>
                     <name>buildver</name>
                     <value>350</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release351</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>351</value>
                 </property>
             </activation>
             <dependencies>

@@ -1,0 +1,4 @@
+{"byte": 01,  "int": 01,  "float": 01.0,   "decimal": 01.0}
+{"byte": 001, "int": 001, "float": 001.01, "decimal": 001.01}
+{"byte": -01, "int": -01, "float": -01.0,  "decimal": -01.0}
+{"byte": 1,   "int": 1,   "float": 1,      "decimal": 1}

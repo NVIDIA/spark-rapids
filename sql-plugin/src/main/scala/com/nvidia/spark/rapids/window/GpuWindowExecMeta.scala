@@ -448,9 +448,10 @@ object GpuWindowExecMeta {
     }
 
   def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
-    GpuSpecialFrameBoundary(UnboundedPreceding),
-    GpuSpecialFrameBoundary(UnboundedFollowing))) => true
+    case GpuWindowSpecDefinition(
+           _, _, GpuSpecifiedWindowFrame(_,
+           GpuSpecialFrameBoundary(UnboundedPreceding),
+           GpuSpecialFrameBoundary(UnboundedFollowing))) => true
     case _ => false
   }
 
@@ -464,13 +465,24 @@ object GpuWindowExecMeta {
     isSpecOkay && isFuncOkay
   }
 
+  /**
+   * Checks whether the window aggregation qualifies to be accelerated via group-by aggregation.
+   * Currently, aggregations without group-by (i.e. whole-table aggregations) are not supported.
+   */
   def isUnboundedToUnboundedAggFunc(func: Expression, spec: GpuWindowSpecDefinition,
       conf: RapidsConf): Boolean = {
+
+    def noGroupByColumns(spec:GpuWindowSpecDefinition): Boolean = spec match {
+      case GpuWindowSpecDefinition(partSpec, _, _) => partSpec.isEmpty
+      case _ => false
+    }
+
     if (!conf.isWindowUnboundedAggEnabled) {
       false
     } else {
-      if (!GpuWindowExecMeta.isUnboundedToUnboundedWindow(spec)) {
-        false
+      if (!GpuWindowExecMeta.isUnboundedToUnboundedWindow(spec)
+            || noGroupByColumns(spec)) {
+        false // Must be both unbounded, and have a group by specification.
       } else {
         func match {
           case _: GpuUnboundedToUnboundedWindowAgg => true
@@ -530,8 +542,11 @@ object GpuWindowExecMeta {
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
-    BatchedOps(running.toSeq, unboundedToUnboundedAgg.toSeq, doublePass.toSeq,
-      batchedBounded.toSeq, passThrough.toSeq)
+    BatchedOps(running.toSeq,
+               unboundedToUnboundedAgg.toSeq,
+               doublePass.toSeq,
+               batchedBounded.toSeq,
+               passThrough.toSeq)
   }
 
   /**
