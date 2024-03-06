@@ -348,21 +348,14 @@ object RapidsPluginUtils extends Logging {
   }
 
   /**
-   * Internal implementation to extract supported GPU architectures from properties file
-   * and check if current GPU architecture is supported.
+   * Extracts supported GPU architectures from the given properties file
    */
-  private def checkGpuArchitectureInternal(propName: String): Unit = {
-    val props = RapidsPluginUtils.loadProps(propName)
-    // supportedGpuArchsList is in the format ["70", "80", "86", ...]
-    val supportedGpuArchsList = Option(props.getProperty("gpu_architectures"))
-      .getOrElse(throw new RuntimeException(s"GPU architectures not found in $propName"))
-      .split("\\s+")
-    val actualGpuArch = s"${Cuda.getComputeCapabilityMajor}${Cuda.getComputeCapabilityMinor}"
-
-    if (!supportedGpuArchsList.contains(actualGpuArch)) {
-      throw new RuntimeException(s"GPU architecture $actualGpuArch is unsupported, " +
-        s"supported architectures: ${supportedGpuArchsList.mkString(", ")}")
-    }
+  private def getSupportedGpuArchitectures(propFileName: String): Set[String] = {
+    val props = RapidsPluginUtils.loadProps(propFileName)
+    Option(props.getProperty("gpu_architectures"))
+      .getOrElse(throw new RuntimeException(s"GPU architectures not found in $propFileName"))
+      .split(";")
+      .toSet
   }
 
   /**
@@ -370,8 +363,13 @@ object RapidsPluginUtils extends Logging {
    * and cuDF libraries.
    */
   def checkGpuArchitecture(): Unit = {
-    checkGpuArchitectureInternal(JNI_PROPS_FILENAME)
-    checkGpuArchitectureInternal(CUDF_PROPS_FILENAME)
+    val supportedGpuArchsSet = getSupportedGpuArchitectures(JNI_PROPS_FILENAME)
+      .intersect(getSupportedGpuArchitectures(CUDF_PROPS_FILENAME))
+    val actualGpuArch = s"${Cuda.getComputeCapabilityMajor}${Cuda.getComputeCapabilityMinor}"
+    if (!supportedGpuArchsSet.contains(actualGpuArch)) {
+      throw new RuntimeException(s"GPU architecture $actualGpuArch is unsupported, " +
+        s"supported architectures: ${supportedGpuArchsSet.toSeq.sorted.mkString(", ")}")
+    }
   }
 }
 
