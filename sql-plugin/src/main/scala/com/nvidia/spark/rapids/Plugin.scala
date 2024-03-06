@@ -346,6 +346,33 @@ object RapidsPluginUtils extends Logging {
       loadExtensions(classOf[SparkPlugin], pluginClasses)
     }
   }
+
+  /**
+   * Internal implementation to extract supported GPU architectures from properties file
+   * and check if current GPU architecture is supported.
+   */
+  private def checkGpuArchitectureInternal(propName: String): Unit = {
+    val props = RapidsPluginUtils.loadProps(propName)
+    // supportedGpuArchsList is in the format ["70", "80", "86", ...]
+    val supportedGpuArchsList = Option(props.getProperty("gpu_architectures"))
+      .getOrElse(throw new RuntimeException(s"GPU architectures not found in $propName"))
+      .split("\\s+")
+    val actualGpuArch = s"${Cuda.getComputeCapabilityMajor}${Cuda.getComputeCapabilityMinor}"
+
+    if (!supportedGpuArchsList.contains(actualGpuArch)) {
+      throw new RuntimeException(s"GPU architecture $actualGpuArch is unsupported, " +
+        s"supported architectures: ${supportedGpuArchsList.mkString(", ")}")
+    }
+  }
+
+  /**
+   * Checks if the current GPU architecture is supported by the spark-rapids-jni
+   * and cuDF libraries.
+   */
+  def checkGpuArchitecture(): Unit = {
+    checkGpuArchitectureInternal(JNI_PROPS_FILENAME)
+    checkGpuArchitectureInternal(CUDF_PROPS_FILENAME)
+  }
 }
 
 /**
@@ -427,10 +454,10 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
-      if (Cuda.getComputeCapabilityMajor < 6) {
-        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
-          " is unsupported, requires 6.0+")
-      }
+      // Checks if the current GPU architecture is supported by the
+      // spark-rapids-jni and cuDF libraries.
+      RapidsPluginUtils.checkGpuArchitecture()
+
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 
