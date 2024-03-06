@@ -427,18 +427,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
+      if (Cuda.getComputeCapabilityMajor < 6) {
+        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
+          " is unsupported, requires 6.0+")
+      }
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
-
-      // Fail if the device's compute capability is less than minimum supported
-      if (Cuda.getComputeCapabilityMajor < conf.minCudaComputeCapabilitySupported) {
-        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
-          s" is unsupported, requires ${conf.minCudaComputeCapabilitySupported}+")
-      }
 
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)
