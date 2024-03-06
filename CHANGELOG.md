@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-03-05
+Generated on 2024-03-06
 
 ## Release 24.02
 
@@ -46,6 +46,7 @@ Generated on 2024-03-05
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#10548](https://github.com/NVIDIA/spark-rapids/issues/10548)|[BUG] test_dpp_bypass / test_dpp_via_aggregate_subquery failures in CI Databricks 13.3|
 |[#10530](https://github.com/NVIDIA/spark-rapids/issues/10530)|test_delta_merge_match_delete_only java.lang.OutOfMemoryError: GC overhead limit exceeded|
 |[#10464](https://github.com/NVIDIA/spark-rapids/issues/10464)|[BUG] spark334 and spark342 shims missed in scala2.13 dist jar|
 |[#10473](https://github.com/NVIDIA/spark-rapids/issues/10473)|[BUG] Leak when running RANK query|
@@ -123,6 +124,8 @@ Generated on 2024-03-05
 ### PRs
 |||
 |:---|:---|
+|[#10551](https://github.com/NVIDIA/spark-rapids/pull/10551)|Try to make degenerative joins here impossible for these tests|
+|[#10546](https://github.com/NVIDIA/spark-rapids/pull/10546)|Update changelog [skip ci]|
 |[#10541](https://github.com/NVIDIA/spark-rapids/pull/10541)|Fix Delta log cache size settings during integration tests|
 |[#10525](https://github.com/NVIDIA/spark-rapids/pull/10525)|Update changelog for v24.02.0 release [skip ci]|
 |[#10465](https://github.com/NVIDIA/spark-rapids/pull/10465)|Add missed shims for scala2.13|
