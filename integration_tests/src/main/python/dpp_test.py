@@ -28,6 +28,7 @@ value_gen = RepeatSeqGen([None, INT_MIN, -1, 0, 1, INT_MAX], data_type=IntegerTy
 
 def create_dim_table(table_name, table_format, length=500):
     def fn(spark):
+        # Pick a random filter value, but make it constant for the whole 
         df = gen_df(spark, [
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
             ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
@@ -35,14 +36,13 @@ def create_dim_table(table_name, table_format, length=500):
             ('value', value_gen),
             # specify nullable=False for `filter` to avoid generating invalid SQL with
             # expression `filter = None` (https://github.com/NVIDIA/spark-rapids/issues/9817)
-            ('filter', RepeatSeqGen(
-                IntegerGen(min_val=0, max_val=length, special_cases=[], nullable=False), length=length // 20))
+            ('filter', RepeatSeqGen(IntegerGen(nullable=False), length=1))
         ], length)
         df.cache()
         df.write.format(table_format) \
             .mode("overwrite") \
             .saveAsTable(table_name)
-        return df.select('filter').where("value > 0").first()[0]
+        return df.select('filter').first()[0], df.select('ex_key').first()[0]
 
     return with_cpu_session(fn)
 
@@ -146,7 +146,7 @@ _statements = [
     dim_table AS (
         SELECT dim.key as key, dim.value as value, dim.filter as filter
         FROM {1} dim
-        WHERE ex_key = 3
+        WHERE ex_key = {3}
         ORDER BY dim.key
     )
     SELECT key, max(value)
@@ -181,8 +181,9 @@ _statements = [
 def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format, length=10000)
-    filter_val = create_dim_table(dim_table, store_format, length=2000)
-    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    filter_val, ex_key_val = create_dim_table(dim_table, store_format, length=2000)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val, ex_key_val)
+    
     if is_databricks113_or_later() and aqe_enabled == 'true':
         # SubqueryBroadcastExec is unoptimized in Databricks 11.3 with EXECUTOR_BROADCAST
         # See https://github.com/NVIDIA/spark-rapids/issues/7425
@@ -202,8 +203,8 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
 def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, 'parquet', length=10000)
-    filter_val = create_dim_table(dim_table, 'parquet', length=2000)
-    statement = _statements[0].format(fact_table, dim_table, filter_val)
+    filter_val, ex_key_val = create_dim_table(dim_table, 'parquet', length=2000)
+    statement = _statements[0].format(fact_table, dim_table, filter_val, ex_key_val)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
         # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
@@ -226,8 +227,8 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
 def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
-    filter_val = create_dim_table(dim_table, store_format)
-    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    filter_val, ex_key_val = create_dim_table(dim_table, store_format)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val, ex_key_val)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
         # Bypass with a true literal, if we can not reuse broadcast exchange.
@@ -250,8 +251,8 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
 def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
-    filter_val = create_dim_table(dim_table, store_format)
-    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    filter_val, ex_key_val = create_dim_table(dim_table, store_format)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val, ex_key_val)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
         # SubqueryExec appears if we plan extra subquery for DPP
@@ -271,8 +272,8 @@ def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_ind
 def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
-    filter_val = create_dim_table(dim_table, store_format)
-    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    filter_val, ex_key_val = create_dim_table(dim_table, store_format)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val, ex_key_val)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
         # SubqueryExec appears if we plan extra subquery for DPP

@@ -33,7 +33,7 @@ pipeline {
     agent {
         kubernetes {
             label "premerge-init-${BUILD_TAG}"
-            cloud 'sc-ipp-blossom-prod'
+            cloud "${common.CLOUD_NAME}"
             yaml "${IMAGE_DB}"
         }
     }
@@ -96,7 +96,7 @@ pipeline {
                         agent {
                             kubernetes {
                                 label "premerge-ci-${DB_RUNTIME}-${BUILD_NUMBER}"
-                                cloud 'sc-ipp-blossom-prod'
+                                cloud "${common.CLOUD_NAME}"
                                 yaml "${IMAGE_DB}"
                                 workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                                 customWorkspace "${CUSTOM_WORKSPACE}-${DB_RUNTIME}-${BUILD_NUMBER}"
