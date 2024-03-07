@@ -1179,6 +1179,19 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable
               "spark.rapids.sql.input." + scan_name: False})
 
 @ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner", "LeftOuter"], ids=idfn)
+@pytest.mark.parametrize("batch_size", ["500", "1g"], ids=idfn)
+def test_distinct_join(join_type, batch_size):
+    join_conf = {
+        "spark.rapids.sql.batchSizeBytes": batch_size
+    }
+    def do_join(spark):
+        left_df = spark.range(1024).withColumn("x", f.col("id") + 1)
+        right_df = spark.range(768).withColumn("x", f.col("id") * 2)
+        return left_df.join(right_df, ["x"], join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+@ignore_order(local=True)
 @pytest.mark.parametrize("join_type", ["Inner", "FullOuter"], ids=idfn)
 @pytest.mark.parametrize("is_left_host_shuffle", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_right_host_shuffle", [False, True], ids=idfn)

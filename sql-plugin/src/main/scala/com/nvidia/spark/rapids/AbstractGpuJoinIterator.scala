@@ -328,52 +328,54 @@ abstract class SplittableJoinIterator(
       joinType: JoinType): Option[JoinGatherer] = {
     assert(maps.length > 0 && maps.length <= 2)
     try {
-      val leftMap = maps.head
-      val rightMap = if (maps.length > 1) {
-        if (rightData.numCols == 0) {
-          // No data so don't bother with it
-          None
-        } else {
-          Some(maps(1))
-        }
-      } else {
-        None
+      val leftGatherer = joinType match {
+        case LeftOuter if maps.length == 1 =>
+          // Distinct left outer joins only produce a single gather map since left table rows
+          // are not rearranged by the join.
+          new JoinGathererSameTable(leftData)
+        case _ =>
+          val lazyLeftMap = LazySpillableGatherMap(maps.head, "left_map")
+          // Inner joins -- manifest the intersection of both left and right sides. The gather maps
+          //   contain the number of rows that must be manifested, and every index
+          //   must be within bounds, so we can skip the bounds checking.
+          //
+          // Left outer  -- Left outer manifests all rows for the left table. The left gather map
+          //   must contain valid indices, so we skip the check for the left side.
+          val leftOutOfBoundsPolicy = joinType match {
+            case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
+            case _ => OutOfBoundsPolicy.NULLIFY
+          }
+          JoinGatherer(lazyLeftMap, leftData, leftOutOfBoundsPolicy)
       }
-
-      val lazyLeftMap = LazySpillableGatherMap(leftMap, "left_map")
+      val rightMap = joinType match {
+        case _ if rightData.numCols == 0 => None
+        case LeftOuter if maps.length == 1 =>
+          // Distinct left outer joins only produce a single gather map since left table rows
+          // are not rearranged by the join.
+          Some(maps.head)
+        case _ if maps.length == 1 => None
+        case _ => Some(maps(1))
+      }
       val gatherer = rightMap match {
         case None =>
           // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
           // In these cases, the map and the table are both the left side, and everything in the map
           // is a match on the left table, so we don't want to check for bounds.
           rightData.close()
-          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
+          leftGatherer
         case Some(right) =>
           // Inner joins -- manifest the intersection of both left and right sides. The gather maps
           //   contain the number of rows that must be manifested, and every index
           //   must be within bounds, so we can skip the bounds checking.
           //
-          // Left outer  -- Left outer manifests all rows for the left table. The left gather map
-          //   must contain valid indices, so we skip the check for the left side. The right side
-          //   has to be checked, since we need to produce nulls (for the right) for those
-          //   rows on the left side that don't have a match on the right.
-          //
           // Right outer -- Is the opposite from left outer (skip right bounds check, keep left)
-          //
-          // Full outer  -- Can produce nulls for any left or right rows that don't have a match
-          //   in the opposite table. So we must check both gather maps.
-          //
-          val leftOutOfBoundsPolicy = joinType match {
-            case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
-            case _ => OutOfBoundsPolicy.NULLIFY
-          }
           val rightOutOfBoundsPolicy = joinType match {
             case _: InnerLike | RightOuter => OutOfBoundsPolicy.DONT_CHECK
             case _ => OutOfBoundsPolicy.NULLIFY
           }
           val lazyRightMap = LazySpillableGatherMap(right, "right_map")
-          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
-            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
+          val rightGatherer = JoinGatherer(lazyRightMap, rightData, rightOutOfBoundsPolicy)
+          MultiJoinGather(leftGatherer, rightGatherer)
       }
       if (gatherer.isDone) {
         // Nothing matched...
