@@ -355,6 +355,7 @@ def pytest_collection_modifyitems(config, items):
             if len(qualifier) != 0:
                 qualifier = "_" + qualifier # prefix separator for formatting purposes
         extras.append('DATAGEN_SEED%s=%s' % (qualifier, str(test_datagen_random_seed_choice)))
+        extras.append('TZ=%s' % get_test_tz())
 
         if injection_mode == 'random':
             inject_choice = r.randrange(0, 2) == 1
