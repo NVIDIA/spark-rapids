@@ -1482,7 +1482,7 @@ case class GpuRegExpExtractAll(
                     }
                 }
                 withResource(stringCols) { _ =>
-                  ColumnVector.makeList(stringCols: _*)
+                  ColumnVector.makeList(rowCount, DType.STRING, stringCols: _*)
                 }
               }
             }

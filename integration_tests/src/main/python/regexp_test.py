@@ -813,10 +813,11 @@ def test_regexp_extract_all_idx_zero():
             ),
         conf=_regexp_conf)
 
-def test_regexp_extract_all_idx_positive():
+@pytest.mark.parametrize('slices', [4, 40, 400], ids=idfn)
+def test_regexp_extract_all_idx_positive(slices):
     gen = mk_str_gen('[abcd]{0,3}[0-9]{0,3}-[0-9]{0,3}[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, gen, num_slices=slices).selectExpr(
                 'regexp_extract_all(a, "([a-d]+).*([0-9])", 1)',
                 'regexp_extract_all(a, "(a)(b)", 2)',
                 'regexp_extract_all(a, "([a-z0-9]((([abcd](\\\\d?)))))", 3)',
