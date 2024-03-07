@@ -360,22 +360,23 @@ class JsonPartitionReader(
    *
    * @param dataBuffer     host buffer to be read
    * @param dataSize       the size of host buffer
-   * @param cudfSchema     the cudf schema of the data
+   * @param cudfDataSchema     the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
    * @param hasHeader      if it has header
    * @return table
    */
   override def readToTable(
       dataBufferer: HostLineBufferer,
-      cudfSchema: Schema,
+      cudfDataSchema: Schema,
       readDataSchema: StructType,
+      cudfReadDataSchema: Schema,
       hasHeader: Boolean,
       decodeTime: GpuMetric): Table = {
     val jsonOpts = buildJsonOptions(parsedOptions)
-    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, jsonOpts,
-      getFileFormatShortName, partFile)
+    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfReadDataSchema, decodeTime,
+      jsonOpts, getFileFormatShortName, partFile)
     withResource(jsonTbl) { tbl =>
-      val cudfColumnNames = cudfSchema.getColumnNames
+      val cudfColumnNames = cudfReadDataSchema.getColumnNames
       val columns = readDataSchema.map { field =>
         val i = cudfColumnNames.indexOf(field.name)
         if (i == -1) {

@@ -478,14 +478,15 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           readDataSchema
         }
 
-        val cudfSchema = getCudfSchema(newReadDataSchema)
+        val cudfSchema = getCudfSchema(dataSchema)
+        val cudfReadSchema = getCudfSchema(newReadDataSchema)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         // The buffer that is sent down
-        val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk,
-            metrics(GPU_DECODE_TIME))
+        val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, cudfReadSchema,
+          isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
         val castTable = withResource(table) { _ =>
@@ -552,15 +553,17 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   /**
    * Read the host buffer to GPU table
    * @param dataBuffer where the data is buffered
-   * @param cudfSchema the cudf schema of the data
+   * @param cudfDataSchema the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
+   * @param cudfReadDataSchema the cudf schema of just the data we want to read.
    * @param isFirstChunk if it is the first chunk
    * @return table
    */
   def readToTable(
     dataBuffer: BUFF,
-    cudfSchema: Schema,
+    cudfDataSchema: Schema,
     readDataSchema: StructType,
+    cudfReadDataSchema: Schema,
     isFirstChunk: Boolean,
     decodeTime: GpuMetric): Table
 
