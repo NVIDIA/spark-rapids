@@ -192,9 +192,9 @@ else
     INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
     RUN_TESTS_COMMAND=("$SCRIPTPATH"/runtests.py
-      --rootdir
-      "$LOCAL_ROOTDIR"
-      "$LOCAL_ROOTDIR"/src/main/python)
+      --rootdir "$LOCAL_ROOTDIR"
+      "${TEST_FILE_OR_DIR:-$LOCAL_ROOTDIR/src/main/python}"
+    )
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     TEST_COMMON_OPTS=(-v
