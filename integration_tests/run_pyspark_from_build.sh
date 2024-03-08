@@ -191,7 +191,7 @@ else
     ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
     INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
-    if [[ "$TEST_FILE_OR_DIR" == "" ]]; then
+    if [[ "${TEST_FILE_OR_DIR}" == "" ]]; then
         TEST_FILE_OR_DIR="${LOCAL_ROOTDIR}/src/main/python"
     fi
 
