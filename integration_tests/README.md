@@ -161,9 +161,13 @@ at `$SPARK_HOME`.  It will be very useful to read the contents of the
 [run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight
 into what is needed as we constantly keep working on to improve and expand the plugin-support.
 
-The python tests run with pytest and the script honors pytest parameters. Some handy flags are:
-- `-k` <pytest-file-name>. This will run all the tests in that test file.
-- `-k` <test-name>. This will also run an individual test.
+The python tests run with pytest and the script honors pytest parameters:
+
+- The explicit test specification of specific modules, methods, and their parametrization
+  is supported by using the `TESTS` environment variable instead of positional arguments
+  in pytest CLI
+- `-k` <keyword_expression>. This will run all the tests satisfying the keyword
+  expression.
 - `-s` Doesn't capture the output and instead prints to the screen.
 - `-v` Increase the verbosity of the tests
 - `-r fExXs` Show extra test summary info as specified by chars: (f)ailed, (E)rror, (x)failed, (X)passed, (s)kipped
@@ -175,7 +179,12 @@ Examples:
   ## running all integration tests for Map
   ./integration_tests/run_pyspark_from_build.sh -k map_test.py
   ## Running a single integration test in map_test
-  ./integration_tests/run_pyspark_from_build.sh -k test_map_integration_1
+  ./integration_tests/run_pyspark_from_build.sh -k 'map_test.py and test_map_integration_1'
+  ## Running tests marching the keyword "exist" from any module
+  ./integration_tests/run_pyspark_from_build.sh -k exist
+  ## Running all parametrization of the method arithmetic_ops_test.py::test_addition
+  ## and a specific parametrization of array_test.py::test_array_exists
+  TESTS="arithmetic_ops_test.py::test_addition array_test.py::test_array_exists[3VL:off-data_gen0]" ./integration_tests/run_pyspark_from_build.sh
   ```
 
 ### Spark execution mode
@@ -343,14 +352,14 @@ integration tests. For example:
 $ DATAGEN_SEED=1702166057 SPARK_HOME=~/spark-3.4.0-bin-hadoop3 integration_tests/run_pyspark_from_build.sh
 ```
 
-Tests can override the seed used using the test marker: 
+Tests can override the seed used using the test marker:
 
 ```
-@datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`. 
+@datagen_overrides(seed=<new seed here>, [condition=True|False], [permanent=True|False])`.
 ```
 
-This marker has the following arguments: 
-- `seed`: a hard coded datagen seed to use. 
+This marker has the following arguments:
+- `seed`: a hard coded datagen seed to use.
 - `condition`: is used to gate when the override is appropriate, usually used to say that specific shims
                need the special override.
 - `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
@@ -507,10 +516,10 @@ The marks you care about are all in marks.py
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
 
-All data generation and Spark function calls should occur within a Spark session. Typically 
-this is done by passing a lambda to functions in `asserts.py` such as 
-`assert_gpu_and_cpu_are_equal_collect`. However, for scalar generation like `gen_scalars`, you 
-may need to put it in a `with_cpu_session`. It is because negative scale decimals can have 
+All data generation and Spark function calls should occur within a Spark session. Typically
+this is done by passing a lambda to functions in `asserts.py` such as
+`assert_gpu_and_cpu_are_equal_collect`. However, for scalar generation like `gen_scalars`, you
+may need to put it in a `with_cpu_session`. It is because negative scale decimals can have
 problems when calling `f.lit` from outside of `with_spark_session`.
 
 ## Guidelines for Testing

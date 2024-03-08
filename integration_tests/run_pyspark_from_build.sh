@@ -191,14 +191,18 @@ else
     ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
     INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
-    if [[ "${TEST_FILE_OR_DIR}" == "" ]]; then
-        TEST_FILE_OR_DIR="${LOCAL_ROOTDIR}/src/main/python"
-    fi
-
-    RUN_TESTS_COMMAND=("$SCRIPTPATH"/runtests.py
-      --rootdir "$LOCAL_ROOTDIR"
-      "${TEST_FILE_OR_DIR}"
+    RUN_TESTS_COMMAND=(
+        "$SCRIPTPATH"/runtests.py
+        --rootdir "$LOCAL_ROOTDIR"
     )
+    if [[ "${TESTS}" == "" ]]; then
+        RUN_TESTS_COMMAND+=("${LOCAL_ROOTDIR}/src/main/python")
+    else
+        read -a RAW_TESTS <<< "${TESTS}"
+        for raw_test in ${RAW_TESTS[@]}; do
+            RUN_TESTS_COMMAND+=("${LOCAL_ROOTDIR}/src/main/python/${raw_test}")
+        done
+    fi
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     TEST_COMMON_OPTS=(-v
