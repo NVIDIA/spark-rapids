@@ -743,7 +743,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9588")),
     pytest.param("[1-9]{1,8}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/4940")),
     # floating-point
-    "[0-9]{0,2}\.[0-9]{1,2}"
+    r"[0-9]{0,2}\.[0-9]{1,2}"
     # boolean
     "(true|false)"
 ])
@@ -1328,9 +1328,11 @@ def test_spark_from_json_date_with_locale(data, locale):
         'ProjectExec',
         conf = { 'spark.rapids.sql.expression.JsonToStructs': True })
 
-@pytest.mark.skipif(is_before_spark_320(), reason="only dd/MM/yyyy is supported prior to 3.2.0")
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.skipif(is_before_spark_320(), reason="dd/MM/yyyy is supported in 3.2.0 and after")
 def test_spark_from_json_date_with_format():
-    data = [["""{"time": "26/08/2015"}"""]]
+    data = [["""{"time": "26/08/2015"}"""],
+            ["""{"time": "01/01/2024"}"""]]
     schema = StructType([StructField("d", DateType())])
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'dateFormat': 'dd/MM/yyyy'})),
