@@ -362,24 +362,31 @@ object RapidsPluginUtils extends Logging {
   /**
    * Checks if the current GPU architecture is supported by the spark-rapids-jni
    * and cuDF libraries.
+   *
+   * Compatibility Rule: Binaries generated for a certain compute capability is supported
+   * to run on any GPU with the same major revision and same or higher minor revision of
+   * compute capability.
+   *
+   * See: https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html
    */
   def checkGpuArchitecture(): Unit = {
     val supportedGpuArchsSet = getSupportedGpuArchitectures(JNI_PROPS_FILENAME)
       .intersect(getSupportedGpuArchitectures(CUDF_PROPS_FILENAME))
+    val supportedArchsStr = supportedGpuArchsSet.toSeq.sorted.mkString(", ")
     val majorGpuArch = Cuda.getComputeCapabilityMajor
     val minorGpuArch = Cuda.getComputeCapabilityMinor
     // Check if the device's major architecture is supported.
-    val supportedMajorArchs = supportedGpuArchsSet.filter(ver => ver / 10 == majorGpuArch)
+    val supportedMajorArchs = supportedGpuArchsSet.filter(ver => majorGpuArch == ver / 10)
     if (supportedMajorArchs.isEmpty) {
-      throw new RuntimeException(s"GPU architecture $majorGpuArch$minorGpuArch is unsupported, " +
-        s"supported architectures: ${supportedGpuArchsSet.toSeq.sorted.mkString(", ")}")
+      throw new RuntimeException(s"Device architecture $majorGpuArch$minorGpuArch is unsupported." +
+        s" Supported architectures: $supportedArchsStr.")
     }
-    // Check if the device's minor architecture is supported.
-    if (!supportedMajorArchs.exists(ver => ver % 10 == minorGpuArch)) {
-      // We should allow if only major architecture is supported.
-      // See: https://docs.nvidia.com/deploy/cuda-compatibility/index.html#conclusion
-      logWarning(s"Only the major version of GPU architecture $majorGpuArch is supported. " +
-        s"Performance could be impacted.")
+    // Check if the device's minor architecture is supported. See docs for explanation.
+    val supportedMinorArchs = supportedMajorArchs.filter(ver => minorGpuArch >= ver % 10)
+    if (supportedMinorArchs.isEmpty) {
+      logWarning(s"Device architecture $majorGpuArch$minorGpuArch is supported based on the" +
+        s" major version. Supported architectures: $supportedArchsStr. " +
+        s"See https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html")
     }
   }
 }
