@@ -350,11 +350,12 @@ object RapidsPluginUtils extends Logging {
   /**
    * Extracts supported GPU architectures from the given properties file
    */
-  private def getSupportedGpuArchitectures(propFileName: String): Set[String] = {
+  private def getSupportedGpuArchitectures(propFileName: String): Set[Int] = {
     val props = RapidsPluginUtils.loadProps(propFileName)
     Option(props.getProperty("gpu_architectures"))
       .getOrElse(throw new RuntimeException(s"GPU architectures not found in $propFileName"))
       .split(";")
+      .map(_.toInt)
       .toSet
   }
 
@@ -368,13 +369,13 @@ object RapidsPluginUtils extends Logging {
     val majorGpuArch = Cuda.getComputeCapabilityMajor
     val minorGpuArch = Cuda.getComputeCapabilityMinor
     // Check if the device's major architecture is supported.
-    val supportedMajorArchs = supportedGpuArchsSet.filter(_.head == majorGpuArch)
+    val supportedMajorArchs = supportedGpuArchsSet.filter(ver => ver / 10 == majorGpuArch)
     if (supportedMajorArchs.isEmpty) {
       throw new RuntimeException(s"GPU architecture $majorGpuArch$minorGpuArch is unsupported, " +
         s"supported architectures: ${supportedGpuArchsSet.toSeq.sorted.mkString(", ")}")
     }
     // Check if the device's minor architecture is supported.
-    if (!supportedMajorArchs.exists(_.last == minorGpuArch)) {
+    if (!supportedMajorArchs.exists(ver => ver % 10 == minorGpuArch)) {
       // We should allow if only major architecture is supported.
       // See: https://docs.nvidia.com/deploy/cuda-compatibility/index.html#conclusion
       logWarning(s"Only the major version of GPU architecture $majorGpuArch is supported. " +
