@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,12 +82,12 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       synchronized {
         currentNonPinnedAllocated += amount
       }
-      Some(HostMemoryBuffer.allocate(amount, false))
+      Some(HostMemoryBuffer.allocateRaw(amount))
     } else {
       synchronized {
         if ((currentNonPinnedAllocated + amount) <= nonPinnedLimit) {
           currentNonPinnedAllocated += amount
-          Some(HostMemoryBuffer.allocate(amount, false))
+          Some(HostMemoryBuffer.allocateRaw(amount))
         } else {
           None
         }

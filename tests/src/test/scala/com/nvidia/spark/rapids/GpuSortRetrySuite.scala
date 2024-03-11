@@ -212,7 +212,7 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
       gpuSorter,
       singleBatch = false)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     while (eachBatchIter.hasNext) {
       var pos = 0
       var curValue = 0
@@ -236,7 +236,7 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
       gpuSorter,
       singleBatch = false)
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     assertThrows[GpuSplitAndRetryOOM] {
       eachBatchIter.next()
     }

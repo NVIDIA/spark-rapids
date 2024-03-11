@@ -74,7 +74,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val sb = buildProjectBatch()
 
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       val result = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, Seq(expr))
       withResource(result) { cb =>
         assertResult(4)(cb.numRows)
@@ -106,7 +106,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val sb = buildProjectBatch()
 
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       val result = tp.projectAndCloseWithRetrySingleBatch(sb)
       withResource(result) { cb =>
         assertResult(4)(cb.numRows)
@@ -141,7 +141,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       when(mockPlan.output).thenReturn(Seq(a, b))
       val ast = GpuProjectAstExec(List(expr.asInstanceOf[Expression]), mockPlan)
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        RmmSpark.OomInjectionType.GPU, 0)
       withResource(sb) { sb =>
         withResource(ast.buildRetryableAstIterator(Seq(sb.getColumnarBatch).iterator)) { result =>
           withResource(result.next()) { cb =>

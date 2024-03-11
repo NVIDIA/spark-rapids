@@ -84,7 +84,7 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
         closeOnExcept(sb) { _ =>
           if (forceRetry) {
             RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-              RmmSpark.OomInjectionType.GPU.ordinal, 0)
+              RmmSpark.OomInjectionType.GPU, 0)
           }
         }
         boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
@@ -119,7 +119,7 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
         val cb = buildBatch()
         if (forceRetry) {
           RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-            RmmSpark.OomInjectionType.GPU.ordinal, 0)
+            RmmSpark.OomInjectionType.GPU, 0)
         }
         val batchSeq = GpuFilter.filterAndClose(cb, boundCondition,
           NoopMetric, NoopMetric, NoopMetric).toSeq

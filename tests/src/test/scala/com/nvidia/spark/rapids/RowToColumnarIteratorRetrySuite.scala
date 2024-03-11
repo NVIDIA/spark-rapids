@@ -29,7 +29,7 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val row2ColIter = new RowToColumnarIterator(
       rowIter, schema, RequireSingleBatch, new GpuRowToColumnConverter(schema))
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     Arm.withResource(row2ColIter.next()) { batch =>
       assertResult(10)(batch.numRows())
     }
@@ -40,7 +40,7 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val row2ColIter = new RowToColumnarIterator(
       rowIter, schema, RequireSingleBatch, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmSpark.OomInjectionType.GPU, 0)
     assertThrows[GpuSplitAndRetryOOM] {
       row2ColIter.next()
     }
