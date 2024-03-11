@@ -372,21 +372,14 @@ object RapidsPluginUtils extends Logging {
   def checkGpuArchitecture(): Unit = {
     val supportedGpuArchsSet = getSupportedGpuArchitectures(JNI_PROPS_FILENAME)
       .intersect(getSupportedGpuArchitectures(CUDF_PROPS_FILENAME))
-    val supportedArchsStr = supportedGpuArchsSet.toSeq.sorted.mkString(", ")
     val majorGpuArch = Cuda.getComputeCapabilityMajor
     val minorGpuArch = Cuda.getComputeCapabilityMinor
-    // Check if the device's major architecture is supported.
-    val supportedMajorArchs = supportedGpuArchsSet.filter(ver => majorGpuArch == ver / 10)
-    if (supportedMajorArchs.isEmpty) {
-      throw new RuntimeException(s"Device architecture $majorGpuArch$minorGpuArch is unsupported." +
-        s" Supported architectures: $supportedArchsStr.")
+    val isSupported = supportedGpuArchsSet.exists { ver =>
+      majorGpuArch == ver / 10 && minorGpuArch >= ver % 10
     }
-    // Check if the device's minor architecture is supported. See docs for explanation.
-    val supportedMinorArchs = supportedMajorArchs.filter(ver => minorGpuArch >= ver % 10)
-    if (supportedMinorArchs.isEmpty) {
-      logWarning(s"Device architecture $majorGpuArch$minorGpuArch is supported based on the" +
-        s" major version. Supported architectures: $supportedArchsStr. " +
-        s"See https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html")
+    if (!isSupported) {
+      throw new RuntimeException(s"Device architecture $majorGpuArch$minorGpuArch is unsupported." +
+        s" Supported architectures: ${supportedGpuArchsSet.toSeq.sorted.mkString(", ")}.")
     }
   }
 }
@@ -470,16 +463,19 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
-      // Checks if the current GPU architecture is supported by the
-      // spark-rapids-jni and cuDF libraries.
-      RapidsPluginUtils.checkGpuArchitecture()
-
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
+
+      // Checks if the current GPU architecture is supported by the
+      // spark-rapids-jni and cuDF libraries.
+      // Note: We allow this check to be skipped for off-chance cases.
+      if (!conf.skipGpuArchCheck) {
+        RapidsPluginUtils.checkGpuArchitecture()
+      }
 
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)
