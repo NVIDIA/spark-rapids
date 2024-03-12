@@ -2133,7 +2133,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .createOptional
 
   val SKIP_GPU_ARCH_CHECK = conf("spark.rapids.skipGpuArchitectureCheck")
-    .doc("When true, skips GPU architecture compatibility check. Note that this check" +
+    .doc("When true, skips GPU architecture compatibility check. Note that this check " +
       "might still be present in cuDF.")
     .internal()
     .booleanConf
