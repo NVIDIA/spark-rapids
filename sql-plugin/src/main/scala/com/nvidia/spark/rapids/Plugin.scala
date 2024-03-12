@@ -363,23 +363,27 @@ object RapidsPluginUtils extends Logging {
    * Checks if the current GPU architecture is supported by the spark-rapids-jni
    * and cuDF libraries.
    *
-   * Compatibility Rule: Binaries generated for a certain compute capability is supported
-   * to run on any GPU with the same major revision and same or higher minor revision of
-   * compute capability.
-   *
    * See: https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html
    */
   def checkGpuArchitecture(): Unit = {
     val supportedGpuArchsSet = getSupportedGpuArchitectures(JNI_PROPS_FILENAME)
       .intersect(getSupportedGpuArchitectures(CUDF_PROPS_FILENAME))
+    val minSupportedGpuArch = supportedGpuArchsSet.min
     val majorGpuArch = Cuda.getComputeCapabilityMajor
     val minorGpuArch = Cuda.getComputeCapabilityMinor
-    val isSupported = supportedGpuArchsSet.exists { ver =>
-      majorGpuArch == ver / 10 && minorGpuArch >= ver % 10
+    val gpuArch = majorGpuArch * 10 + minorGpuArch
+    // Check if the device architecture is supported
+    if (gpuArch < minSupportedGpuArch) {
+      throw new RuntimeException(s"Device architecture $gpuArch is unsupported." +
+        s" Minimum supported architecture: $minSupportedGpuArch.")
     }
-    if (!isSupported) {
-      throw new RuntimeException(s"Device architecture $majorGpuArch$minorGpuArch is unsupported." +
-        s" Supported architectures: ${supportedGpuArchsSet.toSeq.sorted.mkString(", ")}.")
+    val supportedMajorGpuArchsSet = supportedGpuArchsSet.map(_/10)
+    // Warn the user if the device's major architecture is not available
+    if (!supportedMajorGpuArchsSet.contains(majorGpuArch)) {
+      val supportedMajorArchStr = supportedMajorGpuArchsSet.toSeq.sorted.mkString(", ")
+      logWarning(s"No precompiled binaries for device major architecture $majorGpuArch. " +
+        s"Binaries available for architectures $supportedMajorArchStr. " +
+        s"May lead to expensive JIT compile on startup.")
     }
   }
 }
