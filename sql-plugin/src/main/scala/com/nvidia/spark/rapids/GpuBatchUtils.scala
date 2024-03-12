@@ -67,6 +67,11 @@ object GpuBatchUtils {
     estimateGpuMemory(field.dataType, field.nullable, rowCount)
   }
 
+  /** Estimate the amount of GPU memory a batch of rows will occupy per column once converted */
+  def estimatePerColumnGpuMemory(schema: StructType, rowCount: Long): Array[Long] = {
+    schema.fields.indices.map(estimateGpuMemory(schema, _, rowCount)).toArray
+  }
+
   /**
    * Get the minimum size a column could be that matches these conditions.
    */
