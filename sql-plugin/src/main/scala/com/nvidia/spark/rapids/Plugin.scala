@@ -382,8 +382,8 @@ object RapidsPluginUtils extends Logging {
     if (!supportedMajorGpuArchsSet.contains(majorGpuArch)) {
       val supportedMajorArchStr = supportedMajorGpuArchsSet.toSeq.sorted.mkString(", ")
       logWarning(s"No precompiled binaries for device major architecture $majorGpuArch. " +
-        s"Binaries available for architectures $supportedMajorArchStr. " +
-        s"May lead to expensive JIT compile on startup.")
+        "This may lead to expensive JIT compile on startup. " +
+        s"Binaries available for architectures $supportedMajorArchStr.")
     }
   }
 }
