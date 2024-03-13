@@ -314,7 +314,7 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
     'floats.json',
     'floats_leading_zeros.json',
     'floats_invalid.json',
-    pytest.param('floats_edge_cases.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4647')),
+    'floats_edge_cases.json',
     'decimals.json',
     'dates.json',
     'dates_invalid.json',
