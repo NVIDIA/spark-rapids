@@ -1962,6 +1962,29 @@ case class GpuStringToMap(strExpr: Expression,
   }
 }
 
+object GpuStringInstr {
+  def optimizeContains(cmp: GpuExpression): GpuExpression = {
+    cmp match {
+      case GpuGreaterThan(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(v, _)) if v == 0 =>
+        // stringInstr(A, B) > 0 becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuGreaterThanOrEqual(GpuLiteral(v, _), GpuStringInstr(str, substr: GpuLiteral))
+        if v == 0 =>
+        // stringInstr(A, B) >= 1 becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuLessThan(GpuLiteral(v, _), GpuStringInstr(str, substr: GpuLiteral)) if v == 0 =>
+        // 0 < stringInstr(A, B) becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuLessThanOrEqual(GpuLiteral(v, _), GpuStringInstr(str, substr: GpuLiteral))
+        if v == 1 =>
+        // 1 <= stringInstr(A, B) becomes contains(A, B)
+        GpuContains(str, substr)
+      case _ =>
+        cmp
+    }
+  }
+}
+
 case class GpuStringInstr(str: Expression, substr: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
