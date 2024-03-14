@@ -1965,19 +1965,17 @@ case class GpuStringToMap(strExpr: Expression,
 object GpuStringInstr {
   def optimizeContains(cmp: GpuExpression): GpuExpression = {
     cmp match {
-      case GpuGreaterThan(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(v, _)) if v == 0 =>
-        // stringInstr(A, B) > 0 becomes contains(A, B)
+      case GpuGreaterThan(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(0, _)) =>
+        // instr(A, B) > 0 becomes contains(A, B)
         GpuContains(str, substr)
-      case GpuGreaterThanOrEqual(GpuLiteral(v, _), GpuStringInstr(str, substr: GpuLiteral))
-        if v == 0 =>
-        // stringInstr(A, B) >= 1 becomes contains(A, B)
+      case GpuGreaterThanOrEqual(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(1, _)) =>
+        // instr(A, B) >= 1 becomes contains(A, B)
         GpuContains(str, substr)
-      case GpuLessThan(GpuLiteral(v, _), GpuStringInstr(str, substr: GpuLiteral)) if v == 0 =>
-        // 0 < stringInstr(A, B) becomes contains(A, B)
+      case GpuLessThan(GpuLiteral(0, _), GpuStringInstr(str, substr: GpuLiteral)) =>
+        // 0 < instr(A, B) becomes contains(A, B)
         GpuContains(str, substr)
-      case GpuLessThanOrEqual(GpuLiteral(v, _), GpuStringInstr(str, substr: GpuLiteral))
-        if v == 1 =>
-        // 1 <= stringInstr(A, B) becomes contains(A, B)
+      case GpuLessThanOrEqual(GpuLiteral(1, _), GpuStringInstr(str, substr: GpuLiteral)) =>
+        // 1 <= instr(A, B) becomes contains(A, B)
         GpuContains(str, substr)
       case _ =>
         cmp
