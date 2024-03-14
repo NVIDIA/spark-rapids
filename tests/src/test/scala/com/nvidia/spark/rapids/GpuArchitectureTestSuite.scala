@@ -51,7 +51,7 @@ class GpuArchitectureTestSuite extends AnyFunSuite {
   }
 
   test("test empty supported architecture set") {
-    assertThrows[RuntimeException] {
+    assertThrows[IllegalStateException] {
       val jniSupportedGpuArchs = Set(50, 60)
       val cudfSupportedGpuArchs = Set(70, 80)
       val gpuArch = 60
