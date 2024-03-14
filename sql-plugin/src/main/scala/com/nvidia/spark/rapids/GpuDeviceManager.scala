@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -386,6 +386,7 @@ object GpuDeviceManager extends Logging {
 
   private def initializeOffHeapLimits(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
+    val setCuioDefaultResource = conf.pinnedPoolCuioDefault
     val (pinnedSize, nonPinnedLimit) = if (conf.offHeapLimitEnabled) {
       logWarning("OFF HEAP MEMORY LIMITS IS ENABLED. " +
           "THIS IS EXPERIMENTAL FOR NOW USE WITH CAUTION")
@@ -448,7 +449,7 @@ object GpuDeviceManager extends Logging {
     }
     if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
       logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
-      PinnedMemoryPool.initialize(pinnedSize, gpuId)
+      PinnedMemoryPool.initialize(pinnedSize, gpuId, setCuioDefaultResource)
     }
     // Host memory limits must be set after the pinned memory pool is initialized
     HostAlloc.initialize(nonPinnedLimit)

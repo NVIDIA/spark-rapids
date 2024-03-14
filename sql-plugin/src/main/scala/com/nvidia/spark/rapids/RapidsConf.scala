@@ -338,6 +338,14 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
+  val PINNED_POOL_SET_CUIO_DEFAULT = conf("spark.rapids.memory.pinnedPool.setCuioDefault")
+    .doc("If set to true, the pinned pool configured for the plugin will be shared with " +
+      "cuIO for small pinned allocations.")
+    .startupOnly()
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
       .doc("Should the off heap limit be enforced or not.")
       .startupOnly()
@@ -1217,9 +1225,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
-    .doc("JSON reading is not 100% compatible when reading decimals.")
+    .doc("When reading a quoted string as a decimal Spark supports reading non-ascii " +
+        "unicode digits, and the RAPIDS Accelerator does not.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_MIXED_TYPES_AS_STRING =
     conf("spark.rapids.sql.json.read.mixedTypesAsString.enabled")
@@ -2345,6 +2354,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
+
+  lazy val pinnedPoolCuioDefault: Boolean = get(PINNED_POOL_SET_CUIO_DEFAULT)
 
   lazy val offHeapLimitEnabled: Boolean = get(OFF_HEAP_LIMIT_ENABLED)
 
