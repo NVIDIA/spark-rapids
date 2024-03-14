@@ -394,8 +394,8 @@ object RapidsPluginUtils extends Logging {
       throw new RuntimeException(s"Device architecture $gpuArch is unsupported." +
         s" Minimum supported architecture: $minSupportedGpuArch.")
     }
-    val supportedMajorGpuArchs = supportedGpuArchs.map(_/10)
-    val majorGpuArch = gpuArch/10
+    val supportedMajorGpuArchs = supportedGpuArchs.map(_ / 10)
+    val majorGpuArch = gpuArch / 10
     // Warn the user if the device's major architecture is not available
     if (!supportedMajorGpuArchs.contains(majorGpuArch)) {
       val supportedMajorArchStr = supportedMajorGpuArchs.toSeq.sorted.mkString(", ")

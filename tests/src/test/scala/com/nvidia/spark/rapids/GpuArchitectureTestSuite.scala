@@ -28,12 +28,13 @@ class GpuArchitectureTestSuite extends AnyFunSuite {
   }
 
   test("test unsupported architecture") {
-    assertThrows[RuntimeException] {
-      val jniSupportedGpuArchs = Set(50, 60, 70)
-      val cudfSupportedGpuArchs = Set(50, 60, 65, 70)
-      val gpuArch = 40
+    val jniSupportedGpuArchs = Set(50, 60, 70)
+    val cudfSupportedGpuArchs = Set(50, 60, 65, 70)
+    val gpuArch = 40
+    val exception = intercept[RuntimeException] {
       validateGpuArchitectureInternal(gpuArch, jniSupportedGpuArchs, cudfSupportedGpuArchs)
     }
+    assert(exception.getMessage.contains(s"Device architecture $gpuArch is unsupported"))
   }
 
   test("test supported major architecture with higher minor version") {
@@ -51,11 +52,13 @@ class GpuArchitectureTestSuite extends AnyFunSuite {
   }
 
   test("test empty supported architecture set") {
-    assertThrows[IllegalStateException] {
-      val jniSupportedGpuArchs = Set(50, 60)
-      val cudfSupportedGpuArchs = Set(70, 80)
-      val gpuArch = 60
+    val jniSupportedGpuArchs = Set(50, 60)
+    val cudfSupportedGpuArchs = Set(70, 80)
+    val gpuArch = 60
+    val exception = intercept[IllegalStateException] {
       validateGpuArchitectureInternal(gpuArch, jniSupportedGpuArchs, cudfSupportedGpuArchs)
     }
+    assert(exception.getMessage.contains(
+      s"Compatibility check failed for GPU architecture $gpuArch"))
   }
 }
