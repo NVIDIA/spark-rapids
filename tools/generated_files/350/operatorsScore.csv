@@ -18,7 +18,6 @@ AQEShuffleReadExec,3.0
 HashAggregateExec,4.5
 ObjectHashAggregateExec,3.0
 SortAggregateExec,3.0
-InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
 ExecutedCommandExec,3.0
 WriteFilesExec,3.0
