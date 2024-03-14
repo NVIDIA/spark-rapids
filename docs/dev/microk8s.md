@@ -91,7 +91,7 @@ This token can then be specified in the `spark-submit` command with
 
 ## Building and exporting Docker images
 
-Follow the instructions in [Getting Started with RAPIDS and Kubernetes](../get-started/getting-started-kubernetes.md)
+Follow the instructions in [Getting Started with RAPIDS and Kubernetes](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/kubernetes.html)
 to create Docker images containing Spark and the RAPIDS Accelerator for Apache Spark.
 
 Note that an additional step is required to export the Docker images from the host and import them into the Microk8s

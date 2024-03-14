@@ -19,7 +19,9 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
+{"spark": "342"}
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
@@ -54,7 +56,7 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     // Only Hive delimited text writes are currently supported.
     // Check whether that is the format currently in play.
     fileFormat = GpuHiveTextFileFormat.tagGpuSupport(this)

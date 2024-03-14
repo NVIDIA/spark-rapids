@@ -44,7 +44,7 @@ pipeline {
     agent {
         kubernetes {
             label "premerge-init-${BUILD_TAG}"
-            cloud 'sc-ipp-blossom-prod'
+            cloud "${common.CLOUD_NAME}"
             yaml "${IMAGE_DB}"
         }
     }
@@ -74,7 +74,7 @@ pipeline {
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
-        CUDA_CLASSIFIER = 'cuda11'
+        CLASSIFIER = 'cuda11'
     }
 
     stages {
@@ -120,7 +120,7 @@ pipeline {
             agent {
                 kubernetes {
                     label "premerge-docker-${BUILD_TAG}"
-                    cloud 'sc-ipp-blossom-prod'
+                    cloud "${common.CLOUD_NAME}"
                     yaml pod.getDockerBuildYAML()
                     workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                     customWorkspace "${CUSTOM_WORKSPACE}"
@@ -179,7 +179,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     agent {
                         kubernetes {
                             label "premerge-ci-1-${BUILD_TAG}"
-                            cloud 'sc-ipp-blossom-prod'
+                            cloud "${common.CLOUD_NAME}"
                             yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}"
@@ -202,6 +202,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
                                     }
+                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
@@ -215,7 +216,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     agent {
                         kubernetes {
                             label "premerge-ci-2-${BUILD_TAG}"
-                            cloud 'sc-ipp-blossom-prod'
+                            cloud "${common.CLOUD_NAME}"
                             yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}-ci-2" // Use different workspace to avoid conflict with IT
@@ -233,6 +234,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
                                     }
+                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }
@@ -246,7 +248,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     agent {
                         kubernetes {
                             label "ci-scala213-${BUILD_TAG}"
-                            cloud 'sc-ipp-blossom-prod'
+                            cloud "${common.CLOUD_NAME}"
                             yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}-scala-213" // Use different workspace to avoid conflict with IT
@@ -264,6 +266,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
                                     }
+                                    deleteDir() // cleanup content if no error
                                 }
                             }
                         }

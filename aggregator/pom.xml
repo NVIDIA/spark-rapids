@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2021-2023, NVIDIA CORPORATION.
+  Copyright (c) 2021-2024, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
-        <version>23.12.0-SNAPSHOT</version>
+        <version>24.04.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>23.12.0-SNAPSHOT</version>
+    <version>24.04.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>aggregator</rapids.module>
@@ -156,15 +156,23 @@
                                 <mkdir dir="${newClassesDir}"/>
                                 <delete dir="${newClassesDir}"/>
                                 <unzip src="${realAggJar}" dest="${newClassesDir}"/>
-                                <mkdir dir="${oldClassesDir}"/>
-
-                                <exec executable="diff"
-                                      resultproperty="diff.result">
-                                    <arg value="-q"/>
-                                    <arg value="-r"/>
-                                    <arg value="${oldClassesDir}"/>
-                                    <arg value="${newClassesDir}"/>
-                                </exec>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${oldClassesDir}" type="dir"/>
+                                    <then>
+                                        <exec executable="diff"
+                                            resultproperty="diff.result"
+                                            discardOutput="${nonfail.errors.quiet}"
+                                            discardError="${nonfail.errors.quiet}">
+                                            <arg value="-q"/>
+                                            <arg value="-r"/>
+                                            <arg value="${oldClassesDir}"/>
+                                            <arg value="${newClassesDir}"/>
+                                        </exec>
+                                    </then>
+                                    <else>
+                                        <echo>Clean build? Skipping diff because ${oldClassesDir} does not exist</echo>
+                                    </else>
+                                </ac:if>
 
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <equals arg1="0" arg2="${diff.result}"/>
@@ -356,23 +364,6 @@
                 <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-delta-20x_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release321db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>321db</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-spark321db_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <classifier>${spark.version.classifier}</classifier>
                 </dependency>
@@ -612,11 +603,57 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release341db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-spark341db_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release333</id>
             <activation>
                 <property>
                     <name>buildver</name>
                     <value>333</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-21x_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-22x_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-23x_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release334</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>334</value>
                 </property>
             </activation>
             <dependencies>
@@ -675,11 +712,45 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release342</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>342</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-24x_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release350</id>
             <activation>
                 <property>
                     <name>buildver</name>
                     <value>350</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release351</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>351</value>
                 </property>
             </activation>
             <dependencies>

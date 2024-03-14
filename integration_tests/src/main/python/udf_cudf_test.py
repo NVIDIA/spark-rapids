@@ -37,9 +37,14 @@ import time
 from typing import Iterator
 from pyspark.sql import Window
 from pyspark.sql.functions import pandas_udf, PandasUDFType
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import is_databricks_runtime, is_spark_340_or_later, with_cpu_session, with_gpu_session
 from marks import cudf_udf
 
+
+if is_databricks_runtime() and is_spark_340_or_later():
+    # Databricks 13.3 does not use separate reader/writer threads for Python UDFs
+    # which can lead to hangs. Skipping these tests until the Python UDF handling is updated.
+    pytestmark = pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 
 _conf = {
         'spark.rapids.sql.exec.AggregateInPandasExec': 'true',

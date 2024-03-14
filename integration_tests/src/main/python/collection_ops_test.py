@@ -20,8 +20,9 @@ from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
 import pyspark.sql.utils
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_334, is_before_spark_351, is_before_spark_342, is_before_spark_340, is_spark_350
 from conftest import get_datagen_seed
+from marks import allow_non_gpu
 
 nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_128bit),
                StructGen([("a", LongGen()), ("b", decimal_gen_128bit)]),
@@ -250,6 +251,7 @@ sequence_normal_no_step_integral_gens = [(gens[0], gens[1]) for
     gens in sequence_normal_integral_gens]
 
 @pytest.mark.parametrize('start_gen,stop_gen', sequence_normal_no_step_integral_gens, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_sequence_without_step(start_gen, stop_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, start_gen, stop_gen).selectExpr(
@@ -258,6 +260,7 @@ def test_sequence_without_step(start_gen, stop_gen):
             "sequence(20, b)"))
 
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get the datagen seed we use for all datagens, since we need to call start
     # on step_gen
@@ -265,6 +268,8 @@ def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get a step scalar from the 'step_gen' which follows the rules.
     step_gen.start(random.Random(data_gen_seed))
     step_lit = step_gen.gen()
+    if step_lit is None:
+        step_lit = "null"
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
             "sequence(a, b, c)",
@@ -304,6 +309,7 @@ sequence_illegal_boundaries_integral_gens = [
 ]
 
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_illegal_boundaries_integral_gens, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
     assert_gpu_and_cpu_error(
         lambda spark:three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
@@ -313,17 +319,20 @@ def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
 # Exceed the max length of a sequence
 #     "Too long sequence: xxxxxxxxxx. Should be <= 2147483632"
 sequence_too_long_length_gens = [
-    IntegerGen(min_val=2147483633, max_val=2147483633, special_cases=[]),
-    LongGen(min_val=2147483635, max_val=2147483635, special_cases=[None])
+    IntegerGen(min_val=2147483633, max_val=2147483633, special_cases=[], nullable=False),
+    LongGen(min_val=2147483635, max_val=2147483635, special_cases=[], nullable=False)
 ]
 
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_sequence_too_long_sequence(stop_gen):
+    msg = "Too long sequence" if is_before_spark_334() or (not is_before_spark_340() and is_before_spark_342()) \
+    or is_spark_350() else "Unsuccessful try to create array with"
     assert_gpu_and_cpu_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
         lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
             "sequence(0, a)").collect(),
-        conf = {}, error_message = "Too long sequence")
+        conf = {}, error_message = msg)
 
 def get_sequence_cases_mixed_df(spark, length=2048):
     # Generate the sequence data following the 3 rules mixed in a single dataset.
@@ -359,6 +368,7 @@ def get_sequence_cases_mixed_df(spark, length=2048):
         mixed_schema)
 
 # test for 3 cases mixed in a single dataset
+@allow_non_gpu(*non_utc_allow)
 def test_sequence_with_step_mixed_cases():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: get_sequence_cases_mixed_df(spark)

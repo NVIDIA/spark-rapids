@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from conftest import is_not_utc
 from data_gen import *
+from marks import allow_non_gpu, datagen_overrides
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
 from orc_test import reader_opt_confs
@@ -47,8 +49,10 @@ def test_casting_among_integer_types(spark_tmp_path, reader_confs, v1_enabled_li
         lambda spark: spark.read.schema(schema_str).orc(data_path),
         conf=all_confs)
 
+non_utc_allow_orc_scan=['ColumnarToRowExec', 'FileScan'] if is_not_utc() else []
 
 @pytest.mark.parametrize('to_type', ['float', 'double', 'string', 'timestamp'])
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_casting_from_integer(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_cast_integer'
     # The Python 'datetime' module only supports a max-year of 10000, so we set the Long type max
@@ -66,10 +70,11 @@ def test_casting_from_integer(spark_tmp_path, to_type):
             schema_str.format(*([to_type] * len(data_gen)))).orc(orc_path)
     )
 
-
+non_utc_allow_for_test_casting_from_overflow_long = ['FileSourceScanExec', 'ColumnarToRowExec', ] if is_not_utc() else []
 @pytest.mark.parametrize('overflow_long_gen', [LongGen(min_val=int(1e16)),
                                                LongGen(max_val=int(-1e16))])
 @pytest.mark.parametrize('to_type', ['timestamp'])
+@allow_non_gpu(*non_utc_allow_for_test_casting_from_overflow_long)
 def test_casting_from_overflow_long(spark_tmp_path, overflow_long_gen,to_type):
     # Timestamp(micro-seconds) is actually type of int64, when casting long(int64) to timestamp,
     # we need to multiply 1e6 (or 1e3), and it may cause overflow. This function aims to test
@@ -97,9 +102,9 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
         lambda spark: spark.read.schema(schema_str).orc(orc_path)
     )
 
-
 @pytest.mark.parametrize('data_gen', [DoubleGen(max_exp=32, special_cases=None),
                                       DoubleGen(max_exp=32, special_cases=[8.88e9, 9.99e10, 1.314e11])])
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     # ORC will assume the original double value in seconds, we need to convert them to
     # timestamp(INT64 in micro-seconds).
@@ -123,6 +128,7 @@ def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     )
 
 
+@allow_non_gpu(*non_utc_allow_for_test_casting_from_overflow_long)
 def test_casting_from_overflow_double_to_timestamp(spark_tmp_path):
     orc_path = spark_tmp_path + '/orc_casting_from_overflow_double_to_timestamp'
     with_cpu_session(

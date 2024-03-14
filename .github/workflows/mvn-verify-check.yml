@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,24 +28,66 @@ env:
     -Ddist.jar.compress=false
     -DskipTests
     -Dmaven.scaladoc.skip
+    -Dmaven.artifact.threads=10
+    --batch-mode
+    -Dmaven.wagon.http.retryHandler.count=3
+    -Dmaven.wagon.httpconnectionManager.ttlSeconds=30
+    -Daether.connector.http.connectionMaxTtl=30
+    -Drapids.secondaryCacheDir=$HOME/.m2/repository/.sbt/1.0/zinc/org.scala-sbt
 
 jobs:
-  get-shim-versions-from-dist:
+  cache-dependencies:
     runs-on: ubuntu-latest
     outputs:
+      dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
       sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
       scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
-
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
+      - uses: actions/setup-java@v3
         with:
-          distribution: adopt
+          distribution: 'temurin'
           java-version: 8
+      - name: Generate daily cache key
+        id: generateCacheKey
+        run: |
+          set -x
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
+      - name: Cache local Maven repository
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ env.dailyCacheKey }}
+          restore-keys: ${{ runner.os }}-maven-
+      - name: populate-daily-cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -x
+          max_retry=3; delay=30; i=1
+          while true; do
+            for pom in pom.xml scala2.13/pom.xml
+            do
+              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
+                -Dexpression=included_buildvers \
+                -DforceStdout -PnoSnapshots -q | tr -d ',' | \
+                  xargs -n 1 bash -c \
+                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
 
+              # compile base versions to cache scala compiler and compiler bridge
+              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
+                process-test-resources -pl sql-plugin-api -am
+            done && break || {
+            if [[ $i -le $max_retry ]]; then
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+            else
+              echo "mvn command failed. Exit 1"; exit 1
+            fi
+          }
+          done
       - name: all shim versions
         id: allShimVersionsStep
         run: |
@@ -97,10 +139,10 @@ jobs:
           echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
-    needs: get-shim-versions-from-dist
+    needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkTailVersions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.sparkTailVersions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -111,6 +153,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -127,10 +175,8 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B package \
-              -pl integration_tests,tests -am -P 'individual,pre-merge' \
+            mvn package \
+              -pl integration_tests,tests,tools -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
@@ -142,10 +188,10 @@ jobs:
           done
 
   package-tests-scala213:
-    needs: get-shim-versions-from-dist
+    needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Versions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -156,6 +202,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -182,10 +234,8 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B package \
-              -pl integration_tests,tests -am -P 'individual,pre-merge' \
+            mvn package \
+              -pl integration_tests,tests,tools -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
@@ -198,10 +248,10 @@ jobs:
 
 
   verify-all-modules:
-    needs: get-shim-versions-from-dist
+    needs: cache-dependencies
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDKVersions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.sparkJDKVersions) }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -210,6 +260,12 @@ jobs:
         with:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -226,9 +282,7 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=$max_retry \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B verify \
+            mvn verify \
               -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
@@ -240,7 +294,7 @@ jobs:
           done
 
   install-modules:
-    needs: get-shim-versions-from-dist
+    needs: cache-dependencies
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -253,6 +307,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
@@ -272,11 +332,9 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            ./mvnw -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B install \
+            ./mvnw install \
               -P "individual,pre-merge" \
-              -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
+              -Dbuildver=${{ needs.cache-dependencies.outputs.defaultSparkVersion }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))

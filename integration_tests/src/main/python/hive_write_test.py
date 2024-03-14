@@ -14,14 +14,12 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_gpu_and_cpu_are_equal_collect, assert_equal, run_with_cpu_and_gpu
-from conftest import spark_jvm
+from asserts import *
+from conftest import spark_jvm, is_not_utc
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
-from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session, \
-    is_databricks122_or_later
+from spark_session import *
 
 # Using timestamps from 1970 to work around a cudf ORC bug
 # https://github.com/NVIDIA/spark-rapids/issues/140.
@@ -61,6 +59,7 @@ _write_gens = [_basic_gens, _struct_gens, _array_gens, _map_gens]
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", _write_gens, ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "nativeorc", "hiveorc"])
+@allow_non_gpu(*non_utc_allow)
 def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
     data_table = spark_tmp_table_factory.get()
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]

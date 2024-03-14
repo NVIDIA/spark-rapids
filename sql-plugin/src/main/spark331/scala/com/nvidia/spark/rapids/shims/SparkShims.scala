@@ -18,6 +18,7 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -25,7 +26,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 
-object SparkShimImpl extends Spark331PlusShims with AnsiCastRuleShims {
+object SparkShimImpl extends Spark331PlusNonDBShims with AnsiCastRuleShims {
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = {
     Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](

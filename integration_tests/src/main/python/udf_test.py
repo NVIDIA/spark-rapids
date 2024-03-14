@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import pytest
+from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -173,7 +174,10 @@ pre_cur_win = Window\
 
 low_upper_win = Window.partitionBy('a').orderBy('b').rowsBetween(-3, 3)
 
-udf_windows = [no_part_win, unbounded_win, cur_follow_win, pre_cur_win, low_upper_win]
+running_win_param = pytest.param(pre_cur_win, marks=pytest.mark.xfail(
+    condition=is_databricks_runtime() and is_spark_341(),
+    reason='DB13.3 wrongly uses RunningWindowFunctionExec to evaluate a PythonUDAF and it will fail even on CPU'))
+udf_windows = [no_part_win, unbounded_win, cur_follow_win, running_win_param, low_upper_win]
 window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Preceding',
               'Lower_Upper']
 
@@ -213,6 +217,18 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
             .select([f.col('py_array').getItem(i) for i in range(0, 1)]),
         conf=arrow_udf_conf)
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', [byte_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf_array_input(data_gen, window):
+    @f.pandas_udf(returnType=LongType())
+    def pandas_size(to_process: pd.Series) -> int:
+        return to_process.size
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, data_gen, data_gen, ArrayGen(data_gen)).select(
+            pandas_size(f.col('c')).over(window).alias('size_col')),
+        conf=arrow_udf_conf)
 
 # ======= Test flat map group in Pandas =======
 
@@ -327,8 +343,8 @@ def create_df(spark, data_gen, left_length, right_length):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ShortGen(nullable=False)], ids=idfn)
 def test_cogroup_apply_udf(data_gen):
-    def asof_join(l, r):
-        return pd.merge_asof(l, r, on='a', by='b')
+    def asof_join(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+        return pd.merge_ordered(left, right)
 
     def do_it(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -410,3 +426,41 @@ def test_map_pandas_udf_with_empty_partitions():
             lambda data: [pd.DataFrame([len(list(data))])], schema="ret:integer")
 
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf)
+
+
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='mapInPandas with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
+def test_map_in_pandas_with_barrier_mode(is_barrier):
+    def func(iterator):
+        tc = TaskContext.get()
+        assert tc is not None
+        if is_barrier:
+            assert isinstance(tc, BarrierTaskContext)
+        else:
+            assert not isinstance(tc, BarrierTaskContext)
+
+        for batch in iterator:
+            yield batch
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0, 10, 1, 1).mapInPandas(func, "id long", is_barrier))
+
+
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
+@pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
+def test_map_in_arrow_with_barrier_mode(is_barrier):
+    def func(iterator):
+        tc = TaskContext.get()
+        assert tc is not None
+        if is_barrier:
+            assert isinstance(tc, BarrierTaskContext)
+        else:
+            assert not isinstance(tc, BarrierTaskContext)
+
+        for batch in iterator:
+            yield batch
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(0, 10, 1, 1).mapInArrow(func, "id long", is_barrier))

@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from spark_session import is_before_spark_320, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
+from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -80,6 +81,7 @@ orc_write_gens_list = [orc_write_basic_gens,
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_allow)
 def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -101,7 +103,7 @@ def test_write_round_trip_corner(spark_tmp_path, orc_gen, orc_impl):
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
 orc_part_write_gens = [
-        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
+        byte_gen, short_gen, int_gen, long_gen, boolean_gen,
         # Some file systems have issues with UTF8 strings so to help the test pass even there
         StringGen('(\\w| ){0,50}'),
         # Once https://github.com/NVIDIA/spark-rapids/issues/139 is fixed replace this with
@@ -114,9 +116,10 @@ orc_part_write_gens = [
 # There are race conditions around when individual files are read in for partitioned data
 @ignore_order
 @pytest.mark.parametrize('orc_gen', orc_part_write_gens, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_part_write_round_trip(spark_tmp_path, orc_gen):
     gen_list = [('a', RepeatSeqGen(orc_gen, 10)),
-            ('b', orc_gen)]
+                ('b', orc_gen)]
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').orc(path),
@@ -167,7 +170,8 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
-def test_write_save_table(spark_tmp_path, orc_gens, orc_impl, spark_tmp_table_factory):
+@allow_non_gpu(*non_utc_allow)
+def test_write_save_table_orc(spark_tmp_path, orc_gens, orc_impl, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     all_confs={'spark.sql.sources.useV1SourceList': "orc",
@@ -185,10 +189,13 @@ def write_orc_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING ORC location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+non_utc_hive_save_table_allow = ['ExecutedCommandExec', 'DataWritingCommandExec', 'CreateDataSourceTableAsSelectCommand', 'WriteFilesExec'] if is_not_utc() else []
+
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_hive_save_table_allow)
 def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -198,7 +205,7 @@ def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec', *non_utc_allow)
 @pytest.mark.parametrize('codec', ['zlib', 'lzo'])
 def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
     gen = TimestampGen()
@@ -256,6 +263,7 @@ def test_orc_write_bloom_filter_sql_cpu_fallback(spark_tmp_path, spark_tmp_table
 
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
     def create_empty_df(spark, path):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]

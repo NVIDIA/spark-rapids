@@ -26,11 +26,13 @@ tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
 base_spark_pom_version = '3.2.1'
 base_spark_version_to_install_databricks_jars = base_spark_pom_version
 clusterid = ''
-# can take comma seperated maven options, e.g., -Pfoo=1,-Dbar=2,...
+# can take comma separated maven options, e.g., -Pfoo=1,-Dbar=2,...
 mvn_opt = ''
 jar_path = ''
-# `spark_conf` can take comma seperated multiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
+# can take comma separated multiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
 spark_conf = ''
+# can take comma separated environments, e.g., foo=abc,bar=123,...'
+extra_envs = ''
 
 
 def usage():
@@ -48,11 +50,12 @@ def usage():
           ' -j <jarpath>'
           ' -n <skipstartingcluster>'
           ' -f <sparkconf>'
-          ' -i <sparkinstallver>')
+          ' -i <sparkinstallver>'
+          ' -e <extraenvs>')
 
 
 try:
-    opts, script_args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:',
+    opts, script_args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:e:',
                                       ['workspace=',
                                        'token=',
                                        'clusterid=',
@@ -62,9 +65,10 @@ try:
                                        'sparktgz=',
                                        'basesparkpomversion=',
                                        'mvnoptions=',
-                                       'jarpath',
-                                       'sparkconf',
-                                       'sparkinstallver='])
+                                       'jarpath=',
+                                       'sparkconf=',
+                                       'sparkinstallver=',
+                                       'extraenvs='])
 except getopt.GetoptError:
     usage()
     sys.exit(2)
@@ -97,6 +101,8 @@ for opt, arg in opts:
         spark_conf = arg
     elif opt in ('-i', '--sparkinstallver'):
         base_spark_version_to_install_databricks_jars = arg
+    elif opt in ('-e', '--extraenvs'):
+        extra_envs = arg
 
 print('-w is ' + workspace)
 print('-c is ' + clusterid)
@@ -109,3 +115,4 @@ print('-v is ' + base_spark_pom_version)
 print('-j is ' + jar_path)
 print('-f is ' + spark_conf)
 print('-i is ' + base_spark_version_to_install_databricks_jars)
+print('-e is ' + extra_envs)

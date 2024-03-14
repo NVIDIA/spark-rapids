@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1462,6 +1462,157 @@ class FloatGen(conf: ColumnConf, defaultValueRange: Option[(Any, Any)])
   override def dataType: DataType = FloatType
 
   override protected def getValGen: GeneratorFunction = FloatGenFunc()
+}
+
+trait JSONType {
+  def appendRandomValue(sb: StringBuilder,
+      index: Int,
+      maxStringLength: Int,
+      maxArrayLength: Int,
+      maxObjectLength: Int,
+      depth: Int,
+      maxDepth: Int,
+      r: Random): Unit
+}
+
+object JSONType {
+  def selectType(depth: Int,
+      maxDepth: Int,
+      r: Random): JSONType = {
+    val toSelectFrom = if (depth < maxDepth) {
+      Seq(QuotedJSONString, JSONLong, JSONDouble, JSONArray, JSONObject)
+    } else {
+      Seq(QuotedJSONString, JSONLong, JSONDouble)
+    }
+    val index = r.nextInt(toSelectFrom.length)
+    toSelectFrom(index)
+  }
+}
+
+object QuotedJSONString extends JSONType {
+  override def appendRandomValue(sb: StringBuilder,
+      index: Int,
+      maxStringLength: Int,
+      maxArrayLength: Int,
+      maxObjectLength: Int,
+      depth: Int,
+      maxDepth: Int,
+      r: Random): Unit = {
+    val strValue = r.nextString(r.nextInt(maxStringLength + 1))
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+    sb.append('"')
+    sb.append(strValue)
+    sb.append('"')
+  }
+}
+
+object JSONLong extends JSONType {
+  override def appendRandomValue(sb: StringBuilder,
+      index: Int,
+      maxStringLength: Int,
+      maxArrayLength: Int,
+      maxObjectLength: Int,
+      depth: Int,
+      maxDepth: Int,
+      r: Random): Unit = {
+    sb.append(r.nextLong())
+  }
+}
+
+object JSONDouble extends JSONType {
+  override def appendRandomValue(sb: StringBuilder,
+      index: Int,
+      maxStringLength: Int,
+      maxArrayLength: Int,
+      maxObjectLength: Int,
+      depth: Int,
+      maxDepth: Int,
+      r: Random): Unit = {
+    sb.append(r.nextDouble() * 4096.0)
+  }
+}
+
+object JSONArray extends JSONType {
+  override def appendRandomValue(sb: StringBuilder,
+      index: Int,
+      maxStringLength: Int,
+      maxArrayLength: Int,
+      maxObjectLength: Int,
+      depth: Int,
+      maxDepth: Int,
+      r: Random): Unit = {
+    val childType = JSONType.selectType(depth, maxDepth, r)
+    val length = r.nextInt(maxArrayLength + 1)
+    sb.append("[")
+    (0 until length).foreach { i =>
+      if (i > 0) {
+        sb.append(",")
+      }
+      childType.appendRandomValue(sb, i, maxStringLength, maxArrayLength, maxObjectLength,
+        depth + 1, maxDepth, r)
+    }
+    sb.append("]")
+  }
+}
+
+object JSONObject extends JSONType {
+  override def appendRandomValue(sb: StringBuilder,
+      index: Int,
+      maxStringLength: Int,
+      maxArrayLength: Int,
+      maxObjectLength: Int,
+      depth: Int,
+      maxDepth: Int,
+      r: Random): Unit = {
+    val length = r.nextInt(maxObjectLength) + 1
+    sb.append("{")
+    (0 until length).foreach { i =>
+      if (i > 0) {
+        sb.append(",")
+      }
+      sb.append("\"key_")
+      sb.append(i)
+      sb.append("_")
+      sb.append(depth )
+      sb.append("\":")
+      val childType = JSONType.selectType(depth, maxDepth, r)
+      childType.appendRandomValue(sb, i, maxStringLength, maxArrayLength, maxObjectLength,
+        depth + 1, maxDepth, r)
+    }
+    sb.append("}")
+  }
+}
+
+case class JSONGenFunc(
+    maxStringLength: Int,
+    maxArrayLength: Int,
+    maxObjectLength: Int,
+    maxDepth: Int,
+    lengthGen: LengthGeneratorFunction = null,
+    mapping: LocationToSeedMapping = null) extends GeneratorFunction {
+
+  override def apply(rowLoc: RowLocation): Any = {
+    val r = DataGen.getRandomFor(rowLoc, mapping)
+    val sb = new StringBuilder()
+    JSONObject.appendRandomValue(sb, 0, maxStringLength, maxArrayLength, maxObjectLength,
+      0, maxDepth, r)
+    // For now I am going to have some hard coded keys
+    UTF8String.fromString(sb.toString())
+  }
+
+  override def withLengthGeneratorFunction(lengthGen: LengthGeneratorFunction): GeneratorFunction =
+    JSONGenFunc(maxStringLength, maxArrayLength, maxObjectLength, maxDepth, lengthGen, mapping)
+
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    JSONGenFunc(maxStringLength, maxArrayLength, maxObjectLength, maxDepth, lengthGen, mapping)
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalArgumentException("value ranges are not supported for strings")
 }
 
 case class ASCIIGenFunc(

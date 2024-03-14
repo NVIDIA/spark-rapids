@@ -449,12 +449,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   test("ansi_cast float to string") {
     testCastToString[Float](DataTypes.FloatType, ansiMode = true,
-      comparisonFunc = Some(compareStringifiedFloats))
+      comparisonFunc = Some(compareStringifiedFloats(true)))
   }
 
   test("ansi_cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, ansiMode = true,
-      comparisonFunc = Some(compareStringifiedFloats))
+      comparisonFunc = Some(compareStringifiedFloats(false)))
   }
 
   test("ansi_cast decimal to string") {

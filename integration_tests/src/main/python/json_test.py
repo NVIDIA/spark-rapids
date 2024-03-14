@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,14 +15,13 @@
 import pyspark.sql.functions as f
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, \
-    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import *
 from data_gen import *
+from conftest import is_not_utc
 from datetime import timezone
 from conftest import is_databricks_runtime
-from marks import approximate_float, allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_340, \
-    is_before_spark_341
+from marks import approximate_float, allow_non_gpu, ignore_order, datagen_overrides
+from spark_session import *
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -38,7 +37,10 @@ json_supported_gens = [
     DoubleGen(no_nans=False)
 ]
 
+optional_whitespace_regex = '[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?'
+
 _enable_all_types_conf = {
+    'spark.rapids.sql.expression.JsonToStructs': 'true',
     'spark.rapids.sql.format.json.enabled': 'true',
     'spark.rapids.sql.format.json.read.enabled': 'true',
     'spark.rapids.sql.json.read.float.enabled': 'true',
@@ -81,6 +83,35 @@ _timestamp_schema = StructType([
 
 _string_schema = StructType([
     StructField('a', StringType())])
+
+json_supported_date_formats = [
+    None, # represents not specifying a format (which is different from explicitly specifying the default format in some Spark versions)
+    'yyyy-MM-dd', 'yyyy/MM/dd',
+    'yyyy-MM', 'yyyy/MM',
+    'MM-yyyy', 'MM/yyyy',
+    'MM-dd-yyyy', 'MM/dd/yyyy',
+    'dd-MM-yyyy', 'dd/MM/yyyy']
+
+json_supported_ts_parts = [
+    "'T'HH:mm:ss.SSSXXX",
+    "'T'HH:mm:ss[.SSS][XXX]",
+    "'T'HH:mm:ss.SSS",
+    "'T'HH:mm:ss[.SSS]",
+    "'T'HH:mm:ss",
+    "'T'HH:mm[:ss]",
+    "'T'HH:mm"]
+
+json_supported_timestamp_formats = [
+    None, # represents not specifying a format (which is different from explicitly specifying the default format in some Spark versions)
+]
+for date_part in json_supported_date_formats:
+    if date_part:
+        # use date format without time component
+        json_supported_timestamp_formats.append(date_part)
+        # use date format and each supported time format
+        for ts_part in json_supported_ts_parts:
+            json_supported_timestamp_formats.append(date_part + ts_part)
+
 
 def read_json_df(data_path, schema, spark_tmp_table_factory_ignored, options = {}):
     def read_impl(spark):
@@ -153,82 +184,91 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_block_length()'),
             conf=updated_conf)
 
-json_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
-        'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
-@pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
+allow_non_gpu_for_json_scan = ['FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu(*allow_non_gpu_for_json_scan)
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'
     schema = gen.data_type
     updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
-    with_cpu_session(
-            lambda spark : gen_df(spark, gen).write\
-                    .option('dateFormat', date_format)\
-                    .json(data_path))
+
+    def create_test_data(spark):
+        write = gen_df(spark, gen).write
+        if date_format:
+            write = write.option('dateFormat', date_format)
+        return write.json(data_path)
+
+    with_cpu_session(lambda spark : create_test_data(spark))
+
+    def do_read(spark):
+        read = spark.read.schema(schema)
+        if date_format:
+            read = read.option('dateFormat', date_format)
+        return read.json(data_path)
+
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read\
-                    .schema(schema)\
-                    .option('dateFormat', date_format)\
-                    .json(data_path),
+            lambda spark: do_read(spark),
             conf=updated_conf)
 
-json_supported_ts_parts = ['', # Just the date
-        "'T'HH:mm:ss.SSSXXX",
-        "'T'HH:mm:ss[.SSS][XXX]",
-        "'T'HH:mm:ss.SSS",
-        "'T'HH:mm:ss[.SSS]",
-        "'T'HH:mm:ss",
-        "'T'HH:mm[:ss]",
-        "'T'HH:mm"]
 
-@pytest.mark.parametrize('ts_part', json_supported_ts_parts)
-@pytest.mark.parametrize('date_format', json_supported_date_formats)
+not_utc_allow_for_test_json_scan = ['BatchScanExec', 'FileSourceScanExec'] if is_not_utc() else []
+@allow_non_gpu(*not_utc_allow_for_test_json_scan)
+@pytest.mark.parametrize('timestamp_format', json_supported_timestamp_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
-def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
-    full_format = date_format + ts_part
+def test_json_ts_formats_round_trip(spark_tmp_path, timestamp_format, v1_enabled_list):
     data_gen = TimestampGen()
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'
     schema = gen.data_type
-    with_cpu_session(
-            lambda spark : gen_df(spark, gen).write\
-                    .option('timestampFormat', full_format)\
-                    .json(data_path))
+
+    def create_test_data(spark):
+        write = gen_df(spark, gen).write
+        if timestamp_format:
+            write = write.option('timestampFormat', timestamp_format)
+        write.json(data_path)
+
+    with_cpu_session(lambda spark: create_test_data(spark))
     updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+    def do_read(spark):
+        read = spark.read.schema(schema)
+        if timestamp_format:
+            read = read.option('timestampFormat', timestamp_format)
+        return read.json(data_path)
+
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read\
-                    .schema(schema)\
-                    .option('timestampFormat', full_format)\
-                    .json(data_path),
+            lambda spark: do_read(spark),
             conf=updated_conf)
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec')
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
-@pytest.mark.parametrize('ts_part', json_supported_ts_parts)
-@pytest.mark.parametrize('date_format', json_supported_date_formats)
+@pytest.mark.parametrize('timestamp_format', json_supported_timestamp_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
-    json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'json', 'FileSourceScanExec')
+def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, timestamp_format, timestamp_type):
+    json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_type, 'json', 'FileSourceScanExec')
 
 @allow_non_gpu('BatchScanExec', 'ProjectExec')
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
-@pytest.mark.parametrize('ts_part', json_supported_ts_parts)
-@pytest.mark.parametrize('date_format', json_supported_date_formats)
+@pytest.mark.parametrize('timestamp_format', json_supported_timestamp_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-def test_json_ts_formats_round_trip_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
-    json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
+def test_json_ts_formats_round_trip_ntz_v2(spark_tmp_path, timestamp_format, timestamp_type):
+    json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_type, '', 'BatchScanExec')
 
-def json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
-    full_format = date_format + ts_part
+def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_type, v1_enabled_list, cpu_scan_class):
     data_gen = TimestampGen(tzinfo=None if timestamp_type == "TIMESTAMP_NTZ" else timezone.utc)
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'
     schema = gen.data_type
-    with_cpu_session(
-        lambda spark : gen_df(spark, gen).write \
-            .option('timestampFormat', full_format) \
-            .json(data_path))
+
+    def create_test_data(spark):
+        write = gen_df(spark, gen).write
+        if timestamp_format:
+            write = write.option('timestampFormat', timestamp_format)
+        write.json(data_path)
+
+    with_cpu_session(lambda spark: create_test_data(spark))
     updated_conf = copy_and_update(_enable_all_types_conf,
         {
             'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -236,18 +276,25 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timesta
         })
 
     def do_read(spark):
-        return spark.read \
-            .schema(schema) \
-            .option('timestampFormat', full_format) \
-            .json(data_path)
+        read = spark.read.schema(schema)
+        if timestamp_format:
+            read = read.option('timestampFormat', timestamp_format)
+        return read.json(data_path)
 
 
     if timestamp_type == "TIMESTAMP_LTZ":
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark : do_read(spark),
-            exist_classes = 'Gpu' + cpu_scan_class,
-            non_exist_classes = cpu_scan_class,
-            conf=updated_conf)
+        if is_not_utc():
+            # non UTC is not support for json, skip capture check
+            # Tracked in https://github.com/NVIDIA/spark-rapids/issues/9912
+            assert_gpu_and_cpu_are_equal_collect(lambda spark: do_read(spark), conf = updated_conf)
+        else:
+            assert_cpu_and_gpu_are_equal_collect_with_capture(
+                lambda spark : do_read(spark),
+                exist_classes = 'Gpu' + cpu_scan_class,
+                non_exist_classes = cpu_scan_class,
+                conf=updated_conf)
+
+
     else:
         # we fall back to CPU due to "unsupported data types in output: TimestampNTZType"
         assert_gpu_fallback_collect(
@@ -274,21 +321,33 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timesta
 ])
 @pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, \
                                     _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, \
-                                    _date_schema])
+                                    _date_schema], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
-@pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
-@pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
+@pytest.mark.parametrize('allow_non_numeric_numbers', ['true', 'false'])
+@pytest.mark.parametrize('allow_numeric_leading_zeros', [
+    'true',
+    'false'
+])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory):
+@allow_non_gpu(*not_utc_allow_for_test_json_scan)
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'])
+def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, \
+        allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory, date_format):
     updated_conf = copy_and_update(_enable_all_types_conf,
         {'spark.sql.ansi.enabled': ansi_enabled,
          'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+    options = {"allowNonNumericNumbers": allow_non_numeric_numbers,
+           "allowNumericLeadingZeros": allow_numeric_leading_zeros,
+           }
+
+    if date_format:
+        options['dateFormat'] = date_format
+
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
-        schema,
-        spark_tmp_table_factory,
-        { "allowNonNumericNumbers": allow_non_numeric_numbers,
-          "allowNumericLeadingZeros": allow_numeric_leading_zeros}),
+                  schema,
+                  spark_tmp_table_factory,
+                  options),
         conf=updated_conf)
 
 @ignore_order
@@ -314,12 +373,44 @@ def test_read_invalid_json(spark_tmp_table_factory, std_input_path, read_func, f
     'mixed-primitives.ndjson',
     'mixed-primitives-nested.ndjson',
     'simple-nested.ndjson',
-    pytest.param('mixed-nested.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9353'))
+    'mixed-nested.ndjson',
+    'mixed-types-in-struct.ndjson',
+    'mixed-primitive-arrays.ndjson',
 ])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
-@pytest.mark.parametrize('schema', [_int_schema])
+@pytest.mark.parametrize('schema', [_int_schema], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 def test_read_valid_json(spark_tmp_table_factory, std_input_path, read_func, filename, schema, v1_enabled_list):
+    conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+         'spark.rapids.sql.json.read.mixedTypesAsString.enabled': True})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+                  schema,
+                  spark_tmp_table_factory,
+                  {}),
+        conf=conf)
+
+@pytest.mark.parametrize('filename', ['nested-structs.ndjson'])
+@pytest.mark.parametrize('schema', [
+    StructType([StructField('teacher', StringType())]),
+    StructType([
+        StructField('student', StructType([
+            StructField('name', StringType()),
+            StructField('age', IntegerType())
+        ]))
+    ]),
+    StructType([
+        StructField('teacher', StringType()),
+        StructField('student', StructType([
+            StructField('name', StringType()),
+            StructField('age', IntegerType())
+        ]))
+    ]),
+])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_read_nested_struct(spark_tmp_table_factory, std_input_path, read_func, filename, schema, v1_enabled_list):
     conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
@@ -327,6 +418,29 @@ def test_read_valid_json(spark_tmp_table_factory, std_input_path, read_func, fil
                   spark_tmp_table_factory,
                   {}),
         conf=conf)
+
+@pytest.mark.parametrize('filename', ['optional-fields.ndjson'])
+@pytest.mark.parametrize('schema', [
+    StructType([StructField('teacher', StringType())]),
+    StructType([StructField('student', StringType())]),
+    StructType([
+        StructField('teacher', StringType()),
+        StructField('student', StringType())
+    ]),
+])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_read_optional_fields(spark_tmp_table_factory, std_input_path, read_func, filename, schema, v1_enabled_list):
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+                  schema,
+                  spark_tmp_table_factory,
+                  {}),
+        conf=conf)
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+not_utc_json_scan_allow=['FileSourceScanExec'] if is_not_utc() else []
 
 @approximate_float
 @pytest.mark.parametrize('filename', [
@@ -337,8 +451,8 @@ def test_read_valid_json(spark_tmp_table_factory, std_input_path, read_func, fil
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow))
 ])
 def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
@@ -353,6 +467,40 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
     else:
         assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
 
+@pytest.mark.parametrize('date_gen_pattern', [
+    '[0-9]{1,4}-[0-3]{1,2}-[0-3]{1,2}',
+    '[0-9]{1,2}-[0-3]{1,2}-[0-9]{1,4}',
+    '[1-9]{4}-[1-3]{2}-[1-3]{2}',
+    '[1-9]{4}-[1-3]{1,2}-[1-3]{1,2}',
+    '[1-3]{1,2}-[1-3]{1,2}-[1-9]{4}',
+    '[1-3]{1,2}/[1-3]{1,2}/[1-9]{4}',
+])
+@pytest.mark.parametrize('schema', [StructType([StructField('value', DateType())])])
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
+@pytest.mark.parametrize('ansi_enabled', [True, False])
+@pytest.mark.parametrize('allow_numeric_leading_zeros', [True, False])
+@allow_non_gpu(*allow_non_gpu_for_json_scan)
+def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date_gen_pattern, schema, date_format, \
+        ansi_enabled, allow_numeric_leading_zeros):
+    # create test data with json strings where a subset are valid dates
+    # example format: {"value":"3481-1-31"}
+    path = spark_tmp_path + '/JSON_DATA'
+
+    data_gen = StringGen(optional_whitespace_regex + date_gen_pattern + optional_whitespace_regex, nullable=False)
+
+    with_cpu_session(lambda spark: gen_df(spark, data_gen).write.json(path))
+
+    updated_conf = copy_and_update(_enable_all_types_conf, {
+        'spark.sql.ansi.enabled': ansi_enabled,
+        'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+
+    options = { 'allowNumericLeadingZeros': allow_numeric_leading_zeros }
+    if date_format:
+        options['dateFormat'] = date_format
+
+    f = read_json_df(path, schema, spark_tmp_table_factory, options)
+    assert_gpu_and_cpu_are_equal_collect(f, conf = updated_conf)
+
 @approximate_float
 @pytest.mark.parametrize('filename', [
     'dates_invalid.json',
@@ -360,16 +508,19 @@ def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi
 @pytest.mark.parametrize('schema', [_date_schema])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*not_utc_json_scan_allow))
 ])
-def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
+def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, ansi_enabled, date_format, \
+        time_parser_policy, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
                                     'spark.sql.legacy.timeParserPolicy': time_parser_policy })
-    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
+    options = { 'dateFormat': date_format } if date_format else {}
+    f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, options)
     if time_parser_policy == 'EXCEPTION':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: f(spark).collect(),
@@ -383,6 +534,11 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
     else:
         assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_file_source_scan_allow = ['FileSourceScanExec'] if is_not_utc() else []
+
+non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
+
 @approximate_float
 @pytest.mark.parametrize('filename', [
     'timestamps.json',
@@ -392,8 +548,9 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    # For non UTC cases, corrected and exception will have CPU fallback in lack of timezone support.
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_file_source_scan_allow)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_file_source_scan_allow))
 ])
 def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, \
         spark_tmp_table_factory):
@@ -452,6 +609,7 @@ def test_json_read_count(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.schema(schema).json(data_path),
             conf=updated_conf)
 
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_map():
     # The test here is working around some inconsistencies in how the keys are parsed for maps
     # on the GPU the keys are dense, but on the CPU they are sparse
@@ -459,7 +617,7 @@ def test_from_json_map():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf=_enable_all_types_conf)
 
 @allow_non_gpu('ProjectExec', 'JsonToStructs')
 def test_from_json_map_fallback():
@@ -470,7 +628,7 @@ def test_from_json_map_fallback():
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,INT>')),
         'JsonToStructs',
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf=_enable_all_types_conf)
 
 @pytest.mark.parametrize('schema', [
     'struct<a:string>',
@@ -484,17 +642,32 @@ def test_from_json_map_fallback():
     'struct<d:string>',
     'struct<a:string,b:string>',
     'struct<c:int,a:string>',
-    'struct<a:string,a:string>',
     ])
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct(schema):
-    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
-    json_string_gen = StringGen(r'{"a": [1-9]{0,5}, "b": "[A-Z]{0,5}", "c": 1\d\d\d}') \
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/10534
+    json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.from_json('a', schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+            .select(f.col('a'), f.from_json('a', schema)),
+        conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('schema', [
+    'struct<a:string,a:string>',
+    ])
+@allow_non_gpu("ProjectExec")
+def test_from_json_struct_fallback_dupe_keys(schema):
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/10534
+    json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', schema)),
+        'JsonToStructs',
+        conf=_enable_all_types_conf)
 
 @pytest.mark.parametrize('pattern', [
     r'{ "bool": (true|false|True|False|TRUE|FALSE) }',
@@ -505,6 +678,7 @@ def test_from_json_struct(schema):
     r'{ "bool": [0-9]{4}-[0-9]{2}-[0-9]{2} }',
     r'{ "bool": "[0-9]{4}-[0-9]{2}-[0-9]{2}" }'
 ])
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_boolean(pattern):
     json_string_gen = StringGen(pattern) \
         .with_special_case('', weight=50) \
@@ -512,76 +686,72 @@ def test_from_json_struct_boolean(pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<bool:boolean>')),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf=_enable_all_types_conf)
 
+@allow_non_gpu(*non_utc_allow)
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10349')
 def test_from_json_struct_decimal():
     json_string_gen = StringGen(r'{ "a": "[+-]?([0-9]{0,5})?(\.[0-9]{0,2})?([eE][+-]?[0-9]{1,2})?" }') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.from_json('a', 'struct<a:decimal>')),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+            .select(f.col('a'), f.from_json('a', 'struct<a:decimal>')),
+        conf=_enable_all_types_conf)
 
 @pytest.mark.parametrize('date_gen', [
     # "yyyy-MM-dd"
-    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}" + optional_whitespace_regex + "\"",
     # "yyyy-MM"
-    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}" + optional_whitespace_regex + "\"",
     # "yyyy"
-    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[0-9]{4}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    "\"" + optional_whitespace_regex + "[0-9]{4}" + optional_whitespace_regex + "\"",
     # "dd/MM/yyyy"
-    "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
+    "\"" + optional_whitespace_regex + "[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}" + optional_whitespace_regex + "\"",
     # special constant values
-    "\"(now|today|tomorrow|epoch)\"",
+    "\"" + optional_whitespace_regex + "(now|today|tomorrow|epoch)" + optional_whitespace_regex + "\"",
     # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
     pytest.param("\"[0-9]{5}\"", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
-    "[0-9]{1,5}",
+    pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # floating-point
     "[0-9]{0,2}\\.[0-9]{1,2}"
     # boolean
     "(true|false)"
 ])
-@pytest.mark.parametrize('date_format', [
-    "",
-    "yyyy-MM-dd",
-    # https://github.com/NVIDIA/spark-rapids/issues/9667
-    pytest.param("dd/MM/yyyy", marks=pytest.mark.allow_non_gpu('ProjectExec')),
-])
-@pytest.mark.parametrize('time_parser_policy', [
-    pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
-    "CORRECTED"
-])
-def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'] if is_before_spark_320 else json_supported_date_formats)
+@allow_non_gpu(*non_utc_project_allow)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10535')
+def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format } if date_format else { }
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True,
-              'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+        conf=conf)
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
 @pytest.mark.parametrize('date_format', [
-    "",
+    None,
     "yyyy-MM-dd",
 ])
 def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format } if date_format else { }
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
         'ProjectExec',
-        conf={"spark.rapids.sql.expression.JsonToStructs": True,
-              'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+        conf=conf)
 
+@pytest.mark.skipif(is_spark_320_or_later(), reason="We only fallback for non-default formats prior to 320")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
 @pytest.mark.parametrize('date_format', [
@@ -592,18 +762,110 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    options = { 'dateFormat': date_format }
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
         'ProjectExec',
-        conf={"spark.rapids.sql.expression.JsonToStructs": True,
-              'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+        conf=conf)
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
 
-@pytest.mark.parametrize('schema', ['struct<teacher:string>',
-                                    'struct<student:struct<name:string,age:int>>',
-                                    'struct<teacher:string,student:struct<name:string,age:int>>'])
+@pytest.mark.parametrize('timestamp_gen', [
+    # "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
+    "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?" + optional_whitespace_regex + "\"",
+    # "yyyy-MM-dd"
+    "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}" + optional_whitespace_regex + "\"",
+    # "yyyy-MM"
+    "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}" + optional_whitespace_regex + "\"",
+    # "yyyy"
+    "\"" + optional_whitespace_regex + yyyy_start_0001 + optional_whitespace_regex + "\"",
+    # "dd/MM/yyyy"
+    "\"" + optional_whitespace_regex + "[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}" + optional_whitespace_regex + "\"",
+    # special constant values
+    pytest.param("\"" + optional_whitespace_regex + "(now|today|tomorrow|epoch)" + optional_whitespace_regex + "\"", marks=pytest.mark.xfail(condition=is_before_spark_320(), reason="https://github.com/NVIDIA/spark-rapids/issues/9724")),
+    # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
+    pytest.param("\"" + optional_whitespace_regex + "[0-9]{5}" + optional_whitespace_regex + "\"", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
+    # integral
+    pytest.param("[0-9]{1,5}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/4940")),
+    pytest.param("[1-9]{1,8}", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/4940")),
+    # floating-point
+    r"[0-9]{0,2}\.[0-9]{1,2}"
+    # boolean
+    "(true|false)"
+])
+@pytest.mark.parametrize('timestamp_format', [
+    # Even valid timestamp format, CPU fallback happens still since non UTC is not supported for json.
+    pytest.param(None, marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
+    # https://github.com/NVIDIA/spark-rapids/issues/9723
+    pytest.param("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    pytest.param("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    pytest.param("dd/MM/yyyy'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    pytest.param("CORRECTED", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10535'))
+])
+@pytest.mark.parametrize('ansi_enabled', [ True, False ])
+def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
+    json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('{ "a": "6395-12-21T56:86:40.205705Z" }') \
+        .with_special_case('null')
+    options = { 'timestampFormat': timestamp_format } if timestamp_format else { }
+    conf = copy_and_update(_enable_all_types_conf, {
+        'spark.sql.legacy.timeParserPolicy': time_parser_policy, 
+        'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('timestamp_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?\""])
+@pytest.mark.parametrize('timestamp_format', [
+    None,
+    "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]",
+])
+def test_from_json_struct_timestamp_fallback_legacy(timestamp_gen, timestamp_format):
+    json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'timestampFormat': timestamp_format } if timestamp_format else { }
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
+        'ProjectExec',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('timestamp_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?\""])
+@pytest.mark.parametrize('timestamp_format', [
+    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+    "dd/MM/yyyy'T'HH:mm:ss[.SSS][XXX]",
+])
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10535')
+def test_from_json_struct_timestamp_fallback_non_default_format(timestamp_gen, timestamp_format):
+    json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'timestampFormat': timestamp_format } if timestamp_format else { }
+    conf = copy_and_update(_enable_all_types_conf, {'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
+        'ProjectExec',
+        conf=conf)
+
+@pytest.mark.parametrize('schema', [
+    'struct<teacher:string>',
+    'struct<student:struct<name:string,age:int>>',
+    'struct<teacher:string,student:struct<name:string,age:int>>'
+])
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_of_struct(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}') \
@@ -613,11 +875,12 @@ def test_from_json_struct_of_struct(schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf=_enable_all_types_conf)
 
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:array<struct<name:string,class:string>>>',
                                     'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_of_list(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
@@ -627,15 +890,29 @@ def test_from_json_struct_of_list(schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('schema', [
+    'struct<a:string>'
+])
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10351')
+def test_from_json_mixed_types_list_struct(schema):
+    json_string_gen = StringGen(r'{"a": (\[1,2,3\]|{"b":"[a-z]{2}"}) }')
+    conf = copy_and_update(_enable_all_types_conf, {'spark.rapids.sql.json.read.mixedTypesAsString.enabled': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select('a', f.from_json('a', schema)),
+        conf=conf)
 
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_all_empty_string_input(schema):
     json_string_gen = StringGen('')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+        conf=_enable_all_types_conf)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
@@ -688,10 +965,13 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     short_gen,
     int_gen,
     long_gen,
+    decimal_gen_32bit,
+    decimal_gen_64bit,
+    decimal_gen_128bit,
     pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
-    pytest.param(date_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9515')),
-    pytest.param(timestamp_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9515')),
+    date_gen,
+    timestamp_gen,
     StringGen('[A-Za-z0-9\r\n\'"\\\\]{0,10}', nullable=True) \
         .with_special_case('\u1f600') \
         .with_special_case('"a"') \
@@ -706,7 +986,13 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
     False
 ])
-def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
+@pytest.mark.parametrize('timezone', [
+    'UTC',
+    'Etc/UTC',
+    pytest.param('UTC+07:00', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty, timezone):
     struct_gen = StructGen([
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
@@ -718,7 +1004,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'pretty': pretty }
+                'pretty': pretty,
+                'timeZone': timezone}
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
@@ -730,3 +1017,396 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : struct_to_json(spark),
         conf=conf)
+
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('timestamp_format', [
+    'yyyy-MM-dd\'T\'HH:mm:ss[.SSS][XXX]',
+    pytest.param('yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    pytest.param('dd/MM/yyyy\'T\'HH:mm:ss[.SSS][XXX]', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
+@pytest.mark.parametrize('timezone', [
+    'UTC',
+    'Etc/UTC',
+    pytest.param('UTC+07:00', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
+@pytest.mark.skipif(is_not_utc(), reason='Duplicated as original test case designed which it is parameterized by timezone. https://github.com/NVIDIA/spark-rapids/issues/9653.')
+def test_structs_to_json_timestamp(spark_tmp_path, data_gen, timestamp_format, timezone):
+    struct_gen = StructGen([
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timestampFormat': timestamp_format,
+                'timeZone': timezone}
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options))
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : struct_to_json(spark),
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('timezone', ['UTC+07:00'])
+def test_structs_to_json_fallback_timezone(spark_tmp_path, data_gen, timezone):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+        ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
+        ("d", MapGen(LongGen(nullable=False), data_gen)),
+        ("d", MapGen(StringGen('[A-Za-z0-9]{0,10}', nullable=False), data_gen)),
+        ("e", ArrayGen(MapGen(LongGen(nullable=False), data_gen), nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timeZone': timezone }
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [date_gen, timestamp_gen], ids=idfn)
+def test_structs_to_json_fallback_legacy(spark_tmp_path, data_gen):
+    struct_gen = StructGen([
+        ("a", StructGen([('child', data_gen)], nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct")).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True,
+          'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
+@pytest.mark.parametrize('timezone', ['UTC'])
+@pytest.mark.parametrize('date_format', [
+    'yyyy-dd-MM',
+    'dd/MM/yyyy',
+])
+def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezone, date_format):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timeZone': timezone,
+                'dateFormat': date_format }
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('timezone', ['UTC'])
+@pytest.mark.parametrize('timestamp_format', [
+    'yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX',
+    'dd/MM/yyyy\'T\'HH:mm:ss[.SSS][XXX]',
+])
+def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezone, timestamp_format):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timeZone': timezone,
+                'timestampFormat': timestamp_format }
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
+
+
+#####################################################
+# Some from_json tests ported over from Apache Spark
+#####################################################
+
+# from_json escaping
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_escaping():
+    schema = StructType([StructField("\"quote", IntegerType())])
+    data = [[r'''{"\"quote":10}'''],
+            [r"""{'"quote':20}"""]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# from_json
+# from_json null input column
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [[r'''{"a": 1}'''],
+            [None]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# from_json - input=empty array, schema=struct, output=single row with null
+# from_json - input=empty object, schema=struct, output=single row with null
+# SPARK-19543: from_json empty input column
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10483')
+@pytest.mark.parametrize('data', [
+    [[r'''[]''']],
+    [[r'''{ }''']],
+    [[r''' ''']]], ids=idfn)
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_empty_table(data):
+    schema = StructType([StructField("a", IntegerType())])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# SPARK-20549: from_json bad UTF-8
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10483')
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_bad_json():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [["\u0000\u0000\u0000A\u0001AAA"]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# from_json - invalid data
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_invalid():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [[r'''{"a": 1}'''],
+            [None]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# This does not work the same way as the unit test. We fallback, and nulls are allowed as input, so we will just go with it for now
+# If we ever do try to support FAILFAST this shold be updated so that there is an invalid JSON line and we produce the proper
+# error
+@allow_non_gpu('ProjectExec')
+def test_spark_from_json_invalid_failfast():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [[r'''{"a": 1}'''],
+            [None]]
+    assert_gpu_fallback_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'mode': 'FAILFAST'})),
+        'ProjectExec',
+        conf =_enable_all_types_conf)
+
+#from_json - input=array, schema=array, output=array
+#from_json - input=object, schema=array, output=array of single row
+#from_json - input=empty array, schema=array, output=empty array
+#from_json - input=empty object, schema=array, output=array of single row with null
+@allow_non_gpu('ProjectExec')
+def test_spark_from_json_array_schema():
+    schema = ArrayType(StructType([StructField("a", IntegerType())]))
+    data = [[r'''[{"a": 1}, {"a": 2}]'''],
+            [r'''{"a": 1}'''],
+            [r'''[ ]'''],
+            [r'''{ }''']]
+    assert_gpu_fallback_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        'ProjectExec',
+        conf =_enable_all_types_conf)
+
+# from_json - input=array of single object, schema=struct, output=single row
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_single_item_array_to_struct():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [[r'''[{"a": 1}]''']]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10484')
+#from_json - input=array, schema=struct, output=single row
+@allow_non_gpu('ProjectExec')
+def test_spark_from_json_struct_with_corrupted_row():
+    schema = StructType([StructField("a", IntegerType()), StructField("corrupted", StringType())])
+    data = [[r'''[{"a": 1}, {"a": 2}]''']]
+    assert_gpu_fallback_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'columnNameOfCorruptRecord': 'corrupted'})),
+        'ProjectExec',
+        conf =_enable_all_types_conf)
+
+# The Spark test sets the time zone to several in a list, but we are just going to go off of our TZ testing for selecting time zones
+# for this part of the test
+# from_json with timestamp
+@allow_non_gpu(*non_utc_allow)
+def test_spark_from_json_timestamp_default_format():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [[r'''{"t": "2016-01-01T00:00:00.123Z"}''']]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# The spark test only sets the timezone as an ID one, but we really just care that we fallback when it is set to something we cannot support
+@pytest.mark.parametrize('zone_id', [
+    "UTC",
+    "-08:00",
+    "+01:00",
+    "Africa/Dakar",
+    "America/Los_Angeles",
+    "Asia/Urumqi",
+    "Asia/Hong_Kong",
+    "Europe/Brussels"], ids=idfn)
+@allow_non_gpu('ProjectExec')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10535')
+# This is expected to fallback to the CPU because the timestampFormat is not supported, but really is, so we shold be better about this.
+def test_spark_from_json_timestamp_format_option_zoneid(zone_id):
+    schema = StructType([StructField("t", TimestampType())])
+    data = [[r'''{"t": "2016-01-01T00:00:00"}''']]
+    assert_gpu_fallback_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss",'timeZone': zone_id})),
+        'ProjectExec',
+        conf =_enable_all_types_conf)
+
+@pytest.mark.parametrize('zone_id', [
+    "UTC",
+    "-08:00",
+    "+01:00",
+    "Africa/Dakar",
+    "America/Los_Angeles",
+    "Asia/Urumqi",
+    "Asia/Hong_Kong",
+    "Europe/Brussels"], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')
+def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zone_id):
+    schema = StructType([StructField("t", TimestampType())])
+    data = [[r'''{"t": "2016-01-01 00:00:00"}''']]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]",'timeZone': zone_id})),
+        conf =_enable_all_types_conf)
+
+@pytest.mark.parametrize('zone_id', [
+    "UTC",
+    pytest.param("-08:00",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')),
+    pytest.param("+01:00",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')),
+    pytest.param("Africa/Dakar",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')),
+    pytest.param("America/Los_Angeles",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')), # This works only some of the time??? https://github.com/NVIDIA/spark-rapids/issues/10488
+    pytest.param("Asia/Urumqi",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')),
+    pytest.param("Asia/Hong_Kong",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')),
+    pytest.param("Europe/Brussels",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485'))], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_spark_from_json_timestamp_format_option_zoneid_but_default_format(zone_id):
+    schema = StructType([StructField("t", TimestampType())])
+    data = [[r'''{"t": "2016-01-01 00:00:00"}'''],
+        [r'''{"t": "2023-07-27 12:21:05"}''']]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timeZone': zone_id})),
+        conf =_enable_all_types_conf)
+
+# from_json with option (timestampFormat)
+# no timestamp format appears to actually work
+@allow_non_gpu('ProjectExec')
+def test_spark_from_json_timestamp_format():
+    schema = StructType([StructField("time", TimestampType())])
+    data = [[r'''{"time": "26/08/2015 18:00"}''']]
+    assert_gpu_fallback_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timestampFormat': "dd/MM/yyyy HH:mm"})),
+        'ProjectExec',
+        conf =_enable_all_types_conf)
+
+# from_json missing fields
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10489')
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_missing_fields_with_cr():
+    schema = StructType([StructField("a", LongType(), False), StructField("b", StringType(), False), StructField("c", StringType(), False)])
+    data = [["""{
+        "a": 1,
+        "c": "foo"
+        }"""]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_missing_fields():
+    schema = StructType([StructField("a", LongType(), False), StructField("b", StringType(), False), StructField("c", StringType(), False)])
+    data = [["""{"a": 1,"c": "foo"}"""]]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# For now we are going to try and rely on the dateFormat to fallback, but we might want to
+# fallback for unsupported locals too
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data,locale', [
+    ([["""{"d":"Nov 2018"}"""]], "en-US"),
+    ([["""{"d":"ноя 2018"}"""]], "ru-RU"),
+], ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10485')
+def test_spark_from_json_date_with_locale(data, locale):
+    schema = StructType([StructField("d", DateType())])
+    assert_gpu_fallback_collect(
+            lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'dateFormat': 'MMM yyyy', 'locale': locale})),
+        'ProjectExec',
+        conf =_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.skipif(is_before_spark_320(), reason="dd/MM/yyyy is supported in 3.2.0 and after")
+def test_spark_from_json_date_with_format():
+    data = [["""{"time": "26/08/2015"}"""],
+            ["""{"time": "01/01/2024"}"""]]
+    schema = StructType([StructField("d", DateType())])
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'dateFormat': 'dd/MM/yyyy'})),
+        conf =_enable_all_types_conf)
+
+# TEST from_json missing columns
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_missing_columns():
+    schema = StructType([StructField("b", IntegerType())])
+    data = [['''{"a": 1}''']]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)
+
+# TEST from_json invalid json
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10483')
+@allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+def test_spark_from_json_invalid_json():
+    schema = StructType([StructField("a", IntegerType())])
+    data = [['''{"a" 1}''']]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
+        conf =_enable_all_types_conf)

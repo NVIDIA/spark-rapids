@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@ import os
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
-    assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_spark_exception
+from asserts import *
+from conftest import is_not_utc
 from data_gen import *
 from parquet_write_test import parquet_nested_datetime_gen, parquet_ts_write_options
 from marks import *
@@ -25,7 +25,7 @@ import pyarrow.parquet as pa_pq
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
 from spark_init_internal import spark_version
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
+from spark_session import *
 from conftest import is_databricks_runtime, is_dataproc_runtime
 
 
@@ -76,7 +76,12 @@ multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reade
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
-        'spark.rapids.sql.reader.chunked': True}
+        'spark.rapids.sql.reader.chunked': True,
+        'spark.rapids.sql.reader.chunked.subPage': True}
+coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+        'spark.rapids.sql.reader.chunked': True,
+        'spark.rapids.sql.reader.chunked.subPage': False}
 coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
         'spark.rapids.sql.reader.chunked': False}
@@ -90,7 +95,12 @@ native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.rea
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
-        'spark.rapids.sql.reader.chunked': True}
+        'spark.rapids.sql.reader.chunked': True,
+        'spark.rapids.sql.reader.chunked.subPage': True}
+native_coalesce_parquet_file_reader_sub_not_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.reader.chunked': True,
+        'spark.rapids.sql.reader.chunked.subPage': False}
 combining_multithreaded_parquet_file_reader_conf_ordered = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
         'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
         'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
@@ -108,7 +118,9 @@ combining_multithreaded_parquet_file_reader_deprecated_conf_ordered = {
 reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded_parquet_file_reader_conf,
                     native_coalesce_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_multithread_filter_chunked_conf,
-                    native_coalesce_parquet_file_reader_chunked_conf]
+                    coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf,
+                    native_coalesce_parquet_file_reader_chunked_conf,
+                    native_coalesce_parquet_file_reader_sub_not_chunked_conf]
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
@@ -121,7 +133,8 @@ reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df])
 @pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
-    coalesce_parquet_file_reader_multithread_filter_chunked_conf])
+    coalesce_parquet_file_reader_multithread_filter_chunked_conf,
+    coalesce_parquet_file_reader_multithread_filter_sub_not_chunked_conf])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -164,6 +177,8 @@ def test_parquet_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabl
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@tz_sensitive_test
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -203,6 +218,7 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('binary_as_string', [True, False])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@tz_sensitive_test
 def test_parquet_read_round_trip_binary(std_input_path, read_func, binary_as_string, reader_confs):
     data_path = std_input_path + '/binary_as_string.parquet'
 
@@ -253,6 +269,7 @@ def test_parquet_read_forced_binary_schema(std_input_path, v1_enabled_list):
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@tz_sensitive_test
 def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, reader_confs, v1_enabled_list):
     data_path = std_input_path + '/binary_as_string.parquet'
 
@@ -298,6 +315,7 @@ parquet_pred_push_gens = [
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
@@ -311,6 +329,7 @@ def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1
             lambda spark: rf(spark).select(f.col('a') >= s0),
             conf=all_confs)
 
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
 @pytest.mark.parametrize('parquet_gens', [parquet_nested_datetime_gen], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
@@ -353,6 +372,7 @@ def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, re
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
 
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('batch_size', [100, INT_MAX])
@@ -385,6 +405,7 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
 
 
 # In this we are reading the data, but only reading the key the data was partitioned by
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -529,6 +550,7 @@ def test_parquet_read_ignore_missing(spark_tmp_path, v1_enabled_list, reader_con
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
 def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -553,6 +575,7 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
 def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -868,6 +891,7 @@ def test_parquet_reading_from_unaligned_pages_basic_filters(spark_tmp_path, read
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
@@ -895,6 +919,7 @@ def test_parquet_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_c
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'

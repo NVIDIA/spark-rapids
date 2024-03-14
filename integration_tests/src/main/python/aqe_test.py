@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,13 @@ import pytest
 from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+not_utc_aqe_allow=['ShuffleExchangeExec', 'HashAggregateExec'] if is_not_utc() else []
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
 
@@ -193,7 +197,7 @@ db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later(
 # broadcast join. The bug currently manifests in Databricks, but could
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow)
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow, *not_utc_aqe_allow)
 @pytest.mark.parametrize('join', joins, ids=idfn)
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -238,4 +242,59 @@ def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
         )
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
+
+
+# this is specifically to reproduce the issue found in
+# https://github.com/NVIDIA/spark-rapids/issues/10165 where it has an executor broadcast
+# but the exchange going into the BroadcastHashJoin is an exchange with multiple partitions
+# and goes into AQEShuffleRead that uses CoalescePartitions to go down to a single partition
+db_133_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
+@ignore_order(local=True)
+@pytest.mark.skipif(not (is_databricks_runtime()), \
+    reason="Executor side broadcast only supported on Databricks")
+@allow_non_gpu('BroadcastHashJoinExec', 'ColumnarToRowExec', *db_113_cpu_bnlj_join_allow)
+def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    bhj_disable_conf = copy_and_update(_adaptive_conf,
+        { "spark.rapids.sql.exec.BroadcastHashJoinExec": "false"}) 
+
+    def prep(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000),
+            (("Cathy ", "", "Green"), "3", "F", 3000)
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType()))
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df.write.format("parquet").mode("overwrite").save(data_path)
+        data_school= [
+            ("1", "school1"),
+            ("2", "school1"),
+            ("3", "school2")
+        ]
+        schema_school = (StructType()
+                  .add("id", StringType())
+                  .add("school", StringType()))
+        df_school = spark.createDataFrame(spark.sparkContext.parallelize(data_school),schema_school)
+        df_school.createOrReplaceTempView("df_school")
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf = spark.read.parquet(data_path)
+        newdf.createOrReplaceTempView("df")
+        return spark.sql(
+            """
+                select /*+ BROADCAST(df_school) */ * from df a left outer join df_school b on a.id == b.id
+            """
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=bhj_disable_conf)
 

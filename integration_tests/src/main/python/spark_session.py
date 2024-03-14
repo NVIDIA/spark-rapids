@@ -13,9 +13,14 @@
 # limitations under the License.
 
 import os
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, should_inject_oom
+import calendar, time
+from datetime import date, datetime
+from contextlib import contextmanager, ExitStack
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf
 from pyspark.sql import DataFrame
+from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
+from unittest.mock import patch
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -47,7 +52,6 @@ _default_conf = {
     'spark.rapids.sql.hasExtendedYearValues': 'true',
     'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
     'spark.rapids.sql.improvedFloatOps.enabled': 'false',
-    'spark.rapids.sql.improvedTimeOps.enabled': 'false',
     'spark.rapids.sql.incompatibleDateFormats.enabled': 'false',
     'spark.rapids.sql.incompatibleOps.enabled': 'false',
     'spark.rapids.sql.mode': 'executeongpu',
@@ -57,10 +61,10 @@ _default_conf = {
 
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
-    if (should_inject_oom()):
-        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
-    else:
-        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
+    inject_oom = get_inject_oom_conf()
+    if inject_oom:
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM",
+                         inject_oom.args[0] if len(inject_oom.args) > 0 else True)
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
@@ -82,6 +86,43 @@ def _check_for_proper_return_values(something):
     if (isinstance(something, DataFrame)):
         raise RuntimeError("You should never return a DataFrame from a with_*_session, you will not get the results that you expect")
 
+@contextmanager
+def pyspark_compatibility_fixes():
+    def timestampToInternal(_, dt):
+        if isinstance(dt, int):
+            return dt
+        if isinstance(dt, datetime):
+            seconds = (calendar.timegm(dt.utctimetuple()) if dt.tzinfo
+                       else time.mktime(dt.timetuple()))
+            return int(seconds) * 1000000 + dt.microsecond
+
+    def dateToInternal(self, d):
+        if isinstance(d, int):
+            return d
+        if isinstance(d, (datetime, date)):
+            return d.toordinal() - self.EPOCH_ORDINAL
+
+    pyspark_compatibility_fixes = []
+    # Patch timestamp and date types so that we only compare in testing to the internal integral representations
+    pyspark_compatibility_fixes.append(patch.object(TimestampType, 'fromInternal', lambda _, ts: ts))
+    pyspark_compatibility_fixes.append(patch.object(TimestampType, 'toInternal', timestampToInternal))
+    pyspark_compatibility_fixes.append(patch.dict(_acceptable_types, { TimestampType: (datetime, int)}))
+    try:
+        from pyspark.sql.types import TimestampNTZType
+        pyspark_compatibility_fixes.append(patch.object(TimestampNTZType, 'fromInternal', lambda _, ts: ts))
+        pyspark_compatibility_fixes.append(patch.object(TimestampNTZType, 'toInternal', timestampToInternal))
+        pyspark_compatibility_fixes.append(patch.dict(_acceptable_types, { TimestampNTZType: (datetime, int)}))
+    except ImportError:
+        pass
+    pyspark_compatibility_fixes.append(patch.object(DateType, 'fromInternal', lambda _, v: v))
+    pyspark_compatibility_fixes.append(patch.object(DateType, 'toInternal', dateToInternal))
+    pyspark_compatibility_fixes.append(patch.dict(_acceptable_types, { DateType: (datetime, date, int)}))
+    with ExitStack() as stack:
+        for cm in pyspark_compatibility_fixes:
+            stack.enter_context(cm)
+        yield
+
+@pyspark_compatibility_fixes()
 def with_spark_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
@@ -128,11 +169,17 @@ def is_before_spark_312():
 def is_before_spark_313():
     return spark_version() < "3.1.3"
 
+def is_before_spark_314():
+    return spark_version() < "3.1.4"
+
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
 def is_before_spark_322():
     return spark_version() < "3.2.2"
+
+def is_before_spark_323():
+    return spark_version() < "3.2.3"
 
 def is_before_spark_330():
     return spark_version() < "3.3.0"
@@ -140,14 +187,23 @@ def is_before_spark_330():
 def is_before_spark_331():
     return spark_version() < "3.3.1"
 
+def is_before_spark_334():
+    return spark_version() < "3.3.4"
+
 def is_before_spark_340():
     return spark_version() < "3.4.0"
 
 def is_before_spark_341():
     return spark_version() < "3.4.1"
 
+def is_before_spark_342():
+    return spark_version() < "3.4.2"
+
 def is_before_spark_350():
     return spark_version() < "3.5.0"
+
+def is_before_spark_351():
+    return spark_version() < "3.5.1"
 
 def is_spark_320_or_later():
     return spark_version() >= "3.2.0"
@@ -158,11 +214,17 @@ def is_spark_330_or_later():
 def is_spark_340_or_later():
     return spark_version() >= "3.4.0"
 
+def is_spark_341():
+    return spark_version() == "3.4.1"
+
 def is_spark_350_or_later():
     return spark_version() >= "3.5.0"
 
 def is_spark_330():
     return spark_version() == "3.3.0"
+
+def is_spark_350():
+    return spark_version() == "3.5.0"
 
 def is_spark_33X():
     return "3.3.0" <= spark_version() < "3.4.0"
@@ -197,6 +259,9 @@ def is_databricks113_or_later():
 
 def is_databricks122_or_later():
     return is_databricks_version_or_later(12, 2)
+
+def is_databricks133_or_later():
+    return is_databricks_version_or_later(13, 3)
 
 def supports_delta_lake_deletion_vectors():
     if is_databricks_runtime():

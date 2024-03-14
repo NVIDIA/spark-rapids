@@ -14,14 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_write, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
-from conftest import get_non_gpu_allowed
+from asserts import *
+from conftest import get_non_gpu_allowed, is_not_utc
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330, is_spark_350_or_later, is_before_spark_340, is_before_spark_341
+from spark_session import *
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -249,6 +248,8 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@tz_sensitive_test
+@allow_non_gpu(*non_utc_allow)
 def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
     updated_conf=copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -289,6 +290,7 @@ csv_supported_gens = [
 @approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@allow_non_gpu(*non_utc_allow)
 def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
@@ -330,8 +332,9 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    # Date is also time zone related for csv since rebase.
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow))
 ])
 def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
     gen = StructGen([('a', DateGen())], nullable=False)
@@ -364,13 +367,16 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, a
                     .csv(data_path),
             conf=updated_conf)
 
+non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourceScanExec'] if is_not_utc() else []
+
 @pytest.mark.parametrize('filename', ["date.csv"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    # Date is also time zone related for csv since rebasing.
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
 ])
 def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list, ansi_enabled, time_parser_policy):
     data_path = std_input_path + '/' + filename
@@ -405,6 +411,7 @@ csv_supported_ts_parts = ['', # Just the date
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@allow_non_gpu(*non_utc_allow)
 def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -474,7 +481,7 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
             cpu_fallback_class_name = 'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
             conf=updated_conf)
 
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec', *non_utc_allow)
 def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/CSV_DATA'
@@ -611,11 +618,18 @@ def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timesta
             cpu_fallback_class_name = cpu_scan_class,
             conf = conf)
     else:
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: do_read(spark),
-            exist_classes = 'Gpu' + cpu_scan_class,
-            non_exist_classes = cpu_scan_class,
-            conf = conf)
+        if is_not_utc():
+            # non UTC is not support for csv, skip capture check
+            # tracked in https://github.com/NVIDIA/spark-rapids/issues/9913
+            assert_gpu_and_cpu_are_equal_collect(lambda spark: do_read(spark), conf = conf)
+        else:
+            assert_cpu_and_gpu_are_equal_collect_with_capture(
+                lambda spark: do_read(spark),
+                exist_classes = 'Gpu' + cpu_scan_class,
+                non_exist_classes = cpu_scan_class,
+                conf = conf)
+
+
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
@@ -627,14 +641,21 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
+    if is_not_utc(): # non UTC is not support for csv
+        exist_clazz = 'FileSourceScanExec'
+        non_exist_clazz = 'GpuFileSourceScanExec'
+    else:
+        exist_clazz = 'GpuFileSourceScanExec'
+        non_exist_clazz = 'FileSourceScanExec'
+
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
-        exist_classes = 'GpuFileSourceScanExec',
-        non_exist_classes = 'FileSourceScanExec')
+        exist_classes = exist_clazz,
+        non_exist_classes = non_exist_clazz)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path),
-        exist_classes = 'GpuFileSourceScanExec',
-        non_exist_classes = 'FileSourceScanExec')
+        exist_classes = exist_clazz,
+        non_exist_classes = non_exist_clazz)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')

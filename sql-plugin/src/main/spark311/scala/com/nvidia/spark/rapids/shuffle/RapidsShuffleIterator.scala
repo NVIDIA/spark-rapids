@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "311"}
 {"spark": "312"}
@@ -21,7 +22,6 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
@@ -33,8 +33,8 @@
 {"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
@@ -77,6 +77,7 @@ class RapidsShuffleIterator(
     blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
     sparkTypes: Array[DataType],
+    taskAttemptId: Long,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
@@ -224,7 +225,11 @@ class RapidsShuffleIterator(
           private[this] var clientExpectedBatches = 0L
           private[this] var clientResolvedBatches = 0L
 
-          def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
+          private[this] val taskIds = Array[Long](taskAttemptId)
+
+          override def getTaskIds: Array[Long] = taskIds
+
+          override def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
             if (expectedBatches == 0) {
               throw new IllegalStateException(
                 s"Received an invalid response from shuffle server: " +
@@ -234,7 +239,7 @@ class RapidsShuffleIterator(
             batchesInFlight = batchesInFlight + expectedBatches
             totalBatchesExpected = totalBatchesExpected + expectedBatches
             clientExpectedBatches = expectedBatches
-            logDebug(s"Task: $taskAttemptId Client $blockManagerId " +
+            logDebug(s"Task: $taskAttemptIdStr Client $blockManagerId " +
                 s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
                 s"flight, total expected by this client: $clientExpectedBatches, total " +
                 s"resolved by this client: $clientResolvedBatches")
@@ -243,7 +248,7 @@ class RapidsShuffleIterator(
           def clientDone: Boolean = clientExpectedBatches > 0 &&
             clientExpectedBatches == clientResolvedBatches
 
-          def batchReceived(handle: RapidsBufferHandle): Boolean = {
+          override def batchReceived(handle: RapidsBufferHandle): Boolean = {
             resolvedBatches.synchronized {
               if (taskComplete) {
                 false
@@ -259,11 +264,11 @@ class RapidsShuffleIterator(
                   resolvedBatches.offer(BufferReceived(handle))
 
                   if (clientDone) {
-                    logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
+                    logDebug(s"Task: $taskAttemptIdStr Client $blockManagerId is " +
                         s"done fetching batches. Total batches expected $clientExpectedBatches, " +
                         s"total batches resolved $clientResolvedBatches.")
                   } else {
-                    logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
+                    logDebug(s"Task: $taskAttemptIdStr Client $blockManagerId is " +
                         s"NOT done fetching batches. Total batches expected " +
                         s"$clientExpectedBatches, total batches resolved $clientResolvedBatches.")
                   }
@@ -305,7 +310,7 @@ class RapidsShuffleIterator(
   private[this] def receiveBufferCleaner(): Unit = resolvedBatches.synchronized {
     taskComplete = true
     if (hasNext) {
-      logWarning(s"Iterator for task ${taskAttemptId} closing, " +
+      logWarning(s"Iterator for task ${taskAttemptIdStr} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
       resolvedBatches.forEach {
         case BufferReceived(handle) =>
@@ -323,10 +328,8 @@ class RapidsShuffleIterator(
     }
   }
 
-  // Used to print log messages, defaulting to a value for unit tests
-  private[this] lazy val taskAttemptId: String =
-    taskContext.map(_.taskAttemptId().toString)
-        .getOrElse("testTaskAttempt")
+  // Used to print log messages
+  private[this] lazy val taskAttemptIdStr: String = taskAttemptId.toString
 
   private[this] val taskContext: Option[TaskContext] = Option(TaskContext.get())
 
@@ -356,8 +359,7 @@ class RapidsShuffleIterator(
     // fetches and so it could produce device memory. Note this is not allowing for some external
     // thread to schedule the fetches for us, it may be something we consider in the future, given
     // memory pressure.
-    // No good way to get a metric in here for semaphore time.
-    taskContext.foreach(GpuSemaphore.acquireIfNecessary(_))
+    taskContext.foreach(GpuSemaphore.acquireIfNecessary)
 
     if (!started) {
       // kick off if we haven't already
@@ -367,11 +369,11 @@ class RapidsShuffleIterator(
 
     val blockedStart = System.currentTimeMillis()
     var result: Option[ShuffleClientResult] = None
-    RmmSpark.threadCouldBlockOnShuffle()
+    RmmSpark.waitingOnPool()
     try {
       result = pollForResult(timeoutSeconds)
     } finally {
-      RmmSpark.threadDoneWithShuffle()
+      RmmSpark.doneWaitingOnPool()
     }
     val blockedTime = System.currentTimeMillis() - blockedStart
 

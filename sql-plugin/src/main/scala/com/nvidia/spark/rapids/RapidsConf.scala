@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
+import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -113,11 +114,11 @@ object ConfHelper {
       }
       functionsByClass.update(className, fnSeq :+ s"`$fnCleaned`")
     }
-    functionsByClass.toMap
+    functionsByClass.mapValues(_.sorted).toMap
   }
 }
 
-abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String, 
+abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String,
     val isInternal: Boolean, val isStartUpOnly: Boolean, val isCommonlyUsed: Boolean) {
 
   def get(conf: Map[String, String]): T
@@ -127,7 +128,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
   override def toString: String = key
 }
 
-class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String, 
+class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false,
     val defaultValue: T)
   extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly, isCommonlyUsed) {
@@ -164,7 +165,7 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
     isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, 
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal,
   isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): Option[T] = {
@@ -337,6 +338,14 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
+  val PINNED_POOL_SET_CUIO_DEFAULT = conf("spark.rapids.memory.pinnedPool.setCuioDefault")
+    .doc("If set to true, the pinned pool configured for the plugin will be shared with " +
+      "cuIO for small pinned allocations.")
+    .startupOnly()
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
       .doc("Should the off heap limit be enforced or not.")
       .startupOnly()
@@ -420,7 +429,7 @@ object RapidsConf {
     .stringConf
     .createOptional
 
-  val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
+val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("The pattern to use to generate the named pipe path. Occurrences of %p in the pattern " +
       "will be replaced with the process ID of the executor.")
     .internal
@@ -582,6 +591,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
+      .doc("Enable a chunked reader where possible for reading data that is smaller " +
+          "than the typical row group/page limit. Currently this only works for parquet.")
+      .booleanConf
+      .createWithDefault(true)
+
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
@@ -626,6 +641,13 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val USE_SHUFFLED_SYMMETRIC_HASH_JOIN = conf("spark.rapids.sql.join.useShuffledSymmetricHashJoin")
+    .doc("Use the experimental shuffle symmetric hash join designed to improve handling of large " +
+      "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
           "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
@@ -666,13 +688,6 @@ object RapidsConf {
       .createWithDefault("MODERATE")
 
   // ENABLE/DISABLE PROCESSING
-
-  val IMPROVED_TIMESTAMP_OPS =
-    conf("spark.rapids.sql.improvedTimeOps.enabled")
-      .doc("When set to true, some operators will avoid overflowing by converting epoch days " +
-          "directly to seconds without first converting to microseconds")
-      .booleanConf
-      .createWithDefault(false)
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
@@ -732,6 +747,30 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_WINDOW_COLLECT_LIST = conf("spark.rapids.sql.window.collectList.enabled")
+      .doc("The output size of collect list for a window operation is proportional to " +
+          "the window size squared. The current GPU implementation does not handle this well " +
+          "and is disabled by default. If you know that your window size is very small you " +
+          "can try to enable it.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_WINDOW_COLLECT_SET = conf("spark.rapids.sql.window.collectSet.enabled")
+      .doc("The output size of collect set for a window operation can be proportional to " +
+          "the window size squared. The current GPU implementation does not handle this well " +
+          "and is disabled by default. If you know that your window size is very small you " +
+          "can try to enable it.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_WINDOW_UNBOUNDED_AGG = conf("spark.rapids.sql.window.unboundedAgg.enabled")
+      .doc("This is a temporary internal config to turn on an unbounded to unbounded " +
+          "window optimization that is still a work in progress. It should eventually replace " +
+          "the double pass window exec.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -767,7 +806,7 @@ object RapidsConf {
     .doc("format_number with floating point types on the GPU returns results that have " +
       "a different precision than the default results of Spark.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
@@ -1069,6 +1108,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
+    .doc("When set to false disables the pre-projection for GPU Expand. " +
+      "Pre-projection leverages the tiered projection to evaluate expressions that " +
+      "semantically equal across Expand projection lists before expanding, to avoid " +
+      s"duplicate evaluations. '${ENABLE_TIERED_PROJECT.key}' should also set to true " +
+      "to enable this.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
     .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
@@ -1176,7 +1225,14 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_READ_JSON_DECIMALS = conf("spark.rapids.sql.json.read.decimal.enabled")
-    .doc("JSON reading is not 100% compatible when reading decimals.")
+    .doc("When reading a quoted string as a decimal Spark supports reading non-ascii " +
+        "unicode digits, and the RAPIDS Accelerator does not.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_READ_JSON_MIXED_TYPES_AS_STRING =
+    conf("spark.rapids.sql.json.read.mixedTypesAsString.enabled")
+    .doc("JSON reading is not 100% compatible when reading mixed types as string.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1340,6 +1396,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val BATCHED_BOUNDED_ROW_WINDOW_MAX: ConfEntryWithDefault[Integer] =
+    conf("spark.rapids.sql.window.batched.bounded.row.max")
+      .doc("Max value for bounded row window preceding/following extents " +
+      "permissible for the window to be evaluated in batched mode. This value affects " +
+      "both the preceding and following bounds, potentially doubling the window size " +
+      "permitted for batched execution")
+      .integerConf
+      .createWithDefault(value = 100)
+
   val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
     .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
@@ -1378,12 +1443,17 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
-  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
-    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
-         "once per invocation.")
+  val TEST_RETRY_OOM_INJECTION_MODE = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If `true` the retry iterator will inject a GpuRetryOOM " +
+         "or CpuRetryOOM once per invocation. Furthermore an extended config " +
+         "`num_ooms=<int>,skip=<int>,type=CPU|GPU|CPU_OR_GPU,split=<bool>` can be provided to " +
+         "specify the number of OOMs to generate; how many to skip before doing so; whether to " +
+         "filter by allocation events by host(CPU), device(GPU), or both (CPU_OR_GPU); " +
+         "whether to inject *SplitAndRetryOOM instead of plain *RetryOOM exceptions." +
+         "Note *SplitAndRetryOOM exceptions are not always handled - use with care.")
     .internal()
-    .booleanConf
-    .createWithDefault(false)
+    .stringConf
+    .createWithDefault(false.toString)
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
@@ -1650,7 +1720,7 @@ object RapidsConf {
     .stringConf
     .createWithDefault("none")
 
-  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
     .startupOnly()
@@ -1839,6 +1909,21 @@ object RapidsConf {
       "with the RAPIDS Accelerator version, then set this to true.")
     .booleanConf
     .createWithDefault(false)
+
+  object AllowMultipleJars extends Enumeration {
+    val ALWAYS, SAME_REVISION, NEVER = Value
+  }
+
+  val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
+    .startupOnly()
+    .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
+      "Spark will take the first one it finds, so the version may not be expected. Possisble " +
+      "values are ALWAYS: allow all jars, SAME_REVISION: only allow jars with the same " +
+      "revision, NEVER: do not allow multiple jars at all.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(AllowMultipleJars.values.map(_.toString))
+    .createWithDefault(AllowMultipleJars.SAME_REVISION.toString)
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
@@ -2056,12 +2141,6 @@ object RapidsConf {
     .booleanConf
     .createOptional
 
-  val TEST_USE_TIMEZONE_CPU_BACKEND = conf("spark.rapids.test.CPU.timezone")
-    .doc("Only for tests: verify for timezone related functions")
-    .internal()
-    .booleanConf
-    .createOptional
-
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2097,7 +2176,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.04.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2262,6 +2341,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
+  lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
+
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isFileScanPrunePartitionEnabled: Boolean = get(FILE_SCAN_PRUNE_PARTITION_ENABLED)
@@ -2274,6 +2355,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
+  lazy val pinnedPoolCuioDefault: Boolean = get(PINNED_POOL_SET_CUIO_DEFAULT)
+
   lazy val offHeapLimitEnabled: Boolean = get(OFF_HEAP_LIMIT_ENABLED)
 
   lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
@@ -2284,7 +2367,53 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
-  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
+  /**
+   * Convert a string value to the injection configuration OomInjection.
+   *
+   * The new format is a CSV in any order
+   *  "num_ooms=<integer>,skip=<integer>,type=<string value of OomInjectionType>"
+   *
+   * "type" maps to OomInjectionType to run count against oomCount and skipCount
+   * "num_ooms" maps to oomCount (default 1), the number of allocations resulting in an OOM
+   * "skip" maps to skipCount (default 0), the number of matching  allocations to skip before
+   * injecting an OOM at the skip+1st allocation.
+   * *split* maps to withSplit (default false), determining whether to inject
+   * *SplitAndRetryOOM instead of plain *RetryOOM exceptions
+   *
+   * For backwards compatibility support existing binary configuration
+   *   "false", disabled, i.e. oomCount=0, skipCount=0, injectionType=None
+   *   "true" or anything else but "false"  yields the default
+   *      oomCount=1, skipCount=0, injectionType=CPU_OR_GPU, withSplit=false
+   */
+  lazy val testRetryOOMInjectionMode : OomInjectionConf = {
+    get(TEST_RETRY_OOM_INJECTION_MODE).toLowerCase match {
+      case "false" =>
+        OomInjectionConf(numOoms = 0, skipCount = 0,
+        oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case "true" =>
+        OomInjectionConf(numOoms = 1, skipCount = 0,
+          oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
+      case injectConfStr =>
+        val injectConfMap = injectConfStr.split(',').map(_.split('=')).collect {
+          case Array(k, v) => k -> v
+        }.toMap
+        val numOoms = injectConfMap.getOrElse("num_ooms", 1.toString)
+        val skipCount = injectConfMap.getOrElse("skip", 0.toString)
+        val oomFilterStr = injectConfMap
+          .getOrElse("type", OomInjectionType.CPU_OR_GPU.toString)
+          .toUpperCase()
+        val oomFilter = OomInjectionType.valueOf(oomFilterStr)
+        val withSplit = injectConfMap.getOrElse("split", false.toString)
+        val ret = OomInjectionConf(
+          numOoms = numOoms.toInt,
+          skipCount = skipCount.toInt,
+          oomInjectionFilter = oomFilter,
+          withSplit = withSplit.toBoolean
+        )
+        logDebug(s"Parsed ${ret} from ${injectConfStr} via injectConfMap=${injectConfMap}");
+        ret
+    }
+  }
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
@@ -2354,6 +2483,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
+  lazy val isWindowCollectListEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_LIST)
+
+  lazy val isWindowCollectSetEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_SET)
+
+  lazy val isWindowUnboundedAggEnabled: Boolean = get(ENABLE_WINDOW_UNBOUNDED_AGG)
+
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
   lazy val explain: String = get(EXPLAIN)
@@ -2362,9 +2497,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
 
-  lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
-
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+
+  lazy val chunkedSubPageReaderEnabled: Boolean = get(CHUNKED_SUBPAGE_READER)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
@@ -2427,6 +2562,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
+  lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.
@@ -2530,6 +2667,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
+
+  lazy val isJsonMixedTypesAsStringEnabled: Boolean = get(ENABLE_READ_JSON_MIXED_TYPES_AS_STRING)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
@@ -2641,6 +2780,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
+  lazy val allowMultipleJars: AllowMultipleJars.Value = {
+    get(ALLOW_MULTIPLE_JARS) match {
+      case "ALWAYS" => AllowMultipleJars.ALWAYS
+      case "NEVER" => AllowMultipleJars.NEVER
+      case "SAME_REVISION" => AllowMultipleJars.SAME_REVISION
+      case other =>
+        throw new IllegalArgumentException(s"Internal Error $other is not supported for " +
+            s"${ALLOW_MULTIPLE_JARS.key}")
+    }
+  }
+
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
   lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
@@ -2715,6 +2865,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val batchedBoundedRowsWindowMax: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
@@ -2818,3 +2970,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     conf.contains(key)
   }
 }
+
+case class OomInjectionConf(
+  numOoms: Int,
+  skipCount: Int,
+  withSplit: Boolean,
+  oomInjectionFilter: OomInjectionType
+)

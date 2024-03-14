@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,6 +80,9 @@ class RapidsBufferCatalog(
     extends RapidsBufferHandle {
 
     private var closed = false
+
+    override def toString: String =
+      s"buffer handle $id at $priority"
 
     override def setSpillPriority(newPriority: Long): Unit = {
       priority = newPriority
@@ -613,7 +616,7 @@ class RapidsBufferCatalog(
     }
   }
 
-  def updateTiers(bufferSpill: BufferSpill): Long = bufferSpill match {
+  def updateTiers(bufferSpill: SpillAction): Long = bufferSpill match {
     case BufferSpill(spilledBuffer, maybeNewBuffer) =>
       logDebug(s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
           s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
@@ -621,6 +624,14 @@ class RapidsBufferCatalog(
       maybeNewBuffer.foreach(registerNewBuffer)
       removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
       spilledBuffer.memoryUsedBytes
+
+    case BufferUnspill(unspilledBuffer, maybeNewBuffer) =>
+      logDebug(s"Unspilled ${unspilledBuffer.id} from tier ${unspilledBuffer.storageTier}. " +
+          s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
+          s"${maybeNewBuffer}")
+      maybeNewBuffer.foreach(registerNewBuffer)
+      removeBufferTier(unspilledBuffer.id, unspilledBuffer.storageTier)
+      unspilledBuffer.memoryUsedBytes
   }
 
   /**
@@ -646,6 +657,34 @@ class RapidsBufferCatalog(
       case Some(existingBuffer) => existingBuffer
     }
   }
+
+  /**
+   * Copies `buffer` to the `hostStorage` store, registering a new `RapidsBuffer` in
+   * the process
+   *
+   * @param buffer - buffer to copy
+   * @param stream - Cuda.Stream to synchronize on
+   * @return - The `RapidsBuffer` instance that was added to the host store.
+   */
+  def unspillBufferToHostStore(
+      buffer: RapidsBuffer,
+      stream: Cuda.Stream): RapidsBuffer = synchronized {
+    // try to acquire the buffer, if it's already in the store
+    // do not create a new one, else add a reference
+    acquireBuffer(buffer.id, StorageTier.HOST) match {
+      case Some(existingBuffer) => existingBuffer
+      case None =>
+        val maybeNewBuffer = hostStorage.copyBuffer(buffer, this, stream)
+        maybeNewBuffer.map { newBuffer =>
+          logDebug(s"got new RapidsHostMemoryStore buffer ${newBuffer.id}")
+          newBuffer.addReference() // add a reference since we are about to use it
+          updateTiers(BufferUnspill(buffer, Some(newBuffer)))
+          buffer.safeFree()
+          newBuffer
+        }.get // the host store has to return a buffer here for now, or throw OOM
+    }
+  }
+
 
   /**
    * Remove a buffer ID from the catalog at the specified storage tier.

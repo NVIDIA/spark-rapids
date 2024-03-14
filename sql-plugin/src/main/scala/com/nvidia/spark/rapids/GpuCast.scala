@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,13 +26,14 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, Decima
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.{CastStrings, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -85,6 +86,13 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = cast.dataType
+
+  override def isTimeZoneSupported: Boolean = {
+    (fromType, toType) match {
+      case (TimestampType, DateType) => true // this is for to_date(...)
+      case _ => false
+    }
+  }
 
   override def tagExprForGpu(): Unit = {
     recursiveTagExprForGpuCheck()
@@ -177,9 +185,6 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   def buildTagMessage(entry: ConfEntry[_]): String = {
     s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
   }
-
-  // timezone tagging in type checks is good enough, so always false
-  override protected val needTimezoneTagging: Boolean = false
 }
 
 object CastOptions {
@@ -212,13 +217,16 @@ object CastOptions {
  * @param ansiMode                       Whether the cast should be ANSI compliant
  * @param stringToDateAnsiMode           Whether to cast String to Date using ANSI compliance
  * @param castToJsonString               Whether to use JSON format when casting to String
+ * @param ignoreNullFieldsInStructs      Whether to omit null values when converting to JSON
+ * @param timeZoneId                     If cast is timezone aware, the timezone needed
  */
 class CastOptions(
     legacyCastComplexTypesToString: Boolean,
     ansiMode: Boolean,
     stringToDateAnsiMode: Boolean,
     val castToJsonString: Boolean = false,
-    val ignoreNullFieldsInStructs: Boolean = true) extends Serializable {
+    val ignoreNullFieldsInStructs: Boolean = true,
+    val timeZoneId: Option[String] = Option.empty[String]) extends Serializable {
 
   /**
    * Retuns the left bracket to use when surrounding brackets when converting
@@ -617,6 +625,12 @@ object GpuCast {
       case (_: IntegerType | ShortType | ByteType, ym: DataType)
         if GpuTypeShims.isSupportedYearMonthType(ym) =>
         GpuIntervalUtils.intToYearMonthInterval(input, ym)
+      case (TimestampType, DateType) if options.timeZoneId.isDefined =>
+        val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
+        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.asInstanceOf[ColumnVector],
+            zoneId.normalized())) { 
+          shifted => shifted.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -730,8 +744,9 @@ object GpuCast {
       fromDataType: DataType, options: CastOptions): ColumnVector = fromDataType match {
     case StringType => input.copyToColumnVector()
     case DateType => input.asStrings("%Y-%m-%d")
+    case TimestampType if options.castToJsonString => castTimestampToJson(input)
     case TimestampType => castTimestampToString(input)
-    case FloatType | DoubleType => castFloatingTypeToString(input)
+    case FloatType | DoubleType => CastStrings.fromFloat(input)
     case BinaryType => castBinToString(input, options)
     case _: DecimalType => GpuCastShims.CastDecimalToString(input, options.useDecimalPlainString)
     case StructType(fields) => castStructToString(input, fields, options)
@@ -771,6 +786,14 @@ object GpuCast {
         }
       }
     }
+  }
+
+  private def castTimestampToJson(input: ColumnView): ColumnVector = {
+    // we fall back to CPU if the JSON timezone is not UTC, so it is safe
+    // to hard-code `Z` here for now, but we should really add a timestamp
+    // format to CastOptions when we add support for custom formats in
+    // https://github.com/NVIDIA/spark-rapids/issues/9602
+    input.asStrings("%Y-%m-%dT%H:%M:%S.%3fZ")
   }
 
   /**
@@ -932,7 +955,8 @@ object GpuCast {
         // to be represented by the string literal `null`
         val strValue = closeOnExcept(strKey) { _ =>
           withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-            val valueStr = if (valueColumn.getType == DType.STRING) {
+            val dt = valueColumn.getType
+            val valueStr = if (dt == DType.STRING || dt.isDurationType || dt.isTimestampType) {
               withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
                 addQuotes(valueStr, valueColumn.getRowCount.toInt)
               }
@@ -1102,8 +1126,9 @@ object GpuCast {
         colon: ColumnVector,
         quote: ColumnVector): ColumnVector = {
       val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
-      val dataType = inputSchema(fieldIndex).dataType
-      val needsQuoting = dataType == DataTypes.StringType
+      val dt = inputSchema(fieldIndex).dataType
+      val needsQuoting = dt == DataTypes.StringType || dt == DataTypes.DateType ||
+        dt == DataTypes.TimestampType
       withResource(input.getChildColumnView(fieldIndex)) { cv =>
         withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
           // prefix with quoted column name followed by colon
@@ -1113,13 +1138,15 @@ object GpuCast {
           }
           if (options.ignoreNullFieldsInStructs) {
             // write the value
-            val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
-            if (needsQuoting) {
-              attrColumns += quote.incRefCount()
-              attrColumns += escapeJsonString(attrValue)
-              attrColumns += quote.incRefCount()
-            } else {
-              attrColumns += attrValue
+            withResource(castToString(cv, inputSchema(fieldIndex).dataType, options)) {
+                attrValue =>
+              if (needsQuoting) {
+                attrColumns += quote.incRefCount()
+                attrColumns += escapeJsonString(attrValue)
+                attrColumns += quote.incRefCount()
+              } else {
+                attrColumns += attrValue.incRefCount()
+              }
             }
             // now concatenate
             val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
@@ -1272,9 +1299,10 @@ object GpuCast {
 
   /** This method does not close the `input` ColumnVector. */
   def convertDateOrNull(
-      input: ColumnVector,
+      input: ColumnView,
       regex: String,
-      cudfFormat: String): ColumnVector = {
+      cudfFormat: String,
+      failOnInvalid: Boolean = false): ColumnVector = {
 
     val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
     val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
@@ -1284,6 +1312,13 @@ object GpuCast {
     }
 
     withResource(isValidDate) { _ =>
+      if (failOnInvalid) {
+        withResource(isValidDate.all()) { all =>
+          if (all.isValid && !all.getBoolean) {
+            throw new DateTimeException("One or more values is not a valid date")
+          }
+        }
+      }
       withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { orElse =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           isValidDate.ifElse(asDays, orElse)
@@ -1366,7 +1401,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
     val result = castStringToDate(input)
     if (ansiMode) {
       // When ANSI mode is enabled, we need to throw an exception if any values could not be
@@ -1379,7 +1414,7 @@ object GpuCast {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOrNull(
+  def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -1463,7 +1498,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()
@@ -1797,7 +1832,8 @@ case class GpuCast(
   import GpuCast._
 
   private val options: CastOptions =
-    new CastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled)
+    new CastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled,
+        timeZoneId = timeZoneId)
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
   override def hasSideEffects: Boolean = super.hasSideEffects || {

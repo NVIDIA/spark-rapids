@@ -18,12 +18,12 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html) for more details.
 
-## Release v23.10.0
+## Release v24.02.0
 ### Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Models: NVIDIA P100, V100, T4, A10/A100, L4 and H100 GPUs
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
 
 ### Software Requirements:
 
@@ -32,12 +32,11 @@ The plugin is tested on the following architectures:
 	NVIDIA Driver*: R470+
 
 	Runtime: 
-		Scala 2.12
+		Scala 2.12, 2.13
 		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
 
 		* Check the Spark documentation for Python and Java version compatibility with your specific 
-		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1. 
-		Please be aware that we do not currently support Spark builds with Scala 2.13.
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
 
 	Supported Spark versions:
 		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
@@ -49,10 +48,16 @@ The plugin is tested on the following architectures:
 		Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
 		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
 		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
 	
 	Supported Dataproc versions:
 		GCP Dataproc 2.0
 		GCP Dataproc 2.1
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
 
 *Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
 for your hardware's minimum driver version.
@@ -60,22 +65,28 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
-#### RAPIDS Accelerator's Support Policy for Apache Spark
+### RAPIDS Accelerator's Support Policy for Apache Spark
 The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
 
-### Download v23.10.0
-* Download the [RAPIDS
-  Accelerator for Apache Spark 23.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar)
+### Download RAPIDS Accelerator for Apache Spark v24.02.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0-cuda11-arm64.jar.asc) |
 
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
 
 ### Verify signature
-* Download the [RAPIDS Accelerator for Apache Spark 23.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar)
-  and [RAPIDS Accelerator for Apache Spark 23.10.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar.asc)
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
-* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.10.0.jar.asc rapids-4-spark_2.12-23.10.0.jar`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.02.0.jar.asc rapids-4-spark_2.12-24.02.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.02.0.jar.asc rapids-4-spark_2.13-24.02.0.jar`
 
 The output of signature verify:
 
@@ -83,17 +94,17 @@ The output of signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Introduced support for Spark 3.5.0.
-* Improved memory management for better control in YARN and K8s on CSP.
-* Strengthened Parquet and ORC tests for enhanced stability and support.
-* Reduce GPU out-of-memory (OOM) occurrences.
-* Enhanced driver log with actionable insights.
-* Qualification and Profiling tool:
-	* Enhanced user experience with the availability of the 'ascli' tool for qualification and 
-	profiling across all platforms.
-	* The qualification tool now accommodates CPU-fallback transitions and broadens the speedup factor coverage.
-	* Extended diagnostic support for user tools to cover EMR, Databricks AWS, and Databricks Azure.
-	* Introduced support for cluster configuration recommendations in the profiling tool for supported platforms.
+* Discontinued support for Nvidia GPUs based on Pascal architecture.
+* Set get_json_object functionality to disabled by default.
+* Implemented string comparison in AST expressions.
+* Expanded timezone support to include options beyond UTC.
+* Optional checksums for cached files in the file cache.
+* Introduced support for Databricks 13.3 ML LTS.
+* Added support for parse_url functionality.
+* Introducing Lazy Quantifier support for regular expression functions.
+* Added support for the format_number function.
+* Enhanced batching support for row-based bounded window functions.
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).

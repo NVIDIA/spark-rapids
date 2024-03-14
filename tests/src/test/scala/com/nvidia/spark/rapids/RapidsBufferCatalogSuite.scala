@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -342,6 +342,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
         length: Long,
         stream: Cuda.Stream): Unit = {}
       override def getDeviceMemoryBuffer: DeviceMemoryBuffer = null
+      override def getHostMemoryBuffer: HostMemoryBuffer = null
       override def addReference(): Boolean = {
         if (_acquireAttempts > 0) {
           _acquireAttempts -= 1

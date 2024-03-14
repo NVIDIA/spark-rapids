@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -126,7 +127,9 @@ trait GpuPartitioning extends Partitioning {
     val mightNeedToSplit = totalInputSize > GpuPartitioning.MaxCpuBatchSize
 
     val hostPartColumns = withResource(partitionColumns) { _ =>
-      partitionColumns.map(_.copyToHost())
+      withRetryNoSplit {
+        partitionColumns.safeMap(_.copyToHost())
+      }
     }
     try {
       // Leaving the GPU for a while

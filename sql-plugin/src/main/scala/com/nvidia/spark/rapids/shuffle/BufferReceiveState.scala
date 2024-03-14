@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.internal.Logging
 
@@ -177,7 +178,7 @@ class BufferReceiveState(
       closeOnExcept(new ArrayBuffer[DeviceMemoryBuffer]()) { toClose =>
         val results = currentBlocks.flatMap { b =>
           val pendingTransferRequest = b.block.request
-
+          RmmSpark.shuffleThreadWorkingOnTasks(pendingTransferRequest.handler.getTaskIds)
           val fullSize = pendingTransferRequest.tableMeta.bufferMeta().size()
 
           var contigBuffer: DeviceMemoryBuffer = null
@@ -232,6 +233,10 @@ class BufferReceiveState(
         // We need to synchronize, because we can't ask ucx to overwrite our bounce buffer
         // unless all that data has truly moved to our final buffer in our stream
         stream.sync()
+
+        results.foreach { result =>
+          RmmSpark.poolThreadFinishedForTasks(result.handler.getTaskIds)
+        }
 
         // cpu is in sync, we can recycle the bounce buffer
         if (!toFinalize.isEmpty) {

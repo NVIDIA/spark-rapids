@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -179,6 +179,45 @@ case class GpuSortEachBatchIterator(
 }
 
 /**
+ * Create an iterator that will sort each batch as it comes in. It will keep any projected
+ * columns in place after doing the sort on the assumption that you want to possibly combine
+ * them in some way afterwards.
+ */
+object GpuSpillableProjectedSortEachBatchIterator {
+  def apply(
+      iter: Iterator[ColumnarBatch],
+      sorter: GpuSorter,
+      opTime: GpuMetric = NoopMetric,
+      sortTime: GpuMetric = NoopMetric): Iterator[SpillableColumnarBatch] = {
+    val spillableIter = iter.flatMap { cb =>
+        // Filter out empty batches and make them spillable
+        if (cb.numRows() > 0) {
+          Some(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        } else {
+          cb.close()
+          None
+        }
+    }
+
+    val sortedBatchIter = spillableIter.flatMap { scb =>
+      withRetry(scb, splitSpillableInHalfByRows) { attemptScb =>
+        opTime.ns {
+          val sortedTbl = withResource(attemptScb.getColumnarBatch()) { attemptCb =>
+            sorter.appendProjectedAndSort(attemptCb, sortTime)
+          }
+          withResource(sortedTbl) { _ =>
+            closeOnExcept(GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { cb =>
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            }
+          }
+        }
+      }
+    }
+    sortedBatchIter
+  }
+}
+
+/**
  * Holds data for the out of core sort. It includes the batch of data and the first row in that
  * batch so we can sort the batches.
  */
@@ -249,6 +288,12 @@ case class GpuOutOfCoreSortIterator(
     outputRows: GpuMetric) extends Iterator[ColumnarBatch]
     with AutoCloseable {
 
+  /**
+   * This has already sorted the data, and it still has the projected columns in it that need to
+   * be removed before it is returned.
+   */
+  val alreadySortedIter = GpuSpillableProjectedSortEachBatchIterator(iter, sorter, opTime, sortTime)
+
   private val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
   // A priority queue of data that is not merged yet.
   private val pending = new Pending(cpuOrd)
@@ -258,7 +303,7 @@ case class GpuOutOfCoreSortIterator(
   // how much data, in bytes, that is stored in `sorted`
   private var sortedSize = 0L
 
-  override def hasNext: Boolean = !sorted.isEmpty || !pending.isEmpty || iter.hasNext
+  override def hasNext: Boolean = !sorted.isEmpty || !pending.isEmpty || alreadySortedIter.hasNext
 
   // Use types for the UnsafeProjection otherwise we need to have CPU BoundAttributeReferences
   // used for converting between columnar data and rows (to get the first row in each batch).
@@ -398,45 +443,28 @@ case class GpuOutOfCoreSortIterator(
   }
 
   /**
-   * First pass through the data. Read in all of the batches, sort each batch and split them up into
-   * smaller chunks for later merge sorting.
+   * Take a single sorted batch from the `alreadySortedIter`, split it up and store them for
+   * merging.
    */
-  private final def firstPassReadBatches(): Unit = {
-    while(iter.hasNext) {
-      val spillBatch = closeOnExcept(iter.next()) { batch =>
-        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+  private final def splitOneSortedBatch(scb: SpillableColumnarBatch): Unit = {
+    withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
+      val ret = withRetryNoSplit(scb) { attempt =>
+        onFirstPassSplit()
+        splitAfterSort(attempt)
       }
-      val sortedIt =
-        withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, opTime)){ _ =>
-          withRetry(spillBatch, splitSpillableInHalfByRows) { attemptScb =>
-            onFirstPassSort()
-            withResource(attemptScb.getColumnarBatch()) { attemptCb =>
-              sorter.appendProjectedAndSort(attemptCb, sortTime)
-            }
-          }
-        }
+      saveSplitResult(ret)
+    }
+  }
 
-      withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
-        while(sortedIt.hasNext) {
-          val sortedTbl = sortedIt.next()
-          val rows = sortedTbl.getRowCount.toInt
-          // filter out empty batches
-          if (rows > 0) {
-            val sp = withResource(sortedTbl) { _ =>
-              closeOnExcept(GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { cb =>
-                SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-              }
-            }
-            val ret = withRetryNoSplit(sp) { attempt =>
-              onFirstPassSplit()
-              splitAfterSort(attempt)
-            }
-            saveSplitResult(ret)
-          } else {
-            sortedTbl.close()
-          }
-        }
-      }
+  /**
+   * First pass through the data. Conceptually we are going to read in all of the batches, that are
+   * already sorted and split them up into smaller chunks for later merge sorting. But we are
+   * only going to do that if we have more than one batch to sort.
+   */
+  private final def firstPassReadBatches(scb: SpillableColumnarBatch): Unit = {
+    splitOneSortedBatch(scb)
+    while (alreadySortedIter.hasNext) {
+      splitOneSortedBatch(alreadySortedIter.next())
     }
   }
 
@@ -564,10 +592,19 @@ case class GpuOutOfCoreSortIterator(
   override def next(): ColumnarBatch = {
     if (sorter.projectedBatchSchema.isEmpty) {
       // special case, no columns just rows
-      iter.next()
+      withRetryNoSplit(alreadySortedIter.next()) { scb =>
+        // This should have no columns so no need to remove anything from the projected data
+        scb.getColumnarBatch()
+      }
     } else {
       if (pending.isEmpty && sorted.isEmpty) {
-        firstPassReadBatches()
+        closeOnExcept(alreadySortedIter.next()) { scb =>
+          if (!alreadySortedIter.hasNext) {
+            sorted.add(scb)
+          } else {
+            firstPassReadBatches(scb)
+          }
+        }
       }
       withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, opTime)) { _ =>
         val ret = mergeSortEnoughToOutput().getOrElse(concatOutput())
@@ -590,7 +627,6 @@ case class GpuOutOfCoreSortIterator(
   }
 
   /** Callbacks designed for unit tests only. Don't do any heavy things inside. */
-  protected def onFirstPassSort(): Unit = {}
   protected def onFirstPassSplit(): Unit = {}
   protected def onMergeSortSplit(): Unit = {}
   protected def onConcatOutput(): Unit = {}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,14 +24,15 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.SparkSession
 
-class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
+trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
-  protected var deviceStorage: RapidsDeviceMemoryStore = null
+  protected var deviceStorage: RapidsDeviceMemoryStore = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
+    RmmSpark.clearEventHandler()
     if (!Rmm.isInitialized) {
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
@@ -46,20 +47,22 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     RapidsBufferCatalog.setCatalog(catalog)
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
-    RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
+    RmmSpark.currentThreadIsDedicatedToTask(1)
+    HostAlloc.initialize(-1)
   }
 
   override def afterEach(): Unit = {
     super.afterEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
-    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
+    RmmSpark.removeAllCurrentThreadAssociation()
     RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
     GpuSemaphore.shutdown()
     if (rmmWasInitialized) {
       Rmm.shutdown()
     }
+    HostAlloc.initialize(-1)
   }
 
   private class BaseRmmEventHandler extends RmmEventHandler {

@@ -23,7 +23,7 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -38,7 +38,8 @@ object AddOverflowChecks {
       lhs: BinaryOperable,
       rhs: BinaryOperable,
       ret: ColumnVector): Unit = {
-    // Check overflow. It is true when both arguments have the opposite sign of the result.
+    // Check overflow. It is true if the arguments have different signs and
+    // the sign of the result is different from the sign of x.
     // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
     val signCV = withResource(ret.bitXor(lhs)) { lXor =>
       withResource(ret.bitXor(rhs)) { rXor =>
@@ -54,7 +55,7 @@ object AddOverflowChecks {
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
           throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Add operation."
+          "One or more rows overflow for Add operation."
           )
         }
       }
@@ -103,6 +104,35 @@ object AddOverflowChecks {
       } else {
         withResource(Scalar.fromNull(ret.getType)) { nullVal =>
           overflow.ifElse(nullVal, ret)
+        }
+      }
+    }
+  }
+}
+
+object SubtractOverflowChecks {
+  def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    // Check overflow. It is true if the arguments have different signs and
+    // the sign of the result is different from the sign of x.
+    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
+    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
+      withResource(lhs.bitXor(ret)) { xrXor =>
+        xyXor.bitAnd(xrXor)
+      }
+    }
+    val signDiffCV = withResource(signCV) { sign =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        sign.lessThan(zero)
+      }
+    }
+    withResource(signDiffCV) { signDiff =>
+      withResource(signDiff.any()) { any =>
+        if (any.isValid && any.getBoolean) {
+          throw RapidsErrorUtils.
+            arithmeticOverflowError("One or more rows overflow for Subtract operation.")
         }
       }
     }
@@ -289,35 +319,6 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
   override def binaryOp: BinaryOp = BinaryOp.SUB
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.SUB)
 
-  private[this] def basicOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    // Check overflow. It is true if the arguments have different signs and
-    // the sign of the result is different from the sign of x.
-    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
-
-    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
-      withResource(lhs.bitXor(ret)) { xrXor =>
-        xyXor.bitAnd(xrXor)
-      }
-    }
-    val signDiffCV = withResource(signCV) { sign =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        sign.lessThan(zero)
-      }
-    }
-    withResource(signDiffCV) { signDiff =>
-      withResource(signDiff.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Subtract operation."
-          )
-        }
-      }
-    }
-  }
-
   private[this] def decimalOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
@@ -367,7 +368,7 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-        basicOpOverflowCheck(lhs, rhs, ret)
+        SubtractOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
@@ -452,7 +453,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
         rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
       }
       withResource(castRhs) { castRhs =>
-        com.nvidia.spark.rapids.jni.DecimalUtils.multiply128(castLhs, castRhs, -dataType.scale)
+        DecimalMultiply128(castLhs, castRhs, -dataType.scale)
       }
     }
     val retCol = withResource(retTab) { retTab =>

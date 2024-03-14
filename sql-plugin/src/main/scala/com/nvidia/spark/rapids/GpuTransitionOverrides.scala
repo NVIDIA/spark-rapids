@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
@@ -106,40 +106,40 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           GpuRowToColumnarExec(newChild, goal)
       }
 
-      // adaptive plan final query stage with columnar output
-      case r2c @ RowToColumnarExec(child) if parent.isEmpty =>
-        val optimizedChild = optimizeAdaptiveTransitions(child, Some(r2c))
-        val projectedChild =
-          optimizedChild.getTagValue(GpuOverrides.preRowToColProjection).map { exprs =>
-            ProjectExec(exprs, optimizedChild)
-          }.getOrElse(optimizedChild)
-        GpuRowToColumnarExec(projectedChild, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
+    // adaptive plan final query stage with columnar output
+    case r2c @ RowToColumnarExec(child) if parent.isEmpty =>
+      val optimizedChild = optimizeAdaptiveTransitions(child, Some(r2c))
+      val projectedChild =
+        optimizedChild.getTagValue(GpuOverrides.preRowToColProjection).map { exprs =>
+          ProjectExec(exprs, optimizedChild)
+        }.getOrElse(optimizedChild)
+      GpuRowToColumnarExec(projectedChild, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
 
-      case ColumnarToRowExec(bb: GpuBringBackToHost) =>
-        // We typically want the final operator in the plan (the operator that has no parent) to be
-        // wrapped in `ColumnarToRowExec(GpuBringBackToHost(_))` operators to
-        // bring the data back onto the host and be translated to rows so that it can be returned
-        // from the Spark API. However, in the case of AQE, each exchange operator is treated as an
-        // individual query with no parent and we need to remove these operators in this case
-        // because we need to return an operator that implements `BroadcastExchangeLike` or
-        // `ShuffleExchangeLike`.
-        bb.child match {
-          case GpuShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
-            // The coalesce step gets added back into the plan later on, in a
-            // future query stage that reads the output from this query stage. This
-            // is handled in the case clauses below.
-            e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
-          case GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
-            // The coalesce step gets added back into the plan later on, in a
-            // future query stage that reads the output from this query stage. This
-            // is handled in the case clauses below.
-            e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
-          case _ => optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
-            case e: GpuBroadcastExchangeExecBase => e
-            case e: GpuShuffleExchangeExecBase => e
-            case other => GpuColumnarToRowExec(other)
-          }
+    case ColumnarToRowExec(bb: GpuBringBackToHost) =>
+      // We typically want the final operator in the plan (the operator that has no parent) to be
+      // wrapped in `ColumnarToRowExec(GpuBringBackToHost(_))` operators to
+      // bring the data back onto the host and be translated to rows so that it can be returned
+      // from the Spark API. However, in the case of AQE, each exchange operator is treated as an
+      // individual query with no parent and we need to remove these operators in this case
+      // because we need to return an operator that implements `BroadcastExchangeLike` or
+      // `ShuffleExchangeLike`.
+      bb.child match {
+        case GpuShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
+          // The coalesce step gets added back into the plan later on, in a
+          // future query stage that reads the output from this query stage. This
+          // is handled in the case clauses below.
+          e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
+        case GpuCoalesceBatches(e: GpuShuffleExchangeExecBase, _) if parent.isEmpty =>
+          // The coalesce step gets added back into the plan later on, in a
+          // future query stage that reads the output from this query stage. This
+          // is handled in the case clauses below.
+          e.withNewChildren(e.children.map(c => optimizeAdaptiveTransitions(c, Some(e))))
+        case _ => optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
+          case e: GpuBroadcastExchangeExecBase => e
+          case e: GpuShuffleExchangeExecBase => e
+          case other => GpuColumnarToRowExec(other)
         }
+      }
 
     case s: ShuffleQueryStageExec =>
       // When reading a materialized shuffle query stage in AQE mode, we need to insert an
@@ -173,6 +173,28 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case e: GpuCustomShuffleReaderExec =>
       // We wrap custom shuffle readers with a coalesce batches operator here.
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
+
+    case c2re: ColumnarToRowExec if
+        SparkShimImpl.checkCToRWithExecBroadcastAQECoalPart(c2re, parent) =>
+      val shuffle = SparkShimImpl.getShuffleFromCToRWithExecBroadcastAQECoalPart(c2re)
+      shuffle match {
+        case Some(s) =>
+            /*
+             * When we find this pattern, explicitly add in the GPU columnar to row and CPU
+             * exchange for executor broadcast.
+             * Note that this likely adds some performance overhead because we end up doing
+             * an extra exchange.
+             *
+             * +- Exchange (SinglePartition, EXECUTOR_BROADCAST)
+             *     +- GpuColumnarToRow
+             *         +- GpuShuffleCoalesce
+             *             +- ShuffleQueryStage
+             *                 +- GpuColumnarExchange
+             */
+          val gpuc2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(s, Some(plan)))
+          SparkShimImpl.addExecBroadcastShuffle(gpuc2r)
+        case _ => c2re
+      }
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
@@ -264,25 +286,37 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   /**
-   * Removes `GpuCoalesceBatches(GpuShuffleCoalesceExec(build side))` for the build side
-   * for the shuffled hash join. The coalesce logic has been moved to the
+   * Removes `GpuCoalesceBatches(GpuShuffleCoalesceExec(build side))` from either side of a
+   * GpuShuffledInnerHashJoinExec since that node handles shuffled data directly. For other joins,
+   * it removes it for for the build side. The coalesce logic has been moved to the
    * `GpuShuffleCoalesceExec` class, and is handled differently to prevent holding onto the
    * GPU semaphore for stream IO.
    */
-  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = plan match {
-    case x@GpuShuffledHashJoinExec(
-         _, _, _, buildSide, _,
-        left: GpuShuffleCoalesceExec,
-        GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_) if buildSide == GpuBuildRight =>
-      x.withNewChildren(
-        Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
-    case x@GpuShuffledHashJoinExec(
-         _, _, _, buildSide, _,
-        GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
-        right: GpuShuffleCoalesceExec, _) if buildSide == GpuBuildLeft =>
-      x.withNewChildren(
-        Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
-    case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
+  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case j: GpuShuffledSymmetricHashJoinExec =>
+        val newChildren = Seq(j.left, j.right).map {
+          case GpuCoalesceBatches(GpuShuffleCoalesceExec(c, _), _) => c
+          case GpuShuffleCoalesceExec(c, _) => c
+          case c => c
+        }.map(shuffledHashJoinOptimizeShuffle)
+        j.withNewChildren(newChildren)
+      case x@GpuShuffledHashJoinExec(
+          _, _, _, buildSide, _,
+          left: GpuShuffleCoalesceExec,
+          GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_)
+          if buildSide == GpuBuildRight && rapidsConf.shuffledHashJoinOptimizeShuffle =>
+        x.withNewChildren(
+          Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
+      case x@GpuShuffledHashJoinExec(
+          _, _, _, buildSide, _,
+          GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
+          right: GpuShuffleCoalesceExec, _)
+          if buildSide == GpuBuildLeft && rapidsConf.shuffledHashJoinOptimizeShuffle =>
+        x.withNewChildren(
+          Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
+      case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
+    }
   }
 
   private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal],
@@ -764,7 +798,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
         updatedPlan = fixupHostColumnarTransitions(updatedPlan)
         updatedPlan = optimizeCoalesce(updatedPlan)
-        if (rapidsConf.shuffledHashJoinOptimizeShuffle) {
+        if (rapidsConf.shuffledHashJoinOptimizeShuffle || rapidsConf.useShuffledSymmetricHashJoin) {
           updatedPlan = shuffledHashJoinOptimizeShuffle(updatedPlan)
         }
         if (rapidsConf.exportColumnarRdd) {

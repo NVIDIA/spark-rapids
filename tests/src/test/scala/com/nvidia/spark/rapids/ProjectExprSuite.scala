@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   test("basic retry") {
-    RmmSpark.associateCurrentThreadWithTask(0)
+    RmmSpark.currentThreadIsDedicatedToTask(0)
     try {
       val expr = GpuAlias(GpuAdd(
         GpuBoundReference(0, LongType, true)(NamedExpression.newExprId, "a"),
@@ -73,7 +73,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         "ret")()
       val sb = buildProjectBatch()
 
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       val result = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, Seq(expr))
       withResource(result) { cb =>
         assertResult(4)(cb.numRows)
@@ -90,12 +91,12 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         }
       }
     } finally {
-      RmmSpark.removeThreadAssociation(0)
+      RmmSpark.removeCurrentDedicatedThreadAssociation(0)
     }
   }
 
   test("tiered retry") {
-    RmmSpark.associateCurrentThreadWithTask(0)
+    RmmSpark.currentThreadIsDedicatedToTask(0)
     try {
       val a = AttributeReference("a", LongType)()
       val b = AttributeReference("b", LongType)()
@@ -104,7 +105,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val tp = GpuBindReferences.bindGpuReferencesTiered(Seq(fullAdd), Seq(a, b), true)
       val sb = buildProjectBatch()
 
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       val result = tp.projectAndCloseWithRetrySingleBatch(sb)
       withResource(result) { cb =>
         assertResult(4)(cb.numRows)
@@ -121,12 +123,12 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         }
       }
     } finally {
-      RmmSpark.removeThreadAssociation(0)
+      RmmSpark.removeCurrentDedicatedThreadAssociation(0)
     }
   }
 
   test("AST retry with split") {
-    RmmSpark.associateCurrentThreadWithTask(0)
+    RmmSpark.currentThreadIsDedicatedToTask(0)
     try {
       val a = AttributeReference("a", LongType)()
       val b = AttributeReference("b", LongType)()
@@ -138,7 +140,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val mockPlan = mock(classOf[SparkPlan])
       when(mockPlan.output).thenReturn(Seq(a, b))
       val ast = GpuProjectAstExec(List(expr.asInstanceOf[Expression]), mockPlan)
-      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
       withResource(sb) { sb =>
         withResource(ast.buildRetryableAstIterator(Seq(sb.getColumnarBatch).iterator)) { result =>
           withResource(result.next()) { cb =>
@@ -166,7 +169,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         }
       }
     } finally {
-      RmmSpark.removeThreadAssociation(0)
+      RmmSpark.removeCurrentDedicatedThreadAssociation(0)
     }
   }
 

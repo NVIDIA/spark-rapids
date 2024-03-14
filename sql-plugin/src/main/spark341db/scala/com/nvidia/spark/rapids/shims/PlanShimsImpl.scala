@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.{GpuAlias, PlanShims}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
 import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ResultQueryStageExec
+import org.apache.spark.sql.types.DataType
 
 class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
@@ -38,5 +39,9 @@ class PlanShimsImpl extends PlanShims {
     case Alias(e, _) => isAnsiCast(e)
     case GpuAlias(e, _) => isAnsiCast(e)
     case e => isAnsiCast(e)
+  }
+
+  def extractAnsiCastTypes(e: Expression): (DataType, DataType) = {
+    AnsiCastShim.extractAnsiCastTypes(e)
   }
 }

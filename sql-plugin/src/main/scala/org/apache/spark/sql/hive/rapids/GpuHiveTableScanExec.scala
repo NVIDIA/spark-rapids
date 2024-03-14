@@ -486,8 +486,9 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
       maxBytesPerChunk, execMetrics, HostStringColBuffererFactory) {
 
   override def readToTable(dataBufferer: HostStringColBufferer,
-                           inputFileCudfSchema: Schema,
+                           cudfDataSchema: Schema,
                            requestedOutputDataSchema: StructType,
+                           cudfReadDataSchema: Schema,
                            isFirstChunk: Boolean,
                            decodeTime: GpuMetric): Table = {
     withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
@@ -515,7 +516,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
           withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
             // This is a bit different because we are dropping columns/etc ourselves
             val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
-            val outputColumnNames = inputFileCudfSchema.getColumnNames
+            val outputColumnNames = cudfDataSchema.getColumnNames
             val reorderedColumns = requiredColumnSequence.safeMap { colName =>
               val colIndex = outputColumnNames.indexOf(colName)
               if (splitTable.getNumberOfColumns > colIndex) {

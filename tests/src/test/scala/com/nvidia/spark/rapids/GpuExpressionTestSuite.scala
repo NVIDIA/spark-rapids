@@ -144,33 +144,15 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  def compareStringifiedFloats(expected: String, actual: String): Boolean = {
+  def compareStringifiedFloats(float: Boolean)(expected: String, actual: String): Boolean = {
 
     // handle exact matches first
     if (expected == actual) {
       return true
     }
-
-    // need to split into mantissa and exponent
-    def parse(s: String): (Double, Int) = s match {
-      case s if s == "Inf" => (Double.PositiveInfinity, 0)
-      case s if s == "-Inf" => (Double.NegativeInfinity, 0)
-      case s if s.contains('E') =>
-        val parts = s.split('E')
-        (parts.head.toDouble, parts(1).toInt)
-      case _ =>
-        (s.toDouble, 0)
-    }
-
-    val (expectedMantissa, expectedExponent) = parse(expected)
-    val (actualMantissa, actualExponent) = parse(actual)
-
-    if (expectedExponent == actualExponent) {
-      // mantissas need to be within tolerance
-      compare(expectedMantissa, actualMantissa, 0.00001)
-    } else {
-      // whole number need to be within tolerance
-      compare(expected.toDouble, actual.toDouble, 0.00001)
+    float match {
+      case true => compare(expected.toFloat, actual.toFloat)
+      case false => compare(expected.toDouble, actual.toDouble)
     }
   }
 

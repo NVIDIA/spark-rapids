@@ -289,7 +289,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
                 // perform comparison logic specific to the cast
                 (from, to) match {
                   case (DataTypes.FloatType | DataTypes.DoubleType, DataTypes.StringType) =>
-                    compareFloatToStringResults(fromCpu, fromGpu)
+                    compareFloatToStringResults(from == DataTypes.FloatType, fromCpu, fromGpu)
                   case _ =>
                     compareResults(sort = false, 0.00001, fromCpu, fromGpu)
                 }
@@ -306,12 +306,13 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def compareFloatToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]): Unit = {
+  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row], 
+      fromGpu: Array[Row]): Unit = {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
         val cpuValue = c.getAs[String](0)
         val gpuValue = g.getAs[String](0)
-        if (!compareStringifiedFloats(cpuValue, gpuValue)) {
+        if (!compareStringifiedFloats(float)(cpuValue, gpuValue)) {
           fail(s"Running on the GPU and on the CPU did not match: CPU " +
             s"value: $cpuValue. GPU value: $gpuValue.")
         }
@@ -437,11 +438,13 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast float to string") {
-    testCastToString[Float](DataTypes.FloatType, comparisonFunc = Some(compareStringifiedFloats))
+    testCastToString[Float](DataTypes.FloatType, comparisonFunc = 
+        Some(compareStringifiedFloats(true)))
   }
 
   test("cast double to string") {
-    testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
+    testCastToString[Double](DataTypes.DoubleType, comparisonFunc = 
+        Some(compareStringifiedFloats(false)))
   }
 
   test("cast decimal to string") {
@@ -527,16 +530,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  def before3_4_0(s: SparkSession): (Boolean, String) = {
-    (s.version < "3.4.0", s"Spark version must be prior to 3.4.0")
-  }
-
-  def since3_4_0(s: SparkSession): (Boolean, String) = {
-    (s.version >= "3.4.0", s"Spark version must be at least 3.4.0")
-  }
-
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
-    assumeCondition = before3_4_0) {
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -549,14 +543,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(LongType),
       col("date").cast(TimestampType))
    }
-
-  testSparkResultsAreEqual("Test cast from date Spark 3.4.0+", timestampDatesMsecParquet,
-    assumeCondition = since3_4_0) {
-    frame =>
-      frame.select(
-        col("date"),
-        col("date").cast(TimestampType))
-  }
 
   testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))

@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -1097,7 +1097,7 @@ private[rapids] class GpuRangeIterator(
     (rowsNumber) => {
       withResource(rowsNumber) { _ =>
         if (rowsNumber.value < 10) {
-          throw new SplitAndRetryOOM(s"GPU OutOfMemory: the number of rows generated is" +
+          throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: the number of rows generated is" +
             s" too small to be split ${rowsNumber.value}!")
         }
         Seq(AutoCloseableLong(rowsNumber.value / 2))

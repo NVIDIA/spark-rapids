@@ -17,7 +17,8 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "342"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark340PlusShims
+object SparkShimImpl extends Spark340PlusNonDBShims

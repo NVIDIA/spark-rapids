@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,19 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPrettyString}
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
 
-object SparkShimImpl extends Spark340PlusShims {
+object SparkShimImpl extends Spark340PlusNonDBShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
@@ -72,5 +75,19 @@ object SparkShimImpl extends Spark340PlusShims {
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
+  }
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]= Seq(
+      GpuOverrides.exec[WindowGroupLimitExec](
+        "Apply group-limits for row groups destined for rank-based window functions like " +
+          "row_number(), rank(), and dense_rank()",
+        ExecChecks( // Similar to WindowExec.
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+           TypeSig.STRUCT +  TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.all),
+        (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    super.getExecs ++ shimExecs
   }
 }

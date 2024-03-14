@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,32 @@ import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
-import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
+import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
+import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
+import org.apache.spark.sql.types.StringType
 
 trait Spark341PlusDBShims extends Spark332PlusDBShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[ToPrettyString]("An internal expressions which is used to " +
+        "generate pretty string for all kinds of values",
+        new ToPrettyStringChecks(),
+        (toPrettyString, conf, p, r) => {
+          new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
+
+            override val toType: StringType.type = StringType
+
+            override def convertToGpu(child: Expression): GpuExpression = {
+              GpuToPrettyString(child)
+            }
+          }
+        }),
       // Empty2Null is pulled out of FileFormatWriter by default since Spark 3.4.0,
       // so it is visible in the overriding stage.
       GpuOverrides.expr[Empty2Null](
@@ -42,7 +60,35 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
         (a, conf, p, r) => new UnaryExprMeta[Empty2Null](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
         }
-      )
+      ),
+      GpuOverrides.expr[PythonUDAF](
+        "UDF run in an external python process. Does not actually run on the GPU, but " +
+          "the transfer of data to/from it can be accelerated",
+        ExprChecks.fullAggAndProject(
+          // Different types of Pandas UDF support different sets of output type. Please refer to
+          //   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
+          // for more details.
+          // It is impossible to specify the exact type signature for each Pandas UDF type in a
+          // single expression 'PythonUDF'.
+          // So use the 'unionOfPandasUdfOut' to cover all types for Spark. The type signature of
+          // plugin is also an union of all the types of Pandas UDF.
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested() + TypeSig.STRUCT,
+          TypeSig.unionOfPandasUdfOut,
+          repeatingParamCheck = Some(RepeatingParamCheck(
+            "param",
+            (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all))),
+        (a, conf, p, r) => new ExprMeta[PythonUDAF](a, conf, p, r) {
+          override def replaceMessage: String = "not block GPU acceleration"
+
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"blocks running on GPU because $reasons"
+
+          override def convertToGpu(): GpuExpression =
+            GpuPythonUDAF(a.name, a.func, a.dataType,
+              childExprs.map(_.convertToGpu()),
+              a.evalType, a.udfDeterministic, a.resultId)
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
@@ -122,10 +168,57 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
         }
       ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
         "of rows in a batch it could help by limiting the number of rows transferred from " +
-        "GPU to CPU")
+        "GPU to CPU"),
+    GpuOverrides.exec[WindowGroupLimitExec](
+      "Apply group-limits for row groups destined for rank-based window functions like " +
+        "row_number(), rank(), and dense_rank()",
+      ExecChecks( // Similar to WindowExec.
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+          TypeSig.STRUCT +  TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ shimExecs
 
+  /*
+   * We are looking for the pattern describe below. We end up with a ColumnarToRow that feeds
+   * into a CPU broadcasthash join which is using Executor broadcast. This pattern fails on
+   * Databricks because it doesn't like the ColumnarToRow feeding into the BroadcastHashJoin.
+   * Note, in most other cases we see executor broadcast, the Exchange would be CPU
+   * single partition exchange explicitly marked with type EXECUTOR_BROADCAST.
+   *
+   *  +- BroadcastHashJoin || BroadcastNestedLoopJoin (using executor broadcast)
+   *  ^
+   *  +- ColumnarToRow
+   *      +- AQEShuffleRead ebj (uses coalesce partitions to go to 1 partition)
+   *        +- ShuffleQueryStage
+   *            +- GpuColumnarExchange gpuhashpartitioning
+   */
+  override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
+      parent: Option[SparkPlan]): Boolean = {
+    p match {
+      case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
+        parent match {
+          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
+          case Some(bhnlj: BroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast => true
+          case _ => false
+        }
+      case _ => false
+    }
+  }
+
+  /*
+   * If this plan matches the checkCToRWithExecBroadcastCoalPart() then get the shuffle
+   * plan out so we can wrap it. This function does not check that the parent is
+   * BroadcastHashJoin doing executor broadcast, so is expected to be called only
+   * after checkCToRWithExecBroadcastCoalPart().
+   */
+  override def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = {
+    p match {
+      case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) => Some(s)
+      case _ => None
+    }
+  }
 }

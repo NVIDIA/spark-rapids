@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.sql.SQLException
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 
 /**
@@ -684,7 +685,6 @@ sealed class RegexRewriteFlags(val emptyRepetition: Boolean)
                 RegexSplitMode   if performing a split (string_split)
  */
 class CudfRegexTranspiler(mode: RegexMode) {
-  private val regexMetaChars = ".$^[]\\|?*+(){}"
   private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
   private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
       'b' -> '\b', 'e' -> '\u001b')
@@ -1516,9 +1516,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('+')) =>
           throw new RegexUnsupportedException("Possessive quantifier *+ not supported",
             quantifier.position)
-        case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('?')) =>
-          throw new RegexUnsupportedException("Lazy quantifier *? not supported",
-            quantifier.position)
+        case (RegexRepetition(_, SimpleQuantifier('?' | '*' | '+')), SimpleQuantifier('?')) =>
+          RegexRepetition(rewrite(base, replacement, None, flags), quantifier)
         case _ =>
           throw new RegexUnsupportedException("Preceding token cannot be quantified",
             quantifier.position)
@@ -1566,6 +1565,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
             r.position)
         }
 
+        (ll, rr) match {
+          // ll = lazyQuantifier inside a choice
+          case (RegexSequence(ListBuffer(RegexRepetition(
+          RegexRepetition(_, SimpleQuantifier('?')), SimpleQuantifier('?')))), _) |
+               // rr = lazyQuantifier inside a choice
+               (_, RegexSequence(ListBuffer(RegexRepetition(
+               RegexRepetition(_, SimpleQuantifier('?')), SimpleQuantifier('?'))))) =>
+            throw new RegexUnsupportedException(
+              "cuDF does not support lazy quantifier inside choice", r.position)
+          case (_, RegexChoice(RegexSequence(_), RegexSequence(ListBuffer(RegexRepetition(
+          RegexEscaped('A'), SimpleQuantifier('?')), _)))) =>
+            throw new RegexUnsupportedException("Invalid regex pattern at position", r.position)
+          case _ =>
+        }
         RegexChoice(ll, rr)
 
       case g @ RegexGroup(_, _, Some(lookahead)) =>

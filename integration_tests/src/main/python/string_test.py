@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -650,13 +650,21 @@ def test_byte_length():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'BIT_LENGTH(a)', 'OCTET_LENGTH(a)'))
 
+def test_ascii():
+    # StringGen will generate ascii and latin1 characters by default, which is the same as the supported
+    # range of ascii in plugin. Characters outside of this range will return mismatched results.
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(f.ascii(f.col('a'))),
+            conf={'spark.rapids.sql.expression.Ascii': True})
+
 @incompat
 def test_initcap():
     # Because we don't use the same unicode version we need to limit
-    # the charicter set to something more reasonable
+    # the character set to something more reasonable
     # upper and lower should cover the corner cases, this is mostly to
     # see if there are issues with spaces
-    gen = mk_str_gen('([aAbB1357ȺéŸ_@%-]{0,15}[ \r\n\t]{1,2}){1,5}')
+    gen = StringGen('([aAbB1357ȺéŸ_@%-]{0,15}[ \r\n\t]{1,2}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))
@@ -822,25 +830,35 @@ def test_format_number_supported(data_gen):
             'format_number(a, 100)')
     )
 
-float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
-format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=15)]
+format_float_special_vals = [float('nan'), float('inf'), float('-inf'), 0.0, -0.0, 
+                             1.1234543, 0.0000152, 0.0000252, 0.999999, 999990.0, 
+                             0.001234, 0.00000078, 7654321.1234567]
 
-@pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
-def test_format_number_float_limited(data_gen):
+@pytest.mark.parametrize('data_gen', [SetValuesGen(FloatType(),  format_float_special_vals), 
+                                      SetValuesGen(DoubleType(), format_float_special_vals)], ids=idfn)
+def test_format_number_float_special(data_gen):
     gen = data_gen
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'format_number(a, 5)'),
-        conf = float_format_number_conf
-    )
+    cpu_results = with_cpu_session(lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, 5)').collect())
+    gpu_results = with_gpu_session(lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, 5)').collect())
+    for cpu, gpu in zip(cpu_results, gpu_results):
+        assert cpu[0] == gpu[0]
 
-# format_number for float/double is disabled by default due to compatibility issue
-# GPU will generate result with less precision than CPU
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_format_number_float_fallback(data_gen):
-    assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr(
-            'format_number(a, 5)'),
-        'FormatNumber'
-    )
+def test_format_number_double_value():
+    data_gen = DoubleGen(nullable=False, no_nans=True)
+    cpu_results = list(map(lambda x: float(x[0].replace(",", "")), with_cpu_session(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('format_number(a, 5)').collect())))
+    gpu_results = list(map(lambda x: float(x[0].replace(",", "")), with_gpu_session(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('format_number(a, 5)').collect())))
+    for cpu, gpu in zip(cpu_results, gpu_results):
+        assert math.isclose(cpu, gpu, abs_tol=1.1e-5)
+
+def test_format_number_float_value():
+    data_gen = FloatGen(nullable=False, no_nans=True)
+    cpu_results = list(map(lambda x: float(x[0].replace(",", "")), with_cpu_session(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('format_number(a, 5)').collect())))
+    gpu_results = list(map(lambda x: float(x[0].replace(",", "")), with_gpu_session(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('format_number(a, 5)').collect())))
+    for cpu, gpu in zip(cpu_results, gpu_results):
+        assert math.isclose(cpu, gpu, rel_tol=1e-7) or math.isclose(cpu, gpu, abs_tol=1.1e-5)

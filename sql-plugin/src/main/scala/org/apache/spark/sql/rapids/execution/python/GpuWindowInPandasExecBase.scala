@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.{PythonUDFShim, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.window._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -499,24 +500,19 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
-      val queue: BatchQueue = new BatchQueue()
-      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs.toSeq, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches)
-      val pyInputIterator = groupedIterator.map { batch =>
-        // We have to do the project before we add the batch because the batch might be closed
-        // when it is added
-        val projectedBatch = GpuProjectExec.project(batch, boundDataRefs)
-        // Compute the window bounds and insert to the head of each row for one batch
-        val inputBatch = withResource(projectedBatch) { projectedCb =>
-          insertWindowBounds(projectedCb)
+      val batchProducer = new BatchProducer(
+        new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
+      val pyInputIterator = batchProducer.asIterator.map { batch =>
+        withResource(batch) { _ =>
+          withResource(GpuProjectExec.project(batch, boundDataRefs)) { projectedCb =>
+            // Compute the window bounds and insert to the head of each row for one batch
+            insertWindowBounds(projectedCb)
+          }
         }
-        queue.add(batch)
-        inputBatch
       }
 
       if (isPythonOnGpuEnabled) {
@@ -534,12 +530,11 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          pythonOutputSchema,
-          () => queue.finish())
+          pythonOutputSchema)
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
-          numOutputBatches).map(projectResult(_))
+        new CombiningIterator(batchProducer.getBatchQueue, outputIterator, pyRunner,
+            numOutputRows, numOutputBatches).map(projectResult)
       } else {
         // Empty partition, return the input iterator directly
         inputIter

@@ -17,6 +17,7 @@
 package org.apache.spark.sql.hive.rapids
 
 import java.nio.charset.Charset
+import java.time.ZoneId
 
 import com.google.common.base.Charsets
 import com.nvidia.spark.RapidsUDF
@@ -31,6 +32,7 @@ import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -288,6 +290,15 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             if (!conf.shouldHiveReadDecimals && hasDecimals) {
               willNotWorkOnGpu("reading of decimal typed values has been disabled set " +
                   s"${RapidsConf.ENABLE_READ_HIVE_DECIMALS} to true to enable this.")
+            }
+
+            val types = wrapped.schema.map(_.dataType).toSet
+            if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
+              if (!GpuOverrides.isUTCTimezone()) {
+                willNotWorkOnGpu("Only UTC timezone is supported. " +
+                  s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+                  s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+              }
             }
           }
 

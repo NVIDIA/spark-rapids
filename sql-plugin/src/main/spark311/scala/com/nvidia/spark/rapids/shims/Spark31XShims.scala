@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -339,7 +339,9 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
           override def convertToCpu(): SparkPlan = {
-            wrapped.copy(partitionFilters = partitionFilters)
+            val cpu = wrapped.copy(partitionFilters = partitionFilters)
+            cpu.copyTagsFrom(wrapped)
+            cpu
           }
 
           override def convertToGpu(): GpuExec = {

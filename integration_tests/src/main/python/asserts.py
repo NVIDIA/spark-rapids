@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_incompat, should_sort_on_spark, should_sort_locally, get_float_check, get_limit, spark_jvm
+from conftest import is_incompat, should_sort_on_spark, should_sort_locally, array_columns_to_sort_locally, get_float_check, get_limit, spark_jvm
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import math
@@ -220,6 +220,20 @@ def _prep_func_for_compare(func, mode):
             raise RuntimeError('Local Sort is only supported on a collect')
     return (bring_back, collect_type)
 
+# Sort each of the result sets. If there are array columns to sort, 
+# then sort each of those values in each row
+def _sort_locally(*results):
+    array_columns = array_columns_to_sort_locally()
+    def sort_rows(rows):
+        if array_columns:
+            for r in rows:
+                for col in array_columns:
+                    r[col].sort(key=_RowCmp)
+        rows.sort(key=_RowCmp)
+
+    for rows in results:
+        sort_rows(rows)
+
 def _prep_incompat_conf(conf):
     if is_incompat():
         conf = dict(conf) # Make a copy before we change anything
@@ -257,8 +271,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
     from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
     from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu, from_gpu)
 
     assert_equal(from_cpu, from_gpu)
 
@@ -317,8 +330,7 @@ def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sq
     from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
     from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu, from_gpu)
 
     assert_equal(from_cpu, from_gpu)
 
@@ -351,24 +363,30 @@ def assert_gpu_fallback_write(write_func,
     jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.startCapture()
     gpu_start = time.time()
     gpu_path = base_path + '/GPU'
-    with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
-    gpu_end = time.time()
-    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name_list, 10000)
-    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
-        gpu_end - gpu_start, cpu_end - cpu_start))
+    try:
+        with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
+        gpu_end = time.time()
+        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name_list, 10000)
+        print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
+            gpu_end - gpu_start, cpu_end - cpu_start))
 
-    (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, cpu_path), 'COLLECT')
-    (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, gpu_path), 'COLLECT')
+        (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
+                lambda spark: read_func(spark, cpu_path), 'COLLECT')
+        (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
+                lambda spark: read_func(spark, gpu_path), 'COLLECT')
 
-    from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
-    from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
-    if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
+        from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
+        if should_sort_locally():
+            _sort_locally(from_cpu, from_gpu)
 
-    assert_equal(from_cpu, from_gpu)
+        assert_equal(from_cpu, from_gpu)
+    finally:
+        # Ensure `shouldCapture` state is restored. This may happen when GpuPlan is failed to be executed,
+        # then `shouldCapture` state is failed to restore in `assertCapturedAndGpuFellBack` method.
+        # This mostly happen within a xfail case where error may be ignored.
+        jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.endCapture()
+
 
 def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
         exist_classes='',
@@ -396,8 +414,7 @@ def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu, from_gpu)
 
     assert_equal(from_cpu, from_gpu)
 
@@ -439,8 +456,7 @@ def assert_gpu_fallback_collect(func,
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu, from_gpu)
 
     assert_equal(from_cpu, from_gpu)
 
@@ -496,8 +512,7 @@ def _assert_gpu_and_cpu_are_equal(func,
         (from_cpu, from_gpu) = result_canonicalize_func_before_compare(from_cpu, from_gpu)
 
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu, from_gpu)
 
     assert_equal(from_cpu, from_gpu)
 
@@ -523,7 +538,7 @@ def run_with_cpu(func,
     print('### {}: CPU TOOK {} ###'.format(collect_type,
         cpu_end - cpu_start))
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu)
 
     return from_cpu
 
@@ -557,8 +572,7 @@ def run_with_cpu_and_gpu(func,
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
+        _sort_locally(from_cpu, from_gpu)
 
     return (from_cpu, from_gpu)
 

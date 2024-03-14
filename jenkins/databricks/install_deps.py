@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -160,6 +160,12 @@ def define_deps(spark_version, scala_version):
     if spark_version.startswith('3.3') or spark_version.startswith('3.4'):
         deps += Artifact('org.apache.logging.log4j', 'log4j-core',
                          f'{prefix_ws_sp_mvn_hadoop}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__*.jar'),
+
+    # Scala parser
+    deps += [
+        Artifact('org.scala-lang.modules', f'scala-parser-combinators_{scala_version}',
+                 f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-parser-combinators_{scala_version}-*.jar')
+    ]
 
     if spark_version.startswith('3.4'):
         deps += [

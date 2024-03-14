@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
+from data_gen import non_utc_allow
 from marks import *
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'
@@ -30,6 +31,7 @@ def test_read_int():
     assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass))
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@allow_non_gpu(*non_utc_allow)
 def test_read_strings():
     assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass))
 

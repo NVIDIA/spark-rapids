@@ -14,14 +14,14 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_spark_exception
+from asserts import *
+from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, \
-    is_databricks_runtime, is_before_spark_340, is_spark_340_or_later, is_databricks122_or_later
+from spark_session import *
 
 import pyspark.sql.functions as f
 import pyspark.sql.utils
@@ -90,6 +90,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_write_round_trip(spark_tmp_path, parquet_gens):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -135,6 +136,7 @@ def test_write_round_trip_corner(spark_tmp_path, par_gen):
     ArrayGen(TimestampGen(), max_length=10),
     MapGen(TimestampGen(nullable=False), TimestampGen())]], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
+@allow_non_gpu(*non_utc_allow)
 def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -148,6 +150,7 @@ def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
 @ignore_order
+@allow_non_gpu(*non_utc_allow)
 def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -161,7 +164,7 @@ def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
 
 
 parquet_part_write_gens = [
-    byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    byte_gen, short_gen, int_gen, long_gen,
     # Some file systems have issues with UTF8 strings so to help the test pass even there
     StringGen('(\\w| ){0,50}'),
     boolean_gen, date_gen,
@@ -171,9 +174,10 @@ parquet_part_write_gens = [
 @ignore_order
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_part_write_round_trip(spark_tmp_path, parquet_gen):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
-            ('b', parquet_gen)]
+                ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),
@@ -184,7 +188,7 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen):
 
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
-@pytest.mark.allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", *non_utc_allow)
 def test_int96_write_conf(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {
@@ -201,7 +205,7 @@ def test_int96_write_conf(spark_tmp_path, data_gen):
 @pytest.mark.skipif(is_before_spark_340() and not is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 # Note: From Spark 340, WriteFilesExec is introduced.
-@pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec", *non_utc_allow)
 def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {
@@ -215,6 +219,7 @@ def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
         ['DataWritingCommandExec', 'WriteFilesExec'],
         confs)
 
+@allow_non_gpu(*non_utc_allow)
 def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
         def start(self, rand):
@@ -244,6 +249,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_write_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -259,8 +265,11 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING PARQUET location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+non_utc_hive_save_table_allow = ['ExecutedCommandExec', 'DataWritingCommandExec', 'CreateDataSourceTableAsSelectCommand', 'WriteFilesExec'] if is_not_utc() else []
+
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@allow_non_gpu(*non_utc_hive_save_table_allow)
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -283,6 +292,7 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
                          ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
                          ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
+@allow_non_gpu(*non_utc_allow)
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
     ts_write, gen = ts_write_data_gen
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -461,6 +471,7 @@ def test_write_map_nullable(spark_tmp_path):
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', ['EXCEPTION'])
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
@@ -478,6 +489,7 @@ def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write,
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
 @pytest.mark.parametrize('ts_rebase_read', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_write_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, data_gen, ts_write,
                                                              ts_rebase_write, ts_rebase_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -521,6 +533,7 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
     with_gpu_session(test_it, conf)
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
     def create_empty_df(spark, path):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -758,8 +771,12 @@ def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, fun
 
     func(create_table, read_table, data_path, conf)
 
+non_utc_hive_parquet_write_allow = ['DataWritingCommandExec', 'WriteFilesExec'] if is_not_utc() else []
+
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
-@pytest.mark.parametrize('ts_rebase', ['LEGACY', 'CORRECTED'])
+@pytest.mark.parametrize('ts_rebase', [
+    pytest.param('LEGACY', marks=pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")),
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_hive_parquet_write_allow))])
 def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase):
     def func_test(create_table, read_table, data_path, conf):
         assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path, conf=conf)
@@ -816,5 +833,26 @@ def test_parquet_write_column_name_with_dots(spark_tmp_path):
         ("k", boolean_gen)]
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path:  gen_df(spark, gens).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path)
+
+@ignore_order
+def test_parquet_append_with_downcast(spark_tmp_table_factory, spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    cpu_table = spark_tmp_table_factory.get()
+    gpu_table = spark_tmp_table_factory.get()
+    def setup_tables(spark):
+        df = unary_op_df(spark, int_gen, length=10)
+        df.write.format("parquet").option("path", data_path + "/CPU").saveAsTable(cpu_table)
+        df.write.format("parquet").option("path", data_path + "/GPU").saveAsTable(gpu_table)
+    with_cpu_session(setup_tables)
+    def do_append(spark, path):
+        table = cpu_table
+        if path.endswith("/GPU"):
+            table = gpu_table
+        unary_op_df(spark, LongGen(min_val=0, max_val=128, special_cases=[]), length=10)\
+            .write.mode("append").saveAsTable(table)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_append,
         lambda spark, path: spark.read.parquet(path),
         data_path)

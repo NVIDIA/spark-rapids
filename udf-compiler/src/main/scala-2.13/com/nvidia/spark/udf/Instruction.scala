@@ -314,6 +314,12 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
             val (args, rest) = stack.splitAt(n + 1)
             (args.reverse, rest)
           })
+      case Opcode.INVOKEDYNAMIC =>
+        invokedynamic(lambdaReflection, state,
+          (stack, n) => {
+            val (args, rest) = stack.splitAt(n)
+            (args.reverse, rest)
+        })
       case _ => throw new SparkException("Unsupported instruction: " + instructionStr)
     }
     logDebug(s"[Instruction] ${instructionStr} got new state: ${st} from state: ${state}")
@@ -561,6 +567,31 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         newState
       }
     }
+  }
+
+  private def invokedynamic(lambdaReflection: LambdaReflection, state: State,
+      getArgs: (List[Expression], Int) =>
+          (List[Expression], List[Expression])): State = {
+    val State(locals, stack, cond, expr) = state
+    val (bootstrapMethod, bootstrapArgs) = lambdaReflection.lookupBootstrapMethod(operand)
+    val declaringClass = bootstrapMethod.getDeclaringClass
+    val declaringClassName = declaringClass.getName
+    val newstack = {
+      if (declaringClassName.equals("java.lang.invoke.StringConcatFactory") &&
+          bootstrapMethod.getName.equals("makeConcatWithConstants") &&
+          bootstrapArgs.length == 1) {
+        val recipe = bootstrapArgs.head.toString
+        if (recipe.contains('\u0002')) {
+          throw new SparkException("Unsupported instruction: " + instructionStr)
+        }
+        val (args, rest) = getArgs(stack, recipe.count{x => x == '\u0001'})
+        Concat(recipe.split('\u0001').zipAll(args, "", Literal(""))
+          .map{ case(x, y) => Concat(Seq(Literal(x), y))}.toSeq) :: rest
+      } else {
+        throw new SparkException("Unsupported instruction: " + instructionStr)
+      }
+    }
+    State(locals, newstack, cond, expr)
   }
 
   private def checkArgs(methodName: String,
@@ -958,7 +989,7 @@ object Instruction {
         codeIterator.byteAt(offset + 1)
       case Opcode.BIPUSH =>
         codeIterator.signedByteAt(offset + 1)
-      case Opcode.LDC_W | Opcode.LDC2_W | Opcode.NEW | Opcode.CHECKCAST |
+      case Opcode.LDC_W | Opcode.LDC2_W | Opcode.NEW | Opcode.CHECKCAST | Opcode.INVOKEDYNAMIC |
            Opcode.INVOKESTATIC | Opcode.INVOKEVIRTUAL | Opcode.INVOKEINTERFACE |
            Opcode.INVOKESPECIAL | Opcode.GETSTATIC =>
         codeIterator.u16bitAt(offset + 1)

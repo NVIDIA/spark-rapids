@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       val bhjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastHashJoinExec])
       assert(bhjCount.size === 1)
 
-      val shjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuShuffledHashJoinExec])
+      val shjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuShuffledSymmetricHashJoinExec])
       assert(shjCount.size === 1)
     }, conf)
   }
