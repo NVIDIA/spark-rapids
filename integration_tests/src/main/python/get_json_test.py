@@ -85,7 +85,17 @@ def test_get_json_object_single_quotes():
     pytest.param("$.a",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10196')),
     "$.non_exist_key",
     "$..no_recursive",
-    "$.store.book[0].non_exist_key"])
+    "$.store.book[0].non_exist_key",
+    "$.store.basket[0][*].b", 
+    "$.store.book[*].reader",
+    "$.store.book[*]",
+    "$.store.book[*].category",
+    "$.store.book[*].isbn",
+    "$.store.basket[*]",
+    "$.store.basket[*][0]",
+    "$.store.basket[0][*]",
+    "$.store.basket[*][*]",
+    "$.store.basket[*].non_exist_key"])
 def test_get_json_object_spark_unit_tests(query):
     schema = StructType([StructField("jsonStr", StringType())])
     data = [
@@ -98,26 +108,6 @@ def test_get_json_object_spark_unit_tests(query):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.get_json_object('jsonStr', query)),
-        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
-
-@allow_non_gpu("ProjectExec", "GetJsonObject")
-@pytest.mark.parametrize('query',["$.store.basket[0][*].b", 
-    "$.store.book[*].reader",
-    "$.store.book[*]",
-    "$.store.book[*].category",
-    "$.store.book[*].isbn",
-    "$.store.basket[*]",
-    "$.store.basket[*][0]",
-    "$.store.basket[0][*]",
-    "$.store.basket[*][*]",
-    "$.store.basket[*].non_exist_key"])
-def test_get_json_object_spark_unit_tests_fallback(query):
-    schema = StructType([StructField("jsonStr", StringType())])
-    data = [['''{"store":{"fruit":[{"weight":8,"type":"apple"},{"weight":9,"type":"pear"}],"basket":[[1,2,{"b":"y","a":"x"}],[3,4],[5,6]],"book":[{"author":"Nigel Rees","title":"Sayings of the Century","category":"reference","price":8.95},{"author":"Herman Melville","title":"Moby Dick","category":"fiction","price":8.99,"isbn":"0-553-21311-3"},{"author":"J. R. R. Tolkien","title":"The Lord of the Rings","category":"fiction","reader":[{"age":25,"name":"bob"},{"age":26,"name":"jack"}],"price":22.99,"isbn":"0-395-19395-8"}],"bicycle":{"price":19.95,"color":"red"}},"email":"amy@only_for_json_udf_test.net","owner":"amy","zip code":"94025","fb:testid":"1234"}''']]
-    assert_gpu_fallback_collect(
-        lambda spark: spark.createDataFrame(data,schema=schema).select(
-            f.get_json_object('jsonStr', query)),
-        "GetJsonObject",
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
