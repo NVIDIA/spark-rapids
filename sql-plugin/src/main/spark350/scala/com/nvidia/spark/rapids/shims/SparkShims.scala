@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
@@ -78,13 +79,25 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]= Seq(
+    val imtsKey = classOf[InMemoryTableScanExec].asSubclass(classOf[SparkPlan])
+    // To avoid code duplication we are reusing the rule from GpuOverrides
+    // but we disable it by default
+    val imtsRule = GpuOverrides.commonExecs.getOrElse(imtsKey,
+        throw new IllegalStateException("InMemoryTableScan should be overridden by default before" +
+        " Spark 3.5.0")).
+      disabledByDefault(
+        """there could be complications when using it with AQE with Spark-3.5.0 and Spark-3.5.1.
+          |For more details please check
+          |https://github.com/NVIDIA/spark-rapids/issues/10603""".stripMargin.replaceAll("\n", " "))
+
+    val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+      imtsRule,
       GpuOverrides.exec[WindowGroupLimitExec](
         "Apply group-limits for row groups destined for rank-based window functions like " +
           "row_number(), rank(), and dense_rank()",
         ExecChecks( // Similar to WindowExec.
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-           TypeSig.STRUCT +  TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all),
         (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
