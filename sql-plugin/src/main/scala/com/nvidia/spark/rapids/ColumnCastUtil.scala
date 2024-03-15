@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,92 +45,117 @@ object ColumnCastUtil {
    *
    * @param cv the view to be updated
    * @param dt the Spark's data type of the input view (if applicable)
+   * @param nestedMismatchHandler a function that can handle a mismatch between nesting. This can
+   *                              include things like when a STRING is found, but a nested type is
+   *                              needed, or when a nested value is returned by CUDF but a
+   *                              non-nested type is expected.
    * @param convert the partial function used to convert the data. If this matches and returns
    *                a updated view this function takes ownership of that view.
    * @return None if there were no changes to the view or the updated view along with anything else
    *         that needs to be closed.
    */
-  def deepTransformView(cv: ColumnView, dt: Option[DataType] = None)
+  def deepTransformView(cv: ColumnView, dt: Option[DataType] = None,
+      nestedMismatchHandler: Option[(ColumnView, DataType) =>
+          (Option[ColumnView], Seq[AutoCloseable])] = None)
       (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]):
-  (Option[ColumnView], ArrayBuffer[AutoCloseable]) = {
+  (Option[ColumnView], Seq[AutoCloseable]) = {
     closeOnExcept(ArrayBuffer.empty[AutoCloseable]) { needsClosing =>
       val updated = convert.lift((cv, dt))
       needsClosing ++= updated
 
       updated match {
         case Some(newCv) =>
-          (Some(newCv), needsClosing)
+          (Some(newCv), needsClosing.toSeq)
         case None =>
           // Recurse down if needed and check children
           cv.getType.getTypeId match {
             case DType.DTypeEnum.STRUCT =>
-              withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
-                val structFields = dt match {
-                  case None => Array.empty[StructField]
-                  case Some(t: StructType) => t.fields
-                  case Some(t) => /* this should never be reach out */
+              val (structFields, transformedCv) = dt match {
+                case None => (Array.empty[StructField], None)
+                case Some(t: StructType) => (t.fields, None)
+                case Some(t) =>
+                  nestedMismatchHandler.map { handler =>
+                    // The fields is ignored
+                    (Array.empty[StructField], Some(handler(cv, t)))
+                  }.getOrElse {
                     throw new IllegalStateException("Invalid input DataType: " +
-                      s"Expect StructType but got ${t.toString}")
-                }
-                var childrenUpdated = false
-                val newChildren = ArrayBuffer.empty[ColumnView]
-                (0 until cv.getNumChildren).foreach { index =>
-                  val child = cv.getChildColumnView(index)
-                  tmpNeedsClosed += child
-                  val childDt = if (structFields.nonEmpty) {
-                    Some(structFields(index).dataType)
+                        s"CUDF returned STRUCT Spark asked for ${t.toString}")
+                  }
+              }
+              transformedCv.map {
+                case (updatedData, needsClosingData) =>
+                  needsClosing ++= needsClosingData
+                  (updatedData, needsClosing.toSeq)
+              }.getOrElse {
+                withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
+                  var childrenUpdated = false
+                  val newChildren = ArrayBuffer.empty[ColumnView]
+                  (0 until cv.getNumChildren).foreach { index =>
+                    val child = cv.getChildColumnView(index)
+                    tmpNeedsClosed += child
+                    val childDt = if (structFields.nonEmpty) {
+                      Some(structFields(index).dataType)
+                    } else {
+                      None
+                    }
+                    val (updatedChild, needsClosingChild) = deepTransformView(child, childDt,
+                      nestedMismatchHandler)(convert)
+                    needsClosing ++= needsClosingChild
+                    updatedChild match {
+                      case Some(newChild) =>
+                        newChildren += newChild
+                        childrenUpdated = true
+                      case None =>
+                        newChildren += child
+                    }
+                  }
+                  if (childrenUpdated) {
+                    withResource(cv.getValid) { valid =>
+                      val ret = new ColumnView(DType.STRUCT, cv.getRowCount,
+                        Optional.empty[java.lang.Long](), valid, null, newChildren.toArray)
+                      (Some(ret), needsClosing.toSeq)
+                    }
                   } else {
-                    None
+                    (None, needsClosing.toSeq)
                   }
-                  val (updatedChild, needsClosingChild) = deepTransformView(child, childDt)(convert)
-                  needsClosing ++= needsClosingChild
-                  updatedChild match {
-                    case Some(newChild) =>
-                      newChildren += newChild
-                      childrenUpdated = true
-                    case None =>
-                      newChildren += child
-                  }
-                }
-                if (childrenUpdated) {
-                  withResource(cv.getValid) { valid =>
-                    val ret = new ColumnView(DType.STRUCT, cv.getRowCount,
-                      Optional.empty[java.lang.Long](), valid, null, newChildren.toArray)
-                    (Some(ret), needsClosing)
-                  }
-                } else {
-                  (None, needsClosing)
                 }
               }
             case DType.DTypeEnum.LIST =>
-              withResource(cv.getChildColumnView(0)) { child =>
-                // A ColumnView of LIST type may have data type is ArrayType or MapType in Spark.
-                // If it is a MapType, its child will be a column of type struct<key, value>.
-                // In such cases, we need to generate the corresponding Spark's data type
-                // for the child column as a StructType.
-                val childDt = dt match {
-                  case None => None
-                  case Some(t: ArrayType) => Some(t.elementType)
-                  case Some(_: BinaryType) => Some(ByteType)
-                  case Some(t: MapType) => Some(StructType(Array(
-                    StructField("key", t.keyType, nullable = false),
-                    StructField("value", t.valueType, nullable = t.valueContainsNull))))
-                  case Some(t) => /* this should never be reach out */
-                    throw new IllegalStateException("Invalid input DataType: " +
-                      s"Expect ArrayType/BinaryType/MapType but got ${t.toString}")
-                }
-                val (updatedData, needsClosingData) = deepTransformView(child, childDt)(convert)
-                needsClosing ++= needsClosingData
-                updatedData match {
-                  case Some(updated) =>
-                    (Some(GpuListUtils.replaceListDataColumnAsView(cv, updated)), needsClosing)
-                  case None =>
-                    (None, needsClosing)
+              // A ColumnView of LIST was found. There are some types that we can auto-transform,
+              // but, in some cases we need to fall back to other processing.
+              val (childDt, transformedResult) = dt match {
+                case None => (None, None)
+                case Some(t: ArrayType) => (Some(t.elementType), None)
+                case Some(_: BinaryType) => (Some(ByteType), None)
+                case Some(t: MapType) => (Some(StructType(Array(
+                  StructField("key", t.keyType, nullable = false),
+                  StructField("value", t.valueType, nullable = t.valueContainsNull)))), None)
+                case Some(t) =>
+                  nestedMismatchHandler.map { handler =>
+                    (None, Some(handler(cv, t)))
+                  }.getOrElse {
+                    withResource(cv.getChildColumnView(0)) { child =>
+                      throw new IllegalStateException("Invalid input DataType: " +
+                          s"CUDF returned LIST[${child.getType}] We expect Spark to want an " +
+                          s"ArrayType/BinaryType/MapType but got ${t.toString}")
+                    }
+                  }
+              }
+              val (updatedData, needsClosingData) = transformedResult.getOrElse {
+                withResource(cv.getChildColumnView(0)) { child =>
+                  val (ud, nc) = deepTransformView(child, childDt, nestedMismatchHandler)(convert)
+                  ud match {
+                    case Some(updated) =>
+                      (Some(GpuListUtils.replaceListDataColumnAsView(cv, updated)), nc)
+                    case None =>
+                      (None, nc)
+                  }
                 }
               }
-
+              needsClosing ++= needsClosingData
+              (updatedData, needsClosing.toSeq)
             case _ =>
-              (None, needsClosing)
+              (None, needsClosing.toSeq)
           }
       }
     }
@@ -143,13 +168,19 @@ object ColumnCastUtil {
    *
    * @param cv the vector to be updated
    * @param dt the Spark's data type of the input vector (if applicable)
+   * @param nestedMismatchHandler a function that can handle a mismatch between nesting. This can
+   *                              include things like when a STRING is found, but a nested type is
+   *                              needed, or when a nested value is returned by CUDF but a
+   *                              non-nested type is expected.
    * @param convert the partial function used to convert the data. If this matches and returns
    *                a updated view this function takes ownership of that view.
    * @return the updated vector
    */
-  def deepTransform(cv: ColumnVector, dt: Option[DataType] = None)
+  def deepTransform(cv: ColumnVector, dt: Option[DataType] = None,
+      nestedMismatchHandler: Option[(ColumnView, DataType) =>
+          (Option[ColumnView], Seq[AutoCloseable])] = None)
       (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]): ColumnVector = {
-    val (retView, needsClosed) = deepTransformView(cv, dt)(convert)
+    val (retView, needsClosed) = deepTransformView(cv, dt, nestedMismatchHandler)(convert)
     withResource(needsClosed) { _ =>
       retView match {
         case Some(updated) =>
