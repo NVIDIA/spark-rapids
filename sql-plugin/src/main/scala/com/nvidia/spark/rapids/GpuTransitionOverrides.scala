@@ -775,6 +775,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  /**
+   * Spark will append a ColumnarToRow (C2R) to a GpuDataWritingCommandExec, but this
+   * C2R is useless because DataWritingCommandExec returns empty data.
+   * Besides, Spark will trigger a new job for the operators after a DataWritingCommandExec,
+   * and makes the DataWritingCommandExec be the data source node for this new job. Since
+   * no data is generated, this new job is entirely a noop.
+   *
+   * This rule removes the tailing C2R to eliminate the useless job. Then
+   * GpuDataWritingCommandExec becomes the root node, and should support row-based
+   * executions to interact with Spark.
+   */
+  private def removeTailingColumnarToRow(plan: SparkPlan): SparkPlan = plan match {
+    // No need to do it recursively, because the data write command can not be a
+    // middle node of a Spark job.
+    case GpuColumnarToRowExec(child @ GpuDataWritingCommandExec(_, _), _) => child
+    case _ => plan
+  }
+
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
@@ -829,7 +847,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
 
         insertStageLevelMetrics(updatedPlan)
-        updatedPlan
+        removeTailingColumnarToRow(updatedPlan)
       }
     } else {
       plan

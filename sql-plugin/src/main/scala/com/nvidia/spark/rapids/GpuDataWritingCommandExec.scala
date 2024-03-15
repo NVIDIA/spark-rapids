@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,6 +116,22 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   private lazy val sideEffectResult: Seq[ColumnarBatch] =
     cmd.runColumnar(sparkSession, child)
 
+  /**
+   * Support row-based executions here to interact with Spark directly instead of a
+   * GpuColumnarToRow. Because this write command can be the root operator by the
+   * "removeTailingColumnarToRow" rule.
+   * For more details pls go to this rule in "GpuTransitionOverrides".
+   */
+  private lazy val sideEffectRowsIter: Iterator[InternalRow] =
+    if (sideEffectResult.isEmpty) {
+      Iterator.empty
+    } else {
+      // It will not run into this path because sideEffectResult is always empty,
+      // but just in case.
+      GpuColumnarToRowExec.makeIteratorFunc(output, NoopMetric, NoopMetric, NoopMetric,
+        NoopMetric)(GpuBatchUtils.safeIteratorFromSeq(sideEffectResult))
+    }
+
   override def output: Seq[Attribute] = cmd.output
 
   override def nodeName: String = "Execute " + cmd.nodeName
@@ -123,18 +139,17 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   // override the default one, otherwise the `cmd.nodeName` will appear twice from simpleString
   override def argString(maxFields: Int): String = cmd.argString(maxFields)
 
-  override def executeCollect(): Array[InternalRow] = throw new UnsupportedOperationException(
-    s"${getClass.getCanonicalName} does not support row-based execution")
+  override def executeCollect(): Array[InternalRow] = sideEffectRowsIter.toArray
 
-  override def executeToIterator: Iterator[InternalRow] = throw new UnsupportedOperationException(
-    s"${getClass.getCanonicalName} does not support row-based execution")
+  override def executeToIterator: Iterator[InternalRow] = sideEffectRowsIter
 
-  override def executeTake(limit: Int): Array[InternalRow] =
-    throw new UnsupportedOperationException(
-      s"${getClass.getCanonicalName} does not support row-based execution")
+  override def executeTake(limit: Int): Array[InternalRow] = {
+    sideEffectRowsIter.take(limit).toArray
+  }
 
-  protected override def doExecute(): RDD[InternalRow] = throw new UnsupportedOperationException(
-    s"${getClass.getCanonicalName} does not support row-based execution")
+  protected override def doExecute(): RDD[InternalRow] = {
+    sparkContext.parallelize(sideEffectRowsIter.toSeq, 1)
+  }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     sparkContext.parallelize(sideEffectResult, 1)

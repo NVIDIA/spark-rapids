@@ -48,24 +48,7 @@ object GpuSubPartitionHashJoin {
    * all the resources when needed.
    */
   def safeIteratorFromSeq[R <: AutoCloseable](closeables: Seq[R]): Iterator[R] = {
-    new Iterator[R] with TaskAutoCloseableResource {
-
-      private[this] val remainingCloseables: ArrayBuffer[R] =
-        ArrayBuffer(closeables: _*)
-
-      override def hasNext: Boolean = remainingCloseables.nonEmpty && !closed
-
-      override def next(): R = {
-        if (!hasNext) throw new NoSuchElementException()
-        remainingCloseables.remove(0)
-      }
-
-      override def close(): Unit = {
-        remainingCloseables.safeClose()
-        remainingCloseables.clear()
-        super.close()
-      }
-    }
+    GpuBatchUtils.safeIteratorFromSeq(closeables)
   }
 }
 

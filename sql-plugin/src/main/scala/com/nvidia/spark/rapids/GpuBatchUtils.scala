@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructType}
 
@@ -211,5 +211,30 @@ object GpuBatchUtils {
     } else null
 
     Option(retBatch)
+  }
+
+  /**
+   * Create an iterator that takes over the input resources, and make sure closing
+   * all the resources when needed.
+   */
+  def safeIteratorFromSeq[R <: AutoCloseable](closeables: Seq[R]): Iterator[R] = {
+    new Iterator[R] with TaskAutoCloseableResource {
+
+      private[this] val remainingCloseables: ArrayBuffer[R] =
+        ArrayBuffer(closeables: _*)
+
+      override def hasNext: Boolean = remainingCloseables.nonEmpty && !closed
+
+      override def next(): R = {
+        if (!hasNext) throw new NoSuchElementException()
+        remainingCloseables.remove(0)
+      }
+
+      override def close(): Unit = {
+        remainingCloseables.safeClose()
+        remainingCloseables.clear()
+        super.close()
+      }
+    }
   }
 }
