@@ -81,18 +81,19 @@ def hdfs_glob(path, pattern):
     :type path: pathlib.Path 
     :return: generator of matched files
     """
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     path_str = path.as_posix()
     full_pattern = path_str + '/' + pattern
-    cmd = ['hadoop', 'fs', '-ls', '-C', full_pattern]
-
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        raise AssertionError(f'Failed to list files from {path_str}. Error: {stderr}')
-    
-    paths = stdout.strip().split('\n')
-
-    for p in paths:
+    sc = get_spark_i_know_what_i_am_doing().sparkContext
+    config = sc._jsc.hadoopConfiguration()
+    fs_path = sc._jvm.org.apache.hadoop.fs.Path(full_pattern)
+    fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
+    statuses = fs.globStatus(fs_path)
+    for status in statuses:
+        # status.getPath().toString() return string like "hdfs://hostname:8020/src/test/resources/parquet-testing/data/single_nan.parquet"
+        # but pathlib.Path will remove the first "/" and convert it to "hdfs:/hostname:8020/src/test/resources/parquet-testing/data/single_nan.parquet" and then this path becomes illegal. 
+        # so we need to process the path like this.
+        p = f'hdfs:{status.getPath().toUri().getPath()}'
         yield Path(p)
 
 def glob(path, pattern):
