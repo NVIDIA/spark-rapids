@@ -65,7 +65,7 @@ object ColumnCastUtil {
 
       updated match {
         case Some(newCv) =>
-          (Some(newCv), needsClosing)
+          (Some(newCv), needsClosing.toSeq)
         case None =>
           // Recurse down if needed and check children
           cv.getType.getTypeId match {
@@ -85,7 +85,7 @@ object ColumnCastUtil {
               transformedCv.map {
                 case (updatedData, needsClosingData) =>
                   needsClosing ++= needsClosingData
-                  (updatedData, needsClosing)
+                  (updatedData, needsClosing.toSeq)
               }.getOrElse {
                 withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
                   var childrenUpdated = false
@@ -113,10 +113,10 @@ object ColumnCastUtil {
                     withResource(cv.getValid) { valid =>
                       val ret = new ColumnView(DType.STRUCT, cv.getRowCount,
                         Optional.empty[java.lang.Long](), valid, null, newChildren.toArray)
-                      (Some(ret), needsClosing)
+                      (Some(ret), needsClosing.toSeq)
                     }
                   } else {
-                    (None, needsClosing)
+                    (None, needsClosing.toSeq)
                   }
                 }
               }
@@ -153,9 +153,9 @@ object ColumnCastUtil {
                 }
               }
               needsClosing ++= needsClosingData
-              (updatedData, needsClosing)
+              (updatedData, needsClosing.toSeq)
             case _ =>
-              (None, needsClosing)
+              (None, needsClosing.toSeq)
           }
       }
     }
@@ -178,7 +178,7 @@ object ColumnCastUtil {
    */
   def deepTransform(cv: ColumnVector, dt: Option[DataType] = None,
       nestedMismatchHandler: Option[(ColumnView, DataType) =>
-          (Option[ColumnView], ArrayBuffer[AutoCloseable])] = None)
+          (Option[ColumnView], Seq[AutoCloseable])] = None)
       (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]): ColumnVector = {
     val (retView, needsClosed) = deepTransformView(cv, dt, nestedMismatchHandler)(convert)
     withResource(needsClosed) { _ =>
