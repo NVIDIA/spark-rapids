@@ -19,8 +19,6 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -269,12 +267,12 @@ object GpuJsonReadCommon {
     GpuJsonUtils.timestampFormatInRead(options)
 
   private def throwMismatchException(cv: ColumnView,
-      dt: DataType): (Option[ColumnView], ArrayBuffer[AutoCloseable]) = {
+      dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
     throw new IllegalStateException(s"Don't know how to transform $cv to $dt for JSON")
   }
 
   private def nestedColumnViewMismatchTransform(cv: ColumnView,
-      dt: DataType): (Option[ColumnView], ArrayBuffer[AutoCloseable]) = {
+      dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
     // In the future we should be able to convert strings to maps/etc, but for
     // now we are working around issues where CUDF is not returning a STRING for nested
     // types when asked for it.
@@ -289,7 +287,7 @@ object GpuJsonReadCommon {
             val ret = withResource(GpuScalar.from(null, dt)) { nullScalar =>
               ColumnVector.fromScalar(nullScalar, rows)
             }
-            (Some(ret.asInstanceOf[ColumnView]), ArrayBuffer(ret))
+            (Some(ret.asInstanceOf[ColumnView]), Seq(ret))
           case _ =>
             throwMismatchException(cv, dt)
         }
@@ -301,7 +299,7 @@ object GpuJsonReadCommon {
             val ret = withResource(GpuScalar.from(null, dt)) { nullScalar =>
               ColumnVector.fromScalar(nullScalar, rows)
             }
-            (Some(ret.asInstanceOf[ColumnView]), ArrayBuffer(ret))
+            (Some(ret.asInstanceOf[ColumnView]), Seq(ret))
           case _ =>
             throwMismatchException(cv, dt)
         }
