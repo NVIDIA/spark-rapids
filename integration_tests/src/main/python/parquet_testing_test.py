@@ -82,7 +82,7 @@ def hdfs_glob(path_str, pattern):
     :return: generator of matched files
     """
     from spark_init_internal import get_spark_i_know_what_i_am_doing
-    full_pattern = path_str + '/' + pattern
+    full_pattern = os.path.join(path_str, pattern)
     sc = get_spark_i_know_what_i_am_doing().sparkContext
     config = sc._jsc.hadoopConfiguration()
     fs_path = sc._jvm.org.apache.hadoop.fs.Path(full_pattern)
