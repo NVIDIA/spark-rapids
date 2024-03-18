@@ -319,6 +319,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
                                       "dbc.*?azuredatabricks\\.net", "adb.*?databricks\\.com"]
                     guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
+                    guardWords.add("sc-ipp*") // hide cloud info
                     githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     if (currentBuild.currentResult != "ABORTED") { // skip ABORTED result to avoid status overwrite
