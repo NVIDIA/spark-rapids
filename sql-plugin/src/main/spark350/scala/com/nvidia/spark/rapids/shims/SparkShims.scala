@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
@@ -99,7 +100,8 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all),
-        (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r))
+        (limit, conf, p, r) => new GpuWindowGroupLimitExecMeta(limit, conf, p, r)),
+      GpuOverrides.neverReplaceExec[TableCacheQueryStageExec]("Table cache query stage")
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ shimExecs
   }
