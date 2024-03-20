@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.types.StructType
 
@@ -50,6 +50,7 @@ trait Spark31Xuntil33XShims extends SparkShims {
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
+      relation: Option[HadoopFsRelation],
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }

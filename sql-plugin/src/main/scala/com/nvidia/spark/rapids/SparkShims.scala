@@ -30,7 +30,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.internal.SQLConf
@@ -78,6 +78,7 @@ trait SparkShims {
       readFunction: (PartitionedFile) => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
+      relation: Option[HadoopFsRelation],
       metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow]
 
   def shouldFailDivOverflow: Boolean
