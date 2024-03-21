@@ -73,6 +73,7 @@ object RapidsPluginUtils extends Logging {
   private val TASK_GPU_AMOUNT_KEY = "spark.task.resource.gpu.amount"
   private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
   private val SPARK_MASTER = "spark.master"
+  private val SPARK_RAPIDS_REPO_URL = "https://github.com/NVIDIA/spark-rapids"
 
   {
     val pluginProps = loadProps(PLUGIN_PROPS_FILENAME)
@@ -346,6 +347,63 @@ object RapidsPluginUtils extends Logging {
       loadExtensions(classOf[SparkPlugin], pluginClasses)
     }
   }
+
+  /**
+   * Extracts supported GPU architectures from the given properties file
+   */
+  private def getSupportedGpuArchitectures(propFileName: String): Set[Int] = {
+    val props = RapidsPluginUtils.loadProps(propFileName)
+    Option(props.getProperty("gpu_architectures"))
+      .getOrElse(throw new RuntimeException(s"GPU architectures not found in $propFileName"))
+      .split(";")
+      .map(_.toInt)
+      .toSet
+  }
+
+  /**
+   * Checks if the current GPU architecture is supported by the spark-rapids-jni
+   * and cuDF libraries.
+   */
+  def validateGpuArchitecture(): Unit = {
+    val gpuArch = Cuda.getComputeCapabilityMajor * 10 + Cuda.getComputeCapabilityMinor
+    validateGpuArchitectureInternal(gpuArch, getSupportedGpuArchitectures(JNI_PROPS_FILENAME),
+      getSupportedGpuArchitectures(CUDF_PROPS_FILENAME))
+  }
+
+  /**
+   * Checks the validity of the provided GPU architecture in the provided architecture set.
+   *
+   * See: https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html
+   */
+  def validateGpuArchitectureInternal(gpuArch: Int, jniSupportedGpuArchs: Set[Int],
+      cudfSupportedGpuArchs: Set[Int]): Unit = {
+    val supportedGpuArchs = jniSupportedGpuArchs.intersect(cudfSupportedGpuArchs)
+    if (supportedGpuArchs.isEmpty) {
+      val jniSupportedGpuArchsStr = jniSupportedGpuArchs.toSeq.sorted.mkString(", ")
+      val cudfSupportedGpuArchsStr = cudfSupportedGpuArchs.toSeq.sorted.mkString(", ")
+      throw new IllegalStateException(s"Compatibility check failed for GPU architecture " +
+        s"$gpuArch. Supported GPU architectures by JNI: $jniSupportedGpuArchsStr and " +
+        s"cuDF: $cudfSupportedGpuArchsStr. Please report this issue at $SPARK_RAPIDS_REPO_URL." +
+        s" This check can be disabled by setting `spark.rapids.skipGpuArchitectureCheck` to" +
+        s" `true`, but it may lead to functional failures.")
+    }
+
+    val minSupportedGpuArch = supportedGpuArchs.min
+    // Check if the device architecture is supported
+    if (gpuArch < minSupportedGpuArch) {
+      throw new RuntimeException(s"Device architecture $gpuArch is unsupported." +
+        s" Minimum supported architecture: $minSupportedGpuArch.")
+    }
+    val supportedMajorGpuArchs = supportedGpuArchs.map(_ / 10)
+    val majorGpuArch = gpuArch / 10
+    // Warn the user if the device's major architecture is not available
+    if (!supportedMajorGpuArchs.contains(majorGpuArch)) {
+      val supportedMajorArchStr = supportedMajorGpuArchs.toSeq.sorted.mkString(", ")
+      logWarning(s"No precompiled binaries for device major architecture $majorGpuArch. " +
+        "This may lead to expensive JIT compile on startup. " +
+        s"Binaries available for architectures $supportedMajorArchStr.")
+    }
+  }
 }
 
 /**
@@ -427,16 +485,19 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
-      if (Cuda.getComputeCapabilityMajor < 6) {
-        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
-          " is unsupported, requires 6.0+")
-      }
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
+
+      // Checks if the current GPU architecture is supported by the
+      // spark-rapids-jni and cuDF libraries.
+      // Note: We allow this check to be skipped for off-chance cases.
+      if (!conf.skipGpuArchCheck) {
+        RapidsPluginUtils.validateGpuArchitecture()
+      }
 
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)

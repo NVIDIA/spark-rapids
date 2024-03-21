@@ -189,6 +189,125 @@ class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBuff
   }
 }
 
+object GpuTextBasedPartitionReader {
+  def castStringToTimestamp(
+      lhs: ColumnVector,
+      sparkFormat: String,
+      dtype: DType): ColumnVector = {
+
+    val optionalSeconds = raw"(?:\:\d{2})?"
+    val optionalMicros = raw"(?:\.\d{1,6})?"
+    val twoDigits = raw"\d{2}"
+    val fourDigits = raw"\d{4}"
+
+    val regexRoot = sparkFormat
+        .replace("'T'", "T")
+        .replace("yyyy", fourDigits)
+        .replace("MM", twoDigits)
+        .replace("dd", twoDigits)
+        .replace("HH", twoDigits)
+        .replace("mm", twoDigits)
+        .replace("[:ss]", optionalSeconds)
+        .replace(":ss", optionalSeconds) // Spark always treats seconds portion as optional
+        .replace("[.SSSXXX]", optionalMicros)
+        .replace("[.SSS][XXX]", optionalMicros)
+        .replace("[.SSS]", optionalMicros)
+        .replace("[.SSSSSS]", optionalMicros)
+        .replace(".SSSXXX", optionalMicros)
+        .replace(".SSSSSS", optionalMicros)
+        .replace(".SSS", optionalMicros)
+
+    // Spark treats timestamp portion as optional always
+    val regexOptionalTime = regexRoot.split('T') match {
+      case Array(d, t) =>
+        d + "(?:[ T]" + t + ")?"
+      case _ =>
+        regexRoot
+    }
+    val regex = regexOptionalTime + raw"Z?\Z"
+
+    // get a list of all possible cuDF formats that we need to check for
+    val cudfFormats = GpuTextBasedDateUtils.toCudfFormats(sparkFormat, parseString = true)
+
+
+    // filter by regexp first to eliminate invalid entries
+    val regexpFiltered = withResource(lhs.strip()) { stripped =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      withResource(stripped.matchesRe(prog)) { matchesRe =>
+        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+          matchesRe.ifElse(stripped, nullString)
+        }
+      }
+    }
+
+    // fix timestamps that have milliseconds but no microseconds
+    // example ".296" => ".296000"
+    val sanitized = withResource(regexpFiltered) { _ =>
+      // cannot replace with back-refs directly because cuDF cannot support "\1000\2" so we
+      // first substitute with a placeholder and then replace that. The placeholder value
+      // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
+      // date/time formats that contain the `@` character
+      val placeholder = "@"
+      val prog = new RegexProgram(raw"(\.\d{3})(Z?)\Z")
+      withResource(regexpFiltered.stringReplaceWithBackrefs(prog, raw"\1$placeholder\2")) { tmp =>
+        withResource(Scalar.fromString(placeholder)) { from =>
+          withResource(Scalar.fromString("000")) { to =>
+            tmp.stringReplace(from, to)
+          }
+        }
+      }
+    }
+
+    def isTimestamp(fmt: String): ColumnVector = {
+      val pos = fmt.indexOf('T')
+      if (pos == -1) {
+        sanitized.isTimestamp(fmt)
+      } else {
+        // Spark supports both ` ` and `T` as the delimiter so we have to test
+        // for both formats when calling `isTimestamp` in cuDF but the
+        // `asTimestamp` method ignores the delimiter so we only need to call that
+        // with one format
+        val withSpaceDelim = fmt.substring(0, pos) + ' ' + fmt.substring(pos + 1)
+        withResource(sanitized.isTimestamp(fmt)) { isValidFmt1 =>
+          withResource(sanitized.isTimestamp(withSpaceDelim)) { isValidFmt2 =>
+            isValidFmt1.or(isValidFmt2)
+          }
+        }
+      }
+    }
+
+    def asTimestampOrNull(fmt: String): ColumnVector = {
+      withResource(Scalar.fromNull(dtype)) { nullScalar =>
+        withResource(isTimestamp(fmt)) { isValid =>
+          withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
+            isValid.ifElse(ts, nullScalar)
+          }
+        }
+      }
+    }
+
+    def asTimestampOr(fmt: String, orValue: ColumnVector): ColumnVector = {
+      withResource(orValue) { _ =>
+        withResource(isTimestamp(fmt)) { isValid =>
+          withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
+            isValid.ifElse(ts, orValue)
+          }
+        }
+      }
+    }
+
+    withResource(sanitized) { _ =>
+      if (cudfFormats.length == 1) {
+        asTimestampOrNull(cudfFormats.head)
+      } else {
+        cudfFormats.tail.foldLeft(asTimestampOrNull(cudfFormats.head)) { (input, fmt) =>
+          asTimestampOr(fmt, input)
+        }
+      }
+    }
+  }
+}
+
 /**
  * The text based PartitionReader
  * @param conf the Hadoop configuration
@@ -285,6 +404,64 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
+  def getCudfSchema(dataSchema: StructType): Schema = {
+    // read boolean and numeric columns as strings in cuDF
+    val dataSchemaWithStrings = StructType(dataSchema.fields
+        .map(f => {
+          f.dataType match {
+            case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
+                 DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
+                 DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
+                 DataTypes.TimestampType =>
+              f.copy(dataType = DataTypes.StringType)
+            case other if GpuTypeShims.supportCsvRead(other) =>
+              f.copy(dataType = DataTypes.StringType)
+            case _ =>
+              f
+          }
+        }))
+    GpuColumnVector.from(dataSchemaWithStrings)
+  }
+
+  def castTableToDesiredTypes(table: Table, readSchema: StructType): Table = {
+    val columns = new ListBuffer[ColumnVector]()
+    // Table increases the ref counts on the columns so we have
+    // to close them after creating the table
+    withResource(columns) { _ =>
+      for (i <- 0 until table.getNumberOfColumns) {
+        val castColumn = readSchema.fields(i).dataType match {
+          case DataTypes.BooleanType =>
+            castStringToBool(table.getColumn(i))
+          case DataTypes.ByteType =>
+            castStringToInt(table.getColumn(i), DType.INT8)
+          case DataTypes.ShortType =>
+            castStringToInt(table.getColumn(i), DType.INT16)
+          case DataTypes.IntegerType =>
+            castStringToInt(table.getColumn(i), DType.INT32)
+          case DataTypes.LongType =>
+            castStringToInt(table.getColumn(i), DType.INT64)
+          case DataTypes.FloatType =>
+            castStringToFloat(table.getColumn(i), DType.FLOAT32)
+          case DataTypes.DoubleType =>
+            castStringToFloat(table.getColumn(i), DType.FLOAT64)
+          case dt: DecimalType =>
+            castStringToDecimal(table.getColumn(i), dt)
+          case DataTypes.DateType =>
+            castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
+          case DataTypes.TimestampType =>
+            castStringToTimestamp(table.getColumn(i),
+              timestampFormat, DType.TIMESTAMP_MICROSECONDS)
+          case other if GpuTypeShims.supportCsvRead(other) =>
+            GpuTypeShims.csvRead(table.getColumn(i), other)
+          case _ =>
+            table.getColumn(i).incRefCount()
+        }
+        columns += castColumn
+      }
+      new Table(columns.toSeq: _*)
+    }
+  }
+
   private def readToTable(isFirstChunk: Boolean): Option[Table] = {
     val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
       readPartFile()
@@ -301,68 +478,19 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           readDataSchema
         }
 
-        // read boolean and numeric columns as strings in cuDF
-        val dataSchemaWithStrings = StructType(dataSchema.fields
-          .map(f => {
-            f.dataType match {
-              case DataTypes.BooleanType | DataTypes.ByteType | DataTypes.ShortType |
-                   DataTypes.IntegerType | DataTypes.LongType | DataTypes.FloatType |
-                   DataTypes.DoubleType | _: DecimalType | DataTypes.DateType |
-                   DataTypes.TimestampType =>
-                f.copy(dataType = DataTypes.StringType)
-              case other if GpuTypeShims.supportCsvRead(other) =>
-                f.copy(dataType = DataTypes.StringType)
-              case _ =>
-                f
-            }
-          }))
-        val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
+        val cudfSchema = getCudfSchema(dataSchema)
+        val cudfReadSchema = getCudfSchema(newReadDataSchema)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         // The buffer that is sent down
-        val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk,
-            metrics(GPU_DECODE_TIME))
+        val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, cudfReadSchema,
+          isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
         val castTable = withResource(table) { _ =>
-          val columns = new ListBuffer[ColumnVector]()
-          // Table increases the ref counts on the columns so we have
-          // to close them after creating the table
-          withResource(columns) { _ =>
-            for (i <- 0 until table.getNumberOfColumns) {
-              val castColumn = newReadDataSchema.fields(i).dataType match {
-                case DataTypes.BooleanType =>
-                  castStringToBool(table.getColumn(i))
-                case DataTypes.ByteType =>
-                  castStringToInt(table.getColumn(i), DType.INT8)
-                case DataTypes.ShortType =>
-                  castStringToInt(table.getColumn(i), DType.INT16)
-                case DataTypes.IntegerType =>
-                  castStringToInt(table.getColumn(i), DType.INT32)
-                case DataTypes.LongType =>
-                  castStringToInt(table.getColumn(i), DType.INT64)
-                case DataTypes.FloatType =>
-                  castStringToFloat(table.getColumn(i), DType.FLOAT32)
-                case DataTypes.DoubleType =>
-                  castStringToFloat(table.getColumn(i), DType.FLOAT64)
-                case dt: DecimalType =>
-                  castStringToDecimal(table.getColumn(i), dt)
-                case DataTypes.DateType =>
-                  castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
-                case DataTypes.TimestampType =>
-                  castStringToTimestamp(table.getColumn(i), timestampFormat,
-                    DType.TIMESTAMP_MICROSECONDS)
-                case other if GpuTypeShims.supportCsvRead(other) =>
-                  GpuTypeShims.csvRead(table.getColumn(i), other)
-                case _ =>
-                  table.getColumn(i).incRefCount()
-              }
-              columns += castColumn
-            }
-            new Table(columns.toSeq: _*)
-          }
+          castTableToDesiredTypes(table, newReadDataSchema)
         }
 
         handleResult(newReadDataSchema, castTable)
@@ -399,117 +527,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       lhs: ColumnVector,
       sparkFormat: String,
       dtype: DType): ColumnVector = {
-
-    val optionalSeconds = raw"(?:\:\d{2})?"
-    val optionalMicros = raw"(?:\.\d{1,6})?"
-    val twoDigits = raw"\d{2}"
-    val fourDigits = raw"\d{4}"
-
-    val regexRoot = sparkFormat
-      .replace("'T'", "T")
-      .replace("yyyy", fourDigits)
-      .replace("MM", twoDigits)
-      .replace("dd", twoDigits)
-      .replace("HH", twoDigits)
-      .replace("mm", twoDigits)
-      .replace("[:ss]", optionalSeconds)
-      .replace(":ss", optionalSeconds) // Spark always treats seconds portion as optional
-      .replace("[.SSSXXX]", optionalMicros)
-      .replace("[.SSS][XXX]", optionalMicros)
-      .replace("[.SSS]", optionalMicros)
-      .replace("[.SSSSSS]", optionalMicros)
-      .replace(".SSSXXX", optionalMicros)
-      .replace(".SSSSSS", optionalMicros)
-      .replace(".SSS", optionalMicros)
-
-    // Spark treats timestamp portion as optional always
-    val regexOptionalTime = regexRoot.split('T') match {
-      case Array(d, t) =>
-        d + "(?:[ T]" + t + ")?"
-      case _ =>
-        regexRoot
-    }
-    val regex = regexOptionalTime + raw"Z?\Z"
-
-    // get a list of all possible cuDF formats that we need to check for
-    val cudfFormats = GpuTextBasedDateUtils.toCudfFormats(sparkFormat, parseString = true)
-
-
-    // filter by regexp first to eliminate invalid entries
-    val regexpFiltered = withResource(lhs.strip()) { stripped =>
-      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
-      withResource(stripped.matchesRe(prog)) { matchesRe =>
-        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-          matchesRe.ifElse(stripped, nullString)
-        }
-      }
-    }
-
-    // fix timestamps that have milliseconds but no microseconds
-    // example ".296" => ".296000"
-    val sanitized = withResource(regexpFiltered) { _ =>
-      // cannot replace with back-refs directly because cuDF cannot support "\1000\2" so we
-      // first substitute with a placeholder and then replace that. The placeholder value
-      // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
-      // date/time formats that contain the `@` character
-      val placeholder = "@"
-      val prog = new RegexProgram(raw"(\.\d{3})(Z?)\Z")
-      withResource(regexpFiltered.stringReplaceWithBackrefs(prog, raw"\1$placeholder\2")) { tmp =>
-        withResource(Scalar.fromString(placeholder)) { from =>
-          withResource(Scalar.fromString("000")) { to =>
-            tmp.stringReplace(from, to)
-          }
-        }
-      }
-    }
-
-    def isTimestamp(fmt: String): ColumnVector = {
-      val pos = fmt.indexOf('T')
-      if (pos == -1) {
-        sanitized.isTimestamp(fmt)
-      } else {
-        // Spark supports both ` ` and `T` as the delimiter so we have to test
-        // for both formats when calling `isTimestamp` in cuDF but the
-        // `asTimestamp` method ignores the delimiter so we only need to call that
-        // with one format
-        val withSpaceDelim = fmt.substring(0, pos) + ' ' + fmt.substring(pos + 1)
-        withResource(sanitized.isTimestamp(fmt)) { isValidFmt1 =>
-          withResource(sanitized.isTimestamp(withSpaceDelim)) { isValidFmt2 =>
-            isValidFmt1.or(isValidFmt2)
-          }
-        }
-      }
-    }
-
-    def asTimestampOrNull(fmt: String): ColumnVector = {
-      withResource(Scalar.fromNull(dtype)) { nullScalar =>
-        withResource(isTimestamp(fmt)) { isValid =>
-          withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
-            isValid.ifElse(ts, nullScalar)
-          }
-        }
-      }
-    }
-
-    def asTimestampOr(fmt: String, orValue: ColumnVector): ColumnVector = {
-      withResource(orValue) { _ =>
-        withResource(isTimestamp(fmt)) { isValid =>
-          withResource(sanitized.asTimestamp(dtype, fmt)) { ts =>
-            isValid.ifElse(ts, orValue)
-          }
-        }
-      }
-    }
-
-    withResource(sanitized) { _ =>
-      if (cudfFormats.length == 1) {
-        asTimestampOrNull(cudfFormats.head)
-      } else {
-        cudfFormats.tail.foldLeft(asTimestampOrNull(cudfFormats.head)) { (input, fmt) =>
-          asTimestampOr(fmt, input)
-        }
-      }
-    }
+    GpuTextBasedPartitionReader.castStringToTimestamp(lhs, sparkFormat, dtype)
   }
 
   def castStringToBool(input: ColumnVector): ColumnVector
@@ -535,15 +553,17 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   /**
    * Read the host buffer to GPU table
    * @param dataBuffer where the data is buffered
-   * @param cudfSchema the cudf schema of the data
+   * @param cudfDataSchema the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
+   * @param cudfReadDataSchema the cudf schema of just the data we want to read.
    * @param isFirstChunk if it is the first chunk
    * @return table
    */
   def readToTable(
     dataBuffer: BUFF,
-    cudfSchema: Schema,
+    cudfDataSchema: Schema,
     readDataSchema: StructType,
+    cudfReadDataSchema: Schema,
     isFirstChunk: Boolean,
     decodeTime: GpuMetric): Table
 

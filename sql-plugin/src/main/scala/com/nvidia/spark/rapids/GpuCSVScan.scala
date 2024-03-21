@@ -419,20 +419,21 @@ class CSVPartitionReader(
    * Read the host buffer to GPU table
    *
    * @param dataBufferer   buffered data to be parsed
-   * @param cudfSchema     the cudf schema of the data
+   * @param cudfDataSchema     the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
    * @param isFirstChunk   if it is the first chunk
    * @return table
    */
   override def readToTable(
       dataBufferer: HostLineBufferer,
-      cudfSchema: Schema,
+      cudfDataSchema: Schema,
       readDataSchema: StructType,
+      cudfReadDataSchema: Schema,
       isFirstChunk: Boolean,
       decodeTime: GpuMetric): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    CSVPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, csvOpts,
+    CSVPartitionReader.readToTable(dataBufferer, cudfDataSchema, decodeTime, csvOpts,
       getFileFormatShortName, partFile)
   }
 }

@@ -1,4 +1,5 @@
 {"str": "value"}
+{"str": "value \u0035"}
 {"\str": "value"}
 {"st\r": "value"}
 {"str\": "value"}
