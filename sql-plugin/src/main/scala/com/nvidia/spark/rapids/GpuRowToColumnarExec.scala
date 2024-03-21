@@ -634,11 +634,10 @@ class RowToColumnarIterator(
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
-        var maxBytes: Double = 0
         var overWrite = false
         // read at least one row
         while (!overWrite && hasNext && (rowCount == 0 ||
-            ((rowCount < targetRows) && ((byteCount + maxBytes ) <= batchSizeBytes)))) {
+            ((rowCount < targetRows) && (byteCount < targetSizeBytes)))) {
           val row = if (pending.nonEmpty) {
             pending.dequeue()
           } else {
@@ -649,7 +648,6 @@ class RowToColumnarIterator(
             val rowBytes = converters.convert(row, builders)
             byteCount += rowBytes
             rowCount += 1
-            maxBytes = maxBytes.max(rowBytes)
           } catch {
             case _ : RapidsHostColumnOverflow => {
               // We overwrote the pre-allocated buffers.  Restore state and stop here if we can.
