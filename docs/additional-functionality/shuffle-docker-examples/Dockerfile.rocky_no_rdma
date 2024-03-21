@@ -24,7 +24,7 @@
 #   - ROCKY_VER: Rocky Linux OS version
 
 ARG CUDA_VER=11.8.0
-ARG UCX_VER=1.16.0-rc1
+ARG UCX_VER=1.16.0-rc4
 ARG UCX_CUDA_VER=11
 ARG UCX_ARCH=x86_64
 ARG ROCKY_VER=8
@@ -33,8 +33,7 @@ ARG UCX_VER
 ARG UCX_CUDA_VER
 ARG UCX_ARCH
 
-# note that libibmad is a temporary workaround for a missed dependency in ucx-1.16 rpm
-RUN yum update -y && yum install -y wget bzip2 numactl-libs libgomp libibmad
+RUN yum update -y && yum install -y wget bzip2 numactl-libs libgomp
 RUN ls /usr/lib
 RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
   wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-centos8-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
