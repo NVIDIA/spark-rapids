@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.TableCacheQueryStageExec
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.window.WindowGroupLimitExec
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.{StringType, StructType}
@@ -40,14 +40,10 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
-      relation: Option[HadoopFsRelation],
-      metadataColumns: Seq[AttributeReference] = Seq.empty): RDD[InternalRow] = {
-    if (relation.isDefined) {
+      metadataColumns: Seq[AttributeReference] = Seq.empty,
+      fileFormat: Option[FileFormat]): RDD[InternalRow] = {
       new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns,
-        metadataExtractors = relation.get.fileFormat.fileConstantMetadataExtractors)
-    } else {
-      new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
-    }
+        metadataExtractors = fileFormat.map(_.fileConstantMetadataExtractors).getOrElse(Map.empty))
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {

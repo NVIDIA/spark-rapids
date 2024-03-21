@@ -269,7 +269,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     // TODO [future]: Handle small-file optimization.
     //                (https://github.com/NVIDIA/spark-rapids/issues/7017)
     //                Currently assuming per-file reading.
-    SparkShimImpl.getFileScanRDD(sparkSession, readFile, filePartitions, readSchema, None)
+    SparkShimImpl.getFileScanRDD(sparkSession, readFile, filePartitions, readSchema)
                  .asInstanceOf[RDD[ColumnarBatch]]
   }
 

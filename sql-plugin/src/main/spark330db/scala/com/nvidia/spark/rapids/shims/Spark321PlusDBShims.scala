@@ -56,8 +56,8 @@ trait Spark321PlusDBShims extends SparkShims
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
-      relation: Option[HadoopFsRelation],
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+      metadataColumns: Seq[AttributeReference],
+      fileFormat: Option[FileFormat]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
