@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import scala.util.parsing.combinator.RegexParsers
 
-import ai.rapids.cudf
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.JSONUtils
@@ -94,23 +93,18 @@ object JsonPathParser extends RegexParsers {
     }
   }
 
-  def splitInstructions(instructions: List[PathInstruction]): 
-      (Array[String], Array[String], Array[Long]) = {
-    instructions.map(unzipInstruction).unzip3 match {
-      case (types, names, values) =>
-        (types.toArray, names.toArray, values.toArray)
-    }
-  }
-
-  def createTable(instructions: List[PathInstruction]): cudf.Table = {
-    val (types, names, values) = splitInstructions(instructions)
-    withResource(ColumnVector.fromStrings(types: _*)) { typesColumn =>
-      withResource(ColumnVector.fromStrings(names: _*)) { namesColumn =>
-        withResource(ColumnVector.fromLongs(values: _*)) { valuesColumn =>
-          new cudf.Table(typesColumn, namesColumn, valuesColumn)
-        }
-      }
-    }
+  def convertToJniObject(instructions: List[PathInstruction]): 
+      Array[JSONUtils.PathInstructionJni] = {
+    instructions.map { instruction =>
+      val (tpe, name, index) = unzipInstruction(instruction)
+      new JSONUtils.PathInstructionJni(tpe match {
+        case "subscript" => JSONUtils.PathInstructionType.SUBSCRIPT
+        case "key" => JSONUtils.PathInstructionType.KEY
+        case "wildcard" => JSONUtils.PathInstructionType.WILDCARD
+        case "index" => JSONUtils.PathInstructionType.INDEX
+        case "named" => JSONUtils.PathInstructionType.NAMED
+      }, name, index)
+    }.toArray
   }
 }
 
@@ -143,9 +137,9 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
       pathInstructions
     } match {
       case Some(instructions) => {
-        withResource(JsonPathParser.createTable(instructions)) { instructions =>
-          JSONUtils.getJsonObject(lhs.getBase, instructions)
-        }
+        val jniInstructions = JsonPathParser.convertToJniObject(instructions)
+        val insSize = jniInstructions.length
+        JSONUtils.getJsonObject(lhs.getBase, insSize, jniInstructions)
       }
       case None => GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
     }

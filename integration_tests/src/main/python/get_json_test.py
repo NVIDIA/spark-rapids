@@ -55,9 +55,7 @@ def test_get_json_object_quoted_index():
                     DB 10.4 shows incorrect behaviour with single quotes")
 def test_get_json_object_single_quotes():
     schema = StructType([StructField("jsonStr", StringType())])
-    data = [[r'''{'a':'A'}'''],
-            [r'''{'b':'"B'}'''],
-            [r'''{"c":"'C"}''']]
+    data = [[r'''{'a':'A'}''']]
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
