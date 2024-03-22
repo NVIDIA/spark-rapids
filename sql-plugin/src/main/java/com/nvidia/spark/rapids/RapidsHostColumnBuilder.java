@@ -223,13 +223,13 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
     for (RapidsHostColumnBuilder childBuilder : childBuilders) {
       hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
     }
-    // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
     if (valid != null) {
       // The valid buffer might have been pre-allocated, but never used.  If so, close it.
       if (nullCount == 0) {
         valid.close();
         valid = null;
       } else {
+        // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
         growValidBuffer();
       }
     }
@@ -244,13 +244,13 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
     for (RapidsHostColumnBuilder childBuilder : childBuilders) {
       hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
     }
-    // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
     if (valid != null) {
       // The valid buffer might have been pre-allocated, but never used.  If so, close it.
       if (nullCount == 0) {
         valid.close();
         valid = null;
       } else {
+        // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
         growValidBuffer();
       }
     }
