@@ -272,17 +272,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
      * A collection of builders for building up columnar data.
      * @param schema the schema of the batch.
      * @param rows the maximum number of rows in this batch.
-     * @param totalBytes total size of buffer needed
+     * @param sBuf single spillable host buffer to slice up among columns
      * @param bufferSizes an array of sizes for each column
      */
     public GpuColumnarBatchBuilder(StructType schema, int rows,
-        long totalBytes, long[] bufferSizes) {
+        SpillableHostBuffer sBuf, long[] bufferSizes) {
       fields = schema.fields();
       int len = fields.length;
       builders = new RapidsHostColumnBuilder[len];
       boolean success = false;
       long offset = 0;
-      try (HostMemoryBuffer hBuf = HostAlloc$.MODULE$.alloc(totalBytes, true);) {
+      try (HostMemoryBuffer hBuf =
+               RmmRapidsRetryIterator.withRetryNoSplit(() -> sBuf.getHostBuffer());) {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           try (HostMemoryBuffer columnBuffer = hBuf.slice(offset, bufferSizes[i]);) {

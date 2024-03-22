@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,15 +35,15 @@ def test_row_conversions(override_batch_size_bytes):
         conf["spark.rapids.sql.batchSizeBytes"] = override_batch_size_bytes
 
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
-        ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
-        ["i", timestamp_gen], ["j", date_gen], ["k", ArrayGen(byte_gen)],
-        ["l", ArrayGen(string_gen)], ["m", ArrayGen(float_gen)],
-        ["n", ArrayGen(boolean_gen)], ["o", ArrayGen(ArrayGen(short_gen))],
-        ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])],
-        ["q", simple_string_to_string_map_gen],
-        ["r", MapGen(BooleanGen(nullable=False), ArrayGen(boolean_gen), max_length=2)],
-        ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_32bit],
-        ["v", decimal_gen_128bit]]
+            ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
+            ["i", timestamp_gen], ["j", date_gen], ["k", ArrayGen(byte_gen)],
+            ["l", ArrayGen(string_gen)], ["m", ArrayGen(float_gen)],
+            ["n", ArrayGen(boolean_gen)], ["o", ArrayGen(ArrayGen(short_gen))],
+            ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])],
+            ["q", simple_string_to_string_map_gen],
+            ["r", MapGen(BooleanGen(nullable=False), ArrayGen(boolean_gen), max_length=2)],
+            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_32bit],
+            ["v", decimal_gen_128bit]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"), conf=conf)
 

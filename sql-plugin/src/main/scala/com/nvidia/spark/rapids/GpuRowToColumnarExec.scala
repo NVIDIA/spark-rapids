@@ -17,8 +17,10 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfCpu, withRetry}
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -594,7 +596,7 @@ class RowToColumnarIterator(
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
     streamTime: GpuMetric = NoopMetric,
-    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Logging {
+    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -609,6 +611,21 @@ class RowToColumnarIterator(
       throw new NoSuchElementException
     }
     buildBatch()
+  }
+
+  // Attempt to allocate a single host buffer for the full batch of columns, retrying
+  // with fewer rows if necessary.  Then make it spillable.
+  // Returns of tuple of (actual rows, per-column-sizes, SpillableHostBuffer).
+  private def allocBufWithRetry(rows : Int) : (Int, Array[Long], SpillableHostBuffer) = {
+    val  targetRowCount = AutoCloseableTargetSize(rows, 1)
+    withRetry(targetRowCount, splitTargetSizeInHalfCpu) { attempt =>
+      val perColBytes = GpuBatchUtils.estimatePerColumnGpuMemory(localSchema, attempt.targetSize)
+      closeOnExcept(HostAlloc.alloc(perColBytes.sum, true)) { hBuf =>
+        (attempt.targetSize.toInt, perColBytes,
+            SpillableHostBuffer(hBuf, hBuf.getLength, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBufferCatalog.singleton))
+      }
+    }.next()
   }
 
   private def buildBatch(): ColumnarBatch = {
@@ -626,11 +643,11 @@ class RowToColumnarIterator(
           targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
         }
       }
-      val perColumnBytes = GpuBatchUtils.estimatePerColumnGpuMemory(localSchema, targetRows)
-      val batchSizeBytes = perColumnBytes.sum
+      val (actualRows, perColumnBytes, sBuf) = allocBufWithRetry(targetRows)
+      targetRows = actualRows
 
-      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows,
-        batchSizeBytes, perColumnBytes)) { builders =>
+      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows, sBuf,
+        perColumnBytes)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
