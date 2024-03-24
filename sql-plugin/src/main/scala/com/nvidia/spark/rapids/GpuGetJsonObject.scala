@@ -83,6 +83,11 @@ object JsonPathParser extends RegexParsers {
     }
   }
 
+  def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
+    // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
+    instructions.filterNot(_ == Subscript | Key).length > 16
+  }
+
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
     instruction match {
       case Subscript => ("subscript", "", -1)
@@ -106,6 +111,27 @@ object JsonPathParser extends RegexParsers {
       }, name, index)
     }.toArray
   }
+}
+
+class GpuGetJsonObjectMeta(
+    expr: GetJsonObject,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule
+  ) extends BinaryExprMeta[GetJsonObject](expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    val lit = GpuOverrides.extractLit(expr.right)
+    lit.map { l =>
+      val instructions = JsonPathParser.parse(l.value.asInstanceOf[UTF8String].toString)
+      if (instructions.exists(JsonPathParser.fallbackCheck(_))) {
+        willNotWorkOnGpu("get_json_object on GPU does not support wildcard [*] in path")
+      }
+    }
+  }
+
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+    GpuGetJsonObject(lhs, rhs)
 }
 
 case class GpuGetJsonObject(json: Expression, path: Expression)

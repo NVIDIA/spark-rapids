@@ -37,8 +37,7 @@ def test_get_json_object(json_str_pattern):
             'get_json_object(a, "$.store.fruit[0]")',
             'get_json_object(\'%s\', "$.store.fruit[0]")' % scalar_json,
             ),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.GetJsonObject': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 def test_get_json_object_quoted_index():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -48,8 +47,7 @@ def test_get_json_object_quoted_index():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
         f.get_json_object('jsonStr',r'''$['a']''').alias('sub_a'),
-        f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b')),
-        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
+        f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b')))
 
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks113_or_later(), reason="get_json_object on \
                     DB 10.4 shows incorrect behaviour with single quotes")
@@ -72,15 +70,13 @@ def test_get_json_object_single_quotes():
     "$.store.book",
     "$.store.book[0]",
     pytest.param("$",marks=[
-        pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218'),
-        pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10196'),
-        pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10194')]),
+        pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')]),
     "$.store.book[0].category",
     "$.store.basket[0][1]",
     "$.store.basket[0][2].b",
     "$.zip code",
     "$.fb:testid",
-    pytest.param("$.a",marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10196')),
+    "$.a",
     "$.non_exist_key",
     "$..no_recursive",
     "$.store.book[0].non_exist_key",
@@ -139,7 +135,6 @@ def test_get_json_object_quoted_question():
             f.get_json_object('jsonStr',r'''$['?']''').alias('question')),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10196")
 def test_get_json_object_escaped_string_data():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"a":"A\"B"}'],
@@ -155,7 +150,6 @@ def test_get_json_object_escaped_string_data():
         lambda spark: spark.createDataFrame(data,schema=schema).selectExpr('get_json_object(jsonStr,"$.a")'),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10196")
 def test_get_json_object_escaped_key():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [
@@ -194,7 +188,6 @@ def test_get_json_object_escaped_key():
             ),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10212")
 def test_get_json_object_invalid_path():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":"A"}'],
@@ -303,8 +296,7 @@ def test_unsupported_fallback_get_json_object(json_str_pattern):
         assert_gpu_fallback_collect(lambda spark:
             gen_df(spark, [('a', gen), ('b', pattern)], length=10).selectExpr(sql_text),
         'GetJsonObject',
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.GetJsonObject': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
     assert_gpu_did_fallback('get_json_object(a, b)')
     assert_gpu_did_fallback('get_json_object(\'%s\', b)' % scalar_json)
