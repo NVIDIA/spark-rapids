@@ -108,7 +108,6 @@ def test_from_json_allow_comments_off(std_input_path):
 
 # Off is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
-@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10194')
 def test_get_json_object_allow_comments_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_COMMENTS_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
@@ -216,7 +215,6 @@ def test_from_json_allow_unquoted_field_names_on(std_input_path):
 
 # Off is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
-@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10454')
 def test_get_json_object_allow_unquoted_field_names_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTE_FIELD_NAMES_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
@@ -276,7 +274,6 @@ def test_from_json_allow_numeric_leading_zeros_off(std_input_path):
 
 # Off is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
-@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10454')
 def test_get_json_object_allow_numeric_leading_zeros_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NUMERIC_LEAD_ZEROS_FILE, "json").selectExpr('''get_json_object(json, "$.byte")''',
@@ -339,7 +336,6 @@ def test_from_json_allow_nonnumeric_numbers_on(std_input_path):
 
 # Off is the default for get_json_object so we want this to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
-@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10454')
 def test_get_json_object_allow_nonnumeric_numbers_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NONNUMERIC_NUMBERS_FILE, "json").selectExpr('''get_json_object(json, "$.float")''',
@@ -396,7 +392,6 @@ def test_from_json_allow_backslash_escape_any_on(std_input_path):
 
 # Off is the default for get_json_object so we want this to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
-@pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10454')
 def test_get_json_object_allow_backslash_escape_any_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_BS_ESC_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
@@ -724,8 +719,8 @@ def test_from_json_strings(std_input_path, input_file):
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
-    pytest.param("invalid_ridealong_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10534'))])
+    "boolean_formatted.json",
+    "invalid_ridealong_columns.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_formats(std_input_path, input_file):
    assert_gpu_and_cpu_are_equal_collect(

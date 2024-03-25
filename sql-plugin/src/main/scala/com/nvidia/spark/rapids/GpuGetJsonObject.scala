@@ -22,8 +22,9 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.JSONUtils
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, GetJsonObject}
 import org.apache.spark.sql.types.{DataType, StringType}
+import org.apache.spark.unsafe.types.UTF8String
 
 // Copied from Apache Spark org/apache/spark/sql/catalyst/expressions/jsonExpressions.scala
 sealed trait PathInstruction
@@ -85,7 +86,7 @@ object JsonPathParser extends RegexParsers {
 
   def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
     // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
-    instructions.filterNot(_ == Subscript | Key).length > 16
+    instructions.length > 16
   }
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
