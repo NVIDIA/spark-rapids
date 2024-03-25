@@ -755,11 +755,11 @@ def test_from_json_strings(std_input_path, input_file):
     "sci_formatted_strings.json",
     "decimal_locale_formatted_strings.json",
     "single_quoted_strings.json",
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
-    pytest.param("invalid_ridealong_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10534')),
+    "boolean_formatted.json",
+    "invalid_ridealong_columns.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
-    pytest.param("int_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218'))])
+    "int_struct_formatted.json",
+    "int_mixed_array_struct_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_formats(std_input_path, input_file):
    assert_gpu_and_cpu_are_equal_collect(
