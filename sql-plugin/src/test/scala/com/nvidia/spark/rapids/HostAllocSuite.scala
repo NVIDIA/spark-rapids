@@ -332,8 +332,10 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   override def afterAll(): Unit = {
     RapidsBufferCatalog.close()
     PinnedMemoryPool.shutdown()
-    if (!rmmWasInitialized) {
-      Rmm.shutdown()
+    Rmm.shutdown()
+    if (rmmWasInitialized) {
+      // put RMM back for other tests to use
+      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
     // 1 GiB
     PinnedMemoryPool.initialize(1 * 1024 * 1024 * 1024)

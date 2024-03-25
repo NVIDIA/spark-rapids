@@ -20,14 +20,14 @@ package org.apache.spark.sql.rapids
 import java.util.Locale
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuTextBasedPartitionReader}
+import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.CastStrings
 
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{DataType, _}
 
 /**
  * This is a utility method intended to provide common functionality between JsonToStructs and
@@ -266,10 +266,53 @@ object GpuJsonReadCommon {
   private def timestampFormat(options: JSONOptions): String =
     GpuJsonUtils.timestampFormatInRead(options)
 
+  private def throwMismatchException(cv: ColumnView,
+      dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
+    throw new IllegalStateException(s"Don't know how to transform $cv to $dt for JSON")
+  }
+
+  private def nestedColumnViewMismatchTransform(cv: ColumnView,
+      dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
+    // In the future we should be able to convert strings to maps/etc, but for
+    // now we are working around issues where CUDF is not returning a STRING for nested
+    // types when asked for it.
+    cv.getType match {
+      case DType.LIST =>
+        dt match {
+          case ByteType | ShortType | IntegerType | LongType |
+               BooleanType | FloatType | DoubleType |
+               _: DecimalType | _: StructType =>
+            // This is all nulls
+            val rows = cv.getRowCount().toInt
+            val ret = withResource(GpuScalar.from(null, dt)) { nullScalar =>
+              ColumnVector.fromScalar(nullScalar, rows)
+            }
+            (Some(ret.asInstanceOf[ColumnView]), Seq(ret))
+          case _ =>
+            throwMismatchException(cv, dt)
+        }
+      case DType.STRUCT =>
+        dt match {
+          case _: ArrayType =>
+            // This is all nulls
+            val rows = cv.getRowCount().toInt
+            val ret = withResource(GpuScalar.from(null, dt)) { nullScalar =>
+              ColumnVector.fromScalar(nullScalar, rows)
+            }
+            (Some(ret.asInstanceOf[ColumnView]), Seq(ret))
+          case _ =>
+            throwMismatchException(cv, dt)
+        }
+      case _ =>
+        throwMismatchException(cv, dt)
+    }
+  }
+
   private def convertToDesiredType(inputCv: ColumnVector,
       topLevelType: DataType,
       options: JSONOptions): ColumnVector = {
-    ColumnCastUtil.deepTransform(inputCv, Some(topLevelType)) {
+    ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
+      Some(nestedColumnViewMismatchTransform)) {
       case (cv, Some(BooleanType)) if cv.getType == DType.STRING =>
         castJsonStringToBool(cv)
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
@@ -324,6 +367,7 @@ object GpuJsonReadCommon {
     ai.rapids.cudf.JSONOptions.builder()
     .withRecoverWithNull(true)
     .withMixedTypesAsStrings(enableMixedTypes)
+    .withNormalizeWhitespace(true)
     .withKeepQuotes(true)
     .withNormalizeSingleQuotes(options.allowSingleQuotes)
     .build()

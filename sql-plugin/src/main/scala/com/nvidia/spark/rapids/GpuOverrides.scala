@@ -1928,7 +1928,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGreaterThan(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuGreaterThan(lhs, rhs))
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
@@ -1943,7 +1943,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGreaterThanOrEqual(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuGreaterThanOrEqual(lhs, rhs))
       }),
     expr[In](
       "IN operator",
@@ -1993,7 +1993,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[LessThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuLessThan(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuLessThan(lhs, rhs))
       }),
     expr[LessThanOrEqual](
       "<= operator",
@@ -2008,7 +2008,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuLessThanOrEqual(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuLessThanOrEqual(lhs, rhs))
       }),
     expr[CaseWhen](
       "CASE WHEN expression",
