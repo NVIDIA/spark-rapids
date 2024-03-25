@@ -60,7 +60,9 @@ _enable_json_to_structs_conf = {
     'spark.rapids.sql.expression.JsonToStructs': 'true',
     'spark.rapids.sql.json.read.float.enabled': 'true',
     'spark.rapids.sql.json.read.double.enabled': 'true',
-    'spark.rapids.sql.json.read.decimal.enabled': 'true'
+    'spark.rapids.sql.json.read.decimal.enabled': 'true',
+    'spark.rapids.sql.json.read.decimal.enabled': 'true',
+    'spark.rapids.sql.json.read.mixedTypesAsString.enabled': 'true'
 }
 
 _enable_json_tuple_conf = {
