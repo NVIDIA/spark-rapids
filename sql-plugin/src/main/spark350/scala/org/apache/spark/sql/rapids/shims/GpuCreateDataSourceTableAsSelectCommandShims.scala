@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,8 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "332db"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
+{"spark": "350"}
+{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -31,6 +28,7 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.util.removeInternalMetadata
 import org.apache.spark.sql.execution.command.{CommandUtils, LeafRunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.rapids._
@@ -87,7 +85,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         // We will use the schema of resolved.relation as the schema of the table (instead of
         // the schema of df). It is important since the nullability may be changed by the relation
         // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
-        schema = result.schema)
+        schema = removeInternalMetadata(result.schema))
       // Table location is already validated. No need to check it again during table creation.
       sessionState.catalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
 
