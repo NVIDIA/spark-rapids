@@ -24,7 +24,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.command.DataWritingCommand
@@ -113,24 +113,17 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     extends ShimUnaryExecNode with GpuExec {
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
-  private lazy val sideEffectResult: Seq[ColumnarBatch] =
-    cmd.runColumnar(sparkSession, child)
-
   /**
    * Support row-based executions here to interact with Spark directly instead of a
    * GpuColumnarToRow. Because this write command can be the root operator by the
    * "removeTailingColumnarToRow" rule.
    * For more details pls go to this rule in "GpuTransitionOverrides".
    */
-  private lazy val sideEffectRowsIter: Iterator[InternalRow] =
-    if (sideEffectResult.isEmpty) {
-      Iterator.empty
-    } else {
-      // It will not run into this path because sideEffectResult is always empty,
-      // but just in case.
-      GpuColumnarToRowExec.makeIteratorFunc(output, NoopMetric, NoopMetric, NoopMetric,
-        NoopMetric)(GpuBatchUtils.safeIteratorFromSeq(sideEffectResult))
-    }
+  private lazy val sideEffectResult: Seq[InternalRow] = {
+    val converter = CatalystTypeConverters.createToCatalystConverter(schema)
+    val rows = cmd.run(session, child)
+    rows.map(converter(_).asInstanceOf[InternalRow])
+  }
 
   override def output: Seq[Attribute] = cmd.output
 
@@ -139,20 +132,18 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   // override the default one, otherwise the `cmd.nodeName` will appear twice from simpleString
   override def argString(maxFields: Int): String = cmd.argString(maxFields)
 
-  override def executeCollect(): Array[InternalRow] = sideEffectRowsIter.toArray
+  override def executeCollect(): Array[InternalRow] = sideEffectResult.toArray
 
-  override def executeToIterator: Iterator[InternalRow] = sideEffectRowsIter
+  override def executeToIterator: Iterator[InternalRow] = sideEffectResult.toIterator
 
-  override def executeTake(limit: Int): Array[InternalRow] = {
-    sideEffectRowsIter.take(limit).toArray
-  }
+  override def executeTake(limit: Int): Array[InternalRow] = sideEffectResult.take(limit).toArray
 
   protected override def doExecute(): RDD[InternalRow] = {
-    sparkContext.parallelize(sideEffectRowsIter.toSeq, 1)
+    sparkContext.parallelize(sideEffectResult, 1)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    sparkContext.parallelize(sideEffectResult, 1)
+    sparkContext.parallelize(Seq.empty[ColumnarBatch], 1)
   }
 
   // Need single batch in some cases
