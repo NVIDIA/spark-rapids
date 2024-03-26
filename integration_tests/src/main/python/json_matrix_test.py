@@ -749,9 +749,9 @@ def test_from_json_strings(std_input_path, input_file):
         conf =_enable_json_to_structs_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
     "int_formatted_strings.json",
     "float_formatted_strings.json",
     "sci_formatted_strings.json",
@@ -759,7 +759,7 @@ def test_from_json_strings(std_input_path, input_file):
     "single_quoted_strings.json",
     "boolean_formatted.json",
     "invalid_ridealong_columns.json",
-    pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')),
+    "int_array_formatted.json",
     "int_struct_formatted.json",
     "int_mixed_array_struct_formatted.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC)
