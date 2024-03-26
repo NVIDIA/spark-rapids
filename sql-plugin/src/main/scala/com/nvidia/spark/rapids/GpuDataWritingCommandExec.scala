@@ -121,7 +121,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
    */
   private lazy val sideEffectResult: Seq[InternalRow] = {
     val converter = CatalystTypeConverters.createToCatalystConverter(schema)
-    val rows = cmd.run(session, child)
+    val rows = cmd.run(sparkSession, child)
     rows.map(converter(_).asInstanceOf[InternalRow])
   }
 
