@@ -69,8 +69,7 @@ def test_get_json_object_single_quotes():
     "$['key with spaces']",
     "$.store.book",
     "$.store.book[0]",
-    pytest.param("$",marks=[
-        pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10218')]),
+    "$",
     "$.store.book[0].category",
     "$.store.basket[0][1]",
     "$.store.basket[0][2].b",

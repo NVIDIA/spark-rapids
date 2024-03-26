@@ -86,7 +86,7 @@ object JsonPathParser extends RegexParsers {
 
   def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
     // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
-    instructions.length > 16
+    instructions.length > 32
   }
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
@@ -165,8 +165,7 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
     } match {
       case Some(instructions) => {
         val jniInstructions = JsonPathParser.convertToJniObject(instructions)
-        val insSize = jniInstructions.length
-        JSONUtils.getJsonObject(lhs.getBase, insSize, jniInstructions)
+        JSONUtils.getJsonObject(lhs.getBase, jniInstructions)
       }
       case None => GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
     }
