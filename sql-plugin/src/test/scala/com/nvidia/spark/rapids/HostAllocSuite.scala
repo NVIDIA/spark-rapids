@@ -36,7 +36,6 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
-  sqlConf.setConfString("spark.rapids.memory.gpu.state.debug", "stderr")
   private val rc = new RapidsConf(sqlConf)
   private val timeoutMs = 10000
 
