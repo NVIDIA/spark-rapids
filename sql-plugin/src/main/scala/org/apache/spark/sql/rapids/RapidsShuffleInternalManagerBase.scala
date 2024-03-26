@@ -850,7 +850,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             None // no further batches
           }
         } finally {
-          blockState.close()
+          if (!success) {
+            blockState.close()
+          }
         }
       })
     }
