@@ -831,7 +831,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
     private def deserializeTask(blockState: BlockState): Unit = {
       val slot = RapidsShuffleInternalManagerBase.getNextReaderSlot
-      val tc = TaskContext.get()
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
         var success = false
         try {
