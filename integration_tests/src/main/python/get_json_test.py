@@ -104,7 +104,7 @@ def test_get_json_object_spark_unit_tests(query):
             f.get_json_object('jsonStr', query)),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
+# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
 def test_get_json_object_normalize_non_string_output():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[' { "a": "A" } '],
