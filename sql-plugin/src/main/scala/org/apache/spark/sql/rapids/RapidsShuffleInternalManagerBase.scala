@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{File, FileInputStream}
 import java.util.Optional
-import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue}
+import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection
@@ -672,12 +672,55 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       null
     }
 
-    // Register a completion handler to close any queued cbs.
+    // Register a completion handler to close any queued cbs,
+    // pending iterators, or futures
     onTaskCompletion(context) {
+      // remove any materialized batches
       queued.forEach {
         case (_, cb:ColumnarBatch) => cb.close()
       }
       queued.clear()
+
+      // close any materialized BlockState objects that are holding onto netty buffers or
+      // file descriptors
+      pendingIts.foreach(_.close)
+      pendingIts.clear()
+
+      // we could have futures left that are either done or in flight
+      // we need to cancel them and then close out any `BlockState`
+      // objects that were created (to remove netty buffers or file descriptors)
+      val futuresAndCancellations = futures.map { f =>
+        val didCancel = f.cancel(true)
+        (f, didCancel)
+      }
+
+      // if we weren't able to cancel, we are going to make a best attempt at getting the future
+      // and we are going to close it. The timeout is to prevent an (unlikely) infinite wait.
+      // If we do timeout then this handler is going to throw.
+      var failedFuture: Option[Throwable] = None
+      futuresAndCancellations
+        .filter { case (_, didCancel) => !didCancel }
+        .foreach { case (future, _) =>
+          try {
+            // this could either be a successful future, or it finished with exception
+            // the case when it will fail with exception is when the underlying stream is closed
+            // as part of the shutdown process of the task.
+            future.get(10, TimeUnit.MILLISECONDS)
+              .foreach(_.close())
+          } catch {
+            case t: Throwable =>
+              // this is going to capture the first exception and not worry about others
+              // because we probably don't want to spam the UI or log with an exception per
+              // block we are fetching
+              if (failedFuture.isEmpty) {
+                failedFuture = Some(t)
+              }
+          }
+        }
+      futures.clear()
+      failedFuture.foreach { e =>
+        throw e
+      }
     }
 
     override def hasNext: Boolean = {
@@ -689,8 +732,11 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       }
     }
 
-    case class BlockState(blockId: BlockId, batchIter: SerializedBatchIterator)
-      extends Iterator[(Any, Any)] {
+    case class BlockState(
+        blockId: BlockId,
+        batchIter: SerializedBatchIterator,
+        origStream: AutoCloseable)
+      extends Iterator[(Any, Any)] with AutoCloseable {
       private var nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
 
       def getNextBatchSize: Long = nextBatchSize
@@ -699,8 +745,23 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
       override def next(): (Any, Any) = {
         val nextBatch = batchIter.next()
-        nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
-        nextBatch
+        var success = false
+        try {
+          nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
+          success = true
+          nextBatch
+        } finally {
+          if (!success) {
+            // the call to get a next header threw. We need to close `nextBatch`.
+            nextBatch match {
+              case (_, cb: ColumnarBatch) => cb.close()
+            }
+          }
+        }
+      }
+
+      override def close(): Unit = {
+        origStream.close() // make sure we call this on error
       }
     }
 
@@ -723,7 +784,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               waitTime += System.nanoTime() - waitTimeStart
               // if the future returned a block state, we have more work to do
               pending match {
-                case Some(leftOver@BlockState(_, _)) =>
+                case Some(leftOver@BlockState(_, _, _)) =>
                   pendingIts.enqueue(leftOver)
                 case _ => // done
               }
@@ -770,20 +831,27 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
     private def deserializeTask(blockState: BlockState): Unit = {
       val slot = RapidsShuffleInternalManagerBase.getNextReaderSlot
+      val tc = TaskContext.get()
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
-        var currentBatchSize = blockState.getNextBatchSize
-        var didFit = true
-        while (blockState.hasNext && didFit) {
-          val batch = blockState.next()
-          queued.offer(batch)
-          // peek at the next batch
-          currentBatchSize = blockState.getNextBatchSize
-          didFit = limiter.acquire(currentBatchSize)
-        }
-        if (!didFit) {
-          Some(blockState)
-        } else {
-          None // no further batches
+        var success = false
+        try {
+          var currentBatchSize = blockState.getNextBatchSize
+          var didFit = true
+          while (blockState.hasNext && didFit) {
+            val batch = blockState.next()
+            queued.offer(batch)
+            // peek at the next batch
+            currentBatchSize = blockState.getNextBatchSize
+            didFit = limiter.acquire(currentBatchSize)
+          }
+          success = true
+          if (!didFit) {
+            Some(blockState)
+          } else {
+            None // no further batches
+          }
+        } finally {
+          blockState.close()
         }
       })
     }
@@ -830,7 +898,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
               val deserStream = serializerInstance.deserializeStream(inputStream)
               val batchIter = deserStream.asKeyValueIterator.asInstanceOf[SerializedBatchIterator]
-              val blockState = BlockState(blockId, batchIter)
+              val blockState = BlockState(blockId, batchIter, inputStream)
               // get the next known batch size (there could be multiple batches)
               if (limiter.acquire(blockState.getNextBatchSize)) {
                 // we can fit at least the first batch in this block
