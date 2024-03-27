@@ -730,11 +730,21 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           }
         }
       futures.clear()
-      if (fallbackIter != null) {
-        fallbackIter.close()
-      }
-      failedFuture.foreach { e =>
-        throw e
+      try { 
+        if (fallbackIter != null) {
+          fallbackIter.close()
+        }
+      } catch {
+        case t: Throwable => 
+          if (failedFuture.isEmpty) {
+            failedFuture = Some(t)
+          } else {
+            failedFuture.get.addSuppressed(t)
+          }
+      } finally {
+        failedFuture.foreach { e =>
+          throw e
+        }
       }
     }
 
