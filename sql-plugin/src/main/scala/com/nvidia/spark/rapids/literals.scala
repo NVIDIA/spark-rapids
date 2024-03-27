@@ -473,7 +473,7 @@ object GpuScalar extends Logging {
  *
  * This class is introduced because many expressions require both the cudf Scalar and its
  * corresponding Scala value to complete their computations. e.g. 'GpuStringSplit',
- * 'GpuStringLocate', 'GpuDivide', 'GpuDateAddInterval', 'GpuTimeMath' ...
+ * 'GpuStringLocate', 'GpuDivide', 'GpuDateAddInterval', 'GpuTimeAdd' ...
  * So only either a cudf Scalar or a Scala value can not support such cases, unless copying data
  * between the host and the device each time being asked for.
  *
@@ -493,7 +493,7 @@ object GpuScalar extends Logging {
  * happens.
  *
  * Another reason why storing the Scala value in addition to the cudf Scalar is
- * `GpuDateAddInterval` and 'GpuTimeMath' have different algorithms with the 3 members of
+ * `GpuDateAddInterval` and 'GpuTimeAdd' have different algorithms with the 3 members of
  * a `CalendarInterval`, which can not be supported by a single cudf Scalar now.
  *
  * Do not create a GpuScalar from the constructor, instead call the factory APIs above.

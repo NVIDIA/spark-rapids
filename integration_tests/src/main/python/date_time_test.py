@@ -26,39 +26,57 @@ import pyspark.sql.functions as f
 non_utc_tz_allow = ['ProjectExec'] if not is_utc() else []
 # Others work in all supported time zones
 non_supported_tz_allow = ['ProjectExec'] if not is_supported_time_zone() else []
+non_supported_tz_allow_filter = ['ProjectExec', 'FilterExec'] if not is_supported_time_zone() else []
 
 # We only support literal intervals for TimeSub
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
-            (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
+            (1885, -2828), (0, 2463), (932, 2286), (0, 0), (0, 86400), (1, 86401), (1, 8640000)]
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_timesub(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        # We are starting at year 0015 to make sure we don't go before year 0001 while doing TimeSub
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_timeadd(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        # We are starting at year 0005 to make sure we don't go before year 0001
-        # and beyond year 10000 while doing TimeAdd
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        lambda spark: unary_op_df(spark, TimestampGen())
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
+@pytest.mark.parametrize('edge_vals', [-pow(2, 63), pow(2, 63)], ids=idfn)
+@allow_non_gpu(*non_supported_tz_allow)
+def test_timeadd_long_overflow(edge_vals):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, TimestampGen())
+            .selectExpr("a + (interval {} microseconds)".format(edge_vals)),
+        conf={},
+        error_message='long overflow')
+
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000
-        ('t', TimestampGen(end=datetime(1000, 1, 1, tzinfo=timezone.utc))),
+        ('t', TimestampGen(end=datetime(2000, 1, 1, tzinfo=timezone.utc))),
         # max days is 8000 year, so added result will not be out of range
-        ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
+        ('d', DayTimeIntervalGen(min_value=timedelta(days=-1000 * 365), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
+
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@allow_non_gpu(*non_supported_tz_allow)
+def test_timeadd_daytime_column_long_overflow():
+    overflow_gen = SetValuesGen(DayTimeIntervalType(), 
+                                [timedelta(microseconds=-pow(2, 63)), timedelta(microseconds=(pow(2, 63) - 1))])
+    gen_list = [('t', TimestampGen()),('d', overflow_gen)]
+    assert_gpu_and_cpu_error(
+        lambda spark : gen_df(spark, gen_list).selectExpr("t + d").collect(),
+        conf={},
+        error_message='long overflow')
 
 @pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
 def test_interval_seconds_overflow_exception():
@@ -68,7 +86,7 @@ def test_interval_seconds_overflow_exception():
         error_message="IllegalArgumentException")
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow_filter)
 def test_timeadd_from_subquery(data_gen):
 
     def fun(spark):
@@ -80,7 +98,7 @@ def test_timeadd_from_subquery(data_gen):
     assert_gpu_and_cpu_are_equal_collect(fun)
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_timesub_from_subquery(data_gen):
 
     def fun(spark):
@@ -135,19 +153,17 @@ def test_datediff(data_gen):
             'datediff(a, date(null))',
             'datediff(a, \'2016-03-02\')'))
 
-hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
-
-@allow_non_gpu(*hms_fallback)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_hour():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
 
-@allow_non_gpu(*hms_fallback)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_minute():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
 
-@allow_non_gpu(*hms_fallback)
+@allow_non_gpu(*non_supported_tz_allow)
 def test_second():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))

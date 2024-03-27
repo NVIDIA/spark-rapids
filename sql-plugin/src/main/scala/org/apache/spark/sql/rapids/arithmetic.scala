@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,8 @@ object AddOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
+      ret: ColumnVector,
+      msg: String = "One or more rows overflow for Add operation."): Unit = {
     // Check overflow. It is true if the arguments have different signs and
     // the sign of the result is different from the sign of x.
     // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
@@ -54,9 +55,7 @@ object AddOverflowChecks {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-          "One or more rows overflow for Add operation."
-          )
+          throw RapidsErrorUtils.arithmeticOverflowError(msg)
         }
       }
     }
@@ -114,7 +113,8 @@ object SubtractOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
+      ret: ColumnVector,
+      msg: String = "One or more rows overflow for Add operation."): Unit = {
     // Check overflow. It is true if the arguments have different signs and
     // the sign of the result is different from the sign of x.
     // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
@@ -131,8 +131,7 @@ object SubtractOverflowChecks {
     withResource(signDiffCV) { signDiff =>
       withResource(signDiff.any()) { any =>
         if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.
-            arithmeticOverflowError("One or more rows overflow for Subtract operation.")
+          throw RapidsErrorUtils.arithmeticOverflowError(msg)
         }
       }
     }

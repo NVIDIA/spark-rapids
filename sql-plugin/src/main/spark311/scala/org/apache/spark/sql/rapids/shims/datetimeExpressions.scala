@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,21 +21,65 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, TimeZoneAwareExpression}
-import org.apache.spark.sql.rapids.GpuTimeMath
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, TimeZoneAwareExpression}
+import org.apache.spark.sql.rapids.datetimeExpressionsUtils
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.CalendarInterval
 
-case class GpuTimeAdd(start: Expression,
-                      interval: Expression,
-                      timeZoneId: Option[String] = None)
-  extends GpuTimeMath(start, interval, timeZoneId) {
+case class GpuTimeAdd(
+    start: Expression,
+    interval: Expression,
+    timeZoneId: Option[String] = None)
+   extends ShimBinaryExpression
+       with GpuExpression
+       with TimeZoneAwareExpression
+       with ExpectsInputTypes
+       with Serializable {
+
+  def this(start: Expression, interval: Expression) = this(start, interval, None)
+
+  override def left: Expression = start
+  override def right: Expression = interval
+
+  override def toString: String = s"$left + $right"
+  override def sql: String = s"${left.sql} + ${right.sql}"
+  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, CalendarIntervalType)
+
+  override def dataType: DataType = TimestampType
+
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
-    us.add(us_s)
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
+        // lhs is start, rhs is interval
+        (lhs, rhs) match {
+          case (l, intvlS: GpuScalar) if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
+            // Scalar does not support 'CalendarInterval' now, so use
+            // the Scala value instead.
+            // Skip the null check because it wll be detected by the following calls.
+            val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
+            if (intvl.months != 0) {
+              throw new UnsupportedOperationException("Months aren't supported at the moment")
+            }
+            val resCv = datetimeExpressionsUtils.timestampAddDurationCalendar(l.getBase, 
+                intvl.days, intvl.microseconds, zoneId)
+            GpuColumnVector.from(resCv, dataType)
+          case _ =>
+            throw new UnsupportedOperationException("only column and interval arguments " +
+              s"are supported, got left: ${lhs.getClass} right: ${rhs.getClass}")
+        }
+      }
+    }
   }
 }
