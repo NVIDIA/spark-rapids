@@ -34,7 +34,8 @@ class GpuCreateDataSourceTableAsSelectCommandSuite
   extends SparkQueryCompareTestSuite
   with FunSuiteWithTempDir {
 
-  test("SPARK-43123: Metadata column related field metadata should not be leaked to catalogs") {
+  // Fails with Spark < 3.5.0 - see https://github.com/NVIDIA/spark-rapids/issues/8844
+  test("Metadata column related field metadata should not be leaked to catalogs") {
     val inputDf = "inputDf"
     val targetTable = "targetTable"
     val columnName = "dataColumn"
