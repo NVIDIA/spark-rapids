@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.ParquetCachedBatchSerializer
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, ExecChecks, GpuExec, GpuMetric, GpuOverrides, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimLeafExecNode
 
 import org.apache.spark.rdd.RDD
@@ -37,6 +37,9 @@ class InMemoryTableScanMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends SparkPlanMeta[InMemoryTableScanExec](imts, conf, parent, rule) {
+
+  private val predicates: Seq[BaseExprMeta[_]] =
+    imts.predicates.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
     def stringifyTypeAttributeMap(groupedByType: Map[DataType, Set[String]]): String = {
@@ -69,7 +72,10 @@ class InMemoryTableScanMeta(
    * Convert InMemoryTableScanExec to a GPU enabled version.
    */
   override def convertToGpu(): GpuExec = {
-    GpuInMemoryTableScanExec(imts.attributes, imts.predicates, imts.relation)
+    GpuInMemoryTableScanExec(
+      imts.attributes,
+      predicates.map(_.convertToGpu()),
+      imts.relation)
   }
 }
 
