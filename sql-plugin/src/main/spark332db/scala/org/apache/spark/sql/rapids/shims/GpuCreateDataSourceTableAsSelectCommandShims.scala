@@ -89,7 +89,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         // We will use the schema of resolved.relation as the schema of the table (instead of
         // the schema of df). It is important since the nullability may be changed by the relation
         // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
-         schema = SchemaMetadataShims.getCleanedSchema(result.schema))
+        schema = SchemaMetadataShims.getCleanedSchema(result.schema))
       // Table location is already validated. No need to check it again during table creation.
       sessionState.catalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
 
