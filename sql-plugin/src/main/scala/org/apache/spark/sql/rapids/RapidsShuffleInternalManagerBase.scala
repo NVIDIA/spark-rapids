@@ -28,9 +28,11 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
+
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.executor.ShuffleWriteMetrics
@@ -644,33 +646,44 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private val futures = new mutable.Queue[Future[Option[BlockState]]]()
     private val serializerInstance = serializer.newInstance()
     private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
-    private val fallbackIter: Iterator[(Any, Any)] = if (numReaderThreads == 1) {
-      // this is the non-optimized case, where we add metrics to capture the blocked
-      // time and the deserialization time as part of the shuffle read time.
-      new Iterator[(Any, Any)]() {
-        private var currentIter: Iterator[(Any, Any)] = _
-        override def hasNext: Boolean = fetcherIterator.hasNext || (
-            currentIter != null && currentIter.hasNext)
+    private val fallbackIter: Iterator[(Any, Any)] with AutoCloseable =
+      if (numReaderThreads == 1) {
+        // this is the non-optimized case, where we add metrics to capture the blocked
+        // time and the deserialization time as part of the shuffle read time.
+        new Iterator[(Any, Any)]() with AutoCloseable {
+          private var currentIter: Iterator[(Any, Any)] = _
+          private var currentStream: AutoCloseable = _
+          override def hasNext: Boolean = fetcherIterator.hasNext || (
+              currentIter != null && currentIter.hasNext)
 
-        override def next(): (Any, Any) = {
-          val fetchTimeStart = System.nanoTime()
-          var readBlockedTime = 0L
-          if (currentIter == null || !currentIter.hasNext) {
-            val readBlockedStart = System.nanoTime()
-            val (_, stream) = fetcherIterator.next()
-            readBlockedTime = System.nanoTime() - readBlockedStart
-            currentIter = serializerInstance.deserializeStream(stream).asKeyValueIterator
+          override def close(): Unit = {
+            if (currentStream != null) {
+              currentStream.close()
+              currentStream = null
+            }
           }
-          val res = currentIter.next()
-          val fetchTime = System.nanoTime() - fetchTimeStart
-          deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
-          shuffleReadTimeNs.foreach(_ += fetchTime)
-          res
+
+          override def next(): (Any, Any) = {
+            val fetchTimeStart = System.nanoTime()
+            var readBlockedTime = 0L
+            if (currentIter == null || !currentIter.hasNext) {
+              val readBlockedStart = System.nanoTime()
+              val (_, stream) = fetcherIterator.next()
+              readBlockedTime = System.nanoTime() - readBlockedStart
+              // this is stored only to call close on it
+              currentStream = stream
+              currentIter = serializerInstance.deserializeStream(stream).asKeyValueIterator
+            }
+            val res = currentIter.next()
+            val fetchTime = System.nanoTime() - fetchTimeStart
+            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
+            shuffleReadTimeNs.foreach(_ += fetchTime)
+            res
+          }
         }
+      } else {
+        null
       }
-    } else {
-      null
-    }
 
     // Register a completion handler to close any queued cbs,
     // pending iterators, or futures
@@ -683,7 +696,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
       // close any materialized BlockState objects that are holding onto netty buffers or
       // file descriptors
-      pendingIts.foreach(_.close)
+      pendingIts.safeClose()
       pendingIts.clear()
 
       // we could have futures left that are either done or in flight
@@ -718,6 +731,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           }
         }
       futures.clear()
+      if (fallbackIter != null) {
+        fallbackIter.close()
+      }
       failedFuture.foreach { e =>
         throw e
       }
@@ -737,7 +753,21 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         batchIter: SerializedBatchIterator,
         origStream: AutoCloseable)
       extends Iterator[(Any, Any)] with AutoCloseable {
-      private var nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
+
+      private var nextBatchSize = {
+        var success = false
+        try {
+          val res = batchIter.tryReadNextHeader().getOrElse(0L)
+          success = true
+          res
+        } finally {
+          if (!success) {
+            // we tried to read from a stream, but something happened
+            // lets close it
+            close()
+          }
+        }
+      }
 
       def getNextBatchSize: Long = nextBatchSize
 
