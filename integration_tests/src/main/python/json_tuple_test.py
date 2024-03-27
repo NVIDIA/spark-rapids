@@ -32,8 +32,7 @@ def test_json_tuple(json_str_pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "a", "email", "owner", "b", "b$", "b$$")'),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 def test_json_tuple_select_non_generator_col():
     gen = StringGen(pattern="{\"Zipcode\":\"abc\",\"ZipCodeType\":\"STANDARD\",\"City\":\"PARC PARQUE\",\"State\":\"PR\"}")
@@ -41,8 +40,7 @@ def test_json_tuple_select_non_generator_col():
         lambda spark : gen_df(spark, [('a', gen)]),
             'table',
             'select a, json_tuple(a, \"Zipcode\", \"ZipCodeType\", \"City\", \"State\") from table',
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @allow_non_gpu('GenerateExec', 'JsonTuple')
 @pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
@@ -56,18 +54,15 @@ def test_json_tuple_with_large_number_of_fields_fallback(json_str_pattern):
                            "location", "city", "country", "zip", "code", "region", "state", "street", "block", "loc", \
                            "height", "h", "author", "title", "price", "isbn", "book", "rating", "score", "popular")'),
         "JsonTuple",
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
     
 @allow_non_gpu('GenerateExec', 'JsonTuple')
 @pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
-def test_json_tuple_with_special_characters_fallback(json_str_pattern):
+def test_json_tuple_with_special_characters(json_str_pattern):
     gen = mk_json_str_gen(json_str_pattern)
     special_characters = ['.', '[', ']', '{', '}', '\\\\', '\'', '\\\"']
     for special_character in special_characters:
-        assert_gpu_fallback_collect(
+        assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
                 'json_tuple(a, "a", "a' + special_character + '")'),
-            "JsonTuple",
-            conf={'spark.sql.parser.escapedStringLiterals': 'true',
-                'spark.rapids.sql.expression.JsonTuple': 'true'})
+            conf={'spark.sql.parser.escapedStringLiterals': 'true'})
