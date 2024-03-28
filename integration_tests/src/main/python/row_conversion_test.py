@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,12 @@ from spark_session import with_cpu_session
 # to be brought back to the CPU (rows) to be returned.
 # So we just need a very simple operation in the middle that
 # can be done on the GPU.
-def test_row_conversions():
+@pytest.mark.parametrize('override_batch_size_bytes', [None, '4mb', '1kb'], ids=idfn)
+def test_row_conversions(override_batch_size_bytes):
+    conf = {}
+    if override_batch_size_bytes is not None:
+        conf["spark.rapids.sql.batchSizeBytes"] = override_batch_size_bytes
+
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
             ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
             ["i", timestamp_gen], ["j", date_gen], ["k", ArrayGen(byte_gen)],
@@ -40,7 +45,7 @@ def test_row_conversions():
             ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_32bit],
             ["v", decimal_gen_128bit]]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
+            lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"), conf=conf)
 
 def test_row_conversions_fixed_width():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],

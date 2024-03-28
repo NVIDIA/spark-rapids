@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,6 +65,11 @@ object GpuBatchUtils {
   def estimateGpuMemory(schema: StructType, columnIndex: Int, rowCount: Long): Long = {
     val field = schema.fields(columnIndex)
     estimateGpuMemory(field.dataType, field.nullable, rowCount)
+  }
+
+  /** Estimate the amount of GPU memory a batch of rows will occupy per column once converted */
+  def estimatePerColumnGpuMemory(schema: StructType, rowCount: Long): Array[Long] = {
+    schema.fields.indices.map(estimateGpuMemory(schema, _, rowCount)).toArray
   }
 
   /**
