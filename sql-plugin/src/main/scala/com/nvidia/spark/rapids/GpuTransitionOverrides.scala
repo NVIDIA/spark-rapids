@@ -633,7 +633,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             s"pushed down to LocalTableScanExec ${lts.expressions.mkString(",")}")
         }
       case imts: InMemoryTableScanExec =>
-        if (!imts.expressions.forall(_.isInstanceOf[AttributeReference])) {
+        // When we don't convert imts to GPU, it's children will also not be on the
+        // GPU, so we check for that case as well. 
+        if (!imts.expressions.forall(i =>
+          i.isInstanceOf[AttributeReference] || i.isInstanceOf[Expression])) {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
         }
