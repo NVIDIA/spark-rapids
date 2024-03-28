@@ -132,7 +132,7 @@ def pytest_sessionstart(session):
     if ('PYTEST_XDIST_WORKER' in os.environ):
         wid = os.environ['PYTEST_XDIST_WORKER']
         _handle_event_log_dir(_sb, wid)
-        driver_opts = _handle_configure_log_dir(_sb, wid, driver_opts)
+        driver_opts += _configure_log_dir(_sb, wid)
         _handle_derby_dir(_sb, driver_opts, wid)
         _handle_ivy_cache_dir(_sb, wid)
     else:
@@ -155,14 +155,14 @@ def _handle_derby_dir(sb, driver_opts, wid):
         os.makedirs(d)
     sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
 
-logger = logging.getLogger('__xdist_worker_logger__')
-def _handle_configure_log_dir(_sb, wid, driver_opts):
+logger = logging.getLogger('__pytest_worker_logger__')
+def _configure_log_dir(_sb, wid):
     current_directory = os.path.abspath(os.path.curdir)
     log_file = '{}/{}_worker_logs.log'.format(current_directory, wid)
 
     from conftest import get_std_input_path
     std_input_path = get_std_input_path()
-    f = driver_opts + ' -Dlog4j.configuration=file://{}/xdist_it_log4j.properties '.format(std_input_path) + \
+    driver_opts = ' -Dlog4j.configuration=file://{}/xdist_it_log4j.properties '.format(std_input_path) + \
         ' -Dlogfile={}'.format(log_file)
 
     # Set up Logging
@@ -182,7 +182,7 @@ def _handle_configure_log_dir(_sb, wid, driver_opts):
     # Add the file handler to the logger
     logger.addHandler(file_handler)
 
-    return f
+    return driver_opts
 
 def _handle_event_log_dir(sb, wid):
     if os.environ.get('SPARK_EVENTLOG_ENABLED', str(True)).lower() in [

@@ -409,6 +409,13 @@ the SHS supported values for the config key
 With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
 even without the SHS webUI.
 
+### Worker Logs
+
+By default, integration tests will write the console output to a text file that 
+will appear under the run directories of the form
+`integration_tests/target/run_dir-<timestamp>-xxxx/gw0_worker_logs.log`. If xdist is not used (e.g., `TEST_PARALLEL=1`)
+there will be no logs generated besides the one on console.
+
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.
