@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import pytest
-from pyspark.sql.functions import when, col, current_date, current_timestamp
+from pyspark.sql.functions import when, col, current_date, current_timestamp, min
 from pyspark.sql.types import *
+from pyspark import StorageLevel
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
@@ -298,3 +299,18 @@ def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=bhj_disable_conf)
 
+
+@ignore_order
+def test_coalesced_read():
+    def do_it(spark):
+        df = spark.range(0, 1000000, 1, 5).rdd.map(lambda l: (l[0], l[0])).toDF()
+        # df = binary_op_df(spark, int_gen, num_slices=5)
+        ee = df.select(df._1.alias("src"), df._2.alias("dst")).persist(StorageLevel.MEMORY_AND_DISK)
+        # load cache
+        ee.count()
+        min_nbrs1 = ee.groupBy("src").agg(min(ee.dst).alias("min_number")).persist(StorageLevel.MEMORY_AND_DISK)
+        join = ee.join(min_nbrs1, "src")
+        assert join.count() == ee.count()
+        return join
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={"spark.rapids.sql.exec.InMemoryTableScanExec": True})

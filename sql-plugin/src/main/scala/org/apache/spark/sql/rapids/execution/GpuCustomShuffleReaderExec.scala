@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric}
-import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{AQEShuffleReaderShims, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -38,6 +38,14 @@ case class GpuCustomShuffleReaderExec(
     child: SparkPlan,
     partitionSpecs: Seq[ShufflePartitionSpec]) extends ShimUnaryExecNode with GpuExec  {
   import GpuMetric._
+
+  assert(partitionSpecs.nonEmpty, s"${getClass.getSimpleName} requires at least one partition")
+
+  // If this is to read shuffle files locally, then all partition specs should be
+  // `PartialMapperPartitionSpec`.
+  if (partitionSpecs.exists(_.isInstanceOf[PartialMapperPartitionSpec])) {
+    assert(partitionSpecs.forall(_.isInstanceOf[PartialMapperPartitionSpec]))
+  }
 
   /**
    * We intentionally override metrics in this case rather than overriding additionalMetrics so
@@ -73,6 +81,9 @@ case class GpuCustomShuffleReaderExec(
         case _ =>
           throw new IllegalStateException("operating on canonicalization plan")
       }
+    } else if (isCoalescedRead) {
+      AQEShuffleReaderShims.coalescedReadOutputPartitioning(
+        partitionSpecs, child.outputPartitioning)
     } else {
       UnknownPartitioning(partitionSpecs.length)
     }
@@ -96,14 +107,25 @@ case class GpuCustomShuffleReaderExec(
     Iterator(desc)
   }
 
-  def hasCoalescedPartition: Boolean =
-    partitionSpecs.exists(_.isInstanceOf[CoalescedPartitionSpec])
+  def hasCoalescedPartition: Boolean = {
+    partitionSpecs.exists(AQEShuffleReaderShims.isCoalescedSpec)
+  }
 
   def hasSkewedPartition: Boolean =
     partitionSpecs.exists(_.isInstanceOf[PartialReducerPartitionSpec])
 
   def isLocalReader: Boolean =
-    partitionSpecs.exists(_.isInstanceOf[PartialMapperPartitionSpec])
+    AQEShuffleReaderShims.isLocalReader(partitionSpecs)
+
+  def isCoalescedRead: Boolean = {
+    partitionSpecs.sliding(2).forall {
+      // A single partition spec which is `CoalescedPartitionSpec` also means coalesced read.
+      case Seq(_: CoalescedPartitionSpec) => true
+      case Seq(l: CoalescedPartitionSpec, r: CoalescedPartitionSpec) =>
+        l.endReducerIndex <= r.startReducerIndex
+      case _ => false
+    }
+  }
 
   private var cachedShuffleRDD: RDD[ColumnarBatch] = null
 
