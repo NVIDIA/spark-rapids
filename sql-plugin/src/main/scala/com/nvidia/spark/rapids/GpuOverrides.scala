@@ -3651,9 +3651,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)
-    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
-        "validated, and the output is not normalized the same as Spark"),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
