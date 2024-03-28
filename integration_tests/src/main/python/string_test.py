@@ -214,6 +214,19 @@ def test_unsupported_fallback_locate():
     assert_gpu_did_fallback('locate(a, a, pos)')
     assert_gpu_did_fallback('locate(a, "a", pos)')
 
+# There is no contains function exposed in Spark. You can turn it into a
+# LIKE %FOO% or we have seen some use instr > 0 to do the same thing.
+# Spark optimizes LIKE to be a contains, we also optimize instr to do
+# something similar.
+def test_instr_as_contains():
+    gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'instr(a, "A") > 0',
+                '0 < instr(a, "A")',
+                '1 <= instr(a, "A")',
+                'instr(a, "A") >= 1',
+                'a LIKE "%A%"'))
 
 def test_instr():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')

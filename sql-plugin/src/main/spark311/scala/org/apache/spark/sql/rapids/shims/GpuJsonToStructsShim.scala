@@ -18,13 +18,14 @@
 {"spark": "312"}
 {"spark": "313"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuCast, GpuOverrides, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
+import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
@@ -36,7 +37,7 @@ object GpuJsonToStructsShim {
     }
   }
 
-  def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
+  def castJsonStringToDate(input: ColumnView, options: JSONOptions): ColumnVector = {
     GpuJsonUtils.optionalDateFormatInRead(options) match {
       case None | Some("yyyy-MM-dd") =>
         withResource(Scalar.fromString(" ")) { space =>
@@ -54,7 +55,7 @@ object GpuJsonToStructsShim {
     tagDateFormatSupport(meta, dateFormat)
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+  def castJsonStringToDateFromScan(input: ColumnView, dt: DType,
       dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None | Some("yyyy-MM-dd") =>
@@ -68,11 +69,9 @@ object GpuJsonToStructsShim {
     }
   }
 
-  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
-    timestampFormat: Option[String]): Unit = {}
 
-  def castJsonStringToTimestamp(input: ColumnVector,
-      options: Map[String, String]): ColumnVector = {
+  def castJsonStringToTimestamp(input: ColumnView,
+      options: JSONOptions): ColumnVector = {
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
         // from_json doesn't respect ansi mode

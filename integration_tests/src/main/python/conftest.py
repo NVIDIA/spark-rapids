@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -355,6 +355,7 @@ def pytest_collection_modifyitems(config, items):
             if len(qualifier) != 0:
                 qualifier = "_" + qualifier # prefix separator for formatting purposes
         extras.append('DATAGEN_SEED%s=%s' % (qualifier, str(test_datagen_random_seed_choice)))
+        extras.append('TZ=%s' % get_test_tz())
 
         if injection_mode == 'random':
             inject_choice = r.randrange(0, 2) == 1

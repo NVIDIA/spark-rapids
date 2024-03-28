@@ -31,6 +31,7 @@
 #   OUT_PATH:       The path where jar files are
 #   CUDA_CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12"
 #   CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12,cuda11-arm64,cuda12-arm64"
+#   DEFAULT_CUDA_CLASSIFIER: The default cuda classifer, will get from project's pom.xml if not set
 ###
 
 set -ex
@@ -47,7 +48,7 @@ function mvnEval {
 ART_ID=$(mvnEval $DIST_PL project.artifactId)
 ART_GROUP_ID=$(mvnEval $DIST_PL project.groupId)
 ART_VER=$(mvnEval $DIST_PL project.version)
-DEFAULT_CUDA_CLASSIFIER=$(mvnEval $DIST_PL cuda.version)
+DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval $DIST_PL cuda.version)}
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"}
 CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"} # default as CUDA_CLASSIFIERS for compatibility
 SERVER_ID=${SERVER_ID:-"snapshots"}

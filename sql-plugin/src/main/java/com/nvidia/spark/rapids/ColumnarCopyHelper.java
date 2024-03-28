@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.HostColumnVector.ColumnBuilder;
-
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.vectorized.ColumnVector;
 
@@ -29,13 +27,13 @@ import org.apache.spark.sql.vectorized.ColumnVector;
  */
 public class ColumnarCopyHelper {
 
-  public static void nullCopy(ColumnBuilder b, int rows) {
+  public static void nullCopy(RapidsHostColumnBuilder b, int rows) {
     for (int i = 0; i < rows; i++) {
       b.appendNull();
     }
   }
 
-  public static void booleanCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void booleanCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getBoolean(i));
@@ -51,7 +49,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void byteCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void byteCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getByte(i));
@@ -67,7 +65,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void shortCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void shortCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getShort(i));
@@ -83,7 +81,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void intCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void intCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getInt(i));
@@ -99,7 +97,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void longCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void longCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getLong(i));
@@ -115,7 +113,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void floatCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void floatCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getFloat(i));
@@ -131,7 +129,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void doubleCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void doubleCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.append(cv.getDouble(i));
@@ -147,7 +145,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void stringCopy(ColumnVector cv, ColumnBuilder b, int rows) {
+  public static void stringCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.appendUTF8String(cv.getUTF8String(i).getBytes());
@@ -163,15 +161,15 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void decimal32Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
+  public static void decimal32Copy(WritableColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     intCopy(cv, b, rows);
   }
 
-  public static void decimal64Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
+  public static void decimal64Copy(WritableColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     longCopy(cv, b, rows);
   }
 
-  public static void decimal128Copy(WritableColumnVector cv, ColumnBuilder b, int rows) {
+  public static void decimal128Copy(WritableColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
         b.appendDecimal128(cv.getBinary(i));
@@ -187,7 +185,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void decimal32Copy(ColumnVector cv, ColumnBuilder b, int rows,
+  public static void decimal32Copy(ColumnVector cv, RapidsHostColumnBuilder b, int rows,
       int precision, int scale) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
@@ -204,7 +202,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void decimal64Copy(ColumnVector cv, ColumnBuilder b, int rows,
+  public static void decimal64Copy(ColumnVector cv, RapidsHostColumnBuilder b, int rows,
       int precision, int scale) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {
@@ -221,7 +219,7 @@ public class ColumnarCopyHelper {
     }
   }
 
-  public static void decimal128Copy(ColumnVector cv, ColumnBuilder b, int rows,
+  public static void decimal128Copy(ColumnVector cv, RapidsHostColumnBuilder b, int rows,
       int precision, int scale) {
     if (!cv.hasNull()) {
       for (int i = 0; i < rows; i++) {

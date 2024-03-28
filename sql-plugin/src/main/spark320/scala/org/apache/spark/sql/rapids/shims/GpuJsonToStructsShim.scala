@@ -30,22 +30,22 @@
 {"spark": "333"}
 {"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 
+import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
-
   def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
     // dateFormat is ignored by JsonToStructs in Spark 3.2.x and 3.3.x because it just
     // performs a regular cast from string to date
   }
 
-  def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
+  def castJsonStringToDate(input: ColumnView, options: JSONOptions): ColumnVector = {
     // dateFormat is ignored in from_json in Spark 3.2.x and 3.3.x
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>
@@ -57,7 +57,7 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+  def castJsonStringToDateFromScan(input: ColumnView, dt: DType,
       dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None =>
@@ -79,14 +79,9 @@ object GpuJsonToStructsShim {
     }
   }
 
-  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
-      timestampFormat: Option[String]): Unit = {
-    // timestampFormat is ignored by JsonToStructs in Spark 3.2.x and 3.3.x because it just
-    // performs a regular cast from string to timestamp
-  }
 
-  def castJsonStringToTimestamp(input: ColumnVector,
-      options: Map[String, String]): ColumnVector = {
+  def castJsonStringToTimestamp(input: ColumnView,
+      options: JSONOptions): ColumnVector = {
     // legacy behavior
     withResource(Scalar.fromString(" ")) { space =>
       withResource(input.strip(space)) { trimmed =>

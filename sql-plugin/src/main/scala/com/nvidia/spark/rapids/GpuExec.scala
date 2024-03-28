@@ -131,6 +131,16 @@ object GpuMetric extends Logging {
     case (k, v) => (k, wrap(v))
   }
 
+  def ns[T](metrics: GpuMetric*)(f: => T): T = {
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val taken = System.nanoTime() - start
+      metrics.foreach(_.add(taken))
+    }
+  }
+
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)

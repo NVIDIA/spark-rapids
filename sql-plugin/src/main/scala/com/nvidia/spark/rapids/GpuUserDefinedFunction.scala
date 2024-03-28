@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostColumnVectorCore, NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -123,7 +123,7 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
       val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
       val retRow = new GenericInternalRow(size = 1)
-      closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
+      closeOnExcept(new RapidsHostColumnBuilder(retType, batch.numRows)) { builder =>
         /**
          * This `nullSafe` is for https://github.com/NVIDIA/spark-rapids/issues/3942.
          * And more details can be found from

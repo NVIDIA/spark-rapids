@@ -757,7 +757,7 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
-        <spark351.version>3.5.1-SNAPSHOT</spark351.version>
+        <spark351.version>3.5.1</spark351.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
@@ -806,10 +806,10 @@
             340,
             341,
             342,
-            350
+            350,
+            351
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            351
         </snapshot.buildvers>
         <databricks.buildvers>
             330db,
@@ -855,9 +855,12 @@
             331,
             332,
             333,
+            334,
             340,
             341,
-            350
+            342,
+            350,
+            351
         </noSnapshotScala213.buildvers>
         <snapshotScala213.buildvers>
         </snapshotScala213.buildvers>

@@ -21,21 +21,21 @@
 {"spark": "350"}
 {"spark": "351"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{DateUtils, GpuCast, GpuOverrides, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
+import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.rapids.ExceptionTimeParserPolicy
 
 object GpuJsonToStructsShim {
-
   def tagDateFormatSupport(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
+  def castJsonStringToDate(input: ColumnView, options: JSONOptions): ColumnVector = {
     GpuJsonUtils.optionalDateFormatInRead(options) match {
       case None =>
         // legacy behavior
@@ -53,7 +53,7 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
-  def castJsonStringToDateFromScan(input: ColumnVector, dt: DType,
+  def castJsonStringToDateFromScan(input: ColumnView, dt: DType,
       dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
       case None =>
@@ -68,7 +68,7 @@ object GpuJsonToStructsShim {
     }
   }
 
-  private def jsonStringToDate(input: ColumnVector, dateFormatPattern: String,
+  private def jsonStringToDate(input: ColumnView, dateFormatPattern: String,
       failOnInvalid: Boolean): ColumnVector = {
     val regexRoot = dateFormatPattern
       .replace("yyyy", raw"\d{4}")
@@ -78,15 +78,9 @@ object GpuJsonToStructsShim {
     GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat, failOnInvalid)
   }
 
-  def tagTimestampFormatSupport(meta: RapidsMeta[_, _, _],
-      timestampFormat: Option[String]): Unit = {
-    // we only support the case where no format is specified
-    timestampFormat.foreach(f => meta.willNotWorkOnGpu(s"Unsupported timestampFormat: $f"))
-  }
-
-  def castJsonStringToTimestamp(input: ColumnVector,
-      options: Map[String, String]): ColumnVector = {
-    options.get("timestampFormat") match {
+  def castJsonStringToTimestamp(input: ColumnView,
+      options: JSONOptions): ColumnVector = {
+    options.timestampFormatInRead match {
       case None =>
         // legacy behavior
         withResource(Scalar.fromString(" ")) { space =>
