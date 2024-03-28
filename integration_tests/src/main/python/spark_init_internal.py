@@ -146,7 +146,6 @@ def pytest_sessionstart(session):
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
     global _spark
-    _s.conf.set("spark.rapids.sql.explain", "ALL")
     _spark = _s
 
 
