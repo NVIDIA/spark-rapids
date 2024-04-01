@@ -17,8 +17,10 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfCpu, withRetry}
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -600,14 +602,30 @@ class RowToColumnarIterator(
   private var targetRows = 0
   private var totalOutputBytes: Long = 0
   private var totalOutputRows: Long = 0
+  private[this] val pending = new scala.collection.mutable.Queue[InternalRow]()
 
-  override def hasNext: Boolean = rowIter.hasNext
+  override def hasNext: Boolean =  pending.nonEmpty || rowIter.hasNext
 
   override def next(): ColumnarBatch = {
-    if (!rowIter.hasNext) {
+    if (!hasNext) {
       throw new NoSuchElementException
     }
     buildBatch()
+  }
+
+  // Attempt to allocate a single host buffer for the full batch of columns, retrying
+  // with fewer rows if necessary.  Then make it spillable.
+  // Returns of tuple of (actual rows, per-column-sizes, SpillableHostBuffer).
+  private def allocBufWithRetry(rows : Int) : (Int, Array[Long], SpillableHostBuffer) = {
+    val  targetRowCount = AutoCloseableTargetSize(rows, 1)
+    withRetry(targetRowCount, splitTargetSizeInHalfCpu) { attempt =>
+      val perColBytes = GpuBatchUtils.estimatePerColumnGpuMemory(localSchema, attempt.targetSize)
+      closeOnExcept(HostAlloc.alloc(perColBytes.sum, true)) { hBuf =>
+        (attempt.targetSize.toInt, perColBytes,
+            SpillableHostBuffer(hBuf, hBuf.getLength, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBufferCatalog.singleton))
+      }
+    }.next()
   }
 
   private def buildBatch(): ColumnarBatch = {
@@ -625,21 +643,50 @@ class RowToColumnarIterator(
           targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
         }
       }
+      val (actualRows, perColumnBytes, sBuf) = allocBufWithRetry(targetRows)
+      targetRows = actualRows
 
-      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows)) { builders =>
+      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows, sBuf,
+        perColumnBytes)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
+        var overWrite = false
         // read at least one row
-        while (rowIter.hasNext &&
-            (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-          val row = rowIter.next()
-          byteCount += converters.convert(row, builders)
-          rowCount += 1
+        while (!overWrite && hasNext && (rowCount == 0 ||
+            ((rowCount < targetRows) && (byteCount < targetSizeBytes)))) {
+          val row = if (pending.nonEmpty) {
+            pending.dequeue()
+          } else {
+            rowIter.next()
+          }
+          try {
+            builders.checkpoint()
+            val rowBytes = converters.convert(row, builders)
+            byteCount += rowBytes
+            rowCount += 1
+          } catch {
+            case _ : RapidsHostColumnOverflow => {
+              // We overwrote the pre-allocated buffers.  Restore state and stop here if we can.
+              builders.restore()
+              // If this happens on the first row, we aren't going to succeed.  If we require
+              // a single batch, it will fail below.
+              // For now we will just retry these cases with growth re-enabled - we may run out
+              // of memory though.
+              if ((rowCount == 0) || (localGoal.isInstanceOf[RequireSingleBatchLike])) {
+                builders.setAllowGrowth(true)
+              } else {
+                // We wrote some rows, so we can go on to building the batch
+                overWrite = true
+              }
+              pending.enqueue(row)  // we need to try this row again
+            }
+            case e: Throwable => throw e
+          }
         }
 
         // enforce RequireSingleBatch limit
-        if (rowIter.hasNext && localGoal.isInstanceOf[RequireSingleBatchLike]) {
+        if (hasNext && localGoal.isInstanceOf[RequireSingleBatchLike]) {
           throw new IllegalStateException("A single batch is required for this operation." +
               " Please try increasing your partition count.")
         }
