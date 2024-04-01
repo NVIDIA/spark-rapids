@@ -411,10 +411,12 @@ even without the SHS webUI.
 
 ### Worker Logs
 
-By default, integration tests will write the console output to a text file that 
-will appear under the run directories of the form
-`integration_tests/target/run_dir-<timestamp>-xxxx/gw0_worker_logs.log`. If xdist is not used (e.g., `TEST_PARALLEL=1`)
-there will be no logs generated besides the one on console.
+By default, when using xdist the integration tests will write the tests output to console and to a text file 
+that will appear under the run directory of the form 
+`integration_tests/target/run_dir-<timestamp>-xxxx/gw0_worker_logs.log`. The output format of the log and the log level  
+can be changed by modifying the file `integration_tests/src/test/resources/xdist_it_log4j.properties`. 
+
+In case of a single threaded test run i.e. `TEST_PARALLEL=1` the logs will be printed on the console only.
 
 ### Enabling cudf_udf Tests
 
