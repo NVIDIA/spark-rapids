@@ -304,7 +304,6 @@ def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
 def test_coalesced_read():
     def do_it(spark):
         df = spark.range(0, 1000000, 1, 5).rdd.map(lambda l: (l[0], l[0])).toDF()
-        # df = binary_op_df(spark, int_gen, num_slices=5)
         ee = df.select(df._1.alias("src"), df._2.alias("dst")).persist(StorageLevel.MEMORY_AND_DISK)
         # load cache
         ee.count()
