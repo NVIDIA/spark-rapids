@@ -101,7 +101,6 @@ def test_get_json_object_spark_unit_tests(query):
         lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.get_json_object('jsonStr', query)))
 
-# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
 def test_get_json_object_normalize_non_string_output():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[' { "a": "A" } '],
@@ -342,3 +341,42 @@ def test_unsupported_fallback_get_json_object(json_str_pattern):
     assert_gpu_did_fallback('get_json_object(a, b)')
     assert_gpu_did_fallback('get_json_object(\'%s\', b)' % scalar_json)
 
+@pytest.mark.parametrize('json_str_pattern', [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
+                   r'"bicycle":\{"price":[1-9]\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
+                   r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',
+                   r'\{"a": "[a-z]{1,3}"\}'], ids=idfn)
+def test_get_json_object_legacy(json_str_pattern):
+    gen = mk_json_str_gen(json_str_pattern)
+    scalar_json = '{"store": {"fruit": [{"name": "test"}]}}'
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
+            'get_json_object(a,"$.a")',
+            'get_json_object(a, "$.owner")',
+            'get_json_object(a, "$.store.fruit[0]")',
+            'get_json_object(\'%s\', "$.store.fruit[0]")' % scalar_json,
+            ),
+        conf={'spark.sql.parser.escapedStringLiterals': 'true',
+              'spark.rapids.sql.getjsonobject.legacy.enabled': 'true'})
+
+# Verify that the legacy mode is used and xfail the test which currently passes
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
+def test_get_json_object_normalize_non_string_output_legacy():
+    schema = StructType([StructField("jsonStr", StringType())])
+    data = [[' { "a": "A" } '],
+            ['''{'a':'A"'}'''],
+            [r'''{'a':"B\'"}'''],
+            ['''['a','b','"C"']'''],
+            ['[100.0,200.000,351.980]'],
+            ['[12345678900000000000.0]'],
+            ['[12345678900000000000]'],
+            ['[1' + '0'* 400 + ']'],
+            ['[1E308]'],
+            ['[1.0E309,-1E309,1E5000]'],
+            ['[true,false]'],
+            ['[100,null,10]'],
+            ['{"a":"A","b":null}']]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data,schema=schema).select(
+            f.col('jsonStr'),
+            f.get_json_object('jsonStr', '$')),
+        conf={'spark.rapids.sql.getjsonobject.legacy.enabled': 'true'})
