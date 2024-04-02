@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids;
 
-import com.nvidia.spark.Retryable;
-
 import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
@@ -37,21 +35,17 @@ import java.util.StringJoiner;
  * This is a copy of the cudf HostColumnVector.ColumnBuilder class.
  * Moving this here to allow for iterating on host memory oom handling.
  */
-public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
+public final class RapidsHostColumnBuilder implements AutoCloseable {
 
-  private boolean allowGrowth = true;
   private HostColumnVector.DataType dataType;
   private DType type;
-  private long currentInitBufferOffset = 0l;
   private HostMemoryBuffer data;
   private HostMemoryBuffer valid;
   private HostMemoryBuffer offsets;
   private long nullCount = 0l;
-  private long checkpointNullCount = 0;
+  //TODO nullable currently not used
   private boolean nullable;
   private long rows;
-
-  private long checkpointRows;
   private long estimatedRows;
   private long rowCapacity = 0L;
   private long validCapacity = 0L;
@@ -62,12 +56,8 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
   // The value of currentIndex can't exceed Int32.Max. Storing currentIndex as a long is to
   // adapt HostMemoryBuffer.setXXX, which requires a long offset.
   private long currentIndex = 0;
-  private long checkpointCurrentIndex = 0;
-
   // Only for Strings: pointer of the byte (data) buffer
   private int currentStringByteIndex = 0;
-  private int checkpointCurrentStringByteIndex = 0;
-
   // Use bit shift instead of multiply to transform row offset to byte offset
   private int bitShiftBySize = 0;
   /**
@@ -77,7 +67,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
   private static final int bitShiftByOffset = (int) (Math.log(OFFSET_SIZE) / Math.log(2));
 
   public RapidsHostColumnBuilder(HostColumnVector.DataType dataType, long estimatedRows) {
-    this.allowGrowth = true;
     this.dataType = dataType;
     this.type = dataType.getType();
     this.nullable = dataType.isNullable();
@@ -90,98 +79,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
 
     for (int i = 0; i < dataType.getNumChildren(); i++) {
       childBuilders.add(new RapidsHostColumnBuilder(dataType.getChild(i), estimatedRows));
-    }
-  }
-
-  @Override
-  public void checkpoint() {
-    checkpointRows = rows;
-    checkpointCurrentIndex = currentIndex;
-    checkpointCurrentStringByteIndex = currentStringByteIndex;
-    checkpointNullCount = nullCount;
-    for (RapidsHostColumnBuilder child : childBuilders) {
-      child.checkpoint();
-    }
-  }
-
-  @Override
-  public void restore() {
-    // May need to reset the validity bits
-    if (nullable && (valid != null) && (currentIndex > checkpointCurrentIndex)) {
-      for (long i = checkpointCurrentIndex; i < currentIndex; i++) {
-        resetNullAt(valid, i);
-      }
-    }
-    currentIndex = checkpointCurrentIndex;
-    currentStringByteIndex = checkpointCurrentStringByteIndex;
-    nullCount = checkpointNullCount;
-    rows = checkpointRows;
-    for (RapidsHostColumnBuilder child : childBuilders) {
-      child.restore();
-    }
-  }
-
-  private long getInitBufferOffset() {
-    return this.currentInitBufferOffset;
-  }
-
-  private void preAllocateOffsets(HostMemoryBuffer initBuffer) {
-    long neededSize = (estimatedRows + 1) << bitShiftByOffset;
-    offsets = initBuffer.slice(this.currentInitBufferOffset, neededSize);
-    offsets.setInt(0, 0);
-    this.currentInitBufferOffset += neededSize;
-  }
-
-  private void preAllocateData(HostMemoryBuffer initBuffer, long neededSize) {
-    data = initBuffer.slice(this.currentInitBufferOffset, neededSize);
-    this.currentInitBufferOffset += neededSize;
-  }
-
-  private void preAllocateValidity(HostMemoryBuffer initBuffer) {
-    // This is the same as ColumnView.getValidityBufferSize
-    // number of bytes required = Math.ceil(number of bits / 8)
-    long actualBytes = ((estimatedRows) + 7) >> 3;
-    // padding to the adding boundary(64 bytes)
-    long maskBytes = ((actualBytes + 63) >> 6) << 6;
-    valid = initBuffer.slice(this.currentInitBufferOffset, maskBytes);
-    this.currentInitBufferOffset += maskBytes;
-    valid.setMemory(0, valid.getLength(), (byte) 0xFF);
-    validCapacity = estimatedRows;
-  }
-
-  public RapidsHostColumnBuilder preAllocateBuffers(HostMemoryBuffer initBuffer, long offset) {
-    this.allowGrowth = false;
-    this.currentInitBufferOffset = offset;
-
-    if (this.type == DType.LIST) {
-      preAllocateOffsets(initBuffer);
-    } else if (this.type == DType.STRING) {
-      // Initialize data buffer with 20 bytes per string to match spark default.
-      preAllocateData(initBuffer, estimatedRows * 20);
-      preAllocateOffsets(initBuffer);
-    } else if (this.type == DType.STRUCT) {
-      // just set rowCapacity below
-    } else {
-      preAllocateData(initBuffer, estimatedRows << bitShiftBySize);
-    }
-    rowCapacity = estimatedRows;
-
-    // Pre-allocate validity buffer if needed
-    if (this.nullable) {
-      preAllocateValidity(initBuffer);
-    }
-
-    for (int i = 0; i < dataType.getNumChildren(); i++) {
-      childBuilders.get(i).preAllocateBuffers(initBuffer, this.currentInitBufferOffset);
-      this.currentInitBufferOffset = childBuilders.get(i).getInitBufferOffset();
-    }
-    return this;
-  }
-
-  public void setAllowGrowth(boolean enable) {
-    this.allowGrowth = enable;
-    for (RapidsHostColumnBuilder child : childBuilders) {
-      child.setAllowGrowth(enable);
     }
   }
 
@@ -223,15 +120,9 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
     for (RapidsHostColumnBuilder childBuilder : childBuilders) {
       hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
     }
+    // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
     if (valid != null) {
-      // The valid buffer might have been pre-allocated, but never used.  If so, close it.
-      if (nullCount == 0) {
-        valid.close();
-        valid = null;
-      } else {
-        // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
-        growValidBuffer();
-      }
+      growValidBuffer();
     }
     HostColumnVector hostColumnVector = new HostColumnVector(type, rows,
         Optional.of(nullCount), data, valid, offsets, hostColumnVectorCoreList);
@@ -244,15 +135,9 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
     for (RapidsHostColumnBuilder childBuilder : childBuilders) {
       hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
     }
+    // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
     if (valid != null) {
-      // The valid buffer might have been pre-allocated, but never used.  If so, close it.
-      if (nullCount == 0) {
-        valid.close();
-        valid = null;
-      } else {
-        // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
-        growValidBuffer();
-      }
+      growValidBuffer();
     }
     return new HostColumnVectorCore(type, rows, Optional.of(nullCount), data, valid,
         offsets, hostColumnVectorCoreList);
@@ -301,11 +186,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
       return;
     }
     if (validCapacity < rowCapacity) {
-      if (!this.allowGrowth) {
-        throw new RapidsHostColumnOverflow (
-            "attempt to add rows beyond preallocated capacity: " + rowCapacity);
-      }
-
       // This is the same as ColumnView.getValidityBufferSize
       // number of bytes required = Math.ceil(number of bits / 8)
       long actualBytes = ((rowCapacity) + 7) >> 3;
@@ -340,10 +220,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
       data = HostMemoryBuffer.allocate(neededSize << bitShiftBySize);
       rowCapacity = neededSize;
     } else if (rows > rowCapacity) {
-      if (!this.allowGrowth) {
-        throw new RapidsHostColumnOverflow (
-            "attempt to add rows beyond preallocated capacity: " + rowCapacity);
-      }
       long neededSize = Math.max(rows, rowCapacity * 2);
       long newCap = Math.min(neededSize, Integer.MAX_VALUE - 1);
       data = copyBuffer(HostMemoryBuffer.allocate(newCap << bitShiftBySize), data);
@@ -364,10 +240,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
       offsets.setInt(0, 0);
       rowCapacity = estimatedRows;
     } else if (rows > rowCapacity) {
-      if (!this.allowGrowth) {
-        throw new RapidsHostColumnOverflow (
-            "attempt to add rows beyond preallocated capacity: " + rowCapacity);
-      }
       long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
       offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset), offsets);
       rowCapacity = newCap;
@@ -394,10 +266,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
     }
 
     if (rows > rowCapacity) {
-      if (!this.allowGrowth) {
-        throw new RapidsHostColumnOverflow (
-            "attempt to add rows beyond preallocated capacity: " + rowCapacity);
-      }
       long newCap = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 2);
       offsets = copyBuffer(HostMemoryBuffer.allocate((newCap + 1) << bitShiftByOffset), offsets);
       rowCapacity = newCap;
@@ -405,11 +273,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
 
     long currentLength = currentStringByteIndex + stringLength;
     if (currentLength > data.getLength()) {
-      if (!this.allowGrowth) {
-        throw new RapidsHostColumnOverflow (
-            "attempt to add string bytes beyond preallocated capacity: " + data.getLength());
-      }
-
       long requiredLength = data.getLength();
       do {
         requiredLength = requiredLength * 2;
@@ -430,10 +293,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
     if (rowCapacity == 0) {
       rowCapacity = estimatedRows;
     } else if (rows > rowCapacity) {
-      if (!this.allowGrowth) {
-        throw new RapidsHostColumnOverflow (
-            "attempt to add row beyond preallocated capacity: " + rowCapacity);
-      }
       rowCapacity = Math.min(rowCapacity * 2, Integer.MAX_VALUE - 1);
     }
   }
@@ -450,20 +309,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable, Retryable {
       }
     }
     return buffer;
-  }
-
-  /**
-   * Reset the validity bit for the given index (used by restore).
-   *
-   * @param valid the buffer to reset it in.
-   * @param index the index to reset it at.
-   */
-  static void resetNullAt(HostMemoryBuffer valid, long index) {
-    long bucket = index / 8;
-    byte currentByte = valid.getByte(bucket);
-    int bitmask = (1 << (index % 8)) & 0x00ff;
-    currentByte |= bitmask;
-    valid.setByte(bucket, currentByte);
   }
 
   /**
