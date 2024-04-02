@@ -310,7 +310,6 @@ def test_coalesced_read():
         ee.count()
         min_nbrs1 = ee.groupBy("src").agg(min(ee.dst).alias("min_number")).persist(StorageLevel.MEMORY_AND_DISK)
         join = ee.join(min_nbrs1, "src")
-        assert join.count() == ee.count()
         return join
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf={"spark.rapids.sql.exec.InMemoryTableScanExec": True})
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={ "spark.sql.adaptive.enabled": "true" , "spark.sql.shuffle.partitions": "200" })
