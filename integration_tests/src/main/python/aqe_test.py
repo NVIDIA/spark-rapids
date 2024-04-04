@@ -299,7 +299,8 @@ def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=bhj_disable_conf)
 
 
-# https://github.com/NVIDIA/spark-rapids/issues/10645
+# See https://github.com/NVIDIA/spark-rapids/issues/10645. Sometimes the exchange can provide multiple
+# batches, so we to coalesce them into a single batch for the broadcast hash join.
 @ignore_order(local=True)
 @pytest.mark.skipif(not (is_databricks_runtime()), \
     reason="Executor side broadcast only supported on Databricks")
