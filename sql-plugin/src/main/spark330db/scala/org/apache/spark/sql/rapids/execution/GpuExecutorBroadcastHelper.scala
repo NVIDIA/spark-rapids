@@ -21,7 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuCoalesceIterator, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator, RequireSingleBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
@@ -40,6 +40,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * which means they require a format of the data that can be used on the GPU.
  */
 object GpuExecutorBroadcastHelper {
+  import GpuMetric._
 
   // This reads the shuffle data that we have retrieved using `getShuffleRDD` from the shuffle
   // exchange. WARNING: Do not use this method outside of this context. This method can only be
@@ -65,11 +66,23 @@ object GpuExecutorBroadcastHelper {
     // Use the GPU Shuffle Coalesce iterator to concatenate and load batches onto the 
     // host as needed. Since we don't have GpuShuffleCoalesceExec in the plan for the 
     // executor broadcast scenario, we have to use that logic here to efficiently 
-    // grab and release the semaphore while doing I/O
+    // grab and release the semaphore while doing I/O. We wrap this with GpuCoalesceIterator
+    // to ensure this always a single batch for the following step.
     val iter = shuffleDataIterator(shuffleData)
-    new GpuShuffleCoalesceIterator(
-      new HostShuffleCoalesceIterator(iter, targetSize, metricsMap),
-      dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
+    new GpuCoalesceIterator(
+      new GpuShuffleCoalesceIterator(
+        new HostShuffleCoalesceIterator(iter, targetSize, metricsMap),
+        dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]],
+      dataTypes,
+      RequireSingleBatch,
+      metricsMap(NUM_INPUT_ROWS), // numInputRows
+      metricsMap(NUM_INPUT_BATCHES), // numInputBatches
+      metricsMap(NUM_OUTPUT_ROWS), // numOutputRows
+      metricsMap(NUM_OUTPUT_BATCHES), // numOutputBatches
+      metricsMap(COLLECT_TIME), // collectTime
+      metricsMap(CONCAT_TIME), // concatTime
+      metricsMap(OP_TIME), // opTime
+      "GpuBroadcastHashJoinExec").asInstanceOf[Iterator[ColumnarBatch]]
   }
 
   /**
