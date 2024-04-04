@@ -21,7 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuCoalesceIterator, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator, RequireSingleBatch}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuCoalesceIterator, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator, NoopMetric, RequireSingleBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
@@ -68,18 +68,26 @@ object GpuExecutorBroadcastHelper {
     // executor broadcast scenario, we have to use that logic here to efficiently 
     // grab and release the semaphore while doing I/O. We wrap this with GpuCoalesceIterator
     // to ensure this always a single batch for the following step.
+    val timeMetrics = Set(CONCAT_TIME, OP_TIME)
+    val shuffleMetrics = metricsMap.map { case (k, v) =>
+      if (timeMetrics.contains(k)) {
+        (k, v)
+      } else {
+        (k, NoopMetric)
+      }
+    }
     val iter = shuffleDataIterator(shuffleData)
     new GpuCoalesceIterator(
       new GpuShuffleCoalesceIterator(
-        new HostShuffleCoalesceIterator(iter, targetSize, metricsMap),
-        dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]],
+        new HostShuffleCoalesceIterator(iter, targetSize, shuffleMetrics),
+        dataTypes, shuffleMetrics).asInstanceOf[Iterator[ColumnarBatch]],
       dataTypes,
       RequireSingleBatch,
       metricsMap(NUM_INPUT_ROWS), // numInputRows
       metricsMap(NUM_INPUT_BATCHES), // numInputBatches
       metricsMap(NUM_OUTPUT_ROWS), // numOutputRows
       metricsMap(NUM_OUTPUT_BATCHES), // numOutputBatches
-      metricsMap(COLLECT_TIME), // collectTime
+      NoopMetric, // collectTime
       metricsMap(CONCAT_TIME), // concatTime
       metricsMap(OP_TIME), // opTime
       "GpuBroadcastHashJoinExec").asInstanceOf[Iterator[ColumnarBatch]]
