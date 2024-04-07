@@ -168,7 +168,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
 
   override def toString: String = s"gpustartswith($left, $right)"
 
-  def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
+  def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = 
     lhs.getBase.startsWith(rhs.getBase)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -1082,9 +1082,45 @@ class GpuRLikeMeta(
     }
 
     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-      GpuRLike(lhs, rhs, pattern.getOrElse(
-        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+      val patternStr = pattern.getOrElse(
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
+      // if the pattern can be converted to a startswith or endswith pattern, we can use
+      // GpuStartsWith or GpuEndsWith instead to get better performance
+      GpuRLike.optimizeSimplePattern(rhs, lhs, patternStr)
     }
+}
+
+object GpuRLike {
+
+  // // '(' and ')' are allowed
+  val specialChars = Seq('^', '$', '.', '|', '*', '?', '+', '[', ']', '{', '}')
+
+  // val endWithPatterns = Seq(".*$", "(.*)$")
+  // val startWithPatterns = Seq("^.*", "^(.*)")
+  // val allMatchPatterns = Seq(".*", "(.*)")
+
+  def isSimplePattern(pattern: String): Boolean = {
+    pattern.forall(c => !specialChars.contains(c))
+  }
+
+  def removeBrackets(pattern: String): String = {
+    if (pattern.startsWith("(") && pattern.endsWith(")")) {
+      pattern.substring(1, pattern.length - 1)
+    } else {
+      pattern
+    }
+  }
+
+  def optimizeSimplePattern(rhs: Expression, lhs: Expression, pattern: String): GpuExpression = {
+    val startWithPattern = removeBrackets(pattern.stripSuffix("([^\n\r\u0085\u2028\u2029]*)"))
+    if (isSimplePattern(startWithPattern)) {
+      // println(s"Optimizing $pattern to startWithPattern $startWithPattern")
+      GpuStartsWith(lhs, GpuLiteral(startWithPattern, StringType))
+    } else {
+      // println(s"Optimizing $pattern to gpurlike")
+      GpuRLike(lhs, rhs, pattern)
+    }
+  }
 }
 
 case class GpuRLike(left: Expression, right: Expression, pattern: String)
