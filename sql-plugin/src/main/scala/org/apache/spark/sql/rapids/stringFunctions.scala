@@ -1062,6 +1062,39 @@ class GpuRLikeMeta(
 
     private var pattern: Option[String] = None
 
+    val specialChars = Seq('^', '$', '.', '|', '*', '?', '+', '[', ']', '{', '}')
+
+    val startWithSuffix = "([^\n\r\u0085\u2028\u2029]*)"
+
+    // val endWithPatterns = Seq(".*$", "(.*)$")
+    // val startWithPatterns = Seq("^.*", "^(.*)")
+    // val allMatchPatterns = Seq(".*", "(.*)")
+
+    def isSimplePattern(pattern: String): Boolean = {
+      pattern.forall(c => !specialChars.contains(c))
+    }
+
+    def removeBrackets(pattern: String): String = {
+      if (pattern.startsWith("(") && pattern.endsWith(")")) {
+        pattern.substring(1, pattern.length - 1)
+      } else {
+        pattern
+      }
+    }
+
+    def optimizeSimplePattern(rhs: Expression, lhs: Expression, pattern: String): GpuExpression = {
+      // check if the pattern is end with startWithSuffix
+      if (conf.isRlikeRegexRewriteEnabled && pattern.endsWith(startWithSuffix)) {
+        val startWithPattern = removeBrackets(pattern.stripSuffix(startWithSuffix))
+        if (isSimplePattern(startWithPattern)) {
+          // println(s"Optimizing $pattern to GpuContains $startWithPattern")
+          return GpuContains(lhs, GpuLiteral(startWithPattern, StringType))
+        }
+      }
+      // println(s"Optimizing $pattern to gpurlike")
+      GpuRLike(lhs, rhs, pattern)
+    }
+
     override def tagExprForGpu(): Unit = {
       GpuRegExpUtils.tagForRegExpEnabled(this)
       expr.right match {
@@ -1086,49 +1119,8 @@ class GpuRLikeMeta(
         throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
       // if the pattern can be converted to a startswith or endswith pattern, we can use
       // GpuStartsWith or GpuEndsWith instead to get better performance
-      GpuRLike.optimizeSimplePattern(rhs, lhs, patternStr)
+      optimizeSimplePattern(rhs, lhs, patternStr)
     }
-}
-
-object GpuRLike {
-
-  // // '(' and ')' are allowed
-  val specialChars = Seq('^', '$', '.', '|', '*', '?', '+', '[', ']', '{', '}')
-
-  val startWithSuffix = "([^\n\r\u0085\u2028\u2029]*)"
-
-  // val endWithPatterns = Seq(".*$", "(.*)$")
-  // val startWithPatterns = Seq("^.*", "^(.*)")
-  // val allMatchPatterns = Seq(".*", "(.*)")
-
-  def isSimplePattern(pattern: String): Boolean = {
-    pattern.forall(c => !specialChars.contains(c))
-  }
-
-  def removeBrackets(pattern: String): String = {
-    if (pattern.startsWith("(") && pattern.endsWith(")")) {
-      pattern.substring(1, pattern.length - 1)
-    } else {
-      pattern
-    }
-  }
-
-  def optimizeSimplePattern(rhs: Expression, lhs: Expression, pattern: String): GpuExpression = {
-    // check if the pattern is end with startWithSuffix
-    if (pattern.endsWith(startWithSuffix)) {
-      val startWithPattern = removeBrackets(pattern.stripSuffix(startWithSuffix))
-      if (isSimplePattern(startWithPattern)) {
-        // println(s"Optimizing $pattern to GpuStartsWith $startWithPattern")
-        GpuStartsWith(lhs, GpuLiteral(startWithPattern, StringType))
-      } else {
-        // println(s"Optimizing $pattern to gpurlike")
-        GpuRLike(lhs, rhs, pattern)
-      }
-    } else {
-      // println(s"Optimizing $pattern to gpurlike")
-      GpuRLike(lhs, rhs, pattern)
-    }
-  }
 }
 
 case class GpuRLike(left: Expression, right: Expression, pattern: String)

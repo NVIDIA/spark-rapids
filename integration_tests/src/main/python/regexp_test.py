@@ -27,7 +27,8 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
+_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True,
+                'spark.rapids.sql.rLikeRegexRewrite.enabled': False}
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -445,8 +446,8 @@ def test_regexp_like():
         conf=_regexp_conf)
 
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
-def test_regexp_rlike_startswith():
-    gen = mk_str_gen('[abcd]{3,4}[0-9]{0,2}')
+def test_regexp_rlike_contains():
+    gen = mk_str_gen('[abcd]{3,6}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a',
