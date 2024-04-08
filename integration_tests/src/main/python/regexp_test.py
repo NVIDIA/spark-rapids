@@ -596,7 +596,7 @@ def test_regexp_hexadecimal_digits():
     gen = mk_str_gen(
         '[abcd]\\\\x00\\\\x7f\\\\x80\\\\xff\\\\x{10ffff}\\\\x{00eeee}[\\\\xa0-\\\\xb0][abcd]')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
                 'rlike(a, "\\\\x7f")',
                 'rlike(a, "\\\\x80")',
                 'rlike(a, "[\\\\xa0-\\\\xf0]")',
