@@ -95,7 +95,7 @@ pipeline {
 
                     def title = githubHelper.getIssue().title.toLowerCase()
                     if (title ==~ /.*\[skip ci\].*/) {
-                        githubHelper.updateCommitStatus("$BUILD_URL", "Skipped", GitHubCommitState.SUCCESS)
+                        githubHelper.updateCommitStatus("", "Skipped", GitHubCommitState.SUCCESS)
                         currentBuild.result == "SUCCESS"
                         skipped = true
                         return
@@ -129,7 +129,7 @@ pipeline {
 
             steps {
                 script {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
+                    githubHelper.updateCommitStatus("", "Running", GitHubCommitState.PENDING)
                     unstash "source_tree"
                     container('cpu') {
                         // check if pre-merge dockerfile modified
@@ -279,7 +279,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     }
                     steps {
                         script {
-                            githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
+                            githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
@@ -313,7 +313,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                 }
 
                 if (currentBuild.currentResult == "SUCCESS") {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
+                    githubHelper.updateCommitStatus("", "Success", GitHubCommitState.SUCCESS)
                 } else {
                     // upload log only in case of build failure
                     def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
@@ -323,7 +323,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     if (currentBuild.currentResult != "ABORTED") { // skip ABORTED result to avoid status overwrite
-                        githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                        githubHelper.updateCommitStatus("", "Fail", GitHubCommitState.FAILURE)
                     }
                 }
 
