@@ -45,14 +45,14 @@ The plugin is tested on the following architectures:
 		Apache Spark 3.5.0, 3.5.1
 	
 	Supported Databricks runtime versions for Azure and AWS:
-		Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
 		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
 		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
 		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
 	
-	Supported Dataproc versions:
+	Supported Dataproc versions (Debian/Ubuntu):
 		GCP Dataproc 2.0
 		GCP Dataproc 2.1
+		GCP Dataproc 2.2
 	
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
@@ -93,17 +93,12 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-New functionality and performance improvements for this release include:
-* Discontinued support for Nvidia GPUs based on Pascal architecture.
-* Set get_json_object functionality to disabled by default.
-* Implemented string comparison in AST expressions.
-* Expanded timezone support to include options beyond UTC.
-* Optional checksums for cached files in the file cache.
-* Introduced support for Databricks 13.3 ML LTS.
-* Added support for parse_url functionality.
-* Introducing Lazy Quantifier support for regular expression functions.
-* Added support for the format_number function.
-* Enhanced batching support for row-based bounded window functions.
+* New functionality and performance improvements for this release include:
+* Enhanced decompression kernels for zstd and snappy.
+* Enhanced Parquet reading performance with modular kernels.
+* Added compatibility with Spark version 3.5.1.
+* Deprecated support for Databricks 10.4 ML LTS.
+* Added a new kernel for get_json_object, aiming to closely match Vanilla Spark output. This feature is disabled by default.
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
 
 For a detailed list of changes, please refer to the
