@@ -64,7 +64,6 @@ def test_get_json_object_single_quotes():
         f.get_json_object('jsonStr',r'''$['c']''').alias('sub_c')),
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
-@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('query',["$.store.bicycle",
     "$['store'].bicycle",
     "$.store['bicycle']",
