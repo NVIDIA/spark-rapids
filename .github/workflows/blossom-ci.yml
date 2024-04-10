@@ -72,6 +72,7 @@ jobs:
       viadea,\
       yinqingh,\
       parthosa,\
+      liurenjie1024,\
       ', format('{0},', github.actor)) && github.event.comment.body == 'build'
     steps:
       - name: Check if comment is issued by authorized person
