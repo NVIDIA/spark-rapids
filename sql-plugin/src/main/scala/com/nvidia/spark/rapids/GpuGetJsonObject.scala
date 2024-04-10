@@ -86,7 +86,7 @@ object JsonPathParser extends RegexParsers {
 
   def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
     // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
-    instructions.length > 32
+    instructions.length > 16
   }
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
@@ -148,7 +148,7 @@ class GpuGetJsonObjectMeta(
       val instructions = JsonPathParser.parse(l.value.asInstanceOf[UTF8String].toString)
       if (conf.isLegacyGetJsonObjectEnabled == false) {
         if (instructions.exists(JsonPathParser.fallbackCheck(_))) {
-          willNotWorkOnGpu("get_json_object on GPU does not support more than 32 nested paths")
+          willNotWorkOnGpu("get_json_object on GPU does not support more than 16 nested paths")
         }
       } else {
         if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {

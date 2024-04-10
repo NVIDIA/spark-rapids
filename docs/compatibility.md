@@ -439,9 +439,8 @@ Known issues are:
 
 ### get_json_object
 
-Known issues:
+Known issue:
 - [Floating-point number normalization error](https://github.com/NVIDIA/spark-rapids-jni/issues/1922). `get_json_object` floating-point number normalization on the GPU could sometimes return incorrect results if the string contains high-precision values, see the String to Float and Float to String section for more details.
-- [Very small float numbers could be normalized to infinity](https://github.com/NVIDIA/spark-rapids-jni/issues/1923). For some very small float numbers, like `9.299999257686047e-0005603333574677677`, CPU will normalize it to `0.0` while GPU will normalize it to `infinity`.
 
 ## Avro
 

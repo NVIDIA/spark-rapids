@@ -902,7 +902,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
-  val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getjsonobject.legacy.enabled")
+  val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getJsonObject.legacy.enabled")
       .doc("When set to true, the get_json_object function will use the legacy implementation " +
           "on the GPU. The legacy implementation is faster than the current implementation, but " +
           "it has several incompatibilities and bugs, including no input validation, escapes are " +

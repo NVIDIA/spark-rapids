@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, with_gpu_session
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
@@ -37,7 +37,8 @@ def test_get_json_object(json_str_pattern):
             'get_json_object(a, "$.store.fruit[0]")',
             'get_json_object(\'%s\', "$.store.fruit[0]")' % scalar_json,
             ),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true',
+              'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_quoted_index():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -47,7 +48,8 @@ def test_get_json_object_quoted_index():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
         f.get_json_object('jsonStr',r'''$['a']''').alias('sub_a'),
-        f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b')))
+        f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b')),
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks113_or_later(), reason="get_json_object on \
                     DB 10.4 shows incorrect behaviour with single quotes")
@@ -59,8 +61,10 @@ def test_get_json_object_single_quotes():
         lambda spark: spark.createDataFrame(data,schema=schema).select(
         f.get_json_object('jsonStr',r'''$['a']''').alias('sub_a'),
         f.get_json_object('jsonStr',r'''$['b']''').alias('sub_b'),
-        f.get_json_object('jsonStr',r'''$['c']''').alias('sub_c')))
+        f.get_json_object('jsonStr',r'''$['c']''').alias('sub_c')),
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
+@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('query',["$.store.bicycle",
     "$['store'].bicycle",
     "$.store['bicycle']",
@@ -99,7 +103,8 @@ def test_get_json_object_spark_unit_tests(query):
             ['{"big": "' + ('x' * 3000) + '"}']]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
-            f.get_json_object('jsonStr', query)))
+            f.get_json_object('jsonStr', query)),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_normalize_non_string_output():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -119,7 +124,8 @@ def test_get_json_object_normalize_non_string_output():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.col('jsonStr'),
-            f.get_json_object('jsonStr', '$')))
+            f.get_json_object('jsonStr', '$')),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -127,7 +133,8 @@ def test_get_json_object_quoted_question():
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
-            f.get_json_object('jsonStr',r'''$['?']''').alias('question')))
+            f.get_json_object('jsonStr',r'''$['?']''').alias('question')),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_escaped_string_data():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -141,7 +148,8 @@ def test_get_json_object_escaped_string_data():
             [r'{"a":"A\tB"}']]
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data,schema=schema).selectExpr('get_json_object(jsonStr,"$.a")'))
+        lambda spark: spark.createDataFrame(data,schema=schema).selectExpr('get_json_object(jsonStr,"$.a")'),
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_escaped_key():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -178,7 +186,8 @@ def test_get_json_object_escaped_key():
             f.get_json_object('jsonStr','$.a\n').alias('qan2'),
             f.get_json_object('jsonStr', r'$.a\t').alias('qat1'),
             f.get_json_object('jsonStr','$.a\t').alias('qat2')
-            ))
+            ),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_invalid_path():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -200,7 +209,8 @@ def test_get_json_object_invalid_path():
             f.get_json_object('jsonStr', 'a').alias('just_a'),
             f.get_json_object('jsonStr', '[-1]').alias('neg_one_index'),
             f.get_json_object('jsonStr', '$.c[-1]').alias('c_neg_one_index'),
-            ))
+            ),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_top_level_array_notation():
     # This is a special version of invalid path. It is something that the GPU supports
@@ -216,7 +226,8 @@ def test_get_json_object_top_level_array_notation():
             f.get_json_object('jsonStr', '$[1]').alias('one_index'),
             f.get_json_object('jsonStr', '''['a']''').alias('sub_a'),
             f.get_json_object('jsonStr', '''$['b']''').alias('sub_b'),
-            ))
+            ),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 def test_get_json_object_unquoted_array_notation():
     # This is a special version of invalid path. It is something that the GPU supports
@@ -231,7 +242,8 @@ def test_get_json_object_unquoted_array_notation():
             f.get_json_object('jsonStr', '$[a]').alias('a_index'),
             f.get_json_object('jsonStr', '$[1]').alias('one_index'),
             f.get_json_object('jsonStr', '''$['1']''').alias('quoted_one_index'),
-            f.get_json_object('jsonStr', '$[a1]').alias('a_one_index')))
+            f.get_json_object('jsonStr', '$[a1]').alias('a_one_index')),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 
 def test_get_json_object_white_space_removal():
@@ -268,7 +280,8 @@ def test_get_json_object_white_space_removal():
             f.get_json_object('jsonStr', "$[' a. a']").alias('space_a_dot_space_a'),
             f.get_json_object('jsonStr', "$['a .a ']").alias('a_space_dot_a_space'),
             f.get_json_object('jsonStr', "$[' a . a ']").alias('space_a_space_dot_space_a_space'),
-            ))
+            ),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 
 def test_get_json_object_jni_java_tests():
@@ -299,11 +312,12 @@ def test_get_json_object_jni_java_tests():
             f.get_json_object('jsonStr', "$[1][1][*]").alias('s_1_s_1_s_w'),
             f.get_json_object('jsonStr', "$.k[1]").alias('dot_k_s_1'),
             f.get_json_object('jsonStr', "$.*").alias('w'),
-            ))
+            ),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 
 @allow_non_gpu('ProjectExec')
-def test_deep_nested_json():
+def test_get_json_object_deep_nested_json():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
             ]]
@@ -311,17 +325,19 @@ def test_deep_nested_json():
         lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.get_json_object('jsonStr', '$.a.b.c.d.e.f.g.h.i').alias('i'),
             f.get_json_object('jsonStr', '$.a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p').alias('p')
-            ))
+            ),
+            conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 @allow_non_gpu('ProjectExec')
-def test_deep_nested_json_fallback():
+def test_get_json_object_deep_nested_json_fallback():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
             ]]
     assert_gpu_fallback_collect(
         lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.get_json_object('jsonStr', '$.a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z').alias('z')),
-        'GetJsonObject')
+        'GetJsonObject',
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('json_str_pattern', [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
@@ -336,7 +352,8 @@ def test_unsupported_fallback_get_json_object(json_str_pattern):
         assert_gpu_fallback_collect(lambda spark:
             gen_df(spark, [('a', gen), ('b', pattern)], length=10).selectExpr(sql_text),
         'GetJsonObject',
-        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true',
+              'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
     assert_gpu_did_fallback('get_json_object(a, b)')
     assert_gpu_did_fallback('get_json_object(\'%s\', b)' % scalar_json)
@@ -355,28 +372,23 @@ def test_get_json_object_legacy(json_str_pattern):
             'get_json_object(a, "$.store.fruit[0]")',
             'get_json_object(\'%s\', "$.store.fruit[0]")' % scalar_json,
             ),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-              'spark.rapids.sql.getjsonobject.legacy.enabled': 'true'})
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true',
+              'spark.sql.parser.escapedStringLiterals': 'true',
+              'spark.rapids.sql.getJsonObject.legacy.enabled': 'true'})
 
-# Verify that the legacy mode is used and xfail the test which currently passes
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
-def test_get_json_object_normalize_non_string_output_legacy():
+# In the legacy mode, the output of get_json_object is not normalized.
+# Verify that the output is not normalized for floating point to check the legacy mode is working.
+def test_get_json_object_number_normalization_legacy():
     schema = StructType([StructField("jsonStr", StringType())])
-    data = [[' { "a": "A" } '],
-            ['''{'a':'A"'}'''],
-            [r'''{'a':"B\'"}'''],
-            ['''['a','b','"C"']'''],
-            ['[100.0,200.000,351.980]'],
+    data = [['[100.0,200.000,351.980]'],
             ['[12345678900000000000.0]'],
             ['[12345678900000000000]'],
             ['[1' + '0'* 400 + ']'],
             ['[1E308]'],
-            ['[1.0E309,-1E309,1E5000]'],
-            ['[true,false]'],
-            ['[100,null,10]'],
-            ['{"a":"A","b":null}']]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data,schema=schema).select(
+            ['[1.0E309,-1E309,1E5000]']]
+    gpu_result = with_gpu_session(lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.col('jsonStr'),
-            f.get_json_object('jsonStr', '$')),
-        conf={'spark.rapids.sql.getjsonobject.legacy.enabled': 'true'})
+            f.get_json_object('jsonStr', '$')).collect(),
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true',
+              'spark.rapids.sql.getJsonObject.legacy.enabled': 'true'})
+    assert([[row[1]] for row in gpu_result] == data)
