@@ -40,8 +40,8 @@ The plugin is tested on the following architectures:
 
 	Supported Spark versions:
 		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
-		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3
-		Apache Spark 3.4.0, 3.4.1
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2
 		Apache Spark 3.5.0, 3.5.1
 	
 	Supported Databricks runtime versions for Azure and AWS:
@@ -52,7 +52,6 @@ The plugin is tested on the following architectures:
 	Supported Dataproc versions (Debian/Ubuntu):
 		GCP Dataproc 2.0
 		GCP Dataproc 2.1
-		GCP Dataproc 2.2
 	
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
@@ -94,11 +93,13 @@ The output of signature verify:
 
 ### Release Notes
 * New functionality and performance improvements for this release include:
+* Performance improvements for S3 reading. 
+Refer to perfio.s3.enabled in [advanced_configs](./additional-functionality/advanced_configs.md) for more details.
+* Performance improvements when doing a joins on unique keys.
 * Enhanced decompression kernels for zstd and snappy.
 * Enhanced Parquet reading performance with modular kernels.
 * Added compatibility with Spark version 3.5.1.
 * Deprecated support for Databricks 10.4 ML LTS.
-* Added a new kernel for get_json_object, aiming to closely match Vanilla Spark output. This feature is disabled by default.
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
 
 For a detailed list of changes, please refer to the
