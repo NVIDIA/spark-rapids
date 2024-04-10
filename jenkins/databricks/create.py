@@ -27,7 +27,7 @@ def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
   sshkey = ''
-  cluster_name = 'CI-GPU-databricks-24.04.0-SNAPSHOT'
+  cluster_name = 'CI-GPU-databricks-24.04.0'
   idletime = 240
   runtime = '7.0.x-gpu-ml-scala2.12'
   num_workers = 1
