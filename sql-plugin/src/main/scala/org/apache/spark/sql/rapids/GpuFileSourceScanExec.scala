@@ -603,7 +603,7 @@ case class GpuFileSourceScanExec(
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file reader")
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, locatedPartitions,
-        requiredSchema)
+        requiredSchema, fileFormat = Some(relation.fileFormat))
     } else {
       logDebug(s"Using Datasource RDD, files are: " +
         s"${prunedPartitions.flatMap(_.files).mkString(",")}")

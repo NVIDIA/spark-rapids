@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
+from spark_session import is_before_spark_320, is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -1477,6 +1477,105 @@ def test_window_aggs_for_rows_collect_set():
         conf={'spark.rapids.sql.window.collectSet.enabled': True})
 
 
+@ignore_order(local=True)
+@allow_non_gpu(*non_utc_allow)
+def test_window_aggs_for_fully_unbounded_partitioned_collect_set():
+    """
+    Test that confirms that `collect_set` window aggregation, when run over UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING
+    runs through the `GpuUnboundedToUnboundedAggWindowExec` (which optimizes it to run via sort-based group-by
+    aggregations).
+    Note: This optimization only holds for the partitioned case.  Unpartitioned windows are not supported yet.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, _gen_data_for_collect_set, length=2048),
+        "window_collect_table",
+        '''
+        select a, b,
+            sort_array(cc_bool),
+            sort_array(cc_int),
+            sort_array(cc_long),
+            sort_array(cc_short),
+            sort_array(cc_date),
+            sort_array(cc_ts),
+            sort_array(cc_byte),
+            sort_array(cc_str),
+            sort_array(cc_float),
+            sort_array(cc_double),
+            sort_array(cc_decimal_32),
+            sort_array(cc_decimal_64),
+            sort_array(cc_decimal_128),
+            sort_array(cc_fp_nan)
+        from (
+            select a, b,
+               collect_set(c_bool) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_bool,
+               collect_set(c_int) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_int,
+               collect_set(c_long) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_long,
+               collect_set(c_short) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_short,
+               collect_set(c_date) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_date,
+               collect_set(c_timestamp) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_ts,
+               collect_set(c_byte) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_byte,
+               collect_set(c_string) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_str,
+               collect_set(c_float) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_float,
+               collect_set(c_double) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_double,
+               collect_set(c_decimal_32) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_decimal_32,
+               collect_set(c_decimal_64) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_decimal_64,
+               collect_set(c_decimal_128) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_decimal_128,
+               collect_set(c_fp_nan) over
+                 (partition by a order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_fp_nan
+            from window_collect_table
+        ) t
+        ''',
+        conf={'spark.rapids.sql.window.collectSet.enabled': True,
+              'spark.rapids.sql.window.unboundedAgg.enabled': True,
+              'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'},
+        validate_execs_in_gpu_plan=['GpuUnboundedToUnboundedAggWindowExec'])
+
+
+@ignore_order(local=True)
+@allow_non_gpu(*non_utc_allow)
+def test_window_aggs_for_fully_unbounded_unpartitioned_collect_set():
+    """
+    Test that confirms that `collect_set` window aggregation, when run over UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING
+    falls back to GpuWindowExec, if no partition spec is specified.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, _gen_data_for_collect_set, length=2048),
+        "window_collect_table",
+        '''
+        select a, b,
+            sort_array(cc_int),
+            sort_array(cc_long),
+            sort_array(cc_short)
+        from (
+            select a, b,
+               collect_set(c_int) over
+                 (order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_int,
+               collect_set(c_long) over
+                 (order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_long,
+               collect_set(c_short) over
+                 (order by b,c_int rows between UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING) as cc_short
+            from window_collect_table
+        ) t
+        ''',
+        conf={'spark.rapids.sql.window.collectSet.enabled': True,
+              'spark.rapids.sql.window.unboundedAgg.enabled': True,
+              'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'},
+        validate_execs_in_gpu_plan=['GpuWindowExec'])
+
+
 # Note, using sort_array() on the CPU, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
@@ -1941,6 +2040,88 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
     # query runs *with* batching, i.e. `GpuBatchedBoundedWindowExec`.
     conf_200 = get_conf_with_extent(200)
     assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
+
+
+@pytest.mark.skipif(condition=not (is_spark_350_or_later() or is_databricks133_or_later()),
+                    reason="WindowGroupLimit not available for spark.version < 3.5 "
+                           "and Databricks version < 13.3")
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1k', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      pytest.param(_grpkey_longs_with_nullable_larger_decimals,
+                                                   marks=pytest.mark.skipif(
+                                                       condition=spark_bugs_in_decimal_sorting(),
+                                                       reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+                                      ],
+                         ids=idfn)
+@pytest.mark.parametrize('rank_clause', [
+                            'RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'DENSE_RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'RANK() OVER (ORDER BY a,b,c) ',
+                            'DENSE_RANK() OVER (ORDER BY a,b,c) ',
+                        ])
+def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_clause):
+    """
+    This test verifies that window group limits are applied for queries with ranking-function based
+    row filters.
+    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
+    clauses.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    query = """
+        SELECT * FROM (
+          SELECT *, {} AS rnk
+          FROM window_agg_table
+        )
+        WHERE rnk < 3
+     """.format(rank_clause)
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=4096),
+        "window_agg_table",
+        query,
+        conf=conf)
+
+
+@allow_non_gpu('WindowGroupLimitExec')
+@pytest.mark.skipif(condition=not (is_spark_350_or_later() or is_databricks133_or_later()),
+                    reason="WindowGroupLimit not available for spark.version < 3.5 "
+                           " and Databricks version < 13.3")
+@ignore_order(local=True)
+@approximate_float
+def test_window_group_limits_fallback_for_row_number():
+    """
+    This test verifies that window group limits are applied for queries with ranking-function based
+    row filters.
+    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
+    clauses.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': '1g',
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    data_gen = _grpkey_longs_with_no_nulls
+    query = """
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b) AS rnk
+          FROM window_agg_table
+        )
+        WHERE rnk < 3
+     """
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=512),
+        cpu_fallback_class_name="WindowGroupLimitExec",
+        table_name="window_agg_table",
+        sql=query,
+        conf=conf)
 
 
 def test_lru_cache_datagen():

@@ -177,7 +177,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
     }
   }
 
-  test("a retry when allocating dataBuffer is handled") {
+  test("a retry when allocating host buffer for data and offsets is handled") {
     val batch = buildBatch()
     val batchIter = Seq(batch).iterator
     withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
@@ -189,7 +189,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       // Do this so we can avoid forcing failures in any host allocations
       // in ColumnarToRowIterator.hasNext()
       assert(ctriter.hasNext)
-      // this forces a retry on the allocation of the dataBuffer
+      // this forces a retry on the allocation of the combined offsets/data buffer
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.CPU.ordinal, 0)
       withResource(myIter.next()) { devBatch =>
@@ -203,7 +203,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
     }
   }
 
-  test("a retry when allocating offsetsBuffer is handled") {
+  test("a split and retry when allocating host buffer for data and offsets is handled") {
     val batch = buildBatch()
     val batchIter = Seq(batch).iterator
     withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
@@ -215,60 +215,9 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       // Do this so we can avoid forcing failures in any host allocations
       // in ColumnarToRowIterator.hasNext()
       assert(ctriter.hasNext)
-      // this forces a retry on the allocation of the offsetBuffer
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.CPU.ordinal, 1)
-      withResource(myIter.next()) { devBatch =>
-        withResource(buildBatch()) { expected =>
-          TestUtils.compareBatches(expected, devBatch)
-        }
-      }
-      assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
-      assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
-    }
-  }
-
-  test("a split and retry when allocating dataBuffer is handled") {
-    val batch = buildBatch()
-    val batchIter = Seq(batch).iterator
-    withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
-      NoopMetric)) { ctriter =>
-      val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
-      val myIter = GeneratedInternalRowToCudfRowIterator(
-        ctriter, schema, TargetSize(Int.MaxValue),
-        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-      // Do this so we can avoid forcing failures in any host allocations
-      // in ColumnarToRowIterator.hasNext()
-      assert(ctriter.hasNext)
-      // this forces a split retry on the allocation of the dataBuffer
+      // this forces a split retry on the allocation of the combined offsets/data buffer
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.CPU.ordinal, 0)
-      withResource(myIter.next()) { devBatch =>
-        withResource(buildBatch()) { expected =>
-          TestUtils.compareBatches(expected, devBatch)
-        }
-      }
-      assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
-      assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
-    }
-  }
-  test("a split and retry when allocating offsetsBuffer is handled") {
-    val batch = buildBatch()
-    val batchIter = Seq(batch).iterator
-    withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
-      NoopMetric)) { ctriter =>
-      val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
-      val myIter = GeneratedInternalRowToCudfRowIterator(
-        ctriter, schema, TargetSize(Int.MaxValue),
-        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-      // Do this so we can avoid forcing failures in any host allocations
-      // in ColumnarToRowIterator.hasNext()
-      assert(ctriter.hasNext)
-      // this forces a split retry on the allocation of the offsetsBuffer
-      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.CPU.ordinal, 1)
       withResource(myIter.next()) { devBatch =>
         withResource(buildBatch()) { expected =>
           TestUtils.compareBatches(expected, devBatch)

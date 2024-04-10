@@ -24,7 +24,9 @@ from spark_session import with_cpu_session, is_before_spark_330, is_databricks_r
 
 pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
-all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
+all_non_symmetric_join_types = ['Left', 'Right', 'LeftSemi', 'LeftAnti', 'Cross']
+all_symmetric_join_types = ['Inner', 'FullOuter']
+all_join_types = all_non_symmetric_join_types + all_symmetric_join_types
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
@@ -208,13 +210,7 @@ def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
 # 3 times smaller than the other side.  So it is not likely to happen
 # unless we can give it some help. Parameters are setup to try to make
 # this happen, if test fails something might have changed related to that.
-@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.parametrize('sub_part_enabled', ['false', 'true'], ids=['SubPartition_OFF', 'SubPartition_ON'])
-@allow_non_gpu(*non_utc_allow)
-def test_hash_join_ridealong(data_gen, join_type, sub_part_enabled):
+def hash_join_ridealong(data_gen, join_type, sub_part_enabled):
     def do_join(spark):
         left, right = create_ridealong_df(spark, short_gen, data_gen, 50, 500)
         return left.join(right, left.key == right.r_key, join_type)
@@ -222,6 +218,24 @@ def test_hash_join_ridealong(data_gen, join_type, sub_part_enabled):
         "spark.rapids.sql.test.subPartitioning.enabled": sub_part_enabled
     })
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
+
+@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('join_type', all_non_symmetric_join_types, ids=idfn)
+@pytest.mark.parametrize('sub_part_enabled', ['false', 'true'], ids=['SubPartition_OFF', 'SubPartition_ON'])
+@allow_non_gpu(*non_utc_allow)
+def test_hash_join_ridealong_non_symmetric(data_gen, join_type, sub_part_enabled):
+    hash_join_ridealong(data_gen, join_type, sub_part_enabled)
+
+@validate_execs_in_gpu_plan('GpuShuffledSymmetricHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('join_type', all_symmetric_join_types, ids=idfn)
+@pytest.mark.parametrize('sub_part_enabled', ['false', 'true'], ids=['SubPartition_OFF', 'SubPartition_ON'])
+@allow_non_gpu(*non_utc_allow)
+def test_hash_join_ridealong_symmetric(data_gen, join_type, sub_part_enabled):
+    hash_join_ridealong(data_gen, join_type, sub_part_enabled)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -969,12 +983,7 @@ def test_multi_table_hash_join(data_gen, aqe_enabled, join_reorder_enabled):
 
 limited_integral_gens = [byte_gen, ShortGen(max_val=BYTE_MAX), IntegerGen(max_val=BYTE_MAX), LongGen(max_val=BYTE_MAX)]
 
-@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
-@ignore_order(local=True)
-@pytest.mark.parametrize('left_gen', limited_integral_gens, ids=idfn)
-@pytest.mark.parametrize('right_gen', limited_integral_gens, ids=idfn)
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_hash_join_different_key_integral_types(left_gen, right_gen, join_type):
+def hash_join_different_key_integral_types(left_gen, right_gen, join_type):
     def do_join(spark):
         left = unary_op_df(spark, left_gen, length=50)
         right = unary_op_df(spark, right_gen, length=500)
@@ -983,6 +992,23 @@ def test_hash_join_different_key_integral_types(left_gen, right_gen, join_type):
         "spark.rapids.sql.test.subPartitioning.enabled": True
     })
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
+
+@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('left_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('right_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', all_non_symmetric_join_types, ids=idfn)
+def test_hash_join_different_key_integral_types_non_symmetric(left_gen, right_gen, join_type):
+    hash_join_different_key_integral_types(left_gen, right_gen, join_type)
+
+@validate_execs_in_gpu_plan('GpuShuffledSymmetricHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('left_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('right_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', all_symmetric_join_types, ids=idfn)
+def test_hash_join_different_key_integral_types_symmetric(left_gen, right_gen, join_type):
+    hash_join_different_key_integral_types(left_gen, right_gen, join_type)
+
 
 bloom_filter_confs = {
     "spark.sql.autoBroadcastJoinThreshold": "1",
@@ -1151,6 +1177,19 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable
         conf={"spark.sql.autoBroadcastJoinThreshold": "-1",
               "spark.sql.sources.useV1SourceList": "",
               "spark.rapids.sql.input." + scan_name: False})
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner", "LeftOuter"], ids=idfn)
+@pytest.mark.parametrize("batch_size", ["500", "1g"], ids=idfn)
+def test_distinct_join(join_type, batch_size):
+    join_conf = {
+        "spark.rapids.sql.batchSizeBytes": batch_size
+    }
+    def do_join(spark):
+        left_df = spark.range(1024).withColumn("x", f.col("id") + 1)
+        right_df = spark.range(768).withColumn("x", f.col("id") * 2)
+        return left_df.join(right_df, ["x"], join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize("join_type", ["Inner", "FullOuter"], ids=idfn)

@@ -206,6 +206,7 @@ class GpuCoalesceBatchesRetrySuite
 
   class SpillableColumnarBatchThatThrows(batch: ColumnarBatch)
       extends SpillableColumnarBatch {
+    var refCount = 1
     override def numRows(): Int = 0
     override def setSpillPriority(priority: Long): Unit = {}
     override def getColumnarBatch(): ColumnarBatch = {
@@ -213,7 +214,23 @@ class GpuCoalesceBatchesRetrySuite
     }
     override def sizeInBytes: Long = 0
     override def dataTypes: Array[DataType] = Array.empty
-    override def close(): Unit = batch.close()
+    override def close(): Unit = {
+      if (refCount <= 0) {
+        throw new IllegalStateException("double free")
+      }
+      refCount -= 1
+      if (refCount == 0) {
+        batch.close()
+      }
+    }
+
+    override def incRefCount(): SpillableColumnarBatch = {
+      if (refCount <= 0) {
+        throw new IllegalStateException("Use after free")
+      }
+      refCount += 1
+      this
+    }
   }
 
   trait CoalesceIteratorMocks {

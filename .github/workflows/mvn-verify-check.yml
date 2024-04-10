@@ -176,7 +176,7 @@ jobs:
           max_retry=3; delay=30; i=1
           while true; do
             mvn package \
-              -pl integration_tests,tests -am -P 'individual,pre-merge' \
+              -pl integration_tests,tests,tools -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
@@ -235,7 +235,7 @@ jobs:
           max_retry=3; delay=30; i=1
           while true; do
             mvn package \
-              -pl integration_tests,tests -am -P 'individual,pre-merge' \
+              -pl integration_tests,tests,tools -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then

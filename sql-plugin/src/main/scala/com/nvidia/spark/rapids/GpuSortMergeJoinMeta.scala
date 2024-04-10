@@ -92,7 +92,8 @@ class GpuSortMergeJoinMeta(
           left,
           right,
           conf.isGPUShuffle,
-          conf.gpuTargetBatchSizeBytes)(
+          conf.gpuTargetBatchSizeBytes,
+          join.isSkewJoin)(
           join.leftKeys,
           join.rightKeys)
       case _ =>

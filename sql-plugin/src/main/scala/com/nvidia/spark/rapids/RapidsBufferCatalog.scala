@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,6 +80,9 @@ class RapidsBufferCatalog(
     extends RapidsBufferHandle {
 
     private var closed = false
+
+    override def toString: String =
+      s"buffer handle $id at $priority"
 
     override def setSpillPriority(newPriority: Long): Unit = {
       priority = newPriority

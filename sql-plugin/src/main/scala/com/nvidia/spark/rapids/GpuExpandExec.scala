@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 package com.nvidia.spark.rapids
+
+import scala.collection.mutable
+import scala.util.Random
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
@@ -49,8 +52,9 @@ class GpuExpandExecMeta(
    */
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
-    GpuExpandExec(projections, expand.output,
-      childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
+    GpuExpandExec(projections, expand.output, childPlans.head.convertIfNeeded())(
+      useTieredProject = conf.isTieredProjectEnabled,
+      preprojectEnabled = conf.isExpandPreprojectEnabled)
   }
 }
 
@@ -67,14 +71,18 @@ case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
     output: Seq[Attribute],
     child: SparkPlan)(
-    useTieredProject: Boolean = false) extends ShimUnaryExecNode with GpuExec {
+    useTieredProject: Boolean = false,
+    preprojectEnabled: Boolean = false) extends ShimUnaryExecNode with GpuExec {
 
-  override def otherCopyArgs: Seq[AnyRef] =
-    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean])
+  override def otherCopyArgs: Seq[AnyRef] = Seq[AnyRef](
+    useTieredProject.asInstanceOf[java.lang.Boolean],
+    preprojectEnabled.asInstanceOf[java.lang.Boolean])
 
+  private val PRE_PROJECT_TIME = "preprojectTime"
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    PRE_PROJECT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, "pre-projection time"),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
@@ -88,15 +96,38 @@ case class GpuExpandExec(
     AttributeSet(projections.flatten.flatMap(_.references))
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val boundProjections = projections.map { pl =>
-      GpuBindReferences.bindGpuReferencesTiered(pl, child.output, useTieredProject)
-    }
-
     // cache in a local to avoid serializing the plan
     val metricsMap = allMetrics
 
+    var projectionsForBind = projections
+    var attributesForBind = child.output
+    var preprojectIter = identity[Iterator[ColumnarBatch]] _
+    if (useTieredProject && preprojectEnabled) {
+      // Tiered projection is enabled, check if pre-projection is needed.
+      val boundPreprojections = GpuBindReferences.bindGpuReferencesTiered(
+        preprojectionList, child.output, useTieredProject)
+      if (boundPreprojections.exprTiers.size > 1) {
+        logDebug("GPU expanding with pre-projection.")
+        // We got some nested expressions, so pre-projection is good to enable.
+        projectionsForBind = preprojectedProjections
+        attributesForBind = preprojectionList.map(_.toAttribute)
+        val opMetric = metricsMap(OP_TIME)
+        val preproMetric = metricsMap(PRE_PROJECT_TIME)
+        preprojectIter = (iter: Iterator[ColumnarBatch]) => iter.map(cb =>
+          GpuMetric.ns(opMetric, preproMetric) {
+            boundPreprojections.projectAndCloseWithRetrySingleBatch(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+          }
+        )
+      }
+    }
+
+    val boundProjections = projectionsForBind.map { pl =>
+      GpuBindReferences.bindGpuReferencesTiered(pl, attributesForBind, useTieredProject)
+    }
+
     child.executeColumnar().mapPartitions { it =>
-      new GpuExpandIterator(boundProjections, metricsMap, it)
+      new GpuExpandIterator(boundProjections, metricsMap, preprojectIter(it))
     }
   }
 
@@ -104,6 +135,57 @@ case class GpuExpandExec(
     throw new IllegalStateException("ROW BASED PROCESSING IS NOT SUPPORTED")
   }
 
+  /**
+   * The expressions that need to be pre-projected, and the corresponding projections
+   * for expanding.
+   *
+   * Some rules (e.g. RewriteDistinctAggregates) in Spark will put non-leaf expressions
+   * into Expand projections, then it can not leverage the GPU tiered projection across
+   * the projection lists.
+   * So here tries to factor out these expressions for the pre-projection before
+   * expanding to avoid duplicate evaluation of semantic-equal (sub) expressions.
+   *
+   * e.g. projections:
+   *     [if((a+b)>0) 1 else 0, null], [null, if((a+b)=0 "no" else "yes")];
+   * without pre-projection, "a+b" will be evaluated twice.
+   * while with pre-projection, it has
+   *    preprojectionList:
+   *            [if((a+b)>0) 1 else 0, if((a+b)=0 "no" else "yes")]
+   *    preprojectedProjections:
+   *            [_pre-project-c1#0, null], [null, _pre-project-c3#1]
+   * and
+   *    "_pre-project-c1#0" refers to "if((a+b)>0) 1 else 0",
+   *    "_pre-project-c3#1" refers to "if((a+b)=0 "no" else "yes"
+   * By leveraging the tiered projection, "a+b" will be evaluated only once.
+   */
+  private[this] lazy val (preprojectionList, preprojectedProjections) = {
+    val projectListSet = mutable.Set[NamedExpression]()
+    val newProjections = projections.map { proList =>
+      proList.map {
+        case attr: AttributeReference if child.outputSet.contains(attr) =>
+          // A ref to child output, add it to pre-projection for passthrough.
+          projectListSet += attr
+          attr
+        case leaf if leaf.children.isEmpty =>
+          // A leaf expression is simple enough, not necessary for pre-projection.
+          // e.g. GpuLiteral.
+          leaf
+        case notLeafNamed: NamedExpression =>
+          logDebug(s"Got a named non-leaf expression: $notLeafNamed for pre-projection")
+          // A named non-leaf expression, e.g. GpuAlias. Add it for pre-projection and
+          // replace with its attribute.
+          projectListSet += notLeafNamed
+          notLeafNamed.toAttribute
+        case notLeaf =>
+          logDebug(s"Got a non-leaf expression: $notLeaf for pre-projection")
+          // Wrap it by a new "GpuAlias", and replace with the "GpuAlias"'s attribute.
+          val alias = GpuAlias(notLeaf, s"_pre-project-c${Random.nextInt}")()
+          projectListSet += alias
+          alias.toAttribute
+      }
+    }
+    (projectListSet.toList, newProjections)
+  }
 }
 
 class GpuExpandIterator(

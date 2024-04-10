@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -115,11 +115,8 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    # Databricks will sometimes generate tons of tiny files on the CPU when using floating point
-    # partition keys. The GPU does not, and this triggers a delta log mismatch. Data contents
-    # of the table are correct, and this seems like Databricks bug on the CPU.
-    if not (is_databricks_runtime() and gens.data_type in (FloatType(), DoubleType())):
-        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
+    # there's no guarantees on the task partitioning due to random sampling.
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -136,11 +133,8 @@ def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    # Databricks will sometimes generate tons of tiny files on the CPU when using floating point
-    # partition keys. The GPU does not, and this triggers a delta log mismatch. Data contents
-    # of the table are correct, and this seems like Databricks bug on the CPU.
-    if not (is_databricks_runtime() and gens.data_type in (FloatType(), DoubleType())):
-        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
+    # there's no guarantees on the task partitioning due to random sampling.
 
 def do_update_round_trip_managed(spark_tmp_path, mode):
     gen_list = [("x", int_gen), ("y", binary_gen), ("z", string_gen)]
@@ -318,7 +312,6 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')")
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
                 f"{clause} SELECT * FROM {view}")
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -342,7 +335,8 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy', 23), (4L, 'value', 2)")
     _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
                 f"{clause} SELECT * FROM {view}")
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
+    # there's no guarantees on the task partitioning due to random sampling.
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -1004,7 +998,9 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
+    # there's no guarantees on the task partitioning due to random sampling.
+    #
     # overwrite with a subset of the original schema
     gen_list = [("b", SetValuesGen(StringType(), ["y"])),
                 ("e", long_gen),
@@ -1019,7 +1015,8 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
+    # there's no guarantees on the task partitioning due to random sampling.
 
 # ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
 # Delta Lake 2.1 from 2.2 in tests. https://github.com/NVIDIA/spark-rapids/issues/9276

@@ -191,10 +191,18 @@ else
     ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
     INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
-    RUN_TESTS_COMMAND=("$SCRIPTPATH"/runtests.py
-      --rootdir
-      "$LOCAL_ROOTDIR"
-      "$LOCAL_ROOTDIR"/src/main/python)
+    RUN_TESTS_COMMAND=(
+        "$SCRIPTPATH"/runtests.py
+        --rootdir "$LOCAL_ROOTDIR"
+    )
+    if [[ "${TESTS}" == "" ]]; then
+        RUN_TESTS_COMMAND+=("${LOCAL_ROOTDIR}/src/main/python")
+    else
+        read -a RAW_TESTS <<< "${TESTS}"
+        for raw_test in ${RAW_TESTS[@]}; do
+            RUN_TESTS_COMMAND+=("${LOCAL_ROOTDIR}/src/main/python/${raw_test}")
+        done
+    fi
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     TEST_COMMON_OPTS=(-v
@@ -224,7 +232,11 @@ else
     fi
 
     # time zone will be tested; use export TZ=time_zone_name before run this script
-    TZ=${TZ:-UTC}
+    export TZ=${TZ:-UTC}
+
+    # Disable Spark UI by default since it is not needed for tests, and Spark can fail to start
+    # due to Spark UI port collisions, especially in a parallel test setup.
+    export PYSP_TEST_spark_ui_enabled=${PYSP_TEST_spark_ui_enabled:-false}
 
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}

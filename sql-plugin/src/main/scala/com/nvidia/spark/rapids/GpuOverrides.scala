@@ -36,6 +36,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
+import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonToStructsReaderType
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -67,7 +68,7 @@ import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
-import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuTimeAdd}
+import org.apache.spark.sql.rapids.shims.{GpuAscii, GpuMapInPandasExecMeta, GpuTimeAdd}
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -856,6 +857,10 @@ object GpuOverrides extends Logging {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
+  val jsonStructReadTypes: TypeSig = (TypeSig.STRUCT + TypeSig.ARRAY +
+      TypeSig.STRING + TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN +
+      TypeSig.DATE + TypeSig.TIMESTAMP).nested()
+
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -894,7 +899,7 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (JsonFormatType, FileFormatChecks(
-      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfRead = jsonStructReadTypes,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())),
@@ -1923,7 +1928,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGreaterThan(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuGreaterThan(lhs, rhs))
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
@@ -1938,7 +1943,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGreaterThanOrEqual(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuGreaterThanOrEqual(lhs, rhs))
       }),
     expr[In](
       "IN operator",
@@ -1988,7 +1993,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[LessThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuLessThan(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuLessThan(lhs, rhs))
       }),
     expr[LessThanOrEqual](
       "<= operator",
@@ -2003,7 +2008,7 @@ object GpuOverrides extends Logging {
             TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuLessThanOrEqual(lhs, rhs)
+          GpuStringInstr.optimizeContains(GpuLessThanOrEqual(lhs, rhs))
       }),
     expr[CaseWhen](
       "CASE WHEN expression",
@@ -3646,32 +3651,39 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuGetJsonObject(lhs, rhs)
-      }
-    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
-        "validated, and the output is not normalized the same as Spark"),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
-        TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.integral +
-          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN + TypeSig.DATE +
-          TypeSig.TIMESTAMP) +
+        TypeSig.STRUCT.nested(jsonStructReadTypes) +
           TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
           "MAP only supports keys and values that are of STRING type"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        def hasDuplicateFieldNames(dt: DataType): Boolean =
+          TrampolineUtil.dataTypeExistsRecursively(dt, {
+            case st: StructType =>
+              val fn = st.fieldNames
+              fn.length != fn.distinct.length
+            case _ => false
+          })
+
         override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
-            case _: StructType => ()
+            case st: StructType =>
+              if (hasDuplicateFieldNames(st)) {
+                willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
+                    "names in a struct")
+              }
+              ()
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
           }
-          GpuJsonScan.tagJsonToStructsSupport(a.options, a.dataType, this)
+          GpuJsonScan.tagSupport(SQLConf.get, JsonToStructsReaderType, a.dataType, a.dataType,
+            a.options, this)
         }
 
         override def convertToGpu(child: Expression): GpuExpression =
@@ -3733,7 +3745,8 @@ object GpuOverrides extends Logging {
         }
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
-    ),
+    ).disabledByDefault("JsonTuple on the GPU does not support all of the normalization " +
+        "that the CPU supports."),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(

@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure,
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, CollectSet, Count, Max, Min, Sum}
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
-import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuCount}
+import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuAggregateFunction, GpuCount}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -977,6 +977,12 @@ trait GpuBatchedRunningWindowWithFixer {
 trait GpuUnboundToUnboundWindowWithFixer {
   def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer
 }
+
+/**
+ * This is used to tag a GpuAggregateFunction that it has been tested to work properly
+ * with `GpuUnboundedToUnboundedAggWindowExec`.
+ */
+trait GpuUnboundedToUnboundedWindowAgg extends GpuAggregateFunction
 
 /**
  * Fixes up a count operation for unbounded preceding to unbounded following

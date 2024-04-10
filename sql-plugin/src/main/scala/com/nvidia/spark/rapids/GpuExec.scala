@@ -63,7 +63,6 @@ object GpuMetric extends Logging {
   val SORT_TIME = "sortTime"
   val AGG_TIME = "computeAggTime"
   val JOIN_TIME = "joinTime"
-  val JOIN_OUTPUT_ROWS = "joinOutputRows"
   val FILTER_TIME = "filterTime"
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
@@ -98,7 +97,6 @@ object GpuMetric extends Logging {
   val DESCRIPTION_SORT_TIME = "sort time"
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
-  val DESCRIPTION_JOIN_OUTPUT_ROWS = "join output rows"
   val DESCRIPTION_FILTER_TIME = "filter time"
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
@@ -131,6 +129,16 @@ object GpuMetric extends Logging {
 
   def wrap(input: Map[String, SQLMetric]): Map[String, GpuMetric] = input.map {
     case (k, v) => (k, wrap(v))
+  }
+
+  def ns[T](metrics: GpuMetric*)(f: => T): T = {
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val taken = System.nanoTime() - start
+      metrics.foreach(_.add(taken))
+    }
   }
 
   object DEBUG_LEVEL extends MetricsLevel(0)
