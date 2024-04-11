@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-04-10
+Generated on 2024-04-11
 
 ## Release 24.04
 
@@ -7,22 +7,17 @@ Generated on 2024-04-10
 |||
 |:---|:---|
 |[#10436](https://github.com/NVIDIA/spark-rapids/issues/10436)|[FEA] Move Spark 3.5.1 out of snapshot once released|
-|[#8819](https://github.com/NVIDIA/spark-rapids/issues/8819)|[AUDIT][SPARK-43039][SQL] Support custom fields in the file source _metadata column|
 |[#10430](https://github.com/NVIDIA/spark-rapids/issues/10430)|[FEA] Error out when running on an unsupported GPU architecture|
-|[#10578](https://github.com/NVIDIA/spark-rapids/issues/10578)|[FEA] Support project expression rewrite for the case ```stringinstr(str_col, substr) > 0``` to ```contains(str_col, substr)```|
 |[#9750](https://github.com/NVIDIA/spark-rapids/issues/9750)|[FEA] Review `JsonToStruct` and `JsonScan` and consolidate some testing and implementation|
-|[#8204](https://github.com/NVIDIA/spark-rapids/issues/8204)|Fix JSON parsing in json to struct function|
 |[#8680](https://github.com/NVIDIA/spark-rapids/issues/8680)|[AUDIT][SPARK-42779][SQL] Allow V2 writes to indicate advisory shuffle partition size|
-|[#9588](https://github.com/NVIDIA/spark-rapids/issues/9588)|[FEA][JSON] Respect `allowNumericLeadingZeros` in `from_json`|
 |[#10429](https://github.com/NVIDIA/spark-rapids/issues/10429)|[FEA] Drop support for Databricks 10.4 ML LTS|
 |[#10334](https://github.com/NVIDIA/spark-rapids/issues/10334)|[FEA] Turn on memory limits for parquet reader|
 |[#10344](https://github.com/NVIDIA/spark-rapids/issues/10344)|[FEA] support barrier mode for mapInPandas/mapInArrow|
-|[#10256](https://github.com/NVIDIA/spark-rapids/issues/10256)|[FEA] Update branch-24.04 JNI and private dependencies version to 24.04.0-SNAPSHOT|
-|[#10261](https://github.com/NVIDIA/spark-rapids/issues/10261)|[FEA] Nonblocking API to acquire GpuSemaphore|
 
 ### Performance
 |||
 |:---|:---|
+|[#10578](https://github.com/NVIDIA/spark-rapids/issues/10578)|[FEA] Support project expression rewrite for the case ```stringinstr(str_col, substr) > 0``` to ```contains(str_col, substr)```|
 |[#10570](https://github.com/NVIDIA/spark-rapids/issues/10570)|[FEA] See if we can optimize sort for a single batch|
 |[#10531](https://github.com/NVIDIA/spark-rapids/issues/10531)|[FEA] Support "WindowGroupLimit" optimization on GPU for Databricks 13.3 ML LTS+|
 |[#5553](https://github.com/NVIDIA/spark-rapids/issues/5553)|[FEA][Audit] - Push down StringEndsWith/Contains to Parquet |
@@ -87,6 +82,7 @@ Generated on 2024-04-10
 ### PRs
 |||
 |:---|:---|
+|[#10654](https://github.com/NVIDIA/spark-rapids/pull/10654)|Add a config to switch back to old impl for getJsonObject|
 |[#10664](https://github.com/NVIDIA/spark-rapids/pull/10664)|Remove build link from the premerge-CI workflow|
 |[#10657](https://github.com/NVIDIA/spark-rapids/pull/10657)|Revert "Host Memory OOM handling for RowToColumnarIterator (#10617)"|
 |[#10637](https://github.com/NVIDIA/spark-rapids/pull/10637)|Cleanup async state when multi-threaded shuffle readers fail|
