@@ -283,7 +283,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     val tableLocation: URI = hiveTableRelation.tableMeta.storage.locationUri.getOrElse{
       throw new UnsupportedOperationException("Table path not set.")
     }
-    println("Hello, world!")
+    println("Hello, world2!")
     // No need to check if table directory exists.
     // FileSystem.listStatus() handles this for GpuHiveTableScanExec,
     // just like for Apache Spark.
