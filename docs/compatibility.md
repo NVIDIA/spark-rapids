@@ -440,11 +440,7 @@ Known issues are:
 ### get_json_object
 
 Known issue:
-- [Non-string output is not normalized](https://github.com/NVIDIA/spark-rapids/issues/10218)
-  When returning a result for things other than strings, a number of things are normalized by
-  Apache Spark, but are not normalized by the GPU, like removing unnecessary white space,
-  parsing and then serializing floating point numbers, turning single quotes to double quotes,
-  and removing unneeded escapes for single quotes.
+- [Floating-point number normalization error](https://github.com/NVIDIA/spark-rapids-jni/issues/1922). `get_json_object` floating-point number normalization on the GPU could sometimes return incorrect results if the string contains high-precision values, see the String to Float and Float to String section for more details.
 
 ## Avro
 
