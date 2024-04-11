@@ -68,14 +68,11 @@ object GpuExecutorBroadcastHelper {
     // executor broadcast scenario, we have to use that logic here to efficiently 
     // grab and release the semaphore while doing I/O. We wrap this with GpuCoalesceIterator
     // to ensure this always a single batch for the following step.
-    val timeMetrics = Set(CONCAT_TIME, OP_TIME)
-    val shuffleMetrics = metricsMap.map { case (k, v) =>
-      if (timeMetrics.contains(k)) {
-        (k, v)
-      } else {
-        (k, NoopMetric)
-      }
-    }
+    val shuffleMetrics = Map(
+      CONCAT_TIME -> metricsMap(CONCAT_TIME),
+      OP_TIME -> metricsMap(OP_TIME)
+    ).withDefaultValue(NoopMetric)
+
     val iter = shuffleDataIterator(shuffleData)
     new GpuCoalesceIterator(
       new GpuShuffleCoalesceIterator(
@@ -83,10 +80,10 @@ object GpuExecutorBroadcastHelper {
         dataTypes, shuffleMetrics).asInstanceOf[Iterator[ColumnarBatch]],
       dataTypes,
       RequireSingleBatch,
-      metricsMap(NUM_INPUT_ROWS), // numInputRows
-      metricsMap(NUM_INPUT_BATCHES), // numInputBatches
-      metricsMap(NUM_OUTPUT_ROWS), // numOutputRows
-      metricsMap(NUM_OUTPUT_BATCHES), // numOutputBatches
+      NoopMetric, // numInputRows
+      NoopMetric, // numInputBatches
+      NoopMetric, // numOutputRows
+      NoopMetric, // numOutputBatches
       NoopMetric, // collectTime
       metricsMap(CONCAT_TIME), // concatTime
       metricsMap(OP_TIME), // opTime
