@@ -2157,24 +2157,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
-  val TEST_GET_JSON_OBJECT = conf("spark.rapids.sql.test.get_json_object")
-      .doc("Only for tests: verify for get_json_object. If enabled, dump the data that " +
-          "causes differences between Spark and GPU.")
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
+  val TEST_GET_JSON_OBJECT_SAVE_PATH = conf("spark.rapids.sql.expression.GetJsonObject.debugPath")
+    .doc("Only for tests: specify a directory to save CSV debug output for get_json_object " +
+      "if the output differs from the CPU version. Multiple files may be saved")
+    .internal()
+    .stringConf
+    .createOptional
 
-  val TEST_GET_JSON_OBJECT_SAVE_PATH = conf("spark.rapids.sql.test.get_json_object.savePath")
-      .doc("Only for tests: specify csv path to save diffs if " +
-          "spark.rapids.sql.test.get_json_object is enabled. " +
-          "Saves by date, the date with yyyyMMdd format will be append to the end of file path")
-      .internal()
-      .stringConf
-      .createWithDefault("/tmp/get-json-object_diffs_")
-
-  val TEST_GET_JSON_OBJECT_SAVE_ROWS = conf("spark.rapids.sql.test.get_json_object.saveRows")
-      .doc("Only for tests: specify save rows for each block that GPUGetJsonObject handles " +
-          "if spark.rapids.sql.test.get_json_object is enabled. ")
+  val TEST_GET_JSON_OBJECT_SAVE_ROWS =
+    conf("spark.rapids.sql.expression.GetJsonObject.debugSaveRows")
+      .doc("Only for tests: when a debugPath is provided this is the number " +
+        "of rows that is saved per file. There may be multiple files if there " +
+        "are multiple tasks or multiple batches within a task")
       .internal()
       .integerConf
       .createWithDefault(1024)
@@ -2948,9 +2942,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val skipGpuArchCheck: Boolean = get(SKIP_GPU_ARCH_CHECK)
 
-  lazy val testGetJsonObject: Boolean = get(TEST_GET_JSON_OBJECT)
-
-  lazy val testGetJsonObjectSavePath: String = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
+  lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
