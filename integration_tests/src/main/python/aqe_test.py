@@ -298,3 +298,40 @@ def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=bhj_disable_conf)
 
+
+# See https://github.com/NVIDIA/spark-rapids/issues/10645. Sometimes the exchange can provide multiple
+# batches, so we to coalesce them into a single batch for the broadcast hash join.
+@ignore_order(local=True)
+@pytest.mark.skipif(not (is_databricks_runtime()), \
+    reason="Executor side broadcast only supported on Databricks")
+def test_aqe_join_executor_broadcast_enforce_single_batch():
+    # Use a small batch to see if Databricks could send multiple batches
+    conf = copy_and_update(_adaptive_conf, { "spark.rapids.sql.batchSizeBytes": "25" })
+    def prep(spark):
+        id_gen = RepeatSeqGen(IntegerGen(nullable=False), length=250)
+        name_gen = RepeatSeqGen(["Adam", "Bob", "Cathy"], data_type=StringType())
+        school_gen = RepeatSeqGen(["School1", "School2", "School3"], data_type=StringType())
+
+        df = gen_df(spark, StructGen([('id', id_gen), ('name', name_gen)], nullable=False), length=1000)
+        df.createOrReplaceTempView("df")
+
+        df_school = gen_df(spark, StructGen([('id', id_gen), ('school', school_gen)], nullable=False), length=250)
+        df.createOrReplaceTempView("df_school")
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        res = spark.sql(
+            """
+                select /*+ BROADCAST(df_school) */ * from df, df_school where df.id == df_school.id
+            """
+        )
+        res.explain()
+        return res
+    # Ensure this is an EXECUTOR_BROADCAST
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_it, 
+        exist_classes="GpuShuffleExchangeExec,GpuBroadcastHashJoinExec",
+        non_exist_classes="GpuBroadcastExchangeExec",
+        conf=conf)
+
