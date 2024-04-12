@@ -2157,6 +2157,28 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val TEST_GET_JSON_OBJECT = conf("spark.rapids.sql.test.get_json_object")
+      .doc("Only for tests: verify for get_json_object. If enabled, dump the data that " +
+          "causes differences between Spark and GPU.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val TEST_GET_JSON_OBJECT_SAVE_PATH = conf("spark.rapids.sql.test.get_json_object.savePath")
+      .doc("Only for tests: specify csv path to save diffs if " +
+          "spark.rapids.sql.test.get_json_object is enabled. " +
+          "Saves by date, the date with yyyyMMdd format will be append to the end of file path")
+      .internal()
+      .stringConf
+      .createWithDefault("/tmp/get-json-object_diffs_")
+
+  val TEST_GET_JSON_OBJECT_SAVE_ROWS = conf("spark.rapids.sql.test.get_json_object.saveRows")
+      .doc("Only for tests: specify save rows for each block that GPUGetJsonObject handles " +
+          "if spark.rapids.sql.test.get_json_object is enabled. ")
+      .internal()
+      .integerConf
+      .createWithDefault(1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2925,6 +2947,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
   lazy val skipGpuArchCheck: Boolean = get(SKIP_GPU_ARCH_CHECK)
+
+  lazy val testGetJsonObject: Boolean = get(TEST_GET_JSON_OBJECT)
+
+  lazy val testGetJsonObjectSavePath: String = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
+
+  lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
