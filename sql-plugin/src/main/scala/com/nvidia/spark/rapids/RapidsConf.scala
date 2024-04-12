@@ -908,6 +908,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getJsonObject.legacy.enabled")
+      .doc("When set to true, the get_json_object function will use the legacy implementation " +
+          "on the GPU. The legacy implementation is faster than the current implementation, but " +
+          "it has several incompatibilities and bugs, including no input validation, escapes are " +
+          "not properly processed for Strings, and non-string output is not normalized.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   // FILE FORMATS
   val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
       .doc("The maximum number of threads on each executor to use for reading small " +
@@ -2577,6 +2586,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
+
+  lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
 
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
