@@ -5,7 +5,7 @@ nav_order: 12
 parent: Developer Overview
 ---
 
-# Dump tool for get json object
+# Dump tool for get_json_object
 
 ## Overview
 In order to help debug the issues with the `get_json_object` function, the RAPIDS Accelerator provides a
