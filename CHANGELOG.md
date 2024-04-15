@@ -155,9 +155,13 @@ Generated on 2024-04-15
 |[#10248](https://github.com/NVIDIA/spark-rapids/pull/10248)|Group-by aggregation based optimization for UNBOUNDED `collect_set` window function|
 |[#10406](https://github.com/NVIDIA/spark-rapids/pull/10406)|Enabled subPage chunking by default|
 |[#10361](https://github.com/NVIDIA/spark-rapids/pull/10361)|Add in basic support for JSON generation in BigDataGen and improve performance of from_json|
+|[#10158](https://github.com/NVIDIA/spark-rapids/pull/10158)|Add in framework for unbounded to unbounded window agg optimization|
 |[#10394](https://github.com/NVIDIA/spark-rapids/pull/10394)|Fix auto merge conflict 10393 [skip ci]|
 |[#10375](https://github.com/NVIDIA/spark-rapids/pull/10375)|Support barrier mode for mapInPandas/mapInArrow|
 |[#10356](https://github.com/NVIDIA/spark-rapids/pull/10356)|Update locate_parquet_testing_files function to support hdfs input path for dataproc CI|
+|[#10369](https://github.com/NVIDIA/spark-rapids/pull/10369)|Revert "Support barrier mode for mapInPandas/mapInArrow (#10364)"|
+|[#10358](https://github.com/NVIDIA/spark-rapids/pull/10358)|Disable Spark UI by default for integration tests|
+|[#10360](https://github.com/NVIDIA/spark-rapids/pull/10360)|Fix a memory leak in json tuple|
 |[#10364](https://github.com/NVIDIA/spark-rapids/pull/10364)|Support barrier mode for mapInPandas/mapInArrow|
 |[#10348](https://github.com/NVIDIA/spark-rapids/pull/10348)|Remove redundant joinOutputRows metric|
 |[#10321](https://github.com/NVIDIA/spark-rapids/pull/10321)|Bump up dependency version to 24.04.0-SNAPSHOT|
@@ -307,14 +311,10 @@ Generated on 2024-04-15
 |[#10403](https://github.com/NVIDIA/spark-rapids/pull/10403)|Cherry-pick: Fix a memory leak in json tuple (#10360)|
 |[#10387](https://github.com/NVIDIA/spark-rapids/pull/10387)|[DOC] Update docs for 24.02.0 release [skip ci]|
 |[#10399](https://github.com/NVIDIA/spark-rapids/pull/10399)|Update NOTICE-binary|
-|[#10158](https://github.com/NVIDIA/spark-rapids/pull/10158)|Add in framework for unbounded to unbounded window agg optimization|
 |[#10389](https://github.com/NVIDIA/spark-rapids/pull/10389)|Change version and branch to 24.02 in docs [skip ci]|
 |[#10384](https://github.com/NVIDIA/spark-rapids/pull/10384)|[DOC] Update docs for 23.12.2 release [skip ci] |
 |[#10309](https://github.com/NVIDIA/spark-rapids/pull/10309)|[DOC] add custom 404 page and fix some document issue [skip ci]|
 |[#10352](https://github.com/NVIDIA/spark-rapids/pull/10352)|xfail mixed type test|
-|[#10369](https://github.com/NVIDIA/spark-rapids/pull/10369)|Revert "Support barrier mode for mapInPandas/mapInArrow (#10364)"|
-|[#10358](https://github.com/NVIDIA/spark-rapids/pull/10358)|Disable Spark UI by default for integration tests|
-|[#10360](https://github.com/NVIDIA/spark-rapids/pull/10360)|Fix a memory leak in json tuple|
 |[#10355](https://github.com/NVIDIA/spark-rapids/pull/10355)|Revert "Support barrier mode for mapInPandas/mapInArrow (#10343)"|
 |[#10353](https://github.com/NVIDIA/spark-rapids/pull/10353)|Use fixed seed for test_from_json_struct_decimal|
 |[#10343](https://github.com/NVIDIA/spark-rapids/pull/10343)|Support barrier mode for mapInPandas/mapInArrow|
