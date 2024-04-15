@@ -1,11 +1,12 @@
 # Change log
-Generated on 2024-04-11
+Generated on 2024-04-15
 
 ## Release 24.04
 
 ### Features
 |||
 |:---|:---|
+|[#10263](https://github.com/NVIDIA/spark-rapids/issues/10263)|[FEA] Add support for reading JSON containing structs where rows are not consistent|
 |[#10436](https://github.com/NVIDIA/spark-rapids/issues/10436)|[FEA] Move Spark 3.5.1 out of snapshot once released|
 |[#10430](https://github.com/NVIDIA/spark-rapids/issues/10430)|[FEA] Error out when running on an unsupported GPU architecture|
 |[#9750](https://github.com/NVIDIA/spark-rapids/issues/9750)|[FEA] Review `JsonToStruct` and `JsonScan` and consolidate some testing and implementation|
@@ -82,21 +83,29 @@ Generated on 2024-04-11
 ### PRs
 |||
 |:---|:---|
+|[#10681](https://github.com/NVIDIA/spark-rapids/pull/10681)|Update rapids JNI dependency to 24.04.0, private to 24.04.1|
+|[#10660](https://github.com/NVIDIA/spark-rapids/pull/10660)|Ensure an executor broadcast is in a single batch|
+|[#10676](https://github.com/NVIDIA/spark-rapids/pull/10676)|[DOC] Update docs for 24.04.0 release [skip ci]|
 |[#10654](https://github.com/NVIDIA/spark-rapids/pull/10654)|Add a config to switch back to old impl for getJsonObject|
+|[#10667](https://github.com/NVIDIA/spark-rapids/pull/10667)|Update rapids private dependency to 24.04.1|
 |[#10664](https://github.com/NVIDIA/spark-rapids/pull/10664)|Remove build link from the premerge-CI workflow|
 |[#10657](https://github.com/NVIDIA/spark-rapids/pull/10657)|Revert "Host Memory OOM handling for RowToColumnarIterator (#10617)"|
+|[#10625](https://github.com/NVIDIA/spark-rapids/pull/10625)|Pin to 3.1.0 maven-gpg-plugin in deploy script [skip ci]|
 |[#10637](https://github.com/NVIDIA/spark-rapids/pull/10637)|Cleanup async state when multi-threaded shuffle readers fail|
 |[#10617](https://github.com/NVIDIA/spark-rapids/pull/10617)|Host Memory OOM handling for RowToColumnarIterator|
 |[#10614](https://github.com/NVIDIA/spark-rapids/pull/10614)|Use random seed for `test_from_json_struct_decimal`|
 |[#10581](https://github.com/NVIDIA/spark-rapids/pull/10581)|Use new jni kernel for getJsonObject|
 |[#10630](https://github.com/NVIDIA/spark-rapids/pull/10630)|Fix removal of internal metadata information in 350 shim|
 |[#10623](https://github.com/NVIDIA/spark-rapids/pull/10623)|Auto merge PRs to branch-24.06 from branch-24.04 [skip ci]|
+|[#10616](https://github.com/NVIDIA/spark-rapids/pull/10616)|Pass metadata extractors to FileScanRDD|
 |[#10620](https://github.com/NVIDIA/spark-rapids/pull/10620)|Remove unused shared lib in Jenkins files|
+|[#10615](https://github.com/NVIDIA/spark-rapids/pull/10615)|Turn off state logging in HostAllocSuite|
 |[#10610](https://github.com/NVIDIA/spark-rapids/pull/10610)|Do not replace TableCacheQueryStageExec|
 |[#10599](https://github.com/NVIDIA/spark-rapids/pull/10599)|Call globStatus directly via PY4J in hdfs_glob to avoid calling hadoop command|
 |[#10602](https://github.com/NVIDIA/spark-rapids/pull/10602)|Remove InMemoryTableScanExec support for Spark 3.5+|
 |[#10608](https://github.com/NVIDIA/spark-rapids/pull/10608)|Update perfio.s3.enabled doc to fix build failure [skip ci]|
 |[#10598](https://github.com/NVIDIA/spark-rapids/pull/10598)|Update CI script to build and deploy using the same CUDA classifier[skip ci]|
+|[#10575](https://github.com/NVIDIA/spark-rapids/pull/10575)|Update JsonToStructs and ScanJson to have white space normalization|
 |[#10597](https://github.com/NVIDIA/spark-rapids/pull/10597)|add guardword to hide cloud info|
 |[#10540](https://github.com/NVIDIA/spark-rapids/pull/10540)|Handle minimum GPU architecture supported|
 |[#10584](https://github.com/NVIDIA/spark-rapids/pull/10584)|Add in small optimization for instr comparison|
@@ -300,6 +309,7 @@ Generated on 2024-04-11
 |[#10399](https://github.com/NVIDIA/spark-rapids/pull/10399)|Update NOTICE-binary|
 |[#10158](https://github.com/NVIDIA/spark-rapids/pull/10158)|Add in framework for unbounded to unbounded window agg optimization|
 |[#10389](https://github.com/NVIDIA/spark-rapids/pull/10389)|Change version and branch to 24.02 in docs [skip ci]|
+|[#10384](https://github.com/NVIDIA/spark-rapids/pull/10384)|[DOC] Update docs for 23.12.2 release [skip ci] |
 |[#10309](https://github.com/NVIDIA/spark-rapids/pull/10309)|[DOC] add custom 404 page and fix some document issue [skip ci]|
 |[#10352](https://github.com/NVIDIA/spark-rapids/pull/10352)|xfail mixed type test|
 |[#10369](https://github.com/NVIDIA/spark-rapids/pull/10369)|Revert "Support barrier mode for mapInPandas/mapInArrow (#10364)"|
@@ -401,6 +411,7 @@ Generated on 2024-04-11
 |[#9996](https://github.com/NVIDIA/spark-rapids/pull/9996)|Test full timestamp output range in PySpark|
 |[#10081](https://github.com/NVIDIA/spark-rapids/pull/10081)|Add a fallback Cloudera Maven repo URL [skip ci]|
 |[#10065](https://github.com/NVIDIA/spark-rapids/pull/10065)|Improve host memory spill interfaces|
+|[#10069](https://github.com/NVIDIA/spark-rapids/pull/10069)|Revert "Support split broadcast join condition into ast and non-ast […|
 |[#10070](https://github.com/NVIDIA/spark-rapids/pull/10070)|Fix 332db build failure|
 |[#10060](https://github.com/NVIDIA/spark-rapids/pull/10060)|Fix failed cases for non-utc time zone|
 |[#10038](https://github.com/NVIDIA/spark-rapids/pull/10038)|Remove spark.rapids.sql.nonUTC.enabled configuration option|
@@ -410,6 +421,7 @@ Generated on 2024-04-11
 |[#10053](https://github.com/NVIDIA/spark-rapids/pull/10053)|Remove invalid user from CODEOWNER file [skip ci]|
 |[#10049](https://github.com/NVIDIA/spark-rapids/pull/10049)|Fix out of range error from pySpark in test_timestamp_millis and other two integration test cases|
 |[#9721](https://github.com/NVIDIA/spark-rapids/pull/9721)|Support date_format via Gpu for non-UTC time zone|
+|[#9470](https://github.com/NVIDIA/spark-rapids/pull/9470)|Use float to string kernel|
 |[#9845](https://github.com/NVIDIA/spark-rapids/pull/9845)|Use parse_url kernel for HOST parsing|
 |[#10024](https://github.com/NVIDIA/spark-rapids/pull/10024)|Support hour minute second for non-UTC time zone|
 |[#9973](https://github.com/NVIDIA/spark-rapids/pull/9973)|Batching support for row-based bounded window functions |
@@ -419,6 +431,7 @@ Generated on 2024-04-11
 |[#10023](https://github.com/NVIDIA/spark-rapids/pull/10023)|GPU supports `yyyyMMdd` format by post process for the `from_unixtime` function|
 |[#10033](https://github.com/NVIDIA/spark-rapids/pull/10033)|Remove GpuToTimestampImproved and spark.rapids.sql.improvedTimeOps.enabled|
 |[#10016](https://github.com/NVIDIA/spark-rapids/pull/10016)|Fix infinite loop in test_str_to_map_expr_random_delimiters|
+|[#9481](https://github.com/NVIDIA/spark-rapids/pull/9481)|Use parse_url kernel for PROTOCOL parsing|
 |[#10030](https://github.com/NVIDIA/spark-rapids/pull/10030)|Update links in shims.md|
 |[#10015](https://github.com/NVIDIA/spark-rapids/pull/10015)|Fix array_transform to not recompute the argument|
 |[#10011](https://github.com/NVIDIA/spark-rapids/pull/10011)|Add cpu oom retry split handling to InternalRowToColumnarBatchIterator|
@@ -446,11 +459,14 @@ Generated on 2024-04-11
 |[#9852](https://github.com/NVIDIA/spark-rapids/pull/9852)|Avoid generating duplicate nan keys with MapGen(FloatGen)|
 |[#9674](https://github.com/NVIDIA/spark-rapids/pull/9674)|Add cache action to speed up mvn workflow [skip ci]|
 |[#9900](https://github.com/NVIDIA/spark-rapids/pull/9900)|Revert "Remove Databricks 13.3 from release 23.12  (#9890)"|
+|[#9889](https://github.com/NVIDIA/spark-rapids/pull/9889)|Fix test_cast_string_ts_valid_format test|
 |[#9888](https://github.com/NVIDIA/spark-rapids/pull/9888)|Update nightly build and deploy script for arm artifacts [skip ci]|
+|[#9833](https://github.com/NVIDIA/spark-rapids/pull/9833)|Fix a hang for Pandas UDFs on DB 13.3|
 |[#9656](https://github.com/NVIDIA/spark-rapids/pull/9656)|Update for new retry state machine JNI APIs|
 |[#9654](https://github.com/NVIDIA/spark-rapids/pull/9654)|Detect multiple jars on the classpath when init plugin|
 |[#9857](https://github.com/NVIDIA/spark-rapids/pull/9857)|Skip redundant steps in nightly build [skip ci]|
 |[#9812](https://github.com/NVIDIA/spark-rapids/pull/9812)|Update JNI and private dep version to 24.02.0-SNAPSHOT|
+|[#9716](https://github.com/NVIDIA/spark-rapids/pull/9716)|Initiate project version 24.02.0-SNAPSHOT|
 
 ## Older Releases
 Changelog of older releases can be found at [docs/archives](/docs/archives)
