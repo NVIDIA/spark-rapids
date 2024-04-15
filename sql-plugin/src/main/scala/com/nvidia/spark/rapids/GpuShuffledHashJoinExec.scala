@@ -21,6 +21,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -79,7 +80,8 @@ class GpuShuffledHashJoinMeta(
           left,
           right,
           conf.isGPUShuffle,
-          conf.gpuTargetBatchSizeBytes)(
+          conf.gpuTargetBatchSizeBytes,
+          isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys)
       case _ =>
@@ -110,7 +112,7 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
-    isSkewJoin: Boolean)(
+    override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
   with GpuSubPartitionHashJoin {
@@ -127,8 +129,7 @@ case class GpuShuffledHashJoinExec(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -170,7 +171,6 @@ case class GpuShuffledHashJoinExec(
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
        .map(_ && RapidsConf.TEST_CONF.get(conf))
@@ -202,7 +202,7 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
-              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+              numOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>
@@ -212,8 +212,7 @@ case class GpuShuffledHashJoinExec(
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
-              numPartitions, numOutputRows, joinOutputRows, numOutputBatches,
-              opTime, joinTime)
+              numPartitions, numOutputRows, numOutputBatches, opTime, joinTime)
         }
       }
     }
@@ -373,7 +372,7 @@ object GpuShuffledHashJoinExec extends Logging {
         logDebug("Return multiple batches as the build side data for the following " +
           "sub-partitioning join in null-filtering mode.")
         val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf.toSeq).map { sp =>
-          withResource(sp)(_.getColumnarBatch())
+          withRetryNoSplit(sp)(_.getColumnarBatch())
         } ++ filteredIter
         Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
       } else {

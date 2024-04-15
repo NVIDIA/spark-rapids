@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,7 +122,6 @@ class GpuCartesianRDD(
     targetSize: Long,
     opTime: GpuMetric,
     joinTime: GpuMetric,
-    joinOutputRows: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
     var rdd1: RDD[GpuSerializableBatch],
@@ -191,7 +190,6 @@ class GpuCartesianRDD(
         Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
         targetSize, boundCondition,
         numOutputRows = numOutputRows,
-        joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,
         opTime = opTime,
         joinTime = joinTime)
@@ -236,8 +234,7 @@ case class GpuCartesianProductExec(
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -246,7 +243,6 @@ case class GpuCartesianProductExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val opTime = gpuLongMetric(OP_TIME)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
@@ -282,7 +278,6 @@ case class GpuCartesianProductExec(
         targetSizeBytes,
         opTime,
         joinTime,
-        joinOutputRows,
         numOutputRows,
         numOutputBatches,
         left.executeColumnar().map(cb => new GpuSerializableBatch(cb)),

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, GpuFileSourceScanExec}
-import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuJoinExec}
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
 class AdaptiveQueryExecSuite
@@ -77,9 +77,10 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuShuffledHashJoinExec] = {
+  private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuJoinExec] = {
     collect(plan) {
       case j: GpuShuffledHashJoinExec => j
+      case j: GpuShuffledSymmetricHashJoinExec => j
     }
   }
 
@@ -202,25 +203,35 @@ class AdaptiveQueryExecSuite
         }
 
         val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
-          _.isInstanceOf[GpuShuffledHashJoinExec]).get
-          .asInstanceOf[GpuShuffledHashJoinExec]
+          _.isInstanceOf[GpuJoinExec]).get
         assert(shj.children.length == 2)
-        val childrenToCheck = if (shouldOptimizeHashJoinShuffle) {
-          // assert that the stream side of SHJ is coalesced
-          shj.buildSide match {
-            case GpuBuildLeft => Seq(shj.right)
-            case GpuBuildRight => Seq(shj.left)
-          }
-        } else {
-          // assert that both the build and stream side of SHJ are coalesced
-          // if we are not optimizing the build side shuffle
-          shj.children
+        shj match {
+          case j: GpuShuffledSymmetricHashJoinExec =>
+            // assert that both children are NOT coalesced, as join will directly handle shuffle
+            assert(j.children.forall {
+              case GpuShuffleCoalesceExec(_, _) => false
+              case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => false
+              case _ => true
+            })
+          case j: GpuShuffledHashJoinExec =>
+            val childrenToCheck = if (shouldOptimizeHashJoinShuffle) {
+              // assert that the stream side of SHJ is coalesced
+              j.buildSide match {
+                case GpuBuildLeft => Seq(j.right)
+                case GpuBuildRight => Seq(j.left)
+              }
+            } else {
+              // assert that both the build and stream side of SHJ are coalesced
+              // if we are not optimizing the build side shuffle
+              j.children
+            }
+            assert(childrenToCheck.forall {
+              case GpuShuffleCoalesceExec(_, _) => true
+              case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
+              case _ => false
+            })
+          case j => throw new IllegalStateException(s"Unexpected join: $j")
         }
-        assert(childrenToCheck.forall {
-          case GpuShuffleCoalesceExec(_, _) => true
-          case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
-          case _ => false
-        })
       }
 
     }, conf)
@@ -671,7 +682,7 @@ class AdaptiveQueryExecSuite
   }
 
   def checkSkewJoin(
-      joins: Seq[GpuShuffledHashJoinExec],
+      joins: Seq[GpuJoinExec],
       leftSkewNum: Int,
       rightSkewNum: Int): Unit = {
     assert(joins.size == 1 && joins.head.isSkewJoin)

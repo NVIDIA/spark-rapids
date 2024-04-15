@@ -445,7 +445,9 @@ class HMBInputFile(buffer: HostMemoryBuffer) extends InputFile {
 
 private case class GpuParquetFileFilterHandler(
     @transient sqlConf: SQLConf,
-    metrics: Map[String, GpuMetric]) {
+    metrics: Map[String, GpuMetric]) extends Logging {
+
+  private val FOOTER_LENGTH_SIZE = 4
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -534,12 +536,16 @@ private case class GpuParquetFileFilterHandler(
   private def readFooterBuffer(
       filePath: Path,
       conf: Configuration): HostMemoryBuffer = {
+    PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
+      .getOrElse(readFooterBufUsingHadoop(filePath, conf))
+  }
+
+  private def readFooterBufUsingHadoop(filePath: Path, conf: Configuration): HostMemoryBuffer = {
     val fs = filePath.getFileSystem(conf)
     val stat = fs.getFileStatus(filePath)
     // Much of this code came from the parquet_mr projects ParquetFileReader, and was modified
     // to match our needs
     val fileLen = stat.getLen
-    val FOOTER_LENGTH_SIZE = 4
     // MAGIC + data + footer + footerIndex + MAGIC
     if (fileLen < MAGIC.length + FOOTER_LENGTH_SIZE + MAGIC.length) {
       throw new RuntimeException(s"$filePath is not a Parquet file (too small length: $fileLen )")
@@ -551,28 +557,18 @@ private case class GpuParquetFileFilterHandler(
         val footerLength = readIntLittleEndian(inputStream)
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
-        if (!util.Arrays.equals(MAGIC, magic)) {
-          if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
-            throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
-              "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
-              s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
-          } else {
-            throw new RuntimeException(s"$filePath is not a Parquet file. " +
-              s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
-              s"but found ${util.Arrays.toString(magic)}")
-          }
-        }
         val footerIndex = footerLengthIndex - footerLength
+        verifyParquetMagic(filePath, magic)
         if (footerIndex < MAGIC.length || footerIndex >= footerLengthIndex) {
           throw new RuntimeException(s"corrupted file: the footer index is not within " +
-              s"the file: $footerIndex")
+            s"the file: $footerIndex")
         }
-        inputStream.seek(footerIndex)
-        // read the footer til the end of the file
         val hmbLength = (fileLen - footerIndex).toInt
         closeOnExcept(HostMemoryBuffer.allocate(hmbLength + MAGIC.length, false)) { outBuffer =>
           val out = new HostMemoryOutputStream(outBuffer)
           out.write(MAGIC)
+          inputStream.seek(footerIndex)
+          // read the footer til the end of the file
           val tmpBuffer = new Array[Byte](4096)
           var bytesLeft = hmbLength
           while (bytesLeft > 0) {
@@ -583,6 +579,21 @@ private case class GpuParquetFileFilterHandler(
           }
           outBuffer
         }
+      }
+    }
+  }
+
+
+  private def verifyParquetMagic(filePath: Path, magic: Array[Byte]): Unit = {
+    if (!util.Arrays.equals(MAGIC, magic)) {
+      if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
+        throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
+          "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+          s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
+      } else {
+        throw new RuntimeException(s"$filePath is not a Parquet file. " +
+          s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
+          s"but found ${util.Arrays.toString(magic)}")
       }
     }
   }
@@ -1333,6 +1344,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
   val PARQUET_META_SIZE: Long = 4 + 4 + 4
 
   // Configuration
+
   def conf: Configuration
   def execMetrics: Map[String, GpuMetric]
 
@@ -1567,18 +1579,24 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       filePathString: String,
       out: HostMemoryOutputStream,
       metrics: Map[String, GpuMetric]): Long = {
-    var totalBytesCopied = 0L
     if (remoteCopies.isEmpty) {
-      return totalBytesCopied
+      return 0L
     }
+
     val fileHadoopConf = ReaderUtils.getHadoopConfForReaderThread(filePath, conf)
     val coalescedRanges = coalesceReads(remoteCopies)
-    val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
-    withResource(filePath.getFileSystem(fileHadoopConf).open(filePath)) { in =>
-      coalescedRanges.foreach { blockCopy =>
-        totalBytesCopied += copyDataRange(blockCopy, in, out, copyBuffer)
+
+    val totalBytesCopied = PerfIO.readToHostMemory(
+        fileHadoopConf, out.buffer, filePath.toUri,
+        coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
+      ).getOrElse {
+        withResource(filePath.getFileSystem(fileHadoopConf).open(filePath)) { in =>
+          val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
+          coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
+            acc + copyDataRange(blockCopy, in, out, copyBuffer)
+          }
+        }
       }
-    }
     // try to cache the remote ranges that were copied
     remoteCopies.foreach { range =>
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES, NoopMetric) += 1

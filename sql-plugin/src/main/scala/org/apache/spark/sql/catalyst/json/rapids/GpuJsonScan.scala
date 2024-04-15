@@ -18,14 +18,15 @@ package org.apache.spark.sql.catalyst.json.rapids
 
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{NvtxColor, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuJsonToStructsShim, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -40,132 +41,121 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuJsonReadCommon
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
+import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 object GpuJsonScan {
 
+  sealed trait JsonReaderType
+  case object JsonScanReaderType extends JsonReaderType {
+    override def toString: String = "JsonScan"
+  }
+  case object JsonToStructsReaderType extends JsonReaderType {
+    override def toString: String = "JsonToStructs"
+  }
+  case object JsonFileFormatReaderType extends JsonReaderType {
+    override def toString: String = "JsonFileFormat"
+  }
+
   def tagSupport(scanMeta: ScanMeta[JsonScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
-      scan.sparkSession,
+      scan.sparkSession.sessionState.conf,
+      JsonScanReaderType,
       scan.dataSchema,
       scan.readDataSchema,
       scan.options.asScala.toMap,
       scanMeta)
   }
 
-  def tagSupportOptions(options: JSONOptionsInRead,
+  def tagSupportOptions(op: JsonReaderType,
+                        options: JSONOptionsInRead,
                         meta: RapidsMeta[_, _, _]): Unit = {
     if (options.multiLine) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
+      meta.willNotWorkOnGpu(s"$op does not support multiLine")
     }
 
     // {"name": /* hello */ "Reynold Xin"} is not supported by CUDF
     if (options.allowComments) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowComments")
+      meta.willNotWorkOnGpu(s"$op does not support allowComments")
     }
 
     // {name: 'Reynold Xin'} is not supported by CUDF
     if (options.allowUnquotedFieldNames) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowUnquotedFieldNames")
+      meta.willNotWorkOnGpu(s"$op does not support allowUnquotedFieldNames")
     }
 
-    // {'name': 'Reynold Xin'} is not supported by CUDF
-    if (options.parameters.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowSingleQuotes")
+    // {'name': 'Reynold Xin'} turning single quotes off is not supported by CUDF
+    if (!options.allowSingleQuotes) {
+      meta.willNotWorkOnGpu(s"$op does not support disabling allowSingleQuotes")
     }
 
     // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
     if (options.allowBackslashEscapingAnyCharacter) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowBackslashEscapingAnyCharacter")
+      meta.willNotWorkOnGpu(s"$op does not support allowBackslashEscapingAnyCharacter")
     }
 
     // {"a":null, "b":1, "c":3.0}, Spark will drop column `a` if dropFieldIfAllNull is enabled.
     if (options.dropFieldIfAllNull) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support dropFieldIfAllNull")
+      meta.willNotWorkOnGpu(s"$op does not support dropFieldIfAllNull")
     }
 
     if (options.parseMode != PermissiveMode) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
+      meta.willNotWorkOnGpu(s"$op only supports Permissive JSON parsing")
     }
 
     if (options.lineSeparator.getOrElse("\n") != "\n") {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
+      meta.willNotWorkOnGpu(op + " only supports \"\\n\" as a line separator")
     }
 
     options.encoding.foreach(enc =>
       if (enc != StandardCharsets.UTF_8.name() && enc != StandardCharsets.US_ASCII.name()) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
+      meta.willNotWorkOnGpu(s"$op only supports UTF8 or US-ASCII encoded data")
     })
   }
 
-  def tagJsonToStructsSupport(options:Map[String, String],
-      dt: DataType,
-      meta: RapidsMeta[_, _, _]): Unit = {
-    val parsedOptions = new JSONOptionsInRead(
-      options,
-      SQLConf.get.sessionLocalTimeZone,
-      SQLConf.get.columnNameOfCorruptRecord)
-
-    val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
-    if (hasDates) {
-      GpuJsonToStructsShim.tagDateFormatSupport(meta,
-        GpuJsonUtils.optionalDateFormatInRead(parsedOptions))
-    }
-
-    val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])
-    if (hasTimestamps) {
-      GpuJsonToStructsShim.tagTimestampFormatSupport(meta,
-        GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions))
-
-      GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions) match {
-        case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
-          // this is fine
-        case timestampFormat =>
-          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported timestampFormat $timestampFormat")
-      }
-    }
-
-    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
-      meta.willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
-    }
-
-    tagSupportOptions(parsedOptions, meta)
-  }
-
-  def tagSupport(sparkSession: SparkSession,
-                 dataSchema: StructType,
-                 readSchema: StructType,
+  def tagSupport(conf: SQLConf,
+                 op: JsonReaderType,
+                 dataSchema: DataType,
+                 readSchema: DataType,
                  options: Map[String, String],
                  meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions = new JSONOptionsInRead(
       options,
-      sparkSession.sessionState.conf.sessionLocalTimeZone,
-      sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+      conf.sessionLocalTimeZone,
+      conf.columnNameOfCorruptRecord)
 
-    if (!meta.conf.isJsonEnabled) {
-      meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_JSON} to true")
+    op match {
+      case JsonScanReaderType | JsonFileFormatReaderType =>
+        if (!meta.conf.isJsonEnabled) {
+          meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set " +
+              s"${RapidsConf.ENABLE_JSON} to true")
+        }
+
+        if (!meta.conf.isJsonReadEnabled) {
+          meta.willNotWorkOnGpu("JSON input has been disabled. To enable set " +
+              s"${RapidsConf.ENABLE_JSON_READ} to true.")
+        }
+      case _ => // Ignored
     }
 
-    if (!meta.conf.isJsonReadEnabled) {
-      meta.willNotWorkOnGpu("JSON input has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_JSON_READ} to true. Please note that, currently json reader does " +
-        s"not support column prune, so user must specify the full schema or just let spark to " +
-        s"infer the schema")
-    }
-
-    tagSupportOptions(parsedOptions, meta)
-
-    val types = readSchema.map(_.dataType)
-
+    tagSupportOptions(op, parsedOptions, meta)
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(readSchema, _.isInstanceOf[DateType])
-    if (hasDates) {
+    val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(readSchema,
+      _.isInstanceOf[TimestampType])
+    val hasFloats = TrampolineUtil.dataTypeExistsRecursively(readSchema,
+      _.isInstanceOf[FloatType])
+    val hasDoubles = TrampolineUtil.dataTypeExistsRecursively(readSchema,
+      _.isInstanceOf[DoubleType])
+    val hasDecimals = TrampolineUtil.dataTypeExistsRecursively(readSchema,
+      _.isInstanceOf[DecimalType])
 
+    if (hasDates) {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
 
@@ -186,7 +176,7 @@ object GpuJsonScan {
       }
     }
 
-    if (types.contains(TimestampType) || types.contains(DateType)) {
+    if (hasDates || hasTimestamps) {
       if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
@@ -195,46 +185,53 @@ object GpuJsonScan {
         GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
 
-    if(GpuJsonUtils.enableDateTimeParsingFallback(parsedOptions) &&
-        (types.contains(DateType) || types.contains(TimestampType))) {
-      meta.willNotWorkOnGpu(s"GpuJsonScan does not support enableDateTimeParsingFallback")
+    if (GpuJsonUtils.enableDateTimeParsingFallback(parsedOptions) &&
+        (hasDates || hasTimestamps)) {
+      meta.willNotWorkOnGpu(s"$op does not support enableDateTimeParsingFallback")
     }
 
-    if (!meta.conf.isJsonFloatReadEnabled && types.contains(FloatType)) {
+    if (!meta.conf.isJsonFloatReadEnabled && hasFloats) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
     }
 
-    if (!meta.conf.isJsonDoubleReadEnabled && types.contains(DoubleType)) {
+    if (!meta.conf.isJsonDoubleReadEnabled && hasDoubles) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading doubles. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
     }
 
-    if (!meta.conf.isJsonDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
+    if (!meta.conf.isJsonDecimalReadEnabled && hasDecimals) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading decimals. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DECIMALS} to true.")
     }
 
-    dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
-      val f = dataSchema(corruptFieldIndex)
-      if (f.dataType != StringType || !f.nullable) {
-        // fallback to cpu to throw exception
-        meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record which must " +
-          "be string type and nullable")
-      }
+    // Technically this is a problem for dates/timestamps too, but we don't support the formats
+    //  that are impacted by the locale
+    if (hasDecimals && parsedOptions.locale != Locale.US) {
+      meta.willNotWorkOnGpu(s"decimal parsing is only supported when the local is set " +
+          s"to US, but we found ${parsedOptions.locale}")
     }
 
-    if (readSchema.length == 1 &&
-      readSchema.head.name == parsedOptions.columnNameOfCorruptRecord) {
-      // fallback to cpu to throw exception
-      meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record")
+    dataSchema match {
+      case st: StructType =>
+        if (st.fieldNames.contains(parsedOptions.columnNameOfCorruptRecord)) {
+          meta.willNotWorkOnGpu(s"$op does not support Corrupt Record")
+        }
+        if (ColumnDefaultValuesShims.hasExistenceDefaultValues(st)) {
+          meta.willNotWorkOnGpu(s"$op does not support default values in schema")
+        }
+      case _ => //Ignored
     }
 
-    if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support default values in schema")
+    readSchema match {
+      case st: StructType =>
+        FileFormatChecks.tag(meta, st, JsonFormatType, ReadFileOp)
+      case _ =>
+      //This is for JsonToStructs when parsing a ArrayType or a MapType.
+      // ArrayType is not supported yet, and MapType only deals with String to String, so we
+      // are good to go. In the future we might want to wrap these in a StructType so
+      // we can get a full set of tests.
     }
-
-    FileFormatChecks.tag(meta, readSchema, JsonFormatType, ReadFileOp)
   }
 }
 
@@ -355,35 +352,31 @@ class JsonPartitionReader(
     partFile, dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
     maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
 
-  def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions = {
-    cudf.JSONOptions.builder()
-      .withRecoverWithNull(true)
-      .withMixedTypesAsStrings(enableMixedTypesAsString)
-      .withNormalizeSingleQuotes(true)
-      .build
-  }
+  def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions =
+    GpuJsonReadCommon.cudfJsonOptions(parsedOptions, enableMixedTypesAsString)
 
   /**
    * Read the host buffer to GPU table
    *
    * @param dataBuffer     host buffer to be read
    * @param dataSize       the size of host buffer
-   * @param cudfSchema     the cudf schema of the data
+   * @param cudfDataSchema     the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
    * @param hasHeader      if it has header
    * @return table
    */
   override def readToTable(
       dataBufferer: HostLineBufferer,
-      cudfSchema: Schema,
+      cudfDataSchema: Schema,
       readDataSchema: StructType,
+      cudfReadDataSchema: Schema,
       hasHeader: Boolean,
       decodeTime: GpuMetric): Table = {
     val jsonOpts = buildJsonOptions(parsedOptions)
-    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, jsonOpts,
-      getFileFormatShortName, partFile)
+    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfReadDataSchema, decodeTime,
+      jsonOpts, getFileFormatShortName, partFile)
     withResource(jsonTbl) { tbl =>
-      val cudfColumnNames = cudfSchema.getColumnNames
+      val cudfColumnNames = cudfReadDataSchema.getColumnNames
       val columns = readDataSchema.map { field =>
         val i = cudfColumnNames.indexOf(field.name)
         if (i == -1) {
@@ -393,6 +386,16 @@ class JsonPartitionReader(
         tbl.getColumn(i)
       }
       new Table(columns: _*)
+    }
+  }
+
+  override def getCudfSchema(dataSchema: StructType): Schema =
+    GpuJsonReadCommon.makeSchema(dataSchema)
+
+  override def castTableToDesiredTypes(input: Table, dataSchema: StructType): Table = {
+    withResource(GpuJsonReadCommon.convertTableToDesiredType(input, dataSchema, parsedOptions)) {
+      cols =>
+        new Table(cols.toSeq: _*)
     }
   }
 
@@ -441,71 +444,16 @@ class JsonPartitionReader(
     }
   }
 
-  /**
-   * JSON only supports unquoted lower-case "true" and "false" as valid boolean values.
-   */
-  override def castStringToBool(input: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromString(true.toString)) { t =>
-      withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
-        withResource(ColumnVector.fromStrings(true.toString, false.toString)) { boolStrings =>
-          withResource(input.contains(boolStrings)) { isValidBool =>
-            withResource(input.equalTo(t)) {
-              isValidBool.ifElse(_, nullBool)
-            }
-          }
-        }
-      }
-    }
-  }
+  // TODO need to rethink how we want to handle casting data from one type to another, but probably
+  //  only after we have nested support added in.
+  //  https://github.com/NVIDIA/spark-rapids/issues/10539
+  override def castStringToBool(input: cudf.ColumnVector): cudf.ColumnVector =
+    throw new IllegalStateException("THIS SHOULD NOT BE CALLED")
 
-  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
-    GpuJsonToStructsShim.castJsonStringToDateFromScan(input, dt, dateFormat)
-  }
+  override def dateFormat: Option[String] =
+    throw new IllegalStateException("THIS SHOULD NOT BE CALLED")
 
-  /**
-   * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
-   *
-   * Spark then has its own rules for supporting NaN and Infinity, which are not
-   * valid numbers in JSON.
-   */
-  private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
-    // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
-    // due to https://issues.apache.org/jira/browse/SPARK-38060
-    // cuDF `isFloat` supports some inputs that are not valid JSON numbers, such as `.1`, `1.`,
-    // and `+1` so we use a regular expression to match valid JSON numbers instead
-    val jsonNumberRegexp = "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    val isValid = if (parsedOptions.allowNonNumericNumbers) {
-      withResource(ColumnVector.fromStrings("NaN", "+INF", "-INF", "+Infinity",
-        "Infinity", "-Infinity")) { nonNumeric =>
-        withResource(input.matchesRe(prog)) { isJsonNumber =>
-          withResource(input.contains(nonNumeric)) { nonNumeric =>
-            isJsonNumber.or(nonNumeric)
-          }
-        }
-      }
-    } else {
-      input.matchesRe(prog)
-    }
-    withResource(isValid) { _ =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
-      }
-    }
-  }
+  override def timestampFormat: String =
+    throw new IllegalStateException("THIS SHOULD NOT BE CALLED")
 
-  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    withResource(sanitizeNumbers(input)) { sanitizedInput =>
-      super.castStringToFloat(sanitizedInput, dt)
-    }
-  }
-
-  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
-    withResource(sanitizeNumbers(input)) { sanitizedInput =>
-      super.castStringToDecimal(sanitizedInput, dt)
-    }
-  }
-
-  override def dateFormat: Option[String] = GpuJsonUtils.optionalDateFormatInRead(parsedOptions)
-  override def timestampFormat: String = GpuJsonUtils.timestampFormatInRead(parsedOptions)
 }

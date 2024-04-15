@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import hudson.model.Result
 import hudson.model.Run
 import jenkins.model.CauseOfInterruption.UserInterruption
 
-@Library(['shared-libs', 'blossom-lib']) _
+@Library('blossom-lib')
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
@@ -44,7 +44,7 @@ pipeline {
     agent {
         kubernetes {
             label "premerge-init-${BUILD_TAG}"
-            cloud 'sc-ipp-blossom-prod'
+            cloud "${common.CLOUD_NAME}"
             yaml "${IMAGE_DB}"
         }
     }
@@ -68,10 +68,10 @@ pipeline {
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
         MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
-        ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
+        ARTIFACTORY_NAME = "${common.ARTIFACTORY_NAME}"
         GITHUB_TOKEN = credentials("github-token")
         URM_CREDS = credentials("urm_creds")
-        URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
+        URM_URL = "https://${common.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CLASSIFIER = 'cuda11'
@@ -95,7 +95,7 @@ pipeline {
 
                     def title = githubHelper.getIssue().title.toLowerCase()
                     if (title ==~ /.*\[skip ci\].*/) {
-                        githubHelper.updateCommitStatus("$BUILD_URL", "Skipped", GitHubCommitState.SUCCESS)
+                        githubHelper.updateCommitStatus("", "Skipped", GitHubCommitState.SUCCESS)
                         currentBuild.result == "SUCCESS"
                         skipped = true
                         return
@@ -120,7 +120,7 @@ pipeline {
             agent {
                 kubernetes {
                     label "premerge-docker-${BUILD_TAG}"
-                    cloud 'sc-ipp-blossom-prod'
+                    cloud "${common.CLOUD_NAME}"
                     yaml pod.getDockerBuildYAML()
                     workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                     customWorkspace "${CUSTOM_WORKSPACE}"
@@ -129,7 +129,7 @@ pipeline {
 
             steps {
                 script {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
+                    githubHelper.updateCommitStatus("", "Running", GitHubCommitState.PENDING)
                     unstash "source_tree"
                     container('cpu') {
                         // check if pre-merge dockerfile modified
@@ -179,7 +179,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     agent {
                         kubernetes {
                             label "premerge-ci-1-${BUILD_TAG}"
-                            cloud 'sc-ipp-blossom-prod'
+                            cloud "${common.CLOUD_NAME}"
                             yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}"
@@ -216,7 +216,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     agent {
                         kubernetes {
                             label "premerge-ci-2-${BUILD_TAG}"
-                            cloud 'sc-ipp-blossom-prod'
+                            cloud "${common.CLOUD_NAME}"
                             yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}-ci-2" // Use different workspace to avoid conflict with IT
@@ -248,7 +248,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     agent {
                         kubernetes {
                             label "ci-scala213-${BUILD_TAG}"
-                            cloud 'sc-ipp-blossom-prod'
+                            cloud "${common.CLOUD_NAME}"
                             yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}-scala-213" // Use different workspace to avoid conflict with IT
@@ -279,7 +279,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     }
                     steps {
                         script {
-                            githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
+                            githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
@@ -313,16 +313,17 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                 }
 
                 if (currentBuild.currentResult == "SUCCESS") {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
+                    githubHelper.updateCommitStatus("", "Success", GitHubCommitState.SUCCESS)
                 } else {
                     // upload log only in case of build failure
                     def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
                                       "dbc.*?azuredatabricks\\.net", "adb.*?databricks\\.com"]
                     guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
+                    guardWords.add("sc-ipp*") // hide cloud info
                     githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     if (currentBuild.currentResult != "ABORTED") { // skip ABORTED result to avoid status overwrite
-                        githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                        githubHelper.updateCommitStatus("", "Fail", GitHubCommitState.FAILURE)
                     }
                 }
 

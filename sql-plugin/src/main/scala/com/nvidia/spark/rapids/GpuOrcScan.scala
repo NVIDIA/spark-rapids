@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -402,13 +402,15 @@ object GpuOrcScan {
         // In this step, ORC casting of CPU throw an exception rather than replace such values with
         // null. We followed the CPU code here.
         withResource(milliseconds) { _ =>
-          // Test whether if there is long-overflow
-          // If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will
-          // throw an exception (as CPU code does).
+          // Test whether if there is long-overflow towards positive and negative infinity
           withResource(milliseconds.max()) { maxValue =>
-            if (maxValue.isValid) {
-              testLongMultiplicationOverflow(maxValue.getDouble.toLong,
-                DateTimeConstants.MICROS_PER_MILLIS)
+            withResource(milliseconds.min()) { minValue =>
+              Seq(maxValue, minValue).foreach { extremum =>
+                if (extremum.isValid) {
+                  testLongMultiplicationOverflow(extremum.getDouble.toLong,
+                    DateTimeConstants.MICROS_PER_MILLIS)
+                }
+              }
             }
           }
           withResource(Scalar.fromDouble(DateTimeConstants.MICROS_PER_MILLIS)) { thousand =>
@@ -486,7 +488,7 @@ object GpuOrcScan {
    * In Math.multiplyExact, if there is an integer-overflow, then it will throw an
    * ArithmeticException.
    */
-  def testLongMultiplicationOverflow(a: Long, b: Long) = {
+  private def testLongMultiplicationOverflow(a: Long, b: Long) = {
     Math.multiplyExact(a, b)
   }
 

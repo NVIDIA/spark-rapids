@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -329,7 +329,6 @@ object GpuBroadcastNestedLoopJoinExecBase {
       targetSize: Long,
       boundCondition: Option[GpuExpression],
       numOutputRows: GpuMetric,
-      joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
@@ -355,7 +354,6 @@ object GpuBroadcastNestedLoopJoinExecBase {
       }
     }
     joinIterator.map { cb =>
-        joinOutputRows += cb.numRows()
         numOutputRows += cb.numRows()
         numOutputBatches += 1
         cb
@@ -462,8 +460,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   /** BuildRight means the right relation <=> the broadcast relation. */
   val (streamed, buildPlan) = gpuBuildSide match {
@@ -613,7 +610,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     if (output.isEmpty) {
       doUnconditionalJoinRowCount(relation)
     } else {
-      val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
       val buildTime = gpuLongMetric(BUILD_TIME)
@@ -666,7 +662,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           }
       }
       joinIterator.map { cb =>
-        joinOutputRows += cb.numRows()
         numOutputRows += cb.numRows()
         numOutputBatches += 1
         cb
@@ -773,7 +768,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val nestedLoopJoinType = joinType
     val buildSide = gpuBuildSide
     streamed.executeColumnar().mapPartitions { streamedIter =>
@@ -791,7 +785,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         spillableBuiltBatch,
         lazyStream, streamAttributes, targetSizeBytes, boundCondition,
         numOutputRows = numOutputRows,
-        joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,
         opTime = opTime,
         joinTime = joinTime)

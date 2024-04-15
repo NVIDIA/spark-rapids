@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,12 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -641,6 +643,104 @@ class JoinGathererImpl(
   override def close(): Unit = {
     gatherMap.close()
     data.close()
+  }
+}
+
+/**
+ * JoinGatherer for the case where the gather produces the same table as the input table.
+ */
+class JoinGathererSameTable(
+    private val data: LazySpillableColumnarBatch) extends JoinGatherer {
+
+  assert(data.numCols > 0, "data with no columns should have been filtered out already")
+
+  // How much of the gather map we have output so far
+  private var gatheredUpTo: Long = 0
+  private var gatheredUpToCheckpoint: Long = 0
+  private val totalRows: Long = data.numRows
+  private val fixedWidthRowSizeBits = {
+    val dts = data.dataTypes
+    JoinGathererImpl.fixedWidthRowSizeBits(dts)
+  }
+
+  override def checkpoint: Unit = {
+    gatheredUpToCheckpoint = gatheredUpTo
+    data.checkpoint()
+  }
+
+  override def restore: Unit = {
+    gatheredUpTo = gatheredUpToCheckpoint
+    data.restore()
+  }
+
+  override def toString: String = {
+    s"SAMEGATHER $gatheredUpTo/$totalRows $data"
+  }
+
+  override def realCheapPerRowSizeEstimate: Double = {
+    val totalInputRows: Int = data.numRows
+    val totalInputSize: Long = data.deviceMemorySize
+    // Avoid divide by 0 here and later on
+    if (totalInputRows > 0 && totalInputSize > 0) {
+      totalInputSize.toDouble / totalInputRows
+    } else {
+      1.0
+    }
+  }
+
+  override def getFixedWidthBitSize: Option[Int] = fixedWidthRowSizeBits
+
+  override def gatherNext(n: Int): ColumnarBatch = {
+    assert(gatheredUpTo + n <= totalRows)
+    val ret = sliceForGather(n)
+    gatheredUpTo += n
+    ret
+  }
+
+  override def isDone: Boolean =
+    gatheredUpTo >= totalRows
+
+  override def numRowsLeft: Long = totalRows - gatheredUpTo
+
+  override def allowSpilling(): Unit = {
+    data.allowSpilling()
+  }
+
+  override def getBitSizeMap(n: Int): ColumnView = {
+    withResource(sliceForGather(n)) { cb =>
+      withResource(GpuColumnVector.from(cb)) { table =>
+        withResource(table.rowBitCount()) { bits =>
+          bits.castTo(DType.INT64)
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    data.close()
+  }
+
+  private def isFullBatchGather(n: Int): Boolean = gatheredUpTo == 0 && n == totalRows
+
+  private def sliceForGather(n: Int): ColumnarBatch = {
+    val cb = data.getBatch
+    if (isFullBatchGather(n)) {
+      GpuColumnVector.incRefCounts(cb)
+    } else {
+      val splitStart = gatheredUpTo.toInt
+      val splitEnd = splitStart + n
+      val inputColumns = GpuColumnVector.extractColumns(cb)
+      val outputColumns: Array[vectorized.ColumnVector] = inputColumns.safeMap { c =>
+        val views = c.getBase.splitAsViews(splitStart, splitEnd)
+        assert(views.length == 3, s"Unexpected number of views: ${views.length}")
+        views(0).safeClose()
+        views(2).safeClose()
+        withResource(views(1)) { v =>
+          GpuColumnVector.from(v.copyToColumnVector(), c.dataType())
+        }
+      }
+      new ColumnarBatch(outputColumns, splitEnd - splitStart)
+    }
   }
 }
 

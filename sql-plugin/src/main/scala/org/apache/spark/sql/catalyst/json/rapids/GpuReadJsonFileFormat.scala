@@ -24,6 +24,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.json.JSONOptionsInRead
+import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan.JsonFileFormatReaderType
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
@@ -86,7 +87,8 @@ object GpuReadJsonFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuJsonScan.tagSupport(
-      SparkShimImpl.sessionFromPlan(fsse),
+      SparkShimImpl.sessionFromPlan(fsse).sessionState.conf,
+      JsonFileFormatReaderType,
       fsse.relation.dataSchema,
       fsse.output.toStructType,
       fsse.relation.options,

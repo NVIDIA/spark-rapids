@@ -192,29 +192,31 @@ class WindowRetrySuite
     val runningIter = new GpuRunningWindowIterator(
       Seq(cb).iterator, Seq(GpuAlias(count, "count")()), boundPartSpec, boundOrderSpec,
       Array(LongType), NoopMetric, NoopMetric, NoopMetric)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    // there should be two batches, each has two rows
-    withResource(runningIter.next()) { first =>
-      assertResult(1)(first.numCols())
-      assertResult(2)(first.numRows())
-      withResource(first.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hc =>
-        // one row one partition
-        Seq(1L, 1L).zipWithIndex.foreach { case (cnt, pos) =>
-          assert(cnt == hc.getLong(pos))
+    withResource(runningIter) { _ =>
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      // there should be two batches, each has two rows
+      withResource(runningIter.next()) { first =>
+        assertResult(1)(first.numCols())
+        assertResult(2)(first.numRows())
+        withResource(first.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hc =>
+          // one row one partition
+          Seq(1L, 1L).zipWithIndex.foreach { case (cnt, pos) =>
+            assert(cnt == hc.getLong(pos))
+          }
         }
       }
-    }
-    withResource(runningIter.next()) { second =>
-      assertResult(1)(second.numCols())
-      assertResult(2)(second.numRows())
-      withResource(second.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hc =>
-        // count for partition [3, 3] are [1L, 2L] by running frame.
-        Seq(1L, 2L).zipWithIndex.foreach { case (cnt, pos) =>
-          assert(cnt == hc.getLong(pos))
+      withResource(runningIter.next()) { second =>
+        assertResult(1)(second.numCols())
+        assertResult(2)(second.numRows())
+        withResource(second.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hc =>
+          // count for partition [3, 3] are [1L, 2L] by running frame.
+          Seq(1L, 2L).zipWithIndex.foreach { case (cnt, pos) =>
+            assert(cnt == hc.getLong(pos))
+          }
         }
       }
+      assert(runningIter.isEmpty)
     }
-    assert(runningIter.isEmpty)
   }
 }

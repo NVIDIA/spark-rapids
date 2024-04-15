@@ -1482,7 +1482,7 @@ case class GpuRegExpExtractAll(
                     }
                 }
                 withResource(stringCols) { _ =>
-                  ColumnVector.makeList(stringCols: _*)
+                  ColumnVector.makeList(rowCount, DType.STRING, stringCols: _*)
                 }
               }
             }
@@ -1958,6 +1958,27 @@ case class GpuStringToMap(strExpr: Expression,
           }
         }
       }
+    }
+  }
+}
+
+object GpuStringInstr {
+  def optimizeContains(cmp: GpuExpression): GpuExpression = {
+    cmp match {
+      case GpuGreaterThan(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(0, _)) =>
+        // instr(A, B) > 0 becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuGreaterThanOrEqual(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(1, _)) =>
+        // instr(A, B) >= 1 becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuLessThan(GpuLiteral(0, _), GpuStringInstr(str, substr: GpuLiteral)) =>
+        // 0 < instr(A, B) becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuLessThanOrEqual(GpuLiteral(1, _), GpuStringInstr(str, substr: GpuLiteral)) =>
+        // 1 <= instr(A, B) becomes contains(A, B)
+        GpuContains(str, substr)
+      case _ =>
+        cmp
     }
   }
 }

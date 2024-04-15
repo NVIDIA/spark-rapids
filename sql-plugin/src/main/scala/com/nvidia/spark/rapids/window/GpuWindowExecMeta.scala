@@ -154,7 +154,8 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
         input,
         getPartitionSpecs,
-        getOrderSpecs)
+        getOrderSpecs,
+        conf)
     } else {
       new GpuWindowExec(
         fixedUpWindowOps,
@@ -221,18 +222,22 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 }
 
 case class BatchedOps(running: Seq[NamedExpression],
-    unboundedToUnbounded: Seq[NamedExpression],
+    unboundedAgg: Seq[NamedExpression],
+    unboundedDoublePass: Seq[NamedExpression],
     bounded: Seq[NamedExpression],
     passThrough: Seq[NamedExpression]) {
 
   def getRunningExpressionsWithPassthrough: Seq[NamedExpression] =
     passThrough ++ running
 
-  def getDoublePassExpressionsWithRunningAsPassthrough: Seq[NamedExpression] =
-    passThrough ++ unboundedToUnbounded ++ running.map(_.toAttribute)
+  def getUnboundedAggWithRunningAsPassthrough: Seq[NamedExpression] =
+    passThrough ++ unboundedAgg ++ running.map(_.toAttribute)
+
+  def getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough: Seq[NamedExpression] =
+    passThrough ++ unboundedDoublePass ++ (unboundedAgg ++ running).map(_.toAttribute)
 
   def getBoundedExpressionsWithTheRestAsPassthrough: Seq[NamedExpression] =
-    passThrough ++ bounded ++ (unboundedToUnbounded ++ running).map(_.toAttribute)
+    passThrough ++ bounded ++ (unboundedDoublePass ++ unboundedAgg ++ running).map(_.toAttribute)
 
   def getMinPrecedingMaxFollowingForBoundedWindows: (Int, Int) = {
     // All bounded window expressions should have window bound window specs.
@@ -260,6 +265,19 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec)
 
+  private def getUnboundedAggWindowExec(
+      gpuPartitionSpec: Seq[Expression],
+      gpuOrderSpec: Seq[SortOrder],
+      child: SparkPlan,
+      cpuPartitionSpec: Seq[Expression],
+      cpuOrderSpec: Seq[SortOrder],
+      conf: RapidsConf): GpuExec =
+    GpuUnboundedToUnboundedAggWindowExec(
+      getUnboundedAggWithRunningAsPassthrough,
+      gpuPartitionSpec,
+      gpuOrderSpec,
+      child)(cpuPartitionSpec, cpuOrderSpec, conf.gpuTargetBatchSizeBytes)
+
   private def getDoublePassWindowExec(
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
@@ -267,7 +285,7 @@ case class BatchedOps(running: Seq[NamedExpression],
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec =
     GpuCachedDoublePassWindowExec(
-      getDoublePassExpressionsWithRunningAsPassthrough,
+      getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough,
       gpuPartitionSpec,
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec)
@@ -289,48 +307,36 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
       cpuPartitionSpec: Seq[Expression],
-      cpuOrderSpec: Seq[SortOrder]): GpuExec = {
-    // The order of these matter so we can pass the output of the first through the second one
+      cpuOrderSpec: Seq[SortOrder],
+      conf: RapidsConf): GpuExec = {
+    // The order of these matter so we can match the order of the parameters used to
+    //  create the various aggregation functions
+    var currentPlan = child
     if (hasRunning) {
-      val runningExec = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+      currentPlan = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
         cpuPartitionSpec, cpuOrderSpec)
-      if (hasDoublePass) {
-        val doublePassExec = getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, runningExec,
-          cpuPartitionSpec, cpuOrderSpec)
-        if (hasBounded) {
-          getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, doublePassExec,
-            cpuPartitionSpec, cpuOrderSpec)
-        } else {
-          doublePassExec
-        }
-      } else {
-        if (hasBounded) {
-          getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, runningExec,
-            cpuPartitionSpec, cpuOrderSpec)
-        }
-        else {
-          runningExec
-        }
-      }
-    } else {
-      if (hasDoublePass) {
-        val doublePassExec = getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
-          cpuPartitionSpec, cpuOrderSpec)
-        if (hasBounded) {
-          getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, doublePassExec,
-            cpuPartitionSpec, cpuOrderSpec)
-        } else {
-          doublePassExec
-        }
-      } else {
-        getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
-          cpuPartitionSpec, cpuOrderSpec)
-      }
     }
+
+    if (hasUnboundedAgg) {
+      currentPlan = getUnboundedAggWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+        cpuPartitionSpec, cpuOrderSpec, conf)
+    }
+
+    if (hasDoublePass) {
+      currentPlan = getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+        cpuPartitionSpec, cpuOrderSpec)
+    }
+
+    if (hasBounded) {
+      currentPlan = getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+        cpuPartitionSpec, cpuOrderSpec)
+    }
+    currentPlan.asInstanceOf[GpuExec]
   }
 
   def hasRunning: Boolean = running.nonEmpty
-  def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
+  def hasUnboundedAgg: Boolean = unboundedAgg.nonEmpty
+  def hasDoublePass: Boolean = unboundedDoublePass.nonEmpty
   def hasBounded: Boolean = bounded.nonEmpty
 }
 
@@ -442,9 +448,10 @@ object GpuWindowExecMeta {
     }
 
   def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
-    GpuSpecialFrameBoundary(UnboundedPreceding),
-    GpuSpecialFrameBoundary(UnboundedFollowing))) => true
+    case GpuWindowSpecDefinition(
+           _, _, GpuSpecifiedWindowFrame(_,
+           GpuSpecialFrameBoundary(UnboundedPreceding),
+           GpuSpecialFrameBoundary(UnboundedFollowing))) => true
     case _ => false
   }
 
@@ -458,7 +465,37 @@ object GpuWindowExecMeta {
     isSpecOkay && isFuncOkay
   }
 
-  def isBatchedUnboundedToUnboundedFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean =
+  /**
+   * Checks whether the window aggregation qualifies to be accelerated via group-by aggregation.
+   * Currently, aggregations without group-by (i.e. whole-table aggregations) are not supported.
+   */
+  def isUnboundedToUnboundedAggFunc(func: Expression, spec: GpuWindowSpecDefinition,
+      conf: RapidsConf): Boolean = {
+
+    def noGroupByColumns(spec:GpuWindowSpecDefinition): Boolean = spec match {
+      case GpuWindowSpecDefinition(partSpec, _, _) => partSpec.isEmpty
+      case _ => false
+    }
+
+    if (!conf.isWindowUnboundedAggEnabled) {
+      false
+    } else {
+      if (!GpuWindowExecMeta.isUnboundedToUnboundedWindow(spec)
+            || noGroupByColumns(spec)) {
+        false // Must be both unbounded, and have a group by specification.
+      } else {
+        func match {
+          case _: GpuUnboundedToUnboundedWindowAgg => true
+          case GpuAggregateExpression(_: GpuUnboundedToUnboundedWindowAgg, _, _, _, _) => true
+          case _ => false
+        }
+      }
+    }
+  }
+
+  // TODO delete this if we can support min, max, and count with
+  //  isUnboundedToUnboundedAggFunc instead.
+  def isBatchedDoublePassFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean =
     func match {
       case _: GpuUnboundToUnboundWindowWithFixer
         if GpuWindowExecMeta.isUnboundedToUnboundedWindow(spec) => true
@@ -471,7 +508,8 @@ object GpuWindowExecMeta {
       spec: GpuWindowSpecDefinition,
       conf: RapidsConf): Boolean = {
     isBatchedRunningFunc(func, spec) ||
-        isBatchedUnboundedToUnboundedFunc(func, spec) ||
+        isUnboundedToUnboundedAggFunc(func, spec, conf) ||
+        isBatchedDoublePassFunc(func, spec) ||
         isBoundedRowsWindowAndBatchable(spec, conf)
   }
 
@@ -479,13 +517,16 @@ object GpuWindowExecMeta {
       conf: RapidsConf): BatchedOps = {
     val running = ArrayBuffer[NamedExpression]()
     val doublePass = ArrayBuffer[NamedExpression]()
+    val unboundedToUnboundedAgg = ArrayBuffer[NamedExpression]()
     val batchedBounded = ArrayBuffer[NamedExpression]()
     val passThrough = ArrayBuffer[NamedExpression]()
     windowOps.foreach {
       case expr@GpuAlias(GpuWindowExpression(func, spec), _) =>
         if (isBatchedRunningFunc(func, spec)) {
           running.append(expr)
-        } else if (isBatchedUnboundedToUnboundedFunc(func, spec)) {
+        } else if (isUnboundedToUnboundedAggFunc(func, spec, conf)) {
+          unboundedToUnboundedAgg.append(expr)
+        } else if (isBatchedDoublePassFunc(func, spec)) {
           doublePass.append(expr)
         } else if (isBoundedRowsWindowAndBatchable(spec, conf)) {
           batchedBounded.append(expr)
@@ -501,7 +542,11 @@ object GpuWindowExecMeta {
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
-    BatchedOps(running.toSeq, doublePass.toSeq, batchedBounded.toSeq, passThrough.toSeq)
+    BatchedOps(running.toSeq,
+               unboundedToUnboundedAgg.toSeq,
+               doublePass.toSeq,
+               batchedBounded.toSeq,
+               passThrough.toSeq)
   }
 
   /**

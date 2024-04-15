@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -235,7 +235,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
-    private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
+    private final RapidsHostColumnBuilder[] builders;
     private ai.rapids.cudf.HostColumnVector[] hostColumns;
 
     /**
@@ -246,17 +246,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public GpuColumnarBatchBuilder(StructType schema, int rows) {
       fields = schema.fields();
       int len = fields.length;
-      builders = new ai.rapids.cudf.HostColumnVector.ColumnBuilder[len];
+      builders = new RapidsHostColumnBuilder[len];
       boolean success = false;
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
-          builders[i] = new HostColumnVector.ColumnBuilder(convertFrom(field.dataType(), field.nullable()), rows);
+          builders[i] =
+              new RapidsHostColumnBuilder(convertFrom(field.dataType(), field.nullable()), rows);
         }
         success = true;
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
+          for (RapidsHostColumnBuilder b: builders) {
             if (b != null) {
               b.close();
             }
@@ -272,7 +273,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
-    public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
+    public RapidsHostColumnBuilder builder(int i) {
       return builders[i];
     }
 
@@ -320,7 +321,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     @Override
     public void close() {
       try {
-        for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
+        for (RapidsHostColumnBuilder b: builders) {
           if (b != null) {
             b.close();
           }

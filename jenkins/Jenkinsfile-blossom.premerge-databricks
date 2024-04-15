@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
  *
  */
 
-@Library(['shared-libs', 'blossom-lib']) _
+@Library('blossom-lib')
 @Library('blossom-github-lib@master')
 
 import ipp.blossom.*
@@ -33,7 +33,7 @@ pipeline {
     agent {
         kubernetes {
             label "premerge-init-${BUILD_TAG}"
-            cloud 'sc-ipp-blossom-prod'
+            cloud "${common.CLOUD_NAME}"
             yaml "${IMAGE_DB}"
         }
     }
@@ -88,7 +88,7 @@ pipeline {
                         // 'name' and 'value' only supprt literal string in the declarative Jenkins
                         // Refer to Jenkins issue https://issues.jenkins.io/browse/JENKINS-62127
                         name 'DB_RUNTIME'
-                        values '10.4', '11.3', '12.2', '13.3'
+                        values '11.3', '12.2', '13.3'
                     }
                 }
                 stages {
@@ -96,7 +96,7 @@ pipeline {
                         agent {
                             kubernetes {
                                 label "premerge-ci-${DB_RUNTIME}-${BUILD_NUMBER}"
-                                cloud 'sc-ipp-blossom-prod'
+                                cloud "${common.CLOUD_NAME}"
                                 yaml "${IMAGE_DB}"
                                 workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                                 customWorkspace "${CUSTOM_WORKSPACE}-${DB_RUNTIME}-${BUILD_NUMBER}"

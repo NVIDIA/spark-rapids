@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2023-2024, NVIDIA CORPORATION.
+  Copyright (c) 2023-2024 NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent_2.12</artifactId>
-        <version>24.02.0</version>
+        <version>24.04.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-cdh-bom</artifactId>
     <packaging>pom</packaging>
     <description>CDH Shim Dependencies</description>
-    <version>24.02.0</version>
+    <version>24.04.0</version>
 
     <properties>
         <rapids.module>../shim-deps/cloudera</rapids.module>
