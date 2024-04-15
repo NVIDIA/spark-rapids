@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Dump tool for get json object
+title: Dump tool for get_json_object
 nav_order: 12
 parent: Developer Overview
 ---
@@ -46,28 +46,31 @@ Please note that this cannot currently be disabled.
 This tool should not dump the original input data.
 The goal is to find out what types of issues are showing up, and ideally 
 give the RAPIDS team enough information to reproduce it.
-Special/retain chars, the following chars will not be masked:
-```
-    ASCII chars [0, 31] including space char
-    { } [ ] , : " ' :  JSON structure chars, should not mask
-    \  :  escape char, should not mask
-    / b f n r t u : can follow \, should not mask
-    - :  used by number, should not mask
-    0-9  : used by number, should not mask
-    e E  : used by number, e.g.: 1.0E-3, should not mask
-    u A-F a-f : used by JSON string by unicode, e.g.: \u1e2F
-    true :  should not mask
-    false :  should not mask
-    null :  should not mask
-    $ [ ] . * '  : used by path, should not mask
-    ?  : json path supports although Spark does not support, adding this has no side effect
-```
-Above special/retain chars should not be masked, or the JSON will be invalid.  
-Mask logic:  
-  - Assume path only contains a-z, A-Z, '-' and [0-9]
-  - For char set [a-z, A-Z] minus special/retain chars like [eE1-9], create a random one to
-    one mapping to mask data. e.g.: a -> b, b -> c, ..., z -> a
-  - For other chars, e.g.: Chinese chars, map to a const char 's'
+
+Digits `[0-9]` will be remapped to `[0-9]`, the mapping is chosen
+randomly for each instance of the expression. This is done to preserve
+the format of the numbers, even if they are not 100% the same.
+
+The characters `[a-zA-Z]` are also randomly remapped to `[a-zA-Z]` similar
+to the numbers. But many of these are preserved because they are part of
+special cases.
+
+The letters that are preserved are `a, b, c, d, e, f, l, n, r, s, t, u, A, B, C, D, E, F`
+
+These are preserved because they could be used as a part of 
+  * special keywords like `true`, `false`, or `null`
+  * number formatting like `1.0E-3`
+  * escape characters defined in the JSON standard `\b\f\n\r\t\u`
+  * or hexadecimal numbers that are a part of the `\u` escape sequence
+
+All other characters are mapped to the letter `s` unless they are one of the following.
+
+  * ASCII `[0 to 31]` are considered to be control characters in the JSON spec and in some cases are not allowed
+  * `-` for negative numbers
+  * `{ } [ ] , : " '` are part of the structure of JSON, or at least are considered that way
+  * `\` for escape sequences
+  * `$ [ ] . * '` which are part of JSON paths
+  * `?` which Spark has as a special case for JSON path, but no one else does.
 
 ## Stored Data
 The dumped data is stored in a CSV file, that should be compatible with Spark,
