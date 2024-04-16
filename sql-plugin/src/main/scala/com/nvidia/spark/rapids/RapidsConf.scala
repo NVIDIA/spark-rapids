@@ -566,6 +566,29 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
+  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
+    .doc("Enable a chunked reader where possible. A chunked reader allows " +
+      "reading highly compressed data that could not be read otherwise, but at the expense " +
+      "of more GPU memory, and in some cases more GPU computation. "+
+      "Currently this only supports ORC and Parquet formats.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val CHUNKED_READER_MEMORY_USAGE_RATIO = conf("spark.rapids.sql.reader.chunked.memoryUsageRatio")
+    .doc("A value to compute soft limit on the internal memory usage of the chunked reader " +
+      "(if being used). Such limit is calculated as the multiplication of this value and " +
+      s"'${GPU_BATCH_SIZE_BYTES.key}'.")
+    .doubleConf
+    .checkValue(v => v > 0, "The ratio value must be positive.")
+    .createWithDefault(4)
+
+  val LIMIT_CHUNKED_READER_MEMORY_USAGE = conf("spark.rapids.sql.reader.chunked.limitMemoryUsage")
+    .doc("Enable a soft limit on the internal memory usage of the chunked reader " +
+      "(if being used). Such limit is calculated as the multiplication of " +
+      s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'.")
+    .booleanConf
+    .createWithDefault(true)
+
   val MAX_GPU_COLUMN_SIZE_BYTES = conf("spark.rapids.sql.columnSizeBytes")
     .doc("Limit the max number of bytes for a GPU column. It is same as the cudf " +
       "row count limit of a column. It is used by the multi-file readers. " +
@@ -583,19 +606,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .commonlyUsed()
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
-
-  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
-      .doc("Enable a chunked reader where possible. A chunked reader allows " +
-          "reading highly compressed data that could not be read otherwise, but at the expense " +
-          "of more GPU memory, and in some cases more GPU computation.")
-      .booleanConf
-      .createWithDefault(true)
-
-  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
-      .doc("Enable a chunked reader where possible for reading data that is smaller " +
-          "than the typical row group/page limit. Currently this only works for parquet.")
-      .booleanConf
-      .createWithDefault(true)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
@@ -2515,7 +2525,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
-  lazy val chunkedSubPageReaderEnabled: Boolean = get(CHUNKED_SUBPAGE_READER)
+  lazy val limitChunkedReaderMemoryUsage: Boolean = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
+
+  lazy val chunkedReaderMemoryUsageRatio: Double = get(CHUNKED_READER_MEMORY_USAGE_RATIO)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
