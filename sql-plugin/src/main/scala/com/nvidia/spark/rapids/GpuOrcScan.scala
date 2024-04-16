@@ -604,9 +604,10 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       PartitionReader[ColumnarBatch] = {
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
-      maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes, numThreads,
-      maxNumFileProcessed, debugDumpPrefix, debugDumpAlways, filters, filterHandler, metrics,
-      ignoreMissingFiles, ignoreCorruptFiles, queryUsesInputFile, keepReadsInOrder, combineConf)
+      maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
+      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, numThreads, maxNumFileProcessed,
+      debugDumpPrefix, debugDumpAlways, filters, filterHandler, metrics, ignoreMissingFiles,
+      ignoreCorruptFiles, queryUsesInputFile, keepReadsInOrder, combineConf)
   }
 
   /**
@@ -647,7 +648,9 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-      maxGpuColumnSizeBytes, metrics, partitionSchema, numThreads, filterHandler.isCaseSensitive)
+      targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,
+      maxChunkedReaderMemoryUsageSizeBytes,
+      metrics, partitionSchema, numThreads, filterHandler.isCaseSensitive)
   }
 
   /**
@@ -675,8 +678,16 @@ case class GpuOrcPartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
   private val debugDumpAlways = rapidsConf.orcDebugDumpAlways
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
-  private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
-  private val maxGpuColumnSizeBytes: Long = rapidsConf.maxGpuColumnSizeBytes
+  private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
+  private val targetBatchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
+  private val maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes
+  private val useChunkedReader = rapidsConf.chunkedReaderEnabled
+  private val maxChunkedReaderMemoryUsageSizeBytes =
+    if(rapidsConf.limitChunkedReaderMemoryUsage) {
+      (rapidsConf.chunkedReaderMemoryUsageRatio * targetBatchSizeBytes).toLong
+    } else {
+      0L
+    }
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, metrics, broadcastedConf,
     pushedFilters, rapidsConf.isOrcFloatTypesToStringEnable)
 
@@ -700,7 +711,9 @@ case class GpuOrcPartitionReaderFactory(
       OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
       val reader = new PartitionReaderWithBytesRead(new GpuOrcPartitionReader(conf, partFile, ctx,
         readDataSchema, debugDumpPrefix, debugDumpAlways,  maxReadBatchSizeRows,
-        maxReadBatchSizeBytes, metrics, filterHandler.isCaseSensitive))
+        maxReadBatchSizeBytes, targetBatchSizeBytes,
+        useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+        metrics, filterHandler.isCaseSensitive))
       ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
         maxGpuColumnSizeBytes)
     }
@@ -1993,7 +2006,11 @@ private object GpuOrcFileFilterHandler {
  * @param partitionSchema Schema of partitions.
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param targetBatchSizeBytes the target size of a batch
  * @param maxGpuColumnSizeBytes maximum number of bytes for a GPU column
+ * @param useChunkedReader whether to read Parquet by chunks or read all at once
+ * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
+ *                                             usage that the reader will use
  * @param numThreads the size of the threadpool
  * @param maxNumFileProcessed threshold to control the maximum file number to be
  *                            submitted to threadpool
@@ -2013,7 +2030,10 @@ class MultiFileCloudOrcPartitionReader(
     partitionSchema: StructType,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
+    targetBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
+    useChunkedReader: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     numThreads: Int,
     maxNumFileProcessed: Int,
     override val debugDumpPrefix: Option[String],
@@ -2538,7 +2558,11 @@ private case class OrcSingleStripeMeta(
  * @param debugDumpAlways       whether to always debug dump or only on errors
  * @param maxReadBatchSizeRows  soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
- * @param maxGpuColumnSizeBytes maxmium number of bytes for a GPU column
+ * @param targetBatchSizeBytes  the target size of a batch
+ * @param maxGpuColumnSizeBytes the maximum size of a GPU column
+ * @param useChunkedReader      whether to read Parquet by chunks or read all at once
+ * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
+ *                                             usage that the reader will use
  * @param execMetrics           metrics
  * @param partitionSchema       schema of partitions
  * @param numThreads            the size of the threadpool
@@ -2553,7 +2577,10 @@ class MultiFileOrcPartitionReader(
     override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
+    targetBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
+    useChunkedReader: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
