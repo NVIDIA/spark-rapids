@@ -28,7 +28,7 @@ else:
     pytestmark = pytest.mark.regexp
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': True,
-                'spark.rapids.sql.rLikeRegexRewrite.enabled': False}
+                'spark.rapids.sql.rLikeRegexRewrite.enabled': True}
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -446,13 +446,23 @@ def test_regexp_like():
         conf=_regexp_conf)
 
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
-def test_regexp_rlike_contains():
+def test_regexp_rlike_rewrite_optimization():
     gen = mk_str_gen('[abcd]{3,6}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a',
                 'regexp_like(a, "(abcd)(.*)")',
-                'regexp_like(a, "abcd(.*)")'),
+                'regexp_like(a, "abcd(.*)")',
+                'regexp_like(a, "(.*)(abcd)(.*)")',
+                'regexp_like(a, "^(abcd)(.*)")',
+                'regexp_like(a, "^abcd")',
+                'regexp_like(a, "(abcd)$")',
+                'regexp_like(a, ".*abcd$")',
+                'regexp_like(a, "^(abcd)$")',
+                'regexp_like(a, "^abcd$")',
+                'regexp_like(a, "ab(.*)cd")',
+                'regexp_like(a, "^^abcd")',
+                'regexp_like(a, "(.*)(.*)abcd")'),
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():
@@ -1034,7 +1044,12 @@ def test_regexp_memory_fallback():
             'a rlike "a{1,6}"',
             'a rlike "abcdef"',
             'a rlike "(1)(2)(3)"',
-            'a rlike "1|2|3|4|5|6"'
+            'a rlike "1|2|3|4|5|6"',
+            'a rlike "^.*aaaa.*$"',
+            'a rlike "^aaaa.*"',
+            'a rlike ".*aaaa$"',
+            'a rlike ".*aaaa.*"',
+            'a rlike "aaaa"',
         ),
         cpu_fallback_class_name='RLike',
         conf={
