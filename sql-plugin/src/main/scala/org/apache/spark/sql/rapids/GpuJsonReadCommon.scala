@@ -268,6 +268,7 @@ object GpuJsonReadCommon {
 
   private def throwMismatchException(cv: ColumnView,
       dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
+    ai.rapids.cudf.TableDebug.get.debug(s"JSON MISMATCH $dt", cv)
     throw new IllegalStateException(s"Don't know how to transform $cv to $dt for JSON")
   }
 
@@ -362,11 +363,10 @@ object GpuJsonReadCommon {
     }
   }
 
-  def cudfJsonOptions(options: JSONOptions,
-      enableMixedTypes: Boolean): ai.rapids.cudf.JSONOptions = {
+  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
     ai.rapids.cudf.JSONOptions.builder()
     .withRecoverWithNull(true)
-    .withMixedTypesAsStrings(enableMixedTypes)
+    .withMixedTypesAsStrings(true)
     .withNormalizeWhitespace(true)
     .withKeepQuotes(true)
     .withNormalizeSingleQuotes(options.allowSingleQuotes)

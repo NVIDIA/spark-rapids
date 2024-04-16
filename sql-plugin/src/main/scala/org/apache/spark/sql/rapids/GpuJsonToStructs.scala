@@ -69,7 +69,6 @@ case class GpuJsonToStructs(
     schema: DataType,
     options: Map[String, String],
     child: Expression,
-    enableMixedTypesAsString: Boolean,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
@@ -155,7 +154,7 @@ case class GpuJsonToStructs(
     SQLConf.get.columnNameOfCorruptRecord)
 
   private lazy val jsonOptions =
-    GpuJsonReadCommon.cudfJsonOptions(parsedOptions, enableMixedTypesAsString)
+    GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
