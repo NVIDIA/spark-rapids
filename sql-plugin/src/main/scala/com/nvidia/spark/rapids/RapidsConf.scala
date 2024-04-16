@@ -587,7 +587,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "(if being used). Such limit is calculated as the multiplication of " +
       s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'.")
     .booleanConf
-    .createWithDefault(true)
+    .createOptional
+
+  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
+    .doc("Enable a chunked reader where possible for reading data that is smaller " +
+      "than the typical row group/page limit. Currently deprecated and replaced by " +
+      s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE}'.")
+    .booleanConf
+    .createOptional
 
   val MAX_GPU_COLUMN_SIZE_BYTES = conf("spark.rapids.sql.columnSizeBytes")
     .doc("Limit the max number of bytes for a GPU column. It is same as the cudf " +
@@ -2167,6 +2174,22 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val TEST_GET_JSON_OBJECT_SAVE_PATH = conf("spark.rapids.sql.expression.GetJsonObject.debugPath")
+    .doc("Only for tests: specify a directory to save CSV debug output for get_json_object " +
+      "if the output differs from the CPU version. Multiple files may be saved")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val TEST_GET_JSON_OBJECT_SAVE_ROWS =
+    conf("spark.rapids.sql.expression.GetJsonObject.debugSaveRows")
+      .doc("Only for tests: when a debugPath is provided this is the number " +
+        "of rows that is saved per file. There may be multiple files if there " +
+        "are multiple tasks or multiple batches within a task")
+      .internal()
+      .integerConf
+      .createWithDefault(1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2525,7 +2548,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
-  lazy val limitChunkedReaderMemoryUsage: Boolean = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
+  lazy val limitChunkedReaderMemoryUsage: Boolean = {
+    val hasLimit = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
+    val deprecatedConf = get(CHUNKED_SUBPAGE_READER)
+
+    if(deprecatedConf.isDefined) {
+      logWarning(s"'${CHUNKED_SUBPAGE_READER.key}' is deprecated and is replaced by " +
+        s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE}'.")
+      if(hasLimit.isDefined && hasLimit.get != deprecatedConf.get) {
+        throw new IllegalStateException(s"Both '${CHUNKED_SUBPAGE_READER.key}' and " +
+          s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE.key}' are set but using different values.")
+      }
+      deprecatedConf.get
+    } else {
+      hasLimit.getOrElse(true)
+    }
+  }
 
   lazy val chunkedReaderMemoryUsageRatio: Double = get(CHUNKED_READER_MEMORY_USAGE_RATIO)
 
@@ -2937,6 +2975,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
   lazy val skipGpuArchCheck: Boolean = get(SKIP_GPU_ARCH_CHECK)
+
+  lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
+
+  lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
