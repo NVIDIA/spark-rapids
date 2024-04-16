@@ -587,7 +587,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "(if being used). Such limit is calculated as the multiplication of " +
       s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'.")
     .booleanConf
-    .createWithDefault(true)
+    .createOptional
+
+  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
+    .doc("Enable a chunked reader where possible for reading data that is smaller " +
+      "than the typical row group/page limit. Currently this only works for parquet.")
+    .booleanConf
+    .createOptional
 
   val MAX_GPU_COLUMN_SIZE_BYTES = conf("spark.rapids.sql.columnSizeBytes")
     .doc("Limit the max number of bytes for a GPU column. It is same as the cudf " +
@@ -2541,7 +2547,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
-  lazy val limitChunkedReaderMemoryUsage: Boolean = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
+  lazy val limitChunkedReaderMemoryUsage: Boolean = {
+    val hasLimit = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
+    val deprecatedConf = get(CHUNKED_SUBPAGE_READER)
+
+    if(deprecatedConf.isDefined) {
+      logWarning(s"'${CHUNKED_SUBPAGE_READER.key}' is deprecated and is replaced by " +
+        s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE}'.")
+      if(hasLimit.isDefined && hasLimit.get != deprecatedConf.get) {
+        throw new IllegalStateException(s"Both '${CHUNKED_SUBPAGE_READER.key}' and " +
+          s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE.key}' are set but using different values.")
+      }
+      deprecatedConf.get
+    } else {
+      hasLimit.getOrElse(true)
+    }
+  }
 
   lazy val chunkedReaderMemoryUsageRatio: Double = get(CHUNKED_READER_MEMORY_USAGE_RATIO)
 
