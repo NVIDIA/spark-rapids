@@ -27,8 +27,7 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True,
-                'spark.rapids.sql.rLikeRegexRewrite.enabled': True}
+_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -607,7 +606,7 @@ def test_regexp_hexadecimal_digits():
     gen = mk_str_gen(
         '[abcd]\\\\x00\\\\x7f\\\\x80\\\\xff\\\\x{10ffff}\\\\x{00eeee}[\\\\xa0-\\\\xb0][abcd]')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
                 'rlike(a, "\\\\x7f")',
                 'rlike(a, "\\\\x80")',
                 'rlike(a, "[\\\\xa0-\\\\xf0]")',
@@ -1044,12 +1043,7 @@ def test_regexp_memory_fallback():
             'a rlike "a{1,6}"',
             'a rlike "abcdef"',
             'a rlike "(1)(2)(3)"',
-            'a rlike "1|2|3|4|5|6"',
-            'a rlike "^.*aaaa.*$"',
-            'a rlike "^aaaa.*"',
-            'a rlike ".*aaaa$"',
-            'a rlike ".*aaaa.*"',
-            'a rlike "aaaa"',
+            'a rlike "1|2|3|4|5|6"'
         ),
         cpu_fallback_class_name='RLike',
         conf={

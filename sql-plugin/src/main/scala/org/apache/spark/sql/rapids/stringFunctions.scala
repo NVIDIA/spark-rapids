@@ -1073,7 +1073,7 @@ class GpuRLikeMeta(
     private var originalPattern: String = ""
     private var pattern: Option[String] = None
 
-    val specialChars = Seq('^', '$', '.', '|', '*', '?', '+', '[', ']', '{', '}', '(', ')')
+    val specialChars = Seq('^', '$', '.', '|', '*', '?', '+', '[', ']', '{', '}', '\\' ,'(', ')')
 
     def isSimplePattern(pat: String): Boolean = {
       pat.size > 0 && pat.forall(c => !specialChars.contains(c))
@@ -1107,15 +1107,23 @@ class GpuRLikeMeta(
     def optimizeSimplePattern(rhs: Expression, lhs: Expression, parts: List[RegexprPart]): 
         GpuExpression = {
       parts match {
-        case Wildcard :: rest => optimizeSimplePattern(rhs, lhs, rest)
-        case Start :: Fixstring(s) :: List(End) => GpuEqualTo(lhs, GpuLiteral(s, StringType))
+        case Wildcard :: rest => {
+          optimizeSimplePattern(rhs, lhs, rest)
+        }
+        case Start :: Wildcard :: List(End) => {
+          GpuEqualTo(lhs, rhs)
+        }
         case Start :: Fixstring(s) :: rest 
-            if rest.forall(_ == Wildcard) || rest == List() =>
+            if rest.forall(_ == Wildcard) || rest == List() => {
           GpuStartsWith(lhs, GpuLiteral(s, StringType))
-        case Fixstring(s) :: List(End) => GpuEndsWith(lhs, GpuLiteral(s, StringType))
+        }
+        case Fixstring(s) :: List(End) => {
+          GpuEndsWith(lhs, GpuLiteral(s, StringType))
+        }
         case Fixstring(s) :: rest
-            if rest == List() || rest.forall(_ == Wildcard) =>
+            if rest == List() || rest.forall(_ == Wildcard) => {
           GpuContains(lhs, GpuLiteral(s, StringType))
+        } 
         case _ => {
           val patternStr = pattern.getOrElse(throw new IllegalStateException(
             "Expression has not been tagged with cuDF regex pattern"))
