@@ -268,7 +268,6 @@ object GpuJsonReadCommon {
 
   private def throwMismatchException(cv: ColumnView,
       dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
-    ai.rapids.cudf.TableDebug.get.debug(s"JSON MISMATCH $dt", cv)
     throw new IllegalStateException(s"Don't know how to transform $cv to $dt for JSON")
   }
 

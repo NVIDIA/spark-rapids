@@ -368,8 +368,8 @@ In versions of Spark before 3.5.0 there is no maximum to how deeply nested JSON 
 no matter what version of Spark is used. If the nesting level is over this the JSON is considered
 invalid and all values will be returned as nulls.
 
-Mixed types can have some problem. If an item being read could have some lines that are arrays 
-and others that are structs/dictionaries it is possible for an error will be thrown.
+Mixed types can have some problems. If an item being read could have some lines that are arrays 
+and others that are structs/dictionaries it is possible an error will be thrown.
 
 Dates and Timestamps have some issues and may return values for technically invalid inputs.
 
