@@ -917,6 +917,21 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     buffer.toArray
   }
 
+  def getORCOptions(
+      memFileSchema: TypeDescription,
+      requestedMapping: Option[Array[Int]],
+      readDataSchema: StructType): ORCOptions = {
+    val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
+    val includedColumns = tableSchema.getFieldNames.asScala.toSeq
+    val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
+    ORCOptions.builder()
+      .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+      .withNumPyTypes(false)
+      .includeColumn(includedColumns: _*)
+      .decimal128Column(decimal128Fields: _*)
+      .build()
+  }
+
   /**
    * Read the host data to GPU for ORC decoding, and return it as a cuDF Table.
    * The input host buffer should contain valid data, otherwise the behavior is
@@ -1217,6 +1232,10 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
  * @param debugDumpAlways whether to always debug dump or only on errors
  * @param maxReadBatchSizeRows maximum number of rows to read in a batch
  * @param maxReadBatchSizeBytes maximum number of bytes to read in a batch
+ * @param targetBatchSizeBytes the target size of a batch
+ * @param useChunkedReader whether to read Parquet by chunks or read all at once
+ * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
+ *                                             usage that the reader will use
  * @param execMetrics metrics to update during read
  * @param isCaseSensitive whether the name check should be case sensitive or not
  */
@@ -1229,6 +1248,9 @@ class GpuOrcPartitionReader(
     override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
+    targetBatchSizeBytes: Long,
+    useChunkedReader: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     execMetrics : Map[String, GpuMetric],
     isCaseSensitive: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
@@ -1239,10 +1261,7 @@ class GpuOrcPartitionReader(
     }
     batchIter = EmptyGpuColumnarBatchIterator
     if (ctx.blockIterator.hasNext) {
-      batchIter = readBatch() match {
-        case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
-        case _ => EmptyGpuColumnarBatchIterator
-      }
+      batchIter = readBatches()
     }
 
     // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
@@ -1258,7 +1277,7 @@ class GpuOrcPartitionReader(
     super.close()
   }
 
-  private def readBatch(): Option[ColumnarBatch] = {
+  private def readBatches(): Iterator[ColumnarBatch] = {
     withResource(new NvtxRange("ORC readBatch", NvtxColor.GREEN)) { _ =>
       val currentStripes = populateCurrentBlockChunk(ctx.blockIterator, maxReadBatchSizeRows,
         maxReadBatchSizeBytes)
@@ -1266,20 +1285,48 @@ class GpuOrcPartitionReader(
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         val numRows = currentStripes.map(_.infoBuilder.getNumberOfRows).sum.toInt
         if (numRows == 0) {
-          None
+          EmptyGpuColumnarBatchIterator
         } else {
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
-          Some(new ColumnarBatch(nullColumns.toArray, numRows))
+          new SingleGpuColumnarBatchIterator(new ColumnarBatch(nullColumns.toArray, numRows))
         }
       } else {
-        val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
-          readPartFile(ctx, currentStripes)
+        val colTypes = readDataSchema.fields.map(f => f.dataType)
+        val iter = if(currentStripes.isEmpty) {
+          CachedGpuBatchIterator(EmptyTableReader, colTypes)
+        } else {
+          val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+            readPartFile(ctx, currentStripes)
+          }
+          if (dataSize == 0) {
+            dataBuffer.close()
+            CachedGpuBatchIterator(EmptyTableReader, colTypes)
+          } else {
+            // about to start using the GPU
+            GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+              // Inc the ref count because MakeOrcTableProducer will try to close the dataBuffer
+              // which we don't want until we know that the retry is done with it.
+              dataBuffer.incRefCount()
+
+              val parseOpts = getORCOptions(ctx.updatedReadSchema, ctx.requestedMapping,
+                readDataSchema)
+              val producer = MakeOrcTableProducer(useChunkedReader,
+                maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
+                dataBuffer, 0, dataSize, metrics, isCaseSensitive, readDataSchema,
+                ctx.updatedReadSchema, Array(partFile), debugDumpPrefix, debugDumpAlways)
+              CachedGpuBatchIterator(producer, colTypes)
+            }
+          }
         }
-        decodeToBatch(dataBuffer, dataSize, ctx.updatedReadSchema, ctx.requestedMapping,
-          isCaseSensitive, Array(partFile))
+        iter.map { batch =>
+          logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
+          batch
+        }
       }
     } // end of withResource(new NvtxRange)
   } // end of readBatch
@@ -2801,5 +2848,126 @@ class MultiFileOrcPartitionReader(
         (buffer, rawOut.getPos)
       }
     }
+  }
+}
+
+object MakeOrcTableProducer extends Logging {
+  def apply(
+      useChunkedReader: Boolean,
+      maxChunkedReaderMemoryUsageSizeBytes: Long,
+      conf: Configuration,
+      chunkSizeByteLimit: Long,
+      parseOpts: ORCOptions,
+      buffer: HostMemoryBuffer,
+      offset: Long,
+      bufferSize: Long,
+      metrics : Map[String, GpuMetric],
+      isSchemaCaseSensitive: Boolean,
+      readDataSchema: StructType,
+      tableSchema: TypeDescription,
+      splits: Array[PartitionedFile],
+      debugDumpPrefix: Option[String],
+      debugDumpAlways: Boolean
+  ): GpuDataProducer[Table] = {
+    if (useChunkedReader) {
+      OrcTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
+        parseOpts, buffer, offset, bufferSize, metrics,  isSchemaCaseSensitive, readDataSchema,
+        tableSchema, splits, debugDumpPrefix, debugDumpAlways)
+    } else {
+      val table = withResource(buffer) { _ =>
+        try {
+          RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+            withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+              metrics(GPU_DECODE_TIME))) { _ =>
+              Table.readORC(parseOpts, buffer, offset, bufferSize)
+            }
+          }
+        } catch {
+          case e: Exception =>
+            val dumpMsg = debugDumpPrefix.map { prefix =>
+              val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+              s", data dumped to $p"
+            }.getOrElse("")
+            throw new IOException(s"Error when processing ${splits.mkString("; ")}$dumpMsg", e)
+        }
+      }
+      closeOnExcept(table) { _ =>
+        debugDumpPrefix.foreach { prefix =>
+          if (debugDumpAlways) {
+            val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+            logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
+          }
+        }
+        if (readDataSchema.length < table.getNumberOfColumns) {
+          throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+            s"but read ${table.getNumberOfColumns} from ${splits.mkString("; ")}")
+        }
+      }
+      metrics(NUM_OUTPUT_BATCHES) += 1
+      val evolvedSchemaTable = SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema,
+        readDataSchema, isSchemaCaseSensitive, Some(GpuOrcScan.castColumnTo))
+      new SingleGpuDataProducer(evolvedSchemaTable)
+    }
+  }
+}
+
+case class OrcTableReader(
+    conf: Configuration,
+    chunkSizeByteLimit: Long,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
+    parseOpts: ORCOptions,
+    buffer: HostMemoryBuffer,
+    offset: Long,
+    bufferSize: Long,
+    metrics : Map[String, GpuMetric],
+    isSchemaCaseSensitive: Boolean,
+    readDataSchema: StructType,
+    tableSchema: TypeDescription,
+    splits: Array[PartitionedFile],
+    debugDumpPrefix: Option[String],
+    debugDumpAlways: Boolean) extends GpuDataProducer[Table] with Logging {
+
+  private[this] val reader = new ORCChunkedReader(chunkSizeByteLimit,
+    maxChunkedReaderMemoryUsageSizeBytes, parseOpts, buffer, offset, bufferSize)
+
+  private[this] lazy val splitsString = splits.mkString("; ")
+
+  override def hasNext: Boolean = reader.hasNext
+
+  override def next: Table = {
+    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+      metrics(GPU_DECODE_TIME))) { _ =>
+      try {
+        reader.readChunk()
+      } catch {
+        case e: Exception =>
+          val dumpMsg = debugDumpPrefix.map { prefix =>
+            val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+            s", data dumped to $p"
+          }.getOrElse("")
+          throw new IOException(s"Error when processing $splitsString$dumpMsg", e)
+      }
+    }
+
+    closeOnExcept(table) { _ =>
+      if (readDataSchema.length < table.getNumberOfColumns) {
+        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+          s"but read ${table.getNumberOfColumns} from $splitsString")
+      }
+    }
+    metrics(NUM_OUTPUT_BATCHES) += 1
+    SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
+      isSchemaCaseSensitive, Some(GpuOrcScan.castColumnTo))
+  }
+
+  override def close(): Unit = {
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+        logWarning(s"Wrote data for $splitsString to $p")
+      }
+    }
+    reader.close()
+    buffer.close()
   }
 }
