@@ -1273,10 +1273,6 @@ class GpuOrcPartitionReader(
     batchIter.hasNext
   }
 
-  override def close(): Unit = {
-    super.close()
-  }
-
   private def readBatches(): Iterator[ColumnarBatch] = {
     withResource(new NvtxRange("ORC readBatch", NvtxColor.GREEN)) { _ =>
       val currentStripes = populateCurrentBlockChunk(ctx.blockIterator, maxReadBatchSizeRows,
