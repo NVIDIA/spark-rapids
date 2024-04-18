@@ -771,7 +771,7 @@
         <spark340.version>3.4.0</spark340.version>
         <spark341.version>3.4.1</spark341.version>
         <spark342.version>3.4.2</spark342.version>
-        <spark343.version>3.4.3-SNAPSHOT</spark343.version>
+        <spark343.version>3.4.3</spark343.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
@@ -827,11 +827,11 @@
             340,
             341,
             342,
+            343,
             350,
             351
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            343
         </snapshot.buildvers>
         <databricks.buildvers>
             330db,
