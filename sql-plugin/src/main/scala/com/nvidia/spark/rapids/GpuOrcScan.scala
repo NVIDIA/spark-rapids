@@ -2297,31 +2297,62 @@ class MultiFileCloudOrcPartitionReader(
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val hmbInfo = memBuffersAndSize.head
-        val batchReader = decodeToBatch(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
-            buffer.requestedMapping, filterHandler.isCaseSensitive, files) match {
-          case Some(batch) =>
-            buffer.allPartValues match {
-              case Some(partRowsAndValues) =>
-                val (rowsPerPart, partValues) = partRowsAndValues.unzip
-                BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, rowsPerPart,
-                  partValues, partitionSchema, maxGpuColumnSizeBytes)
-              case None =>
-                BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
-                  buffer.partitionedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
-            }
-          case _ =>
-            EmptyGpuColumnarBatchIterator
-        }
-
+        val batchIter = readBufferToBatches(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
+          buffer.requestedMapping, filterHandler.isCaseSensitive, buffer.partitionedFile,
+          buffer.allPartValues)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
         } else {
           currentFileHostBuffers = None
         }
-        batchReader
+        batchIter
 
       case _ => throw new RuntimeException("Wrong HostMemoryBuffersWithMetaData")
+    }
+  }
+
+  private def readBufferToBatches(
+      hostBuffer: HostMemoryBuffer,
+      bufferSize: Long,
+      memFileSchema: TypeDescription,
+      requestedMapping: Option[Array[Int]],
+      isCaseSensitive: Boolean,
+      partedFile: PartitionedFile,
+      allPartValues: Option[Array[(Long, InternalRow)]]) : Iterator[ColumnarBatch] = {
+    val parseOpts = closeOnExcept(hostBuffer) { _ =>
+      getORCOptions(memFileSchema, requestedMapping, readDataSchema)
+    }
+    val colTypes = readDataSchema.fields.map(f => f.dataType)
+
+    // about to start using the GPU
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    RmmRapidsRetryIterator.withRetryNoSplit(hostBuffer) { _ =>
+      // The MakeParquetTableProducer will close the input buffer, and that would be bad
+      // because we don't want to close it until we know that we are done with it
+      hostBuffer.incRefCount()
+      val producer = MakeOrcTableProducer(useChunkedReader,
+        maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
+        hostBuffer, 0, bufferSize, metrics, isCaseSensitive, readDataSchema,
+        memFileSchema, files, debugDumpPrefix, debugDumpAlways)
+      val batchIter = CachedGpuBatchIterator(producer, colTypes)
+
+      if (allPartValues.isDefined) {
+        val allPartInternalRows = allPartValues.get.map(_._2)
+        val rowsPerPartition = allPartValues.get.map(_._1)
+        new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
+          rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
+      } else {
+        // this is a bit weird, we don't have number of rows when allPartValues isn't
+        // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
+        batchIter.flatMap { batch =>
+          // we have to add partition values here for this batch, we already verified that
+          // its not different for all the blocks in this batch
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+            partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+        }
+      }
     }
   }
 
