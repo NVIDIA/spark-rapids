@@ -932,61 +932,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .build()
   }
 
-  /**
-   * Read the host data to GPU for ORC decoding, and return it as a cuDF Table.
-   * The input host buffer should contain valid data, otherwise the behavior is
-   * undefined.
-   * 'splits' is used only for debugging.
-   */
-  protected def decodeToTable(
-      hostBuf: HostMemoryBuffer,
-      bufSize: Long,
-      memFileSchema: TypeDescription,
-      requestedMapping: Option[Array[Int]],
-      isCaseSensitive: Boolean,
-      splits: Array[PartitionedFile]): Table = {
-    val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
-    val includedColumns = tableSchema.getFieldNames.asScala.toSeq
-    val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
-    val parseOpts = ORCOptions.builder()
-      .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-      .withNumPyTypes(false)
-      .includeColumn(includedColumns: _*)
-      .decimal128Column(decimal128Fields: _*)
-      .build()
-
-    // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
-    val table = try {
-      RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-          metrics(GPU_DECODE_TIME))) { _ =>
-          Table.readORC(parseOpts, hostBuf, 0, bufSize)
-        }
-
-        // Execute the schema evolution
-        SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
-          isCaseSensitive, Some(GpuOrcScan.castColumnTo))
-      }
-    } catch {
-      case e: Exception =>
-        val dumpMsg = debugDumpPrefix.map { prefix =>
-          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".orc")
-          s", data dumped to $p"
-        }.getOrElse("")
-        throw new IOException(
-          s"Error when processing file splits [${splits.mkString("; ")}]$dumpMsg", e)
-    }
-    debugDumpPrefix.foreach { prefix =>
-      if (debugDumpAlways) {
-        val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".orc")
-        logWarning(s"Dumped data for [${splits.mkString("; ")}] to $p")
-      }
-    }
-    table
-  }
-
   protected final def isNeedToSplitDataBlock(
       curMeta: OrcBlockMetaForSplitCheck,
       nextMeta: OrcBlockMetaForSplitCheck): Boolean = {
@@ -1060,34 +1005,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
  */
 trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
   with ScanWithMetrics { self: FilePartitionReaderBase =>
-
-  /**
-   * Send a host buffer to GPU for ORC decoding, and return it as a ColumnarBatch.
-   * The input hostBuf will be closed after returning, please do not use it anymore.
-   * 'splits' is used only for debugging.
-   */
-  protected final def decodeToBatch(
-      hostBuf: HostMemoryBuffer,
-      bufSize: Long,
-      memFileSchema: TypeDescription,
-      requestedMapping: Option[Array[Int]],
-      isCaseSensitive: Boolean,
-      splits: Array[PartitionedFile]): Option[ColumnarBatch] = {
-    withResource(hostBuf) { _ =>
-      if (bufSize == 0) {
-        None
-      } else {
-        withResource(decodeToTable(hostBuf, bufSize, memFileSchema, requestedMapping,
-            isCaseSensitive, splits)) { t =>
-          val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
-          logDebug(s"GPU batch size: $batchSizeBytes bytes")
-          metrics(NUM_OUTPUT_BATCHES) += 1
-          // convert to batch
-          Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
-        }
-      } // end of else
-    }
-  }
 
   def populateCurrentBlockChunk(
       blockIterator: BufferedIterator[OrcOutputStripe],
@@ -2820,17 +2737,16 @@ class MultiFileOrcPartitionReader(
       dataSize: Long,
       clippedSchema: SchemaBase,
       readSchema: StructType,
-      extraInfo: ExtraInfo): GpuDataProducer[Table] = withResource(dataBuffer) { _ =>
-    val tableReader = new SingleGpuDataProducer(decodeToTable(dataBuffer, dataSize, clippedSchema,
-      extraInfo.requestedMapping, isCaseSensitive, files))
-    GpuDataProducer.wrap(tableReader) { table =>
-      if (readDataSchema.length < table.getNumberOfColumns) {
-        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
-            s"but read ${table.getNumberOfColumns}")
-      }
-      metrics(NUM_OUTPUT_BATCHES) += 1
-      table
-    }
+      extraInfo: ExtraInfo): GpuDataProducer[Table] = {
+    val parseOpts = getORCOptions(clippedSchema, extraInfo.requestedMapping, readDataSchema)
+
+    // About to start using the GPU
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    MakeOrcTableProducer(useChunkedReader,
+      maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
+      dataBuffer, 0, dataSize, metrics, isCaseSensitive, readDataSchema,
+      clippedSchema, files, debugDumpPrefix, debugDumpAlways)
   }
 
   /**
