@@ -612,6 +612,26 @@
             </modules>
         </profile>
         <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>400</buildver>
+                <spark.version>${spark400.version}</spark.version>
+                <spark.test.version>${spark400.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>source-javadoc</id>
             <build>
                 <plugins>
@@ -642,7 +662,7 @@
             <id>scala-2.13</id>
             <properties>
                 <scala.binary.version>2.13</scala.binary.version>
-                <scala.version>2.13.8</scala.version>
+                <scala.version>2.13.13</scala.version>
             </properties>
         </profile>
         <profile>
@@ -782,6 +802,7 @@
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
+        <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
@@ -835,6 +856,9 @@
             351
         </noSnapshot.buildvers>
         <snapshot.buildvers>
+        <!-- #if scala-2.13 --><!--
+            400
+        --><!-- #endif scala-2.13 -->
         </snapshot.buildvers>
         <databricks.buildvers>
             330db,
@@ -890,6 +914,7 @@
             351
         </noSnapshotScala213.buildvers>
         <snapshotScala213.buildvers>
+            400
         </snapshotScala213.buildvers>
         <allScala213.buildvers>
             ${noSnapshotScala213.buildvers}
@@ -1502,7 +1527,7 @@ This will force full Scala code rebuild in downstream modules.
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
                             <property>buildver</property>
-                            <regex>[3-9][3-9][0-9]</regex>
+                            <regex>(?:[3-9][3-9]|[4-9][0-9])[0-9]</regex>
                         </requireProperty>
                         --><!-- #endif scala-2.13 -->
                       </rules>
