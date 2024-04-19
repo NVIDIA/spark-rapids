@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           }
 
           override def tagExprForGpu(): Unit = {
-            if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
+            if (opRapidsFunc.isEmpty && !this.conf.isCpuBasedUDFEnabled) {
               willNotWorkOnGpu(s"Hive SimpleUDF ${a.name} implemented by " +
                   s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
                   s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
@@ -78,7 +78,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
                 a.deterministic)
             }.getOrElse {
               // This `require` is just for double check.
-              require(conf.isCpuBasedUDFEnabled)
+              require(this.conf.isCpuBasedUDFEnabled)
               GpuRowBasedHiveSimpleUDF(
                 a.name,
                 a.funcWrapper,
@@ -101,7 +101,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           }
 
           override def tagExprForGpu(): Unit = {
-            if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
+            if (opRapidsFunc.isEmpty && !this.conf.isCpuBasedUDFEnabled) {
               willNotWorkOnGpu(s"Hive GenericUDF ${a.name} implemented by " +
                   s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
                   s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
@@ -121,7 +121,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
                 a.foldable)
             }.getOrElse {
               // This `require` is just for double check.
-              require(conf.isCpuBasedUDFEnabled)
+              require(this.conf.isCpuBasedUDFEnabled)
               GpuRowBasedHiveGenericUDF(
                 a.name,
                 a.funcWrapper,
@@ -195,11 +195,11 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           }
 
           private def checkIfEnabled(): Unit = {
-            if (!conf.isHiveDelimitedTextEnabled) {
+            if (!this.conf.isHiveDelimitedTextEnabled) {
               willNotWorkOnGpu("Hive text I/O has been disabled. To enable this, " +
                                s"set ${RapidsConf.ENABLE_HIVE_TEXT} to true")
             }
-            if (!conf.isHiveDelimitedTextReadEnabled) {
+            if (!this.conf.isHiveDelimitedTextReadEnabled) {
               willNotWorkOnGpu("reading Hive delimited text tables has been disabled, " +
                                s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
             }
@@ -268,7 +268,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
               TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == FloatType)
             }
 
-            if (!conf.shouldHiveReadFloats && hasFloats) {
+            if (!this.conf.shouldHiveReadFloats && hasFloats) {
               willNotWorkOnGpu("reading of floats has been disabled set " +
                   s"${RapidsConf.ENABLE_READ_HIVE_FLOATS} to true to enable this.")
             }
@@ -277,7 +277,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
               TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == DoubleType)
             }
 
-            if (!conf.shouldHiveReadDoubles && hasDoubles) {
+            if (!this.conf.shouldHiveReadDoubles && hasDoubles) {
               willNotWorkOnGpu("reading of doubles has been disabled set " +
                   s"${RapidsConf.ENABLE_READ_HIVE_DOUBLES} to true to enable this.")
             }
@@ -287,7 +287,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
                 dt => dt.isInstanceOf[DecimalType])
             }
 
-            if (!conf.shouldHiveReadDecimals && hasDecimals) {
+            if (!this.conf.shouldHiveReadDecimals && hasDecimals) {
               willNotWorkOnGpu("reading of decimal typed values has been disabled set " +
                   s"${RapidsConf.ENABLE_READ_HIVE_DECIMALS} to true to enable this.")
             }

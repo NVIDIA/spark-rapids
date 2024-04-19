@@ -168,7 +168,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
+          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, this.conf, this)
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -296,7 +296,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-            getWindowExpressions(winPy).map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            getWindowExpressions(winPy).map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
 
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
