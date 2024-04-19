@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,7 +145,7 @@ abstract class GpuDataSourceBase(
             inferredOpt
           }.getOrElse {
             throw new AnalysisException(s"Failed to resolve the schema for $format for " +
-              s"the partition column: $partitionColumn. It must be specified manually.")
+              s"the partition column: $partitionColumn. It must be specified manually.") {}
           }
         }
         StructType(partitionFields)
@@ -163,7 +163,7 @@ abstract class GpuDataSourceBase(
         SparkShimImpl.filesFromFileIndex(tempFileIndex))
     }.getOrElse {
       throw new AnalysisException(
-        s"Unable to infer schema for $format. It must be specified manually.")
+        s"Unable to infer schema for $format. It must be specified manually.") {}
     }
 
     // We just print a waring message if the data schema and partition schema have the duplicate
@@ -201,7 +201,7 @@ abstract class GpuDataSourceBase(
       case (dataSource: RelationProvider, None) =>
         dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
       case (_: SchemaRelationProvider, None) =>
-        throw new AnalysisException(s"A schema needs to be specified when using $className.")
+        throw new AnalysisException(s"A schema needs to be specified when using $className.") {}
       case (dataSource: RelationProvider, Some(schema)) =>
         val baseRelation =
           dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
@@ -211,7 +211,7 @@ abstract class GpuDataSourceBase(
             s"user-specified: ${schema.toDDL}, actual: ${baseRelation.schema.toDDL}. If " +
             "you're using DataFrameReader.schema API or creating a table, please do not " +
             "specify the schema. Or if you're scanning an existed table, please drop " +
-            "it and re-create it.")
+            "it and re-create it.") {}
         }
         baseRelation
 
@@ -235,7 +235,7 @@ abstract class GpuDataSourceBase(
         }.getOrElse {
           throw new AnalysisException(
             s"Unable to infer schema for $format at ${fileCatalog.allFiles().mkString(",")}. " +
-                "It must be specified manually")
+                "It must be specified manually") {}
         }
 
         HadoopFsRelation(
@@ -277,7 +277,7 @@ abstract class GpuDataSourceBase(
 
       case _ =>
         throw new AnalysisException(
-          s"$className is not a valid Spark SQL Data Source.")
+          s"$className is not a valid Spark SQL Data Source.") {}
     }
 
     relation match {
@@ -414,19 +414,19 @@ object GpuDataSourceBase extends Logging {
                   throw new AnalysisException(
                     "Hive built-in ORC data source must be used with Hive support enabled. " +
                     "Please use the native ORC data source by setting 'spark.sql.orc.impl' to " +
-                    "'native'")
+                    "'native'") {}
                 } else if (provider1.toLowerCase(Locale.ROOT) == "avro" ||
                   provider1 == "com.databricks.spark.avro" ||
                   provider1 == "org.apache.spark.sql.avro") {
                   throw new AnalysisException(
                     s"Failed to find data source: $provider1. Avro is built-in but external data " +
                     "source module since Spark 2.4. Please deploy the application as per " +
-                    "the deployment section of \"Apache Avro Data Source Guide\".")
+                    "the deployment section of \"Apache Avro Data Source Guide\".") {}
                 } else if (provider1.toLowerCase(Locale.ROOT) == "kafka") {
                   throw new AnalysisException(
                     s"Failed to find data source: $provider1. Please deploy the application as " +
                     "per the deployment section of " +
-                    "\"Structured Streaming + Kafka Integration Guide\".")
+                    "\"Structured Streaming + Kafka Integration Guide\".") {}
                 } else {
                   throw new ClassNotFoundException(
                     s"Failed to find data source: $provider1. Please find packages at " +
@@ -460,7 +460,7 @@ object GpuDataSourceBase extends Logging {
             internalSources.head.getClass
           } else {
             throw new AnalysisException(s"Multiple sources found for $provider1 " +
-              s"(${sourceNames.mkString(", ")}), please specify the fully qualified class name.")
+              s"(${sourceNames.mkString(", ")}), please specify the fully qualified class name.") {}
           }
       }
     } catch {
@@ -513,7 +513,7 @@ object GpuDataSourceBase extends Logging {
           }
 
           if (checkEmptyGlobPath && globResult.isEmpty) {
-            throw new AnalysisException(s"Path does not exist: $globPath")
+            throw new AnalysisException(s"Path does not exist: $globPath") {}
           }
 
           globResult
@@ -527,7 +527,7 @@ object GpuDataSourceBase extends Logging {
         ThreadUtils.parmap(nonGlobPaths, "checkPathsExist", numThreads) { path =>
           val fs = path.getFileSystem(hadoopConf)
           if (!fs.exists(path)) {
-            throw new AnalysisException(s"Path does not exist: $path")
+            throw new AnalysisException(s"Path does not exist: $path") {}
           }
         }
       } catch {

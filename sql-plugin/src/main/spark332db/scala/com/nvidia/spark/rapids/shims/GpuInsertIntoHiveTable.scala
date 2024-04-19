@@ -181,7 +181,7 @@ case class GpuInsertIntoHiveTable(
       // Report error if any static partition appears after a dynamic partition
       val isDynamic = partitionColumnNames.map(partitionSpec(_).isEmpty)
       if (isDynamic.init.zip(isDynamic.tail).contains((true, false))) {
-        throw new AnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
+        throw new AnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg) {}
       }
     }
 

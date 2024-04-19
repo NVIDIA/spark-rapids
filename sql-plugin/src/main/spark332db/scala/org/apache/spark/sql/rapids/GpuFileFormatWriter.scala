@@ -62,7 +62,7 @@ object GpuFileFormatWriter extends Logging {
     schema.foreach { field =>
       if (!format.supportDataType(field.dataType)) {
         throw new AnalysisException(
-          s"$format data source does not support ${field.dataType.catalogString} data type.")
+          s"$format data source does not support ${field.dataType.catalogString} data type.") {}
       }
     }
   }

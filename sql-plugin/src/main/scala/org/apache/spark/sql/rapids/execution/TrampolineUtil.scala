@@ -157,7 +157,7 @@ object TrampolineUtil {
   }
 
   /** Throw a Spark analysis exception */
-  def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
+  def throwAnalysisException(msg: String) = throw new AnalysisException(msg) {}
 
   /** Set the task context for the current thread */
   def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)

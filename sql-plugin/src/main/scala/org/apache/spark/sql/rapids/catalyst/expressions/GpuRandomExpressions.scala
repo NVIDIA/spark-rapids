@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
     case GpuLiteral(s, LongType) => s.asInstanceOf[Long]
     case _ => throw new AnalysisException(
-      s"Input argument to $prettyName must be an integer, long or null literal.")
+      s"Input argument to $prettyName must be an integer, long or null literal.") {}
   }
 
   @transient protected var previousPartition: Int = 0

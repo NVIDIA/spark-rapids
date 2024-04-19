@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -121,7 +121,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
       val pathExists = fs.exists(qualifiedOutputPath)
       (mode, pathExists) match {
         case (SaveMode.ErrorIfExists, true) =>
-          throw new AnalysisException(s"path $qualifiedOutputPath already exists.")
+          throw new AnalysisException(s"path $qualifiedOutputPath already exists.") {}
         case (SaveMode.Overwrite, true) =>
           if (ifPartitionNotExists && matchingPartitions.nonEmpty) {
             false
