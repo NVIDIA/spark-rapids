@@ -917,19 +917,20 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     buffer.toArray
   }
 
-  def getORCOptions(
+  def getORCOptionsAndSchema(
       memFileSchema: TypeDescription,
       requestedMapping: Option[Array[Int]],
-      readDataSchema: StructType): ORCOptions = {
+      readDataSchema: StructType): (ORCOptions, TypeDescription) = {
     val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
     val includedColumns = tableSchema.getFieldNames.asScala.toSeq
     val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
-    ORCOptions.builder()
+    val parseOpts = ORCOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
       .withNumPyTypes(false)
       .includeColumn(includedColumns: _*)
       .decimal128Column(decimal128Fields: _*)
       .build()
+    (parseOpts, tableSchema)
   }
 
   protected final def isNeedToSplitDataBlock(
@@ -1226,12 +1227,12 @@ class GpuOrcPartitionReader(
               // which we don't want until we know that the retry is done with it.
               dataBuffer.incRefCount()
 
-              val parseOpts = getORCOptions(ctx.updatedReadSchema, ctx.requestedMapping,
-                readDataSchema)
+              val (parseOpts, tableSchema) = getORCOptionsAndSchema(ctx.updatedReadSchema,
+                ctx.requestedMapping, readDataSchema)
               val producer = MakeOrcTableProducer(useChunkedReader,
                 maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
                 dataBuffer, 0, dataSize, metrics, isCaseSensitive, readDataSchema,
-                ctx.updatedReadSchema, Array(partFile), debugDumpPrefix, debugDumpAlways)
+                tableSchema, Array(partFile), debugDumpPrefix, debugDumpAlways)
               CachedGpuBatchIterator(producer, colTypes)
             }
           }
@@ -2237,8 +2238,8 @@ class MultiFileCloudOrcPartitionReader(
       isCaseSensitive: Boolean,
       partedFile: PartitionedFile,
       allPartValues: Option[Array[(Long, InternalRow)]]) : Iterator[ColumnarBatch] = {
-    val parseOpts = closeOnExcept(hostBuffer) { _ =>
-      getORCOptions(memFileSchema, requestedMapping, readDataSchema)
+    val (parseOpts, tableSchema) = closeOnExcept(hostBuffer) { _ =>
+      getORCOptionsAndSchema(memFileSchema, requestedMapping, readDataSchema)
     }
     val colTypes = readDataSchema.fields.map(f => f.dataType)
 
@@ -2252,7 +2253,7 @@ class MultiFileCloudOrcPartitionReader(
       val producer = MakeOrcTableProducer(useChunkedReader,
         maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
         hostBuffer, 0, bufferSize, metrics, isCaseSensitive, readDataSchema,
-        memFileSchema, files, debugDumpPrefix, debugDumpAlways)
+        tableSchema, files, debugDumpPrefix, debugDumpAlways)
       val batchIter = CachedGpuBatchIterator(producer, colTypes)
 
       if (allPartValues.isDefined) {
@@ -2738,7 +2739,8 @@ class MultiFileOrcPartitionReader(
       clippedSchema: SchemaBase,
       readSchema: StructType,
       extraInfo: ExtraInfo): GpuDataProducer[Table] = {
-    val parseOpts = getORCOptions(clippedSchema, extraInfo.requestedMapping, readDataSchema)
+    val (parseOpts, tableSchema) = getORCOptionsAndSchema(clippedSchema,
+      extraInfo.requestedMapping, readDataSchema)
 
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -2746,7 +2748,7 @@ class MultiFileOrcPartitionReader(
     MakeOrcTableProducer(useChunkedReader,
       maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
       dataBuffer, 0, dataSize, metrics, isCaseSensitive, readDataSchema,
-      clippedSchema, files, debugDumpPrefix, debugDumpAlways)
+      tableSchema, files, debugDumpPrefix, debugDumpAlways)
   }
 
   /**
