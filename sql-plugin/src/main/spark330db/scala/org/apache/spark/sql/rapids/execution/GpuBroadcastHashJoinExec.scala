@@ -29,7 +29,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
@@ -46,7 +46,11 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+    val preferAst = join.joinType match {
+      case _: InnerLike => conf.preferAstJoin
+      case _ => true
+    }
+    val (joinCondition, filterCondition) = if (preferAst && conditionMeta.forall(_.canThisBeAst)) {
       (condition, None)
     } else {
       (None, condition)

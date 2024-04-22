@@ -64,7 +64,11 @@ class GpuShuffledHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+    val preferAst = join.joinType match {
+      case _: InnerLike => conf.preferAstJoin
+      case _ => true
+    }
+    val (joinCondition, filterCondition) = if (preferAst && conditionMeta.forall(_.canThisBeAst)) {
       (condition, None)
     } else {
       (None, condition)

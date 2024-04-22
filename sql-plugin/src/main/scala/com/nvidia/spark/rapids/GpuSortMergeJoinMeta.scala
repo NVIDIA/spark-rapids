@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
@@ -76,7 +76,11 @@ class GpuSortMergeJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
+    val preferAst = join.joinType match {
+      case _: InnerLike => conf.preferAstJoin
+      case _ => true
+    }
+    val (joinCondition, filterCondition) = if (preferAst && conditionMeta.forall(_.canThisBeAst)) {
       (condition, None)
     } else {
       (None, condition)
