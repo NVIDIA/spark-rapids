@@ -35,13 +35,10 @@ jobs:
     # This job only runs for pull request comments
     if: contains( '\
       abellina,\
-      andygrove,\
       anfeng,\
       firestarman,\
       GaryShen2008,\
-      jbrennan333, \
       jlowe,\
-      krajendrannv,\
       kuhushukla,\
       mythrocks,\
       nartal1,\
@@ -49,7 +46,6 @@ jobs:
       NvTimLiu,\
       razajafri,\
       revans2,\
-      rongou,\
       rwlee,\
       sameerz,\
       tgravescs,\
