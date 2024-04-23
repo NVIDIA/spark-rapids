@@ -2550,9 +2550,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
 
-  val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+  def chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
-  val limitChunkedReaderMemoryUsage: Boolean = {
+  def limitChunkedReaderMemoryUsage: Boolean = {
     val hasLimit = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
     val deprecatedConf = get(CHUNKED_SUBPAGE_READER)
     if (deprecatedConf.isDefined) {
