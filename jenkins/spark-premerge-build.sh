@@ -51,48 +51,49 @@ mvn_verify() {
         echo "Spark version: $version"
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
-        #if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
-            #env -u SPARK_HOME \
-            #  $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' -DskipTests
+        if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
+            env -u SPARK_HOME \
+              $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
             # Run filecache tests
-            #env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
-            #  $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
-            #  -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
+            env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
+              $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+              -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
         # build only for other versions
         # elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
         #     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
-        #fi
+        fi
     done
     # build base shim version for following test step with PREMERGE_PROFILES
     $MVN_INSTALL_CMD -DskipTests -Dbuildver=$SPARK_BASE_SHIM_VERSION
 
     # enable UTF-8 for regular expression tests
-    #for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
-    #do
-    #    echo "Spark version (regex): $version"
-    #    env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
-    #      -Dpytest.TEST_TAGS='' \
-    #      -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
-    #done
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
+    do
+        echo "Spark version (regex): $version"
+        env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
+          -Dpytest.TEST_TAGS='' \
+          -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
+    done
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
-    $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean package -DskipTests
+    $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
     # things we care about
-    # SPK_VER=${JACOCO_SPARK_VER:-"311"}
-    # mkdir -p target/jacoco_classes/
-    # FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
-    # UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
-    # pushd target/jacoco_classes/
-    # jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-311}/"
-    # # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
-    # # because the class files in udf jar will be modified in aggregator's shade phase
-    # jar xf "$UDF_JAR" com/nvidia/spark/udf
-    # rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
-    # popd
+    SPK_VER=${JACOCO_SPARK_VER:-"311"}
+    mkdir -p target/jacoco_classes/
+    FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
+    UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
+    pushd target/jacoco_classes/
+    jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-311}/"
+    # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
+    # because the class files in udf jar will be modified in aggregator's shade phase
+    jar xf "$UDF_JAR" com/nvidia/spark/udf
+    rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+    popd
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
@@ -110,8 +111,7 @@ mvn_verify() {
 rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
 
-    # basic ucx checks
-    ucx_info -v
+    # basic ucx check
     ucx_info -d
 
     # run in standalone mode
@@ -255,8 +255,8 @@ case $BUILD_TYPE in
     all)
         echo "Run all testings..."
         mvn_verify
-        #ci_2
-        #ci_scala213
+        ci_2
+        ci_scala213
         ;;
 
     mvn_verify)
@@ -264,11 +264,11 @@ case $BUILD_TYPE in
         ;;
 
     ci_2 )
-        #ci_2
+        ci_2
         ;;
 
     ci_scala213 )
-        #ci_scala213
+        ci_scala213
         ;;
 
     *)
