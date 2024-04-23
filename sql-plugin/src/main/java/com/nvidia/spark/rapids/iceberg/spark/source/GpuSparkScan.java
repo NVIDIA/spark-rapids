@@ -283,7 +283,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.getMaxGpuColumnSizeBytes(), task.useChunkedReader(),
-          task.useSubPageChunked(),
+          task.maxChunkedReaderMemoryUsageSizeBytes(),
           task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
           task.getNumThreads(), task.getMaxNumFileProcessed(),
           useMultiThread, ff, metrics, queryUsesInputFile);
@@ -294,7 +294,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
     BatchReader(ReadTask task, scala.collection.immutable.Map<String, GpuMetric> metrics) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(), task.useChunkedReader(), task.useSubPageChunked(),
+          task.getTargetBatchSizeBytes(), task.useChunkedReader(), task.maxChunkedReaderMemoryUsageSizeBytes(),
           task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(), metrics);
     }
   }
@@ -305,7 +305,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
     private final String expectedSchemaString;
     private final boolean caseSensitive;
     private final boolean useChunkedReader;
-    private final boolean useSubPageChunked;
+    private final long maxChunkedReaderMemoryUsageSizeBytes;
     private final Broadcast<SerializableConfiguration> confBroadcast;
     private final int maxBatchSizeRows;
     private final long maxBatchSizeBytes;
@@ -343,7 +343,12 @@ abstract class GpuSparkScan extends GpuScanWrapper
       this.numThreads = rapidsConf.multiThreadReadNumThreads();
       this.maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel();
       this.useChunkedReader = rapidsConf.chunkedReaderEnabled();
-      this.useSubPageChunked = rapidsConf.chunkedSubPageReaderEnabled();
+      if(rapidsConf.limitChunkedReaderMemoryUsage()) {
+        double limitRatio = rapidsConf.chunkedReaderMemoryUsageRatio();
+        this.maxChunkedReaderMemoryUsageSizeBytes = (long)(limitRatio * this.targetBatchSizeBytes);
+      } else {
+        this.maxChunkedReaderMemoryUsageSizeBytes = 0L;
+      }
     }
 
     @Override
@@ -410,8 +415,8 @@ abstract class GpuSparkScan extends GpuScanWrapper
       return useChunkedReader;
     }
 
-    public boolean useSubPageChunked() {
-      return useSubPageChunked;
+    public long maxChunkedReaderMemoryUsageSizeBytes() {
+      return maxChunkedReaderMemoryUsageSizeBytes;
     }
   }
 }
