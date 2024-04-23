@@ -2668,7 +2668,7 @@ object MakeParquetTableProducer extends Logging {
 case class ParquetTableReader(
     conf: Configuration,
     chunkSizeByteLimit: Long,
-    passReadLimit: Long,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     opts: ParquetOptions,
     buffer: HostMemoryBuffer,
     offset: Long,
@@ -2684,8 +2684,8 @@ case class ParquetTableReader(
     splits: Array[PartitionedFile],
     debugDumpPrefix: Option[String],
     debugDumpAlways: Boolean) extends GpuDataProducer[Table] with Logging {
-  private[this] val reader = new ParquetChunkedReader(chunkSizeByteLimit, passReadLimit, opts,
-    buffer, offset, len)
+  private[this] val reader = new ParquetChunkedReader(chunkSizeByteLimit,
+    maxChunkedReaderMemoryUsageSizeBytes, opts, buffer, offset, len)
 
   private[this] lazy val splitsString = splits.mkString("; ")
 

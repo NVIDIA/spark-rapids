@@ -578,6 +578,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("A value to compute soft limit on the internal memory usage of the chunked reader " +
       "(if being used). Such limit is calculated as the multiplication of this value and " +
       s"'${GPU_BATCH_SIZE_BYTES.key}'.")
+    .internal()
+    .startupOnly()
     .doubleConf
     .checkValue(v => v > 0, "The ratio value must be positive.")
     .createWithDefault(4)
@@ -585,7 +587,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
   val LIMIT_CHUNKED_READER_MEMORY_USAGE = conf("spark.rapids.sql.reader.chunked.limitMemoryUsage")
     .doc("Enable a soft limit on the internal memory usage of the chunked reader " +
       "(if being used). Such limit is calculated as the multiplication of " +
-      s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'.")
+      s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'." +
+      "For example, if batchSizeBytes is set to 1GB and memoryUsageRatio is 4, " +
+      "the chunked reader will try to keep its memory usage under 4GB.")
     .booleanConf
     .createOptional
 
@@ -2551,18 +2555,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val limitChunkedReaderMemoryUsage: Boolean = {
     val hasLimit = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
     val deprecatedConf = get(CHUNKED_SUBPAGE_READER)
-
-    if(deprecatedConf.isDefined) {
+    if (deprecatedConf.isDefined) {
       logWarning(s"'${CHUNKED_SUBPAGE_READER.key}' is deprecated and is replaced by " +
         s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE}'.")
-      if(hasLimit.isDefined && hasLimit.get != deprecatedConf.get) {
+      if (hasLimit.isDefined && hasLimit.get != deprecatedConf.get) {
         throw new IllegalStateException(s"Both '${CHUNKED_SUBPAGE_READER.key}' and " +
           s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE.key}' are set but using different values.")
       }
-      deprecatedConf.get
-    } else {
-      hasLimit.getOrElse(true)
     }
+    hasLimit.getOrElse(deprecatedConf.getOrElse(true))
   }
 
   lazy val chunkedReaderMemoryUsageRatio: Double = get(CHUNKED_READER_MEMORY_USAGE_RATIO)
