@@ -3651,7 +3651,8 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)).disabledByDefault(
+      "Experimental feature that could be unstable or have performance issues."),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(

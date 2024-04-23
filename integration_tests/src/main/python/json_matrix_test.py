@@ -65,6 +65,10 @@ _enable_json_to_structs_conf = {
     'spark.rapids.sql.json.read.mixedTypesAsString.enabled': 'true'
 }
 
+_enable_get_json_object_conf = {
+    'spark.rapids.sql.expression.GetJsonObject': 'true'
+}
+
 _enable_json_tuple_conf = {
     'spark.rapids.sql.expression.JsonTuple': 'true'
 }
@@ -113,7 +117,8 @@ def test_from_json_allow_comments_off(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_allow_comments_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_COMMENTS_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_COMMENTS_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''),
+        conf=_enable_get_json_object_conf)
 
 # Off is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -166,7 +171,8 @@ def test_from_json_allow_single_quotes_on(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_allow_single_quotes_on(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_SQ_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_SQ_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''),
+        conf=_enable_get_json_object_conf)
 
 # On is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -219,7 +225,8 @@ def test_from_json_allow_unquoted_field_names_on(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_allow_unquoted_field_names_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTE_FIELD_NAMES_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTE_FIELD_NAMES_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''),
+        conf=_enable_get_json_object_conf)
 
 # Off is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -278,7 +285,8 @@ def test_from_json_allow_numeric_leading_zeros_off(std_input_path):
 def test_get_json_object_allow_numeric_leading_zeros_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NUMERIC_LEAD_ZEROS_FILE, "json").selectExpr('''get_json_object(json, "$.byte")''',
-            '''get_json_object(json, "$.int")''', '''get_json_object(json, "$.float")''','''get_json_object(json, "$.decimal")'''))
+            '''get_json_object(json, "$.int")''', '''get_json_object(json, "$.float")''','''get_json_object(json, "$.decimal")'''),
+            conf=_enable_get_json_object_conf)
 
 # Off is the default so it really needs to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -339,7 +347,8 @@ def test_from_json_allow_nonnumeric_numbers_on(std_input_path):
 def test_get_json_object_allow_nonnumeric_numbers_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NONNUMERIC_NUMBERS_FILE, "json").selectExpr('''get_json_object(json, "$.float")''',
-            '''get_json_object(json, "$.double")'''))
+            '''get_json_object(json, "$.double")'''),
+            conf=_enable_get_json_object_conf)
 
 # Off is the default for json_tuple, so we want this to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -393,7 +402,8 @@ def test_from_json_allow_backslash_escape_any_on(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_allow_backslash_escape_any_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_BS_ESC_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_BS_ESC_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''),
+        conf=_enable_get_json_object_conf)
 
 # Off is the default for json_tuple, so we want this to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -446,7 +456,8 @@ def test_from_json_allow_unquoted_control_chars_on(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_allow_unquoted_control_chars_on(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTED_CONTROL_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTED_CONTROL_FILE, "json").selectExpr('''get_json_object(json, "$.str")'''),
+        conf=_enable_get_json_object_conf)
 
 # On is the default for json_tuple, so we want this to work
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -504,7 +515,8 @@ def test_from_json_dec_locale(std_input_path, locale):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_dec_locale(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_FILE, "json").selectExpr('''get_json_object(json, "$.data")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_FILE, "json").selectExpr('''get_json_object(json, "$.data")'''),
+        conf=_enable_get_json_object_conf)
 
 #There is no way to set a locale for these, and it really should not matter
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -562,7 +574,8 @@ def test_from_json_dec_locale_non_aribic(std_input_path, locale):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_dec_locale_non_aribic(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_NON_ARIBIC_FILE, "json").selectExpr('''get_json_object(json, "$.data")'''))
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_NON_ARIBIC_FILE, "json").selectExpr('''get_json_object(json, "$.data")'''),
+        conf=_enable_get_json_object_conf)
 
 #There is no way to set a locale for these, and it really should not matter
 @allow_non_gpu(TEXT_INPUT_EXEC)
@@ -760,7 +773,8 @@ def test_from_json_strings(std_input_path, input_file):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_get_json_object_formats(std_input_path, input_file):
    assert_gpu_and_cpu_are_equal_collect(
-           lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").selectExpr("*", '''get_json_object(json, "$.data")'''))
+           lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").selectExpr("*", '''get_json_object(json, "$.data")'''),
+           conf=_enable_get_json_object_conf)
 
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
