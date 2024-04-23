@@ -156,8 +156,7 @@ object RapidsPluginUtils extends Logging {
     lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
         s"Please make sure there is only one $jarName jar in the classpath. "
 
-    // require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
-
+    // revisionMap.size could be 0 when debugging in IDE, so allow it in that case
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
         if (revisionMap.size > 1 || revisionMap.values.exists(_.size != 1)) {
