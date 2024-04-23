@@ -578,6 +578,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("A value to compute soft limit on the internal memory usage of the chunked reader " +
       "(if being used). Such limit is calculated as the multiplication of this value and " +
       s"'${GPU_BATCH_SIZE_BYTES.key}'.")
+    .internal()
+    .startupOnly()
     .doubleConf
     .checkValue(v => v > 0, "The ratio value must be positive.")
     .createWithDefault(4)
@@ -588,7 +590,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'." +
       "For example, if batchSizeBytes is set to 1GB and memoryUsageRatio is 4, " +
       "the chunked reader will try to keep its memory usage under 4GB.")
-    .internal()
     .booleanConf
     .createOptional
 
@@ -2549,9 +2550,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
 
-  lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+  val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
-  lazy val limitChunkedReaderMemoryUsage: Boolean = {
+  val limitChunkedReaderMemoryUsage: Boolean = {
     val hasLimit = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
     val deprecatedConf = get(CHUNKED_SUBPAGE_READER)
     if (deprecatedConf.isDefined) {
