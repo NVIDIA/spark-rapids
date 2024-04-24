@@ -3651,9 +3651,8 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)
-    ).disabledByDefault("escape sequences are not processed correctly, the input is not " +
-        "validated, and the output is not normalized the same as Spark"),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)).disabledByDefault(
+      "Experimental feature that could be unstable or have performance issues."),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -3690,8 +3689,7 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
-          GpuJsonToStructs(a.schema, a.options, child, conf.isJsonMixedTypesAsStringEnabled,
-            a.timeZoneId)
+          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
       }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
       " Please consult the "+
       "[compatibility documentation](../compatibility.md#json-supporting-types)"+
@@ -3884,8 +3882,7 @@ object GpuOverrides extends Logging {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes,
-            conf.maxGpuColumnSizeBytes,
-            conf.isJsonMixedTypesAsStringEnabled)
+            conf.maxGpuColumnSizeBytes)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =

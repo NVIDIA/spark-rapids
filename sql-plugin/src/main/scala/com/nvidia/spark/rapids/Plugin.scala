@@ -126,11 +126,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.04.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.06.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-24.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.06.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-24.04.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.06.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -156,18 +156,17 @@ object RapidsPluginUtils extends Logging {
     lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
         s"Please make sure there is only one $jarName jar in the classpath. "
 
-    require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
-
+    // revisionMap.size could be 0 when debugging in IDE, so allow it in that case
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
-        if (revisionMap.size != 1 || revisionMap.values.exists(_.size != 1)) {
+        if (revisionMap.size > 1 || revisionMap.values.exists(_.size != 1)) {
           logWarning(msg)
         }
       case AllowMultipleJars.SAME_REVISION =>
         val recommended = "If it is impossible to fix the classpath you can suppress the " +
               s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS, but this " +
               s"can cause unpredictable behavior as the plugin may pick up the wrong jar."
-        require(revisionMap.size == 1, msg + recommended)
+        require(revisionMap.size <= 1, msg + recommended)
         if (revisionMap.values.exists(_.size != 1)) {
           logWarning(msg + recommended)
         }
@@ -176,7 +175,7 @@ object RapidsPluginUtils extends Logging {
             s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS." +
             " But setting it to ALWAYS can cause unpredictable behavior as the plugin may pick " +
             "up the wrong jar."
-        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
+        require(revisionMap.size <= 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
     }
   }
 

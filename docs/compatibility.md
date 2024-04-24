@@ -368,10 +368,8 @@ In versions of Spark before 3.5.0 there is no maximum to how deeply nested JSON 
 no matter what version of Spark is used. If the nesting level is over this the JSON is considered
 invalid and all values will be returned as nulls.
 
-Only structs are supported for nested types. There are also some issues with arrays of structs. If
-your data includes this, even if you are not reading it, you might get an exception. You can
-try to set `spark.rapids.sql.json.read.mixedTypesAsString.enabled` to true to work around this,
-but it also has some issues with it.
+Mixed types can have some problems. If an item being read could have some lines that are arrays 
+and others that are structs/dictionaries it is possible an error will be thrown.
 
 Dates and Timestamps have some issues and may return values for technically invalid inputs.
 
@@ -439,31 +437,8 @@ Known issues are:
 
 ### get_json_object
 
-The `GetJsonObject` operator takes a JSON formatted string and a JSON path string as input. The
-code base for this is currently separate from GPU parsing of JSON for files and `FromJsonObject`.
-Because of this the results can be different from each other. Because of several incompatibilities
-and bugs in the GPU version of `GetJsonObject` it will be on the CPU by default. If you are
-aware of the current limitations with the GPU version, you might see a significant performance
-speedup if you enable it by setting `spark.rapids.sql.expression.GetJsonObject` to `true`.
-
-The following is a list of known differences.
-  * [No input validation](https://github.com/NVIDIA/spark-rapids/issues/10218). If the input string
-    is not valid JSON Apache Spark returns a null result, but ours will still try to find a match.
-  * [Escapes are not properly processed for Strings](https://github.com/NVIDIA/spark-rapids/issues/10196).
-    When returning a result for a quoted string Apache Spark will remove the quotes and replace
-    any escape sequences with the proper characters. The escape sequence processing does not happen
-    on the GPU.
-  * [Invalid JSON paths could throw exceptions](https://github.com/NVIDIA/spark-rapids/issues/10212)
-    If a JSON path is not valid Apache Spark returns a null result, but ours may throw an exception
-    and fail the query.
-  * [Non-string output is not normalized](https://github.com/NVIDIA/spark-rapids/issues/10218)
-    When returning a result for things other than strings, a number of things are normalized by
-    Apache Spark, but are not normalized by the GPU, like removing unnecessary white space,
-    parsing and then serializing floating point numbers, turning single quotes to double quotes,
-    and removing unneeded escapes for single quotes.
-
-The following is a list of bugs in either the GPU version or arguably in Apache Spark itself.
-   * https://github.com/NVIDIA/spark-rapids/issues/10219 non-matching quotes in quoted strings
+Known issue:
+- [Floating-point number normalization error](https://github.com/NVIDIA/spark-rapids-jni/issues/1922). `get_json_object` floating-point number normalization on the GPU could sometimes return incorrect results if the string contains high-precision values, see the String to Float and Float to String section for more details.
 
 ## Avro
 

@@ -80,14 +80,15 @@ cp $JS_FPATH-javadoc.jar $FPATH-javadoc.jar
 
 echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
+GPG_PLUGIN="org.apache.maven.plugins:maven-gpg-plugin:3.1.0:sign-and-deploy-file"
 ###### Choose the deploy command ######
 if [ "$SIGN_FILE" == true ]; then
     case $SIGN_TOOL in
         nvsec)
-            DEPLOY_CMD="$MVN gpg:sign-and-deploy-file -Dgpg.executable=nvsec_sign"
+            DEPLOY_CMD="$MVN $GPG_PLUGIN -Dgpg.executable=nvsec_sign"
             ;;
         gpg)
-            DEPLOY_CMD="$MVN gpg:sign-and-deploy-file -Dgpg.passphrase=$GPG_PASSPHRASE "
+            DEPLOY_CMD="$MVN $GPG_PLUGIN -Dgpg.passphrase=$GPG_PASSPHRASE "
             ;;
         *)
             echo "Error unsupported sign type : $SIGN_TYPE !"

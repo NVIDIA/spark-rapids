@@ -6856,7 +6856,7 @@ are limited.
 <td rowSpan="3">GetJsonObject</td>
 <td rowSpan="3">`get_json_object`</td>
 <td rowSpan="3">Extracts a json object from path</td>
-<td rowSpan="3">This is disabled by default because escape sequences are not processed correctly, the input is not validated, and the output is not normalized the same as Spark</td>
+<td rowSpan="3">This is disabled by default because Experimental feature that could be unstable or have performance issues.</td>
 <td rowSpan="3">project</td>
 <td>json</td>
 <td> </td>
