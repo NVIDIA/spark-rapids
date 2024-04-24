@@ -52,8 +52,7 @@ _enable_all_types_json_scan_conf = {
     'spark.rapids.sql.format.json.read.enabled': 'true',
     'spark.rapids.sql.json.read.float.enabled': 'true',
     'spark.rapids.sql.json.read.double.enabled': 'true',
-    'spark.rapids.sql.json.read.decimal.enabled': 'true',
-    'spark.rapids.sql.json.read.mixedTypesAsString.enabled': 'true'
+    'spark.rapids.sql.json.read.decimal.enabled': 'true'
 }
 
 _enable_json_to_structs_conf = {
@@ -61,8 +60,7 @@ _enable_json_to_structs_conf = {
     'spark.rapids.sql.json.read.float.enabled': 'true',
     'spark.rapids.sql.json.read.double.enabled': 'true',
     'spark.rapids.sql.json.read.decimal.enabled': 'true',
-    'spark.rapids.sql.json.read.decimal.enabled': 'true',
-    'spark.rapids.sql.json.read.mixedTypesAsString.enabled': 'true'
+    'spark.rapids.sql.json.read.decimal.enabled': 'true'
 }
 
 _enable_get_json_object_conf = {

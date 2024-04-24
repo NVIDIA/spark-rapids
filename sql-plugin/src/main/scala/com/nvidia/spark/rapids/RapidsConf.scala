@@ -1260,12 +1260,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_READ_JSON_MIXED_TYPES_AS_STRING =
-    conf("spark.rapids.sql.json.read.mixedTypesAsString.enabled")
-    .doc("JSON reading is not 100% compatible when reading mixed types as string.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
     .doc("When set to true enables all avro input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -2736,8 +2730,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
-
-  lazy val isJsonMixedTypesAsStringEnabled: Boolean = get(ENABLE_READ_JSON_MIXED_TYPES_AS_STRING)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
