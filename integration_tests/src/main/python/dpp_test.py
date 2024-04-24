@@ -171,6 +171,7 @@ _statements = [
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
 # DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
 @ignore_order
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10147")
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
