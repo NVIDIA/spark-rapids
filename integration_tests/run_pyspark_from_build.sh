@@ -205,10 +205,11 @@ else
     fi
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
+    STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
     TEST_COMMON_OPTS=(-v
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
-          --std_input_path="$INPUT_PATH"/src/test/resources
+          --std_input_path="$STD_INPUT_PATH"
           --color=yes
           $TEST_TYPE_PARAM
           "$TEST_ARGS"
@@ -407,6 +408,7 @@ EOF
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
             --conf 'spark.databricks.delta.delta.log.cacheSize='"$deltaCacheSize" \
+            --conf spark.driver.extraJavaOptions="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log" \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi

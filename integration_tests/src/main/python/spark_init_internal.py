@@ -136,6 +136,7 @@ def pytest_sessionstart(session):
         _handle_derby_dir(_sb, driver_opts, wid)
         _handle_ivy_cache_dir(_sb, wid)
     else:
+        driver_opts += _configure_log_dir(_sb, 'gw0')
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
 
