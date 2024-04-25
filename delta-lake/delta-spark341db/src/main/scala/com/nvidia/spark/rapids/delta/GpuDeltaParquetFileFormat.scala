@@ -29,7 +29,8 @@ import org.apache.spark.sql.types.StructType
 case class GpuDeltaParquetFileFormat(
     override val columnMappingMode: DeltaColumnMappingMode,
     override val referenceSchema: StructType,
-    isSplittable: Boolean) extends GpuDeltaParquetFileFormatBase {
+    isSplittable: Boolean)
+  extends GpuDeltaParquetFileFormatBase {
 
   if (columnMappingMode == IdMapping) {
     val requiredReadConf = SQLConf.PARQUET_FIELD_ID_READ_ENABLED

@@ -33,6 +33,7 @@ import org.apache.spark.util.SerializableConfiguration
 trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
   val columnMappingMode: DeltaColumnMappingMode
   val referenceSchema: StructType
+  val disableFilterPushdown: Boolean = false
 
   def prepareSchema(inputSchema: StructType): StructType = {
     DeltaColumnMapping.createPhysicalSchema(inputSchema, referenceSchema, columnMappingMode)
@@ -71,7 +72,7 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       prepareSchema(dataSchema),
       prepareSchema(partitionSchema),
       prepareSchema(requiredSchema),
-      filters,
+      if (disableFilterPushdown) Seq.empty else filters,
       options,
       hadoopConf,
       metrics,

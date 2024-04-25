@@ -17,9 +17,9 @@
 package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuLowShuffleMergeCommand, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
+import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta, RapidsDeltaSQLConf}
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
@@ -39,26 +39,50 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.notMatchedBySourceClauses,
-      mergeCmd.migratedSchema)(conf)
+    if (mergeCmd.conf.getConf(RapidsDeltaSQLConf.ENABLE_LOW_SHUFFLE_MERGE)) {
+      GpuLowShuffleMergeCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    } else {
+      GpuMergeIntoCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    }
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.notMatchedBySourceClauses,
-      mergeCmd.migratedSchema)(conf)
+    if (mergeCmd.conf.getConf(RapidsDeltaSQLConf.ENABLE_LOW_SHUFFLE_MERGE)) {
+      GpuLowShuffleMergeCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    } else {
+      GpuMergeIntoCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    }
   }
 }

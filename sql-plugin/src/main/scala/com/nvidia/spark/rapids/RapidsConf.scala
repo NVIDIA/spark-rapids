@@ -2194,6 +2194,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  val FORCE_ONE_FILE_PER_PARITION = conf("spark.rapids.sql.scan.forceOneFilePerPartition")
+    .doc("When true, forces the plugin have only one file per partitioning for " +
+      "all file based data sources.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2419,6 +2426,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val forceOneFilePerPartition: Boolean = get(FORCE_ONE_FILE_PER_PARITION)
 
   /**
    * Convert a string value to the injection configuration OomInjection.

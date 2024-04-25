@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.filecache.FileCacheLocalityManager
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.paths.SparkPath
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
@@ -34,6 +35,7 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
+import org.apache.spark.sql.execution.PartitionedFileUtil.getPartitionedFile
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -104,6 +106,9 @@ case class GpuFileSourceScanExec(
   }
 
   private val isPerFileReadEnabled = gpuFormat.isPerFileReadEnabled(rapidsConf)
+  private val forceOneFilePerPartition = RapidsConf
+    .FORCE_ONE_FILE_PER_PARITION
+    .get(relation.options)
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
@@ -554,16 +559,26 @@ case class GpuFileSourceScanExec(
       readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
-    val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
-    val maxSplitBytes =
-      FilePartition.maxSplitBytes(fsRelation.sparkSession, selectedPartitions)
-    logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
-      s"open cost is considered as scanning $openCostInBytes bytes.")
+    val partitions = if (forceOneFilePerPartition) {
+      selectedPartitions.flatMap { partition =>
+        partition.files.map { file =>
+          // getPath() is very expensive so we only want to call it once in this block:
+          val filePath = file.getPath
+          getPartitionedFile(file,  partition.values, Some(SparkPath.fromPath(filePath)))
+        }
+      }.zipWithIndex.map(p => FilePartition(p._2, Array(p._1))).toSeq
+    } else {
+      val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
+      val maxSplitBytes =
+        FilePartition.maxSplitBytes(fsRelation.sparkSession, selectedPartitions)
+      logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
+        s"open cost is considered as scanning $openCostInBytes bytes.")
 
-    val splitFiles = FilePartitionShims.splitFiles(selectedPartitions, relation, maxSplitBytes)
+      val splitFiles = FilePartitionShims.splitFiles(selectedPartitions, relation, maxSplitBytes)
 
-    val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
+    }
+
 
     getFinalRDD(readFile, partitions)
   }
