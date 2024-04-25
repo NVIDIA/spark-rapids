@@ -2274,6 +2274,26 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  val ENABLE_DELTA_LOW_SHUFFLE_MERGE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
+    .doc("Option to turn on the low shuffle merge for Delta Lake.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val DELTA_LOW_SHUFFLE_MERGE_SCATTER_DEL_VECTOR_BATCH_SIZE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size")
+    .doc("Option to set max batch size when scattering deletion vector")
+    .integerConf
+    .createWithDefault(4096)
+
+  val DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_MAX_COUNT =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.max.count")
+    .doc("Option to set max broadcast count of low shuffle merge deletion vector. If the " +
+        "detected deletion vector row count is larger than this value, low shuffle merge will be " +
+        "disabled.")
+    .longConf
+    .createWithDefault(600000000)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -3082,6 +3102,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
+
+  lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

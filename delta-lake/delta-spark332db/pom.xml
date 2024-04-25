@@ -53,6 +53,10 @@
             <type>pom</type>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

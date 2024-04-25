@@ -45,6 +45,10 @@
             <classifier>${spark.version.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
+        </dependency>
 
         <!--
              Note that we are using the Spark version for all of the Databricks dependencies as well.

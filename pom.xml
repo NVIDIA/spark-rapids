@@ -922,6 +922,7 @@
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
         <nonfail.errors.quiet>false</nonfail.errors.quiet>
+        <roaringbitmap.version>1.0.6</roaringbitmap.version>
     </properties>
 
     <dependencyManagement>
@@ -1002,6 +1003,12 @@
                 <artifactId>flatbuffers-java</artifactId>
                 <version>${flatbuffers.java.version}</version>
                 <scope>compile</scope>  <!-- for shade -->
+            </dependency>
+            <dependency>
+                <groupId>org.roaringbitmap</groupId>
+                <artifactId>RoaringBitmap</artifactId>
+                <version>${roaringbitmap.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
               <groupId>org.rogach</groupId>
