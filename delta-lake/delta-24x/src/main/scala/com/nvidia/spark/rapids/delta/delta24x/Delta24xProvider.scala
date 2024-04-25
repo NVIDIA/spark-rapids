@@ -74,7 +74,9 @@ object Delta24xProvider extends DeltaIOProvider {
 
   override def getReadFileFormat(format: FileFormat): FileFormat = {
     val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
-    GpuDelta24xParquetFileFormat(cpuFormat.metadata, cpuFormat.isSplittable)
+    GpuDelta24xParquetFileFormat(cpuFormat.metadata,
+      cpuFormat.isSplittable,
+      cpuFormat.disablePushDowns)
   }
 
   override def convertToGpu(

@@ -27,7 +27,8 @@ import org.apache.spark.sql.types.StructType
 
 case class GpuDelta24xParquetFileFormat(
     metadata: Metadata,
-    isSplittable: Boolean) extends GpuDeltaParquetFileFormat {
+    isSplittable: Boolean,
+    override val disableFilterPushdown: Boolean = false) extends GpuDeltaParquetFileFormat {
 
   override val columnMappingMode: DeltaColumnMappingMode = metadata.columnMappingMode
   override val referenceSchema: StructType = metadata.schema
@@ -55,7 +56,8 @@ case class GpuDelta24xParquetFileFormat(
       case ff: GpuDelta24xParquetFileFormat =>
         ff.columnMappingMode == columnMappingMode &&
           ff.referenceSchema == referenceSchema &&
-          ff.isSplittable == isSplittable
+          ff.isSplittable == isSplittable &&
+          ff.disableFilterPushdown == disableFilterPushdown
       case _ => false
     }
   }
