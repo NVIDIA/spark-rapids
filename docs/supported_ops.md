@@ -8222,7 +8222,7 @@ are limited.
 <td rowSpan="3">JsonTuple</td>
 <td rowSpan="3">`json_tuple`</td>
 <td rowSpan="3">Returns a tuple like the function get_json_object, but it takes multiple names. All the input parameters and output column types are string.</td>
-<td rowSpan="3">This is disabled by default because JsonTuple on the GPU does not support all of the normalization that the CPU supports.</td>
+<td rowSpan="3">This is disabled by default because Experimental feature that could be unstable or have performance issues.</td>
 <td rowSpan="3">project</td>
 <td>json</td>
 <td> </td>
