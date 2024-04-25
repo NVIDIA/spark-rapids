@@ -162,7 +162,7 @@ def _configure_log_dir(_sb, wid):
 
     from conftest import get_std_input_path
     std_input_path = get_std_input_path()
-    driver_opts = ' -Dlog4j.configuration=file://{}/xdist_it_log4j.properties '.format(std_input_path) + \
+    driver_opts = ' -Dlog4j.configuration=file://{}/pytest_log4j.properties '.format(std_input_path) + \
         ' -Dlogfile={}'.format(log_file)
 
     # Set up Logging
