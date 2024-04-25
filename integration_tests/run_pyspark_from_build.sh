@@ -242,7 +242,7 @@ else
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
     deltaCacheSize=$PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
-    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize $COVERAGE_SUBMIT_FLAGS"
+    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize -Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
@@ -408,7 +408,6 @@ EOF
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
             --conf 'spark.databricks.delta.delta.log.cacheSize='"$deltaCacheSize" \
-            --conf spark.driver.extraJavaOptions="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log" \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi

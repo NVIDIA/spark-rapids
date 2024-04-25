@@ -96,6 +96,7 @@ def create_tmp_hive():
     except Exception as e:
         logging.warn(f"Failed to setup the hive scratch dir {path}. Error {e}")
 
+# Entry point into this file
 def pytest_sessionstart(session):
     # initializations that must happen globally once before tests start
     # if xdist in the coordinator, if not xdist in the pytest process
@@ -132,11 +133,11 @@ def pytest_sessionstart(session):
     if ('PYTEST_XDIST_WORKER' in os.environ):
         wid = os.environ['PYTEST_XDIST_WORKER']
         _handle_event_log_dir(_sb, wid)
-        driver_opts += _configure_log_dir(_sb, wid)
+        driver_opts += _configure_worker_log_dir(_sb, wid)
         _handle_derby_dir(_sb, driver_opts, wid)
         _handle_ivy_cache_dir(_sb, wid)
     else:
-        driver_opts += _configure_log_dir(_sb, 'gw0')
+        driver_opts += _configure_worker_log_dir(_sb, 'gw0')
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
 
@@ -157,12 +158,13 @@ def _handle_derby_dir(sb, driver_opts, wid):
     sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
 
 logger = logging.getLogger('__pytest_worker_logger__')
-def _configure_log_dir(_sb, wid):
+def _configure_worker_log_dir(_sb, wid):
     current_directory = os.path.abspath(os.path.curdir)
     log_file = '{}/{}_worker_logs.log'.format(current_directory, wid)
 
     from conftest import get_std_input_path
     std_input_path = get_std_input_path()
+    # This is not going to take effect when TEST_PARALLEL=1 as it's set as a conf when calling spark-submit
     driver_opts = ' -Dlog4j.configuration=file://{}/pytest_log4j.properties '.format(std_input_path) + \
         ' -Dlogfile={}'.format(log_file)
 
@@ -170,11 +172,9 @@ def _configure_log_dir(_sb, wid):
     # Create a named logger
     global logger
     logger.setLevel(logging.INFO)
-
-    # Create file handler to output logs into corresponding worker file
+    # Create file handler to output logs into corresponding worker log file
     file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.INFO)
-    # Set the formatter for the console handler
+    # Set the formatter for the file handler, we match the formatter from the basicConfig for consistency in logs
     formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
                                   datefmt="%Y-%m-%d %H:%M:%S")
 
