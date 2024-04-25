@@ -874,6 +874,8 @@
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
             ${databricks.buildvers},
+            <!-- 400 is not buildable yet. We are only declaring it as a known shim here -->
+            400
         </all.buildvers>
         <noSnapshotScala213.buildvers>
             330,
