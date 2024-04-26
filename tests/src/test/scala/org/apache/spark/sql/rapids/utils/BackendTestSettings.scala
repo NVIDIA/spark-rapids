@@ -211,7 +211,11 @@ abstract class BackendTestSettings {
 
 object BackendTestSettings {
   val instance: BackendTestSettings = {
-    new RapidsTestSettings()
+    Class
+      .forName("org.apache.spark.sql.rapids.RapidsTestSettings")
+      .getDeclaredConstructor()
+      .newInstance()
+      .asInstanceOf[BackendTestSettings]
   }
 
   def shouldRun(suiteName: String, testName: String): Boolean = {
