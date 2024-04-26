@@ -157,6 +157,7 @@ def _handle_derby_dir(sb, driver_opts, wid):
         os.makedirs(d)
     sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
 
+# Create a named logger to be used for only logging test name in `log_test_name`
 logger = logging.getLogger('__pytest_worker_logger__')
 def _configure_worker_log_dir(_sb, wid):
     current_directory = os.path.abspath(os.path.curdir)
@@ -168,11 +169,14 @@ def _configure_worker_log_dir(_sb, wid):
     driver_opts = ' -Dlog4j.configuration=file://{}/pytest_log4j.properties '.format(std_input_path) + \
         ' -Dlogfile={}'.format(log_file)
 
-    # Set up Logging
-    # Create a named logger
+    # Set up Logging to the WORKERID_worker_logs
+    # Note: This logger is only used for logging the test name in method `log_test_name`. 
     global logger
     logger.setLevel(logging.INFO)
     # Create file handler to output logs into corresponding worker log file
+    # This file_handler is modifying the worker_log file that the plugin will also write to 
+    # The reason for doing this is to get all test logs in one place from where we can do other analysis 
+    # that might be needed in future to look at the execs that were used in our integration tests
     file_handler = logging.FileHandler(log_file)
     # Set the formatter for the file handler, we match the formatter from the basicConfig for consistency in logs
     formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",

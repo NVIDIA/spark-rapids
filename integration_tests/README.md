@@ -413,7 +413,7 @@ even without the SHS webUI.
 
 By default, when using xdist the integration tests will write the tests output to console and to a text file 
 that will appear under the run directory of the form 
-`integration_tests/target/run_dir-<timestamp>-xxxx/gw0_worker_logs.log`. The output format of the log and the log level  
+`integration_tests/target/run_dir-<timestamp>-xxxx/WORKERID_worker_logs.log`. The output format of the log and the log level  
 can be changed by modifying the file `integration_tests/src/test/resources/pytest_log4j.properties`.
 
 If xdist is not used (e.g., `TEST_PARALLEL=1`)
