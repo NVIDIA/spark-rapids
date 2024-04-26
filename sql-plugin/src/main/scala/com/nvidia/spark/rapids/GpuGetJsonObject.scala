@@ -166,6 +166,7 @@ class GpuGetJsonObjectMeta(
       GpuGetJsonObject(lhs, rhs,
         conf.testGetJsonObjectSavePath, conf.testGetJsonObjectSaveRows)
     } else {
+      logWarning("Enabled get_json_object legacy code path.")
       GpuGetJsonObjectLegacy(lhs, rhs,
         conf.testGetJsonObjectSavePath, conf.testGetJsonObjectSaveRows)
     }
