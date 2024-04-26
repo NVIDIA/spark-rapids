@@ -344,8 +344,9 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         // for null
         structFileSeq.append(StructField("n", IntegerType, nullable = true))
     }
+    val fields = structFileSeq.toSeq
     _spark.internalCreateDataFrame(
       _spark.sparkContext.parallelize(Seq(inputRow)),
-      StructType(structFileSeq))
+      StructType(fields))
   }
 }
