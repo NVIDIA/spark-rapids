@@ -22,6 +22,7 @@ import ai.rapids.cudf.{ColumnVector, GetJsonObjectOptions, Scalar}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, GetJsonObject}
 import org.apache.spark.sql.rapids.test.CpuGetJsonObject
@@ -102,7 +103,7 @@ object JsonPathParser extends RegexParsers {
     }
   }
 
-  def convertToJniObject(instructions: List[PathInstruction]): 
+  def convertToJniObject(instructions: List[PathInstruction]):
       Array[JSONUtils.PathInstructionJni] = {
     instructions.map { instruction =>
       val (tpe, name, index) = unzipInstruction(instruction)
@@ -143,7 +144,7 @@ class GpuGetJsonObjectMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule
-  ) extends BinaryExprMeta[GetJsonObject](expr, conf, parent, rule) {
+  ) extends BinaryExprMeta[GetJsonObject](expr, conf, parent, rule) with Logging {
 
   override def tagExprForGpu(): Unit = {
     val lit = GpuOverrides.extractLit(expr.right)
@@ -154,6 +155,7 @@ class GpuGetJsonObjectMeta(
           willNotWorkOnGpu("get_json_object on GPU does not support more than 16 nested paths")
         }
       } else {
+        logWarning("Enabled get_json_object legacy code path.")
         if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {
           willNotWorkOnGpu("get_json_object on GPU does not support wildcard [*] in path")
         }
@@ -166,7 +168,6 @@ class GpuGetJsonObjectMeta(
       GpuGetJsonObject(lhs, rhs,
         conf.testGetJsonObjectSavePath, conf.testGetJsonObjectSaveRows)
     } else {
-      logWarning("Enabled get_json_object legacy code path.")
       GpuGetJsonObjectLegacy(lhs, rhs,
         conf.testGetJsonObjectSavePath, conf.testGetJsonObjectSaveRows)
     }
@@ -320,9 +321,9 @@ case class GpuGetJsonObjectLegacy(
       cachedNormalizedPath = Some(normalizedPath)
       normalizedPath
     } match {
-      case Some(normalizedStr) => 
+      case Some(normalizedStr) =>
         withResource(Scalar.fromString(normalizedStr)) { scalar =>
-          lhs.getBase().getJSONObject(scalar, 
+          lhs.getBase().getJSONObject(scalar,
               GetJsonObjectOptions.builder().allowSingleQuotes(true).build())
         }
       case None => GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
