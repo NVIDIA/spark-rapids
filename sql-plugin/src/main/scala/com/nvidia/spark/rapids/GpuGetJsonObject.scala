@@ -151,11 +151,12 @@ class GpuGetJsonObjectMeta(
     lit.foreach { l =>
       val instructions = JsonPathParser.parse(l.value.asInstanceOf[UTF8String].toString)
       if (!conf.isLegacyGetJsonObjectEnabled) {
+        logInfo("get_json_object executes through new code path.")
         if (instructions.exists(JsonPathParser.fallbackCheck)) {
           willNotWorkOnGpu("get_json_object on GPU does not support more than 16 nested paths")
         }
       } else {
-        logWarning("Enabled get_json_object legacy code path.")
+        logInfo("get_json_object executes through legacy code path.")
         if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {
           willNotWorkOnGpu("get_json_object on GPU does not support wildcard [*] in path")
         }
