@@ -15,11 +15,11 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "331"}
+{"spark": "330"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.{MathFunctionsSuite, RapidsSQLTestsTrait}
+import org.apache.spark.sql.RapidsTestsTrait
+import org.apache.spark.sql.catalyst.expressions.StringExpressionsSuite
 
-class RapidsMathFunctionsSuite extends MathFunctionsSuite with RapidsSQLTestsTrait {
-}
+class RapidsStringExpressionsSuite extends StringExpressionsSuite with RapidsTestsTrait {}

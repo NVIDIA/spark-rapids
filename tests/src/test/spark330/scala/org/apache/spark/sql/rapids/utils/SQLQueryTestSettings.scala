@@ -31,33 +31,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "331"}
+{"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.types._
+trait SQLQueryTestSettings {
+  def getSupportedSQLQueryTests: Set[String]
 
-object RapidsTestConstants {
-
-  val RAPIDS_TEST: String = "Rapids - "
-
-  val IGNORE_ALL: String = "IGNORE_ALL"
-
-  val SUPPORTED_DATA_TYPE = TypeCollection(
-    BooleanType,
-    ByteType,
-    ShortType,
-    IntegerType,
-    LongType,
-    FloatType,
-    DoubleType,
-    DecimalType,
-    StringType,
-    BinaryType,
-    DateType,
-    TimestampType,
-    ArrayType,
-    StructType,
-    MapType
-  )
+  def getOverwriteSQLQueryTests: Set[String]
 }

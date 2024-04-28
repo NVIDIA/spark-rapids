@@ -30,7 +30,7 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
-{"spark": "331"}
+{"spark": "330"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql
 

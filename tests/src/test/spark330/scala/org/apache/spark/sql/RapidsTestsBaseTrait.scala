@@ -31,12 +31,31 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "331"}
+{"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.utils
+package org.apache.spark.sql
 
-trait SQLQueryTestSettings {
-  def getSupportedSQLQueryTests: Set[String]
+import org.apache.spark.sql.rapids.utils.BackendTestSettings
 
-  def getOverwriteSQLQueryTests: Set[String]
+trait RapidsTestsBaseTrait {
+
+  protected val rootPath: String = getClass.getResource("/").getPath
+  protected val basePath: String = rootPath + "unit-tests-working-home"
+
+  protected val warehouse: String = basePath + "/spark-warehouse"
+  protected val metaStorePathAbsolute: String = basePath + "/meta"
+
+  // The blacklist is taken in highest priority. Tests on the
+  // list will never be run with no regard to backend test settings.
+  def testNameBlackList: Seq[String] = Seq()
+
+  def shouldRun(testName: String): Boolean = {
+    if (testNameBlackList.exists(_.equalsIgnoreCase(RapidsTestConstants.IGNORE_ALL))) {
+      return false
+    }
+    if (testNameBlackList.contains(testName)) {
+      return false
+    }
+    BackendTestSettings.shouldRun(getClass.getCanonicalName, testName)
+  }
 }
