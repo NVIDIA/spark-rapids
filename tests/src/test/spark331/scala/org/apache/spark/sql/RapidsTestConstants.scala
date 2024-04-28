@@ -33,29 +33,31 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "331"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql
 
-import org.apache.spark.sql.rapids.utils.BackendTestSettings
+import org.apache.spark.sql.types._
 
-trait RapidsTestsBaseTrait {
+object RapidsTestConstants {
 
-  protected val rootPath: String = getClass.getResource("/").getPath
-  protected val basePath: String = rootPath + "unit-tests-working-home"
+  val RAPIDS_TEST: String = "Rapids - "
 
-  protected val warehouse: String = basePath + "/spark-warehouse"
-  protected val metaStorePathAbsolute: String = basePath + "/meta"
+  val IGNORE_ALL: String = "IGNORE_ALL"
 
-  // The blacklist is taken in highest priority. Tests on the
-  // list will never be run with no regard to backend test settings.
-  def testNameBlackList: Seq[String] = Seq()
-
-  def shouldRun(testName: String): Boolean = {
-    if (testNameBlackList.exists(_.equalsIgnoreCase(RapidsTestConstants.IGNORE_ALL))) {
-      return false
-    }
-    if (testNameBlackList.contains(testName)) {
-      return false
-    }
-    BackendTestSettings.shouldRun(getClass.getCanonicalName, testName)
-  }
+  val SUPPORTED_DATA_TYPE = TypeCollection(
+    BooleanType,
+    ByteType,
+    ShortType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    DecimalType,
+    StringType,
+    BinaryType,
+    DateType,
+    TimestampType,
+    ArrayType,
+    StructType,
+    MapType
+  )
 }

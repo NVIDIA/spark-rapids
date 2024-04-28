@@ -17,15 +17,9 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "331"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.suites
 
-class RapidsDataFrameAggregateSuite extends DataFrameAggregateSuite with RapidsSQLTestsTrait {
-  // example to show how to replace the logic of an excluded test case in Vanilla Spark
-  testRapids("collect functions" ) {  // "collect functions" was excluded at RapidsTestSettings
-    // println("...")
-  }
-}
+import org.apache.spark.sql.RapidsTestsTrait
+import org.apache.spark.sql.catalyst.expressions.RegexpExpressionsSuite
 
-
-
-
+class RapidsRegexpExpressionsSuite extends RegexpExpressionsSuite with RapidsTestsTrait {}

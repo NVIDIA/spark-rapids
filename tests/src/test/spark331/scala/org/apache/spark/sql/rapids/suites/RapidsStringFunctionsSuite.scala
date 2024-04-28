@@ -17,8 +17,9 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "331"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.suites
 
+import org.apache.spark.sql.{RapidsSQLTestsTrait, StringFunctionsSuite}
 import org.apache.spark.sql.catalyst.expressions.ExpressionEvalHelper
 
 class RapidsStringFunctionsSuite

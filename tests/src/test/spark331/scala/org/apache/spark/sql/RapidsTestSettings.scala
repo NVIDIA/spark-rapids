@@ -33,9 +33,9 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "331"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql
 
-import org.apache.spark.sql.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
 import org.apache.spark.sql.rapids.utils.{BackendTestSettings, SQLQueryTestSettings}
 
 // Some settings' line length exceeds 100

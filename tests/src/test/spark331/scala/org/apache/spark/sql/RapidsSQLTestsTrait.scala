@@ -33,7 +33,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "331"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql
 
 import java.io.File
 import java.util.TimeZone
