@@ -216,7 +216,7 @@ abstract class BackendTestSettings {
 object BackendTestSettings {
   val instance: BackendTestSettings = {
     Class
-      .forName("org.apache.spark.sql.rapids.RapidsTestSettings")
+      .forName("org.apache.spark.sql.RapidsTestSettings")
       .getDeclaredConstructor()
       .newInstance()
       .asInstanceOf[BackendTestSettings]
