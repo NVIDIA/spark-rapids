@@ -29,7 +29,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql
+
+/*** spark-rapids-shim-json-lines
+{"spark": "331"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids
 
 import java.io.File
 

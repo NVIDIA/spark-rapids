@@ -29,10 +29,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql.rapids.utils
 
-trait SQLQueryTestSettings {
-  def getSupportedSQLQueryTests: Set[String]
+/*** spark-rapids-shim-json-lines
+{"spark": "331"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids
 
-  def getOverwriteSQLQueryTests: Set[String]
+import org.apache.spark.sql.types._
+
+object RapidsTestConstants {
+
+  val RAPIDS_TEST: String = "Rapids - "
+
+  val IGNORE_ALL: String = "IGNORE_ALL"
+
+  val SUPPORTED_DATA_TYPE = TypeCollection(
+    BooleanType,
+    ByteType,
+    ShortType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    DecimalType,
+    StringType,
+    BinaryType,
+    DateType,
+    TimestampType,
+    ArrayType,
+    StructType,
+    MapType
+  )
 }
