@@ -10817,7 +10817,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>only support partToExtract = PROTOCOL | HOST | QUERY;<br/>Literal value only</em></td>
+<td><em>PS<br/>only support partToExtract = PROTOCOL | HOST | QUERY | PATH;<br/>Literal value only</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
