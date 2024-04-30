@@ -27,6 +27,7 @@ import scala.util.Try
 
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
+import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -35,6 +36,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -75,18 +77,23 @@ object RapidsPluginUtils extends Logging {
   private val SPARK_MASTER = "spark.master"
   private val SPARK_RAPIDS_REPO_URL = "https://github.com/NVIDIA/spark-rapids"
 
+  lazy val buildInfoEvent = SparkRapidsBuildInfoEvent(
+    sparkRapidsBuildInfo = loadProps(PLUGIN_PROPS_FILENAME),
+    sparkRapidsJniBuildInfo = loadProps(JNI_PROPS_FILENAME),
+    cudfBuildInfo = loadProps(CUDF_PROPS_FILENAME),
+    sparkRapidsPrivateBuildInfo =loadProps(PRIVATE_PROPS_FILENAME)
+  )
+
+
+
   {
-    val pluginProps = loadProps(PLUGIN_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator build: $pluginProps")
-    val jniProps = loadProps(JNI_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator JNI build: $jniProps")
-    val cudfProps = loadProps(CUDF_PROPS_FILENAME)
-    logInfo(s"cudf build: $cudfProps")
-    val privateProps = loadProps(PRIVATE_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator Private ${privateProps}")
-    val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
-    val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
-    val privateRev = privateProps.getProperty("revision", "UNKNOWN")
+    logInfo(s"RAPIDS Accelerator build: ${buildInfoEvent.sparkRapidsBuildInfo}")
+    logInfo(s"RAPIDS Accelerator JNI build: ${buildInfoEvent.sparkRapidsJniBuildInfo}")
+    logInfo(s"cudf build: ${buildInfoEvent.cudfBuildInfo}")
+    logInfo(s"RAPIDS Accelerator Private ${buildInfoEvent.sparkRapidsPrivateBuildInfo}")
+    val pluginVersion = buildInfoEvent.sparkRapidsBuildInfo.getOrElse("version", "UNKNOWN")
+    val cudfVersion = buildInfoEvent.cudfBuildInfo.getOrElse("version", "UNKNOWN")
+    val privateRev = buildInfoEvent.sparkRapidsPrivateBuildInfo.getOrElse("revision", "UNKNOWN")
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf ${cudfVersion}, " +
       s"private revision ${privateRev}")
   }
@@ -292,7 +299,7 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  def loadProps(resourceName: String): Properties = {
+  def loadProps(resourceName: String): Map[String, String] = {
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
     val resource = classLoader.getResourceAsStream(resourceName)
     if (resource == null) {
@@ -300,7 +307,7 @@ object RapidsPluginUtils extends Logging {
     }
     val props = new Properties
     props.load(resource)
-    props
+    props.asScala.toMap
   }
 
   private def loadExtensions[T <: AnyRef](extClass: Class[T], classes: Seq[String]): Seq[T] = {
@@ -350,10 +357,8 @@ object RapidsPluginUtils extends Logging {
   /**
    * Extracts supported GPU architectures from the given properties file
    */
-  private def getSupportedGpuArchitectures(propFileName: String): Set[Int] = {
-    val props = RapidsPluginUtils.loadProps(propFileName)
-    Option(props.getProperty("gpu_architectures"))
-      .getOrElse(throw new RuntimeException(s"GPU architectures not found in $propFileName"))
+  private def getSupportedGpuArchitectures(props: Map[String, String], origin: String): Set[Int] = {
+    props.getOrElse("gpu_architectures", sys.error(s"GPU architectures not found in $origin"))
       .split(";")
       .map(_.toInt)
       .toSet
@@ -365,8 +370,9 @@ object RapidsPluginUtils extends Logging {
    */
   def validateGpuArchitecture(): Unit = {
     val gpuArch = Cuda.getComputeCapabilityMajor * 10 + Cuda.getComputeCapabilityMinor
-    validateGpuArchitectureInternal(gpuArch, getSupportedGpuArchitectures(JNI_PROPS_FILENAME),
-      getSupportedGpuArchitectures(CUDF_PROPS_FILENAME))
+    validateGpuArchitectureInternal(gpuArch,
+      getSupportedGpuArchitectures(buildInfoEvent.sparkRapidsJniBuildInfo, JNI_PROPS_FILENAME),
+      getSupportedGpuArchitectures(buildInfoEvent.cudfBuildInfo, CUDF_PROPS_FILENAME))
   }
 
   /**
@@ -404,6 +410,14 @@ object RapidsPluginUtils extends Logging {
     }
   }
 }
+
+
+case class SparkRapidsBuildInfoEvent(
+  sparkRapidsBuildInfo: Map[String, String],
+  sparkRapidsJniBuildInfo: Map[String, String],
+  cudfBuildInfo: Map[String, String],
+  sparkRapidsPrivateBuildInfo: Map[String, String]
+) extends SparkListenerEvent
 
 /**
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
@@ -459,6 +473,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     logDebug("Loading extra driver plugins: " +
       s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")
     extraDriverPlugins.foreach(_.init(sc, pluginContext))
+    TrampolineUtil.postEvent(sc, buildInfoEvent)
     conf.rapidsConfMap
   }
 
@@ -577,16 +592,14 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   private def checkCudfVersion(conf: RapidsConf): Unit = {
     try {
-      val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
-      val expectedCudfVersion = Option(pluginProps.getProperty("cudf_version")).getOrElse {
+      val expectedCudfVersion = buildInfoEvent.sparkRapidsBuildInfo.getOrElse("cudf_version",
         throw CudfVersionMismatchException("Could not find cudf version in " +
-            RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
-      }
-      val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
-      val cudfVersion = Option(cudfProps.getProperty("version")).getOrElse {
+            RapidsPluginUtils.PLUGIN_PROPS_FILENAME))
+
+      val cudfVersion = buildInfoEvent.cudfBuildInfo.getOrElse("version",
         throw CudfVersionMismatchException("Could not find cudf version in " +
-            RapidsPluginUtils.CUDF_PROPS_FILENAME)
-      }
+            RapidsPluginUtils.CUDF_PROPS_FILENAME))
+
       // compare cudf version in the classpath with the cudf version expected by plugin
       if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
         throw CudfVersionMismatchException(s"Found cudf version $cudfVersion, RAPIDS Accelerator " +
