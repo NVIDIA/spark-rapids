@@ -40,6 +40,7 @@ import org.scalactic.source.Position
 import org.scalatest.{Args, Status, Tag}
 
 import org.apache.spark.SparkFunSuite
+import org.apache.spark.internal.config.Tests.IS_TESTING
 import org.apache.spark.sql.RapidsTestConstants.RAPIDS_TEST
 import org.apache.spark.sql.catalyst.expressions.ExpressionEvalHelper
 
@@ -47,6 +48,12 @@ trait RapidsTestsCommonTrait
   extends SparkFunSuite
   with ExpressionEvalHelper
   with RapidsTestsBaseTrait {
+
+  protected override def afterAll(): Unit = {
+    // SparkFunSuite will set this to true, and forget to reset to false
+    System.clearProperty(IS_TESTING.key)
+    super.afterAll()
+  }
 
   override def runTest(testName: String, args: Args): Status = {
     TestStats.suiteTestNumber += 1

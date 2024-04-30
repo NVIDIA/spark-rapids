@@ -40,6 +40,7 @@ import org.scalactic.source.Position
 import org.scalatest.Tag
 
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.config.Tests.IS_TESTING
 import org.apache.spark.sql.RapidsTestConstants.RAPIDS_TEST
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
@@ -48,6 +49,12 @@ import org.apache.spark.sql.test.SharedSparkSession
 
 /** Basic trait for Rapids SQL test cases. */
 trait RapidsSQLTestsBaseTrait extends SharedSparkSession with RapidsTestsBaseTrait {
+
+  protected override def afterAll(): Unit = {
+    // SparkFunSuite will set this to true, and forget to reset to false
+    System.clearProperty(IS_TESTING.key)
+    super.afterAll()
+  }
 
   protected def testRapids(testName: String, testTag: Tag*)(testFun: => Any)(implicit
       pos: Position): Unit = {
@@ -129,6 +136,7 @@ object RapidsSQLTestsBaseTrait {
       .set("spark.sql.queryExecutionListeners",
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
+      .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
       .setAppName("rapids spark plugin running Vanilla Spark UT")
 
     conf
