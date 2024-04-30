@@ -35,13 +35,10 @@ jobs:
     # This job only runs for pull request comments
     if: contains( '\
       abellina,\
-      andygrove,\
       anfeng,\
       firestarman,\
       GaryShen2008,\
-      jbrennan333, \
       jlowe,\
-      krajendrannv,\
       kuhushukla,\
       mythrocks,\
       nartal1,\
@@ -49,7 +46,6 @@ jobs:
       NvTimLiu,\
       razajafri,\
       revans2,\
-      rongou,\
       rwlee,\
       sameerz,\
       tgravescs,\
@@ -73,6 +69,7 @@ jobs:
       yinqingh,\
       parthosa,\
       liurenjie1024,\
+      binmahone,\
       ', format('{0},', github.actor)) && github.event.comment.body == 'build'
     steps:
       - name: Check if comment is issued by authorized person

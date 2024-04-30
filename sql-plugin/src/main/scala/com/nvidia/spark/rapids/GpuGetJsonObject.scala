@@ -205,11 +205,51 @@ case class GpuGetJsonObject(
     }
   }
 
+  /**
+   * get_json_object(any_json, '$.*') always return null.
+   * '$.*' will be parsed to be a single `Wildcard`.
+   * Check whether has separated `Wildcard`
+   *
+   * @param instructions query path instructions
+   * @return true if has separated `Wildcard`, false otherwise.
+   */
+  private def hasSeparateWildcard(instructions: Option[List[PathInstruction]]): Boolean = {
+    import PathInstruction._
+    def hasSeparate(ins: List[PathInstruction], idx: Int): Boolean = {
+      if (idx == 0) {
+        ins(0) match {
+          case Wildcard => true
+          case _ => false
+        }
+      } else {
+        (ins(idx - 1), ins(idx)) match {
+          case (Key, Wildcard) => false
+          case (Subscript, Wildcard) => false
+          case (_, Wildcard) => true
+          case _ => false
+        }
+      }
+    }
+
+    if (instructions.isEmpty) {
+      false
+    } else {
+      val list = instructions.get
+      list.indices.exists { idx => hasSeparate(list, idx) }
+    }
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val fromGpu = cachedInstructions.getOrElse {
       val pathInstructions = parseJsonPath(rhs)
-      cachedInstructions = Some(pathInstructions)
-      pathInstructions
+      val checkedPathInstructions = if (hasSeparateWildcard(pathInstructions)) {
+        // If has separate wildcard path, should return all nulls
+        None
+      } else {
+        pathInstructions
+      }
+      cachedInstructions = Some(checkedPathInstructions)
+      checkedPathInstructions
     } match {
       case Some(instructions) => {
         val jniInstructions = JsonPathParser.convertToJniObject(instructions)
