@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
+
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -42,7 +43,7 @@ import org.apache.spark.util.{ShutdownHookManager, Utils}
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isSupportedRelation(mode: BroadcastMode): Boolean = 
+  def isSupportedRelation(mode: BroadcastMode): Boolean =
     ShimTrampolineUtil.isSupportedRelation(mode)
 
   def unionLikeMerge(left: DataType, right: DataType): DataType =
