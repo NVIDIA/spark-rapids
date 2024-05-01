@@ -409,7 +409,9 @@ the SHS supported values for the config key
 With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
 even without the SHS webUI.
 
-### Worker Logs
+### Worker Logs 
+
+NOTE: Available only in local mode i.e. master URL = local[K, F]  
 
 By default, when using xdist the integration tests will write the tests output to console and to a text file 
 that will appear under the run directory of the form 
