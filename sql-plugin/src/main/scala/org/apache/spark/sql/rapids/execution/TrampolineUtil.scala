@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import java.util.concurrent.ThreadPoolExecutor
+
 import org.json4s.JsonAST
 
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
@@ -219,6 +221,13 @@ object TrampolineUtil {
     }
   }
 
+  def newDaemonCachedThreadPool(
+      prefix: String,
+      maxThreadNumber: Int,
+      keepAliveSeconds: Int): ThreadPoolExecutor = {
+    org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber,
+      keepAliveSeconds)
+  }
 
   def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
     sc.listenerBus.post(sparkEvent)
