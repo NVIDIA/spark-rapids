@@ -242,7 +242,8 @@ else
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
     deltaCacheSize=$PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
-    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize -Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log $COVERAGE_SUBMIT_FLAGS"
+    DRIVER_EXTRA_JAVA_OPTION="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
+    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTION $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
@@ -311,6 +312,9 @@ EOF
         # total memory usage, especially host memory usage because when copying data to the GPU
         # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
         LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
+        # The only case where we want worker logs is in local mode so we set the value here explicitly
+        # We can't use the PYSP_TEST_spark_master as it's not always set e.g. when using --master
+        export USE_WORKER_LOGS=1
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
@@ -371,6 +375,15 @@ EOF
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
+        if [[ "$USE_WORKER_LOGS" != "" ]]; then
+          # Setting the extraJavaOptions again to set the log4j confs that will be needed for writing logs in the expected location
+          # We have to export it again because we want to be able to let the user override these confs by setting them on the
+          # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
+          # export $PYSP_TEST_spark_driver_extraJavaOptions = "$PYSP_TEST_spark_driver_extraJavaOptions $LOG4J_CONF"
+          LOG4J_CONF="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log"
+          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTION $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
+        fi
+
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
         jarOpts=()

@@ -133,11 +133,11 @@ def pytest_sessionstart(session):
     if ('PYTEST_XDIST_WORKER' in os.environ):
         wid = os.environ['PYTEST_XDIST_WORKER']
         _handle_event_log_dir(_sb, wid)
-        driver_opts += _configure_worker_log_dir(_sb, wid)
+        driver_opts += _get_driver_opts_for_worker_logs(_sb, wid)
         _handle_derby_dir(_sb, driver_opts, wid)
         _handle_ivy_cache_dir(_sb, wid)
     else:
-        driver_opts += _configure_worker_log_dir(_sb, 'gw0')
+        driver_opts += _get_driver_opts_for_worker_logs(_sb, 'gw0')
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
 
@@ -157,9 +157,17 @@ def _handle_derby_dir(sb, driver_opts, wid):
         os.makedirs(d)
     sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
 
+def _use_worker_logs():
+    return os.environ.get('USE_WORKER_LOGS') == '1'
+
 # Create a named logger to be used for only logging test name in `log_test_name`
 logger = logging.getLogger('__pytest_worker_logger__')
-def _configure_worker_log_dir(_sb, wid):
+def _get_driver_opts_for_worker_logs(_sb, wid):
+    if not _use_worker_logs():
+        logging.info("Not setting worker logs. Worker logs on non-local mode are sent to the location pre-configured "
+                     "by the user")
+        return ""
+
     current_directory = os.path.abspath(os.path.curdir)
     log_file = '{}/{}_worker_logs.log'.format(current_directory, wid)
 
@@ -243,6 +251,6 @@ def get_spark_i_know_what_i_am_doing():
 def spark_version():
     return _spark.version
 
-@pytest.fixture(scope='function', autouse=True)
+@pytest.fixture(scope='function', autouse=_use_worker_logs())
 def log_test_name(request):
     logger.info("Running test '{}'".format(request.node.nodeid))
