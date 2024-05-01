@@ -28,6 +28,7 @@ import org.apache.spark.internal.config
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.security.CryptoStreamUtils
 import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
 import org.apache.spark.sql.{AnalysisException, SparkSession}
@@ -44,7 +45,7 @@ import org.apache.spark.util.{ShutdownHookManager, Utils}
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isSupportedRelation(mode: BroadcastMode): Boolean = 
+  def isSupportedRelation(mode: BroadcastMode): Boolean =
     ShimTrampolineUtil.isSupportedRelation(mode)
 
   def unionLikeMerge(left: DataType, right: DataType): DataType =
@@ -226,5 +227,9 @@ object TrampolineUtil {
       keepAliveSeconds: Int): ThreadPoolExecutor = {
     org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber,
       keepAliveSeconds)
+  }
+
+  def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
+    sc.listenerBus.post(sparkEvent)
   }
 }
