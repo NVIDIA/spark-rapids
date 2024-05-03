@@ -376,7 +376,7 @@ EOF
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
-        if [[ "$USE_WORKER_LOGS" != "" ]]; then
+        if [[ "$USE_WORKER_LOGS" == "1" ]]; then
           # Setting the extraJavaOptions again to set the log4j confs that will be needed for writing logs in the expected location
           # We have to export it again because we want to be able to let the user override these confs by setting them on the
           # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
