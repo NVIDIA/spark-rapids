@@ -315,7 +315,7 @@ EOF
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
-    if [[ "$SPARK_SUBMIT_FLAGS" == *"--master local"* || "$PYSP_TEST_spark_master" == local* ]]; then
+    if [[ "$SPARK_SUBMIT_FLAGS" == *"--master local"* || "$PYSP_TEST_spark_master" == "local"* ]]; then
         # The only case where we want worker logs is in local mode so we set the value here explicitly
         # We can't use the PYSP_TEST_spark_master as it's not always set e.g. when using --master
         export USE_WORKER_LOGS=1
