@@ -275,7 +275,9 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
   }
 
   /*
-   * Post-process the column view of the array after applying the function parameter
+   * Post-process the column view of the array after applying the function parameter.
+   * @param lambdaTransformedCV the results of the lambda expression running
+   * @param arg the original input array from the expression.
    */
   protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView,
