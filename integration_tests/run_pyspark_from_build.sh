@@ -242,8 +242,8 @@ else
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
     deltaCacheSize=$PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
-    DRIVER_EXTRA_JAVA_OPTION="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
-    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTION $COVERAGE_SUBMIT_FLAGS"
+    DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
+    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
@@ -312,13 +312,14 @@ EOF
         # total memory usage, especially host memory usage because when copying data to the GPU
         # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
         LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
-        # The only case where we want worker logs is in local mode so we set the value here explicitly
-        # We can't use the PYSP_TEST_spark_master as it's not always set e.g. when using --master
-        export USE_WORKER_LOGS=1
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
-
+    if [[ "$SPARK_SUBMIT_FLAGS" == *"--master local"* || "$PYSP_TEST_spark_master" == local* ]]; then
+        # The only case where we want worker logs is in local mode so we set the value here explicitly
+        # We can't use the PYSP_TEST_spark_master as it's not always set e.g. when using --master
+        export USE_WORKER_LOGS=1
+    fi
     # Set a seed to be used in the tests, for datagen
     export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-${DATAGEN_SEED:-`date +%s`}}
     echo "SPARK_RAPIDS_TEST_DATAGEN_SEED used: $SPARK_RAPIDS_TEST_DATAGEN_SEED"
@@ -381,7 +382,7 @@ EOF
           # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
           # export $PYSP_TEST_spark_driver_extraJavaOptions = "$PYSP_TEST_spark_driver_extraJavaOptions $LOG4J_CONF"
           LOG4J_CONF="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log"
-          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTION $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
+          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
         fi
 
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
