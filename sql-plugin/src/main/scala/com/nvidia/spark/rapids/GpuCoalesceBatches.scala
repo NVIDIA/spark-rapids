@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -462,7 +462,7 @@ abstract class AbstractGpuCoalesceIterator(
         // If we have reached the cuDF limit once, proactively filter batches
         // after that first limit is reached.
         GpuFilter.filterAndClose(cbFromIter, inputFilterTier.get,
-          NoopMetric, NoopMetric, opTime)
+          NoopMetric, NoopMetric, NoopMetric)
       } else {
         Iterator(cbFromIter)
       }
@@ -499,7 +499,7 @@ abstract class AbstractGpuCoalesceIterator(
                     var filteredBytes = 0L
                     if (hasAnyToConcat) {
                       val filteredDowIter = GpuFilter.filterAndClose(concatAllAndPutOnGPU(),
-                        filterTier, NoopMetric, NoopMetric, opTime)
+                        filterTier, NoopMetric, NoopMetric, NoopMetric)
                       while (filteredDowIter.hasNext) {
                         closeOnExcept(filteredDowIter.next()) { filteredDownCb =>
                           filteredNumRows += filteredDownCb.numRows()
@@ -512,7 +512,7 @@ abstract class AbstractGpuCoalesceIterator(
                     // filterAndClose takes ownership of CB so we should not close it on a failure
                     // anymore...
                     val filteredCbIter = GpuFilter.filterAndClose(cb.release, filterTier,
-                      NoopMetric, NoopMetric, opTime)
+                      NoopMetric, NoopMetric, NoopMetric)
                     while (filteredCbIter.hasNext) {
                       closeOnExcept(filteredCbIter.next()) { filteredCb =>
                         val filteredWouldBeRows = filteredNumRows + filteredCb.numRows()

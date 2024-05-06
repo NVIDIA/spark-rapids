@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * This file was derived from OptimizeWriteExchange.scala
  * in the Delta Lake project at https://github.com/delta-io/delta
@@ -97,8 +97,12 @@ case class GpuOptimizeWriteExchangeExec(
     ) ++ additionalMetrics
   }
 
-  private lazy val serializer: Serializer =
-    new GpuColumnarBatchSerializer(gpuLongMetric("dataSize"))
+  private lazy val sparkTypes: Array[DataType] = child.output.map(_.dataType).toArray
+
+  private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
+    gpuLongMetric("dataSize"), allMetrics("rapidsShuffleSerializationTime"),
+    allMetrics("rapidsShuffleDeserializationTime"),
+    partitioning.serdeOnGPU, sparkTypes)
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -116,7 +120,7 @@ case class GpuOptimizeWriteExchangeExec(
       inputRDD,
       child.output,
       partitioning,
-      child.output.map(_.dataType).toArray,
+      sparkTypes,
       serializer,
       useGPUShuffle=partitioning.usesGPUShuffle,
       useMultiThreadedShuffle=partitioning.usesMultiThreadedShuffle,
