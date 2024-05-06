@@ -2737,6 +2737,25 @@ object GpuOverrides extends Logging {
           )
         }
       }),
+    expr[ArrayFilter](
+      "Filter an input array using a given predicate",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes +
+        TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[ArrayFilter](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuArrayFilter(
+            childExprs.head.convertToGpu(),
+            childExprs(1).convertToGpu()
+          )
+        }
+      }),
     // TODO: fix the signature https://github.com/NVIDIA/spark-rapids/issues/5327
     expr[ArraysZip](
       "Returns a merged array of structs in which the N-th struct contains" +

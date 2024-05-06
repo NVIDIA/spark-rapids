@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Table}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -275,10 +275,13 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
   }
 
   /*
-   * Post-process the column view of the array after applying the function parameter
+   * Post-process the column view of the array after applying the function parameter.
+   * @param lambdaTransformedCV the results of the lambda expression running
+   * @param arg the original input array from the expression.
    */
   protected def transformListColumnView(
-    lambdaTransformedCV: cudf.ColumnView): GpuColumnVector
+    lambdaTransformedCV: cudf.ColumnView,
+    arg: cudf.ColumnView): GpuColumnVector
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(argument.columnarEval(batch)) { arg =>
@@ -287,12 +290,13 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
       }
       withResource(dataCol) { _ =>
         val cv = GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)
-        withResource(cv)(transformListColumnView)
+        withResource(cv) { cv =>
+          transformListColumnView(cv, arg.getBase)
+        }
       }
     }
   }
 }
-
 
 case class GpuArrayTransform(
   argument: Expression,
@@ -311,11 +315,10 @@ case class GpuArrayTransform(
   }
 
   override protected def transformListColumnView(
-    lambdaTransformedCV: cudf.ColumnView): GpuColumnVector = {
+    lambdaTransformedCV: cudf.ColumnView, arg: cudf.ColumnView): GpuColumnVector = {
     GpuColumnVector.from(lambdaTransformedCV.copyToColumnVector(), dataType)
   }
 }
-
 
 case class GpuArrayExists(
     argument: Expression,
@@ -402,7 +405,8 @@ case class GpuArrayExists(
   }
 
   override protected def transformListColumnView(
-    lambdaTransformedCV: cudf.ColumnView
+    lambdaTransformedCV: cudf.ColumnView,
+    arg: cudf.ColumnView
   ): GpuColumnVector = {
     withResource(exists(lambdaTransformedCV)) { existsCV =>
       // exists is false for empty arrays
@@ -413,6 +417,29 @@ case class GpuArrayExists(
     }
   }
 
+}
+
+case class GpuArrayFilter(
+    argument: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+
+  override def dataType: DataType = argument.dataType
+
+  override def nodeName: String = "filter"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+    GpuArrayFilter(boundArg, boundFunc,isBound = true, boundIntermediate)
+  }
+
+  override protected def transformListColumnView(lambdaTransformedCV: cudf.ColumnView,
+                                                 arg: cudf.ColumnView): GpuColumnVector = {
+    closeOnExcept(arg.applyBooleanMask(lambdaTransformedCV)) { ret =>
+      GpuColumnVector.from(ret, dataType)
+    }
+  }
 }
 
 trait GpuMapSimpleHigherOrderFunction extends GpuSimpleHigherOrderFunction with GpuBind {
