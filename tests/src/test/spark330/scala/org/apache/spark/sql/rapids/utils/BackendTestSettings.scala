@@ -49,11 +49,6 @@ abstract class BackendTestSettings {
 
     val suiteSettings = enabledSuites.get(suiteName)
 
-    suiteSettings.disableReason match {
-      case Some(_) => return false
-      case _ => // continue
-    }
-
     val inclusion = suiteSettings.inclusion.asScala
     val exclusion = suiteSettings.exclusion.asScala
 
@@ -83,58 +78,60 @@ abstract class BackendTestSettings {
     throw new IllegalStateException("Unreachable code")
   }
 
+  sealed trait ExcludeReason
+  case class UNKNOWN_ISSUE() extends ExcludeReason
+  case class KNOWN_ISSUE(issueLink: String) extends ExcludeReason
+  case class WONT_FIX_ISSUE(issueLink: String) extends ExcludeReason
+
+
   final protected class SuiteSettings {
     private[utils] val inclusion: util.List[IncludeBase] = new util.ArrayList()
     private[utils] val exclusion: util.List[ExcludeBase] = new util.ArrayList()
-
-    private[utils] var disableReason: Option[String] = None
+    private[utils] val excludeReasons: util.List[ExcludeReason] = new util.ArrayList()
 
     def include(testNames: String*): SuiteSettings = {
       inclusion.add(Include(testNames: _*))
       this
     }
-    def exclude(testNames: String*): SuiteSettings = {
-      exclusion.add(Exclude(testNames: _*))
+    def exclude(testNames: String, reason: ExcludeReason): SuiteSettings = {
+      exclusion.add(Exclude(testNames))
+      excludeReasons.add(reason)
       this
     }
     def includeRapidsTest(testName: String*): SuiteSettings = {
       inclusion.add(IncludeRapidsTest(testName: _*))
       this
     }
-    def excludeRapidsTest(testName: String*): SuiteSettings = {
-      exclusion.add(ExcludeRapidsTest(testName: _*))
+    def excludeRapidsTest(testName: String, reason: ExcludeReason): SuiteSettings = {
+      exclusion.add(ExcludeRapidsTest(testName))
+      excludeReasons.add(reason)
       this
     }
     def includeByPrefix(prefixes: String*): SuiteSettings = {
       inclusion.add(IncludeByPrefix(prefixes: _*))
       this
     }
-    def excludeByPrefix(prefixes: String*): SuiteSettings = {
-      exclusion.add(ExcludeByPrefix(prefixes: _*))
+    def excludeByPrefix(prefixes: String, reason: ExcludeReason): SuiteSettings = {
+      exclusion.add(ExcludeByPrefix(prefixes))
+      excludeReasons.add(reason)
       this
     }
     def includeRapidsTestsByPrefix(prefixes: String*): SuiteSettings = {
       inclusion.add(IncludeRapidsTestByPrefix(prefixes: _*))
       this
     }
-    def excludeRapidsTestsByPrefix(prefixes: String*): SuiteSettings = {
-      exclusion.add(ExcludeRadpisTestByPrefix(prefixes: _*))
+    def excludeRapidsTestsByPrefix(prefixes: String, reason: ExcludeReason): SuiteSettings = {
+      exclusion.add(ExcludeRadpisTestByPrefix(prefixes))
+      excludeReasons.add(reason)
       this
     }
     def includeAllRapidsTests(): SuiteSettings = {
       inclusion.add(IncludeByPrefix(RAPIDS_TEST))
       this
     }
-    def excludeAllRapidsTests(): SuiteSettings = {
+    def excludeAllRapidsTests(reason: ExcludeReason): SuiteSettings = {
       exclusion.add(ExcludeByPrefix(RAPIDS_TEST))
-      this
-    }
-
-    def disable(reason: String): SuiteSettings = {
-      disableReason = disableReason match {
-        case Some(r) => throw new IllegalArgumentException("Disable reason already set: " + r)
-        case None => Some(reason)
-      }
+      excludeReasons.add(reason)
       this
     }
   }

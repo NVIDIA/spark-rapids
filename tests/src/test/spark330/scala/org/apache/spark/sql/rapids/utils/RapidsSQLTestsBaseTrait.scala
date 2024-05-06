@@ -115,9 +115,7 @@ object RapidsSQLTestsBaseTrait {
     Locale.setDefault(Locale.US)
 
     val conf = origin
-//      .set("spark.sql.adaptive.enabled", "false")
       .set("spark.rapids.sql.enabled", "true")
-//      .set("spark.rapids.sql.test.enabled", "false")
       .set("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .set("spark.sql.queryExecutionListeners",
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")

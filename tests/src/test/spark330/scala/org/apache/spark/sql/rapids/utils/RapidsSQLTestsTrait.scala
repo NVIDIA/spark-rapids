@@ -63,7 +63,6 @@ trait RapidsSQLTestsTrait extends QueryTest with RapidsSQLTestsBaseTrait {
       try df
       catch {
         case ae: AnalysisException =>
-          //val plan = SparkShimLoader.getSparkShims.getAnalysisExceptionPlan(ae)
           val plan = ae.plan
           if (plan.isDefined) {
             fail(s"""
@@ -208,7 +207,7 @@ object RapidsQueryTestUtil extends Assertions {
         s"== Correct Answer - ${expectedAnswer.size} ==" +:
           getRowType(expectedAnswer.headOption) +:
           prepareAnswer(expectedAnswer, isSorted).map(_.toString()),
-        s"== Rapids Answer - ${sparkAnswer.size} ==" +:
+        s"== RAPIDS Answer - ${sparkAnswer.size} ==" +:
           getRowType(sparkAnswer.headOption) +:
           prepareAnswer(sparkAnswer, isSorted).map(_.toString())
       ).mkString("\n")}
@@ -263,34 +262,6 @@ object RapidsQueryTestUtil extends Assertions {
       return Some(genError(expectedAnswer, sparkAnswer, isSorted))
     }
     None
-  }
-
-  /**
-   * Runs the plan and makes sure the answer is within absTol of the expected result.
-   *
-   * @param actualAnswer
-   *   the actual result in a [[Row]].
-   * @param expectedAnswer
-   *   the expected result in a[[Row]].
-   * @param absTol
-   *   the absolute tolerance between actual and expected answers.
-   */
-  protected def checkAggregatesWithTol(actualAnswer: Row, expectedAnswer: Row, absTol: Double) = {
-    require(
-      actualAnswer.length == expectedAnswer.length,
-      s"actual answer length ${actualAnswer.length} != " +
-        s"expected answer length ${expectedAnswer.length}")
-
-    // TODO: support other numeric types besides Double
-    // TODO: support struct types?
-    actualAnswer.toSeq.zip(expectedAnswer.toSeq).foreach {
-      case (actual: Double, expected: Double) =>
-        assert(
-          math.abs(actual - expected) < absTol,
-          s"actual answer $actual not within $absTol of correct answer $expected")
-      case (actual, expected) =>
-        assert(actual == expected, s"$actual did not equal $expected")
-    }
   }
 
   def checkAnswer(df: DataFrame, expectedAnswer: java.util.List[Row]): Unit = {
