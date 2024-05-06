@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.utils
 
 import java.util.{Locale, TimeZone}
 
@@ -26,9 +26,10 @@ import org.scalatest.Tag
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.config.Tests.IS_TESTING
-import org.apache.spark.sql.RapidsTestConstants.RAPIDS_TEST
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.rapids.utils.RapidsTestConstants.RAPIDS_TEST
 import org.apache.spark.sql.test.SharedSparkSession
 
 

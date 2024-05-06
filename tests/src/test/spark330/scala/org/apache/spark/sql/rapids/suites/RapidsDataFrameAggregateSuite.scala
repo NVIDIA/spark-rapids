@@ -19,7 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.{DataFrameAggregateSuite, RapidsSQLTestsTrait}
+import org.apache.spark.sql.DataFrameAggregateSuite
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsDataFrameAggregateSuite extends DataFrameAggregateSuite with RapidsSQLTestsTrait {
   // example to show how to replace the logic of an excluded test case in Vanilla Spark

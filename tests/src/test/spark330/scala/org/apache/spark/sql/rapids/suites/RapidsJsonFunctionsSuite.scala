@@ -19,6 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.{JsonFunctionsSuite, RapidsSQLTestsTrait}
+import org.apache.spark.sql.JsonFunctionsSuite
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsJsonFunctionsSuite extends JsonFunctionsSuite with RapidsSQLTestsTrait {}

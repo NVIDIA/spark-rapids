@@ -19,8 +19,9 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.{RapidsSQLTestsTrait, StringFunctionsSuite}
+import org.apache.spark.sql.StringFunctionsSuite
 import org.apache.spark.sql.catalyst.expressions.ExpressionEvalHelper
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsStringFunctionsSuite
   extends StringFunctionsSuite

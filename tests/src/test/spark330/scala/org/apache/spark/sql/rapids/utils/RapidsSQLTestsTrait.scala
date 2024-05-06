@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.utils
 
 import java.io.File
 import java.util.TimeZone
@@ -28,6 +28,7 @@ import org.apache.commons.io.{FileUtils => fu}
 import org.apache.commons.math3.util.Precision
 import org.scalatest.Assertions
 
+import org.apache.spark.sql.{AnalysisException, DataFrame, QueryTest, Row}
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.util.{sideBySide, stackTraceToString}
 import org.apache.spark.sql.execution.SQLExecution

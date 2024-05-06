@@ -20,11 +20,12 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{sources, RapidsSQLTestsBaseTrait}
 import org.apache.spark.sql.execution.datasources.{InMemoryFileIndex, NoopCache}
 import org.apache.spark.sql.execution.datasources.json.JsonSuite
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScanBuilder
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
+import org.apache.spark.sql.sources
 import org.apache.spark.sql.types.{IntegerType, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 

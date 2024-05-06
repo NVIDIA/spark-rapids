@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.utils
 
 import com.nvidia.spark.rapids.TestStats
 import org.scalactic.source.Position
@@ -25,8 +25,8 @@ import org.scalatest.{Args, Status, Tag}
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.internal.config.Tests.IS_TESTING
-import org.apache.spark.sql.RapidsTestConstants.RAPIDS_TEST
 import org.apache.spark.sql.catalyst.expressions.ExpressionEvalHelper
+import org.apache.spark.sql.rapids.utils.RapidsTestConstants.RAPIDS_TEST
 
 trait RapidsTestsCommonTrait
   extends SparkFunSuite

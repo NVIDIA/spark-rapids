@@ -26,7 +26,7 @@ import scala.reflect.ClassTag
 
 import com.nvidia.spark.rapids.TestStats
 
-import org.apache.spark.sql.RapidsTestConstants.RAPIDS_TEST
+import org.apache.spark.sql.rapids.utils.RapidsTestConstants.RAPIDS_TEST
 
 abstract class BackendTestSettings {
 
@@ -200,7 +200,7 @@ abstract class BackendTestSettings {
 object BackendTestSettings {
   val instance: BackendTestSettings = {
     Class
-      .forName("org.apache.spark.sql.RapidsTestSettings")
+      .forName("org.apache.spark.sql.rapids.utils.RapidsTestSettings")
       .getDeclaredConstructor()
       .newInstance()
       .asInstanceOf[BackendTestSettings]

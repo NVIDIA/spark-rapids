@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.RapidsTestsTrait
 import org.apache.spark.sql.catalyst.expressions.RegexpExpressionsSuite
+import org.apache.spark.sql.rapids.utils.RapidsTestsTrait
 
 class RapidsRegexpExpressionsSuite extends RegexpExpressionsSuite with RapidsTestsTrait {}

@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.utils
 
 import org.apache.spark.sql.types._
 

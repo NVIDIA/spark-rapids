@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.utils
 
 import java.io.File
 
@@ -30,7 +30,7 @@ import org.scalactic.TripleEqualsSupport.Spread
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.RapidsQueryTestUtil.isNaNOrInf
+import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.analysis.ResolveTimeZone
 import org.apache.spark.sql.catalyst.expressions._
@@ -38,6 +38,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjectio
 import org.apache.spark.sql.catalyst.optimizer.{ConstantFolding, ConvertToLocalRelation, NullPropagation}
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, MapData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.utils.RapidsQueryTestUtil.isNaNOrInf
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
