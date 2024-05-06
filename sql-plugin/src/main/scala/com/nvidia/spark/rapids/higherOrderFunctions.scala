@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -339,9 +339,9 @@ case class GpuArrayExists(
   }
 
   private def imputeFalseForEmptyArrays(
-                                         transformedCV: cudf.ColumnView,
-                                         result: cudf.ColumnView
-                                       ): GpuColumnVector = {
+    transformedCV: cudf.ColumnView,
+    result: cudf.ColumnView
+  ): GpuColumnVector = {
 
     val isEmptyList = withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
       withResource(transformedCV.countElements()) {
@@ -405,9 +405,9 @@ case class GpuArrayExists(
   }
 
   override protected def transformListColumnView(
-                                                  lambdaTransformedCV: cudf.ColumnView,
-                                                  arg: cudf.ColumnView
-                                                ): GpuColumnVector = {
+    lambdaTransformedCV: cudf.ColumnView,
+    arg: cudf.ColumnView
+  ): GpuColumnVector = {
     withResource(exists(lambdaTransformedCV)) { existsCV =>
       // exists is false for empty arrays
       // post process empty arrays until cudf allows specifying
