@@ -1054,81 +1054,29 @@ object GpuRegExpUtils {
 
 }
 
-sealed trait RegexprPart
-object RegexprPart {
-  case object Start extends RegexprPart // ^
-  case object End extends RegexprPart   // $
-  case object Wildcard extends RegexprPart  // .* or (.*)
-  case class Fixstring(name: String) extends RegexprPart // normal string without special characters
-  case class Regexpr(value: String) extends RegexprPart  // other strings
-}
-
 class GpuRLikeMeta(
     expr: RLike,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
-    import RegexprPart._
     
     private var originalPattern: String = ""
     private var pattern: Option[String] = None
 
-    val specialChars = Seq('^', '$', '.', '|', '*', '?', '+', '[', ']', '{', '}', '\\' ,'(', ')')
-
-    def isSimplePattern(pat: String): Boolean = {
-      pat.size > 0 && pat.forall(c => !specialChars.contains(c))
-    }
-
-    def parseRegexToParts(pat: String): List[RegexprPart] = {
-      pat match {
-        case "" => 
-          List()
-        case s if s.startsWith("^") => 
-          Start :: parseRegexToParts(s.substring(1))
-        case s if s.endsWith("$") => 
-          parseRegexToParts(s.substring(0, s.length - 1)) :+ End
-        case s if s.startsWith(".*") => 
-          Wildcard :: parseRegexToParts(s.substring(2))
-        case s if s.endsWith(".*") => 
-          parseRegexToParts(s.substring(0, s.length - 2)) :+ Wildcard
-        case s if s.startsWith("(.*)") => 
-          Wildcard :: parseRegexToParts(s.substring(4))
-        case s if s.endsWith("(.*)") => 
-          parseRegexToParts(s.substring(0, s.length - 4)) :+ Wildcard
-        case s if s.startsWith("(") && s.endsWith(")") => 
-          parseRegexToParts(s.substring(1, s.length - 1))
-        case s if isSimplePattern(s) => 
-          Fixstring(s) :: List()
-        case s => 
-          Regexpr(s) :: List()
-      }
-    }
-
-    def optimizeSimplePattern(rhs: Expression, lhs: Expression, parts: List[RegexprPart]): 
-        GpuExpression = {
-      parts match {
-        case Wildcard :: rest => {
-          optimizeSimplePattern(rhs, lhs, rest)
-        }
-        case Start :: Wildcard :: List(End) => {
-          GpuEqualTo(lhs, rhs)
-        }
-        case Start :: Fixstring(s) :: rest 
-            if rest.forall(_ == Wildcard) || rest == List() => {
-          GpuStartsWith(lhs, GpuLiteral(s, StringType))
-        }
-        case Fixstring(s) :: List(End) => {
-          GpuEndsWith(lhs, GpuLiteral(s, StringType))
-        }
-        case Fixstring(s) :: rest
-            if rest == List() || rest.forall(_ == Wildcard) => {
-          GpuContains(lhs, GpuLiteral(s, StringType))
-        } 
-        case _ => {
+    def optimizeSimplePattern(lhs: Expression, rhs: Expression): GpuExpression = {
+      import RegexOptimizationType._
+      val originalAst = new RegexParser(originalPattern).parse()
+      RegexRewriteUtils.matchSimplePattern(originalAst) match {
+        case Equals(s) => GpuEqualTo(lhs, GpuLiteral(s, StringType))
+        case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
+        case EndsWith(s) => GpuEndsWith(lhs, GpuLiteral(s, StringType))
+        case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case NoOptimization => {
           val patternStr = pattern.getOrElse(throw new IllegalStateException(
             "Expression has not been tagged with cuDF regex pattern"))
           GpuRLike(lhs, rhs, patternStr)
         }
+        case _ => throw new IllegalStateException("Unexpected optimization type")
       }
     }
 
@@ -1156,8 +1104,7 @@ class GpuRLikeMeta(
       if (conf.isRlikeRegexRewriteEnabled) {
         // if the pattern can be converted to a startswith or endswith pattern, we can use
         // GpuStartsWith, GpuEndsWith or GpuContains instead to get better performance
-        val parts = parseRegexToParts(originalPattern)
-        optimizeSimplePattern(rhs, lhs, parts)
+        optimizeSimplePattern(lhs, rhs)
       } else {
         val patternStr = pattern.getOrElse(throw new IllegalStateException(
             "Expression has not been tagged with cuDF regex pattern"))
