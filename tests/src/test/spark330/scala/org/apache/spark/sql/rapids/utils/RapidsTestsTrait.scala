@@ -38,6 +38,7 @@ import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, MapData,
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsQueryTestUtil.isNaNOrInf
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 trait RapidsTestsTrait extends RapidsTestsCommonTrait {
 
@@ -294,6 +295,37 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
 
   def convertInternalRowToDataFrame(inputRow: InternalRow): DataFrame = {
     val structFileSeq = new ArrayBuffer[StructField]()
+    val values = inputRow match {
+      case genericInternalRow: GenericInternalRow =>
+        genericInternalRow.values
+      case _ => throw new UnsupportedOperationException("Unsupported InternalRow.")
+    }
+    values.map {
+      case boolean: java.lang.Boolean =>
+        structFileSeq.append(StructField("bool", BooleanType, boolean == null))
+      case short: java.lang.Short =>
+        structFileSeq.append(StructField("i16", ShortType, short == null))
+      case byte: java.lang.Byte =>
+        structFileSeq.append(StructField("i8", ByteType, byte == null))
+      case integer: java.lang.Integer =>
+        structFileSeq.append(StructField("i32", IntegerType, integer == null))
+      case long: java.lang.Long =>
+        structFileSeq.append(StructField("i64", LongType, long == null))
+      case float: java.lang.Float =>
+        structFileSeq.append(StructField("fp32", FloatType, float == null))
+      case double: java.lang.Double =>
+        structFileSeq.append(StructField("fp64", DoubleType, double == null))
+      case utf8String: UTF8String =>
+        structFileSeq.append(StructField("str", StringType, utf8String == null))
+      case byteArr: Array[Byte] =>
+        structFileSeq.append(StructField("vbin", BinaryType, byteArr == null))
+      case decimal: Decimal =>
+        structFileSeq.append(
+          StructField("dec", DecimalType(decimal.precision, decimal.scale), decimal == null))
+      case _ =>
+        // for null
+        structFileSeq.append(StructField("n", IntegerType, nullable = true))
+    }
     val fields = structFileSeq.toSeq
     _spark.internalCreateDataFrame(
       _spark.sparkContext.parallelize(Seq(inputRow)),
