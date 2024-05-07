@@ -27,17 +27,7 @@ trait RapidsTestsBaseTrait {
   protected val warehouse: String = basePath + "/spark-warehouse"
   protected val metaStorePathAbsolute: String = basePath + "/meta"
 
-  // The blacklist is taken in highest priority. Tests on the
-  // list will never be run with no regard to backend test settings.
-  def testNameBlackList: Seq[String] = Seq()
-
   def shouldRun(testName: String): Boolean = {
-    if (testNameBlackList.exists(_.equalsIgnoreCase(RapidsTestConstants.IGNORE_ALL))) {
-      return false
-    }
-    if (testNameBlackList.contains(testName)) {
-      return false
-    }
     BackendTestSettings.shouldRun(getClass.getCanonicalName, testName)
   }
 }

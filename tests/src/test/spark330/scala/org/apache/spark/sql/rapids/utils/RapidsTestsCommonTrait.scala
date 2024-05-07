@@ -46,11 +46,11 @@ trait RapidsTestsCommonTrait
     val status = super.runTest(testName, args)
     if (TestStats.offloadRapids) {
       TestStats.offloadRapidsTestNumber += 1
-      print("'" + testName + "'" + " offload to rapids\n")
+      print("'" + testName + "'" + " offload to RAPIDS\n")
     } else {
       // you can find the keyword 'Validation failed for' in function doValidate() in log
       // to get the fallback reason
-      print("'" + testName + "'" + " NOT use rapids\n")
+      print("'" + testName + "'" + " NOT use RAPIDS\n")
       TestStats.addFallBackCase()
     }
 

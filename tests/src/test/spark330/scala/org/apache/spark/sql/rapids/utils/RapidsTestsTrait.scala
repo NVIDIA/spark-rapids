@@ -21,8 +21,6 @@ package org.apache.spark.sql.rapids.utils
 
 import java.io.File
 
-import scala.annotation.nowarn
-
 import com.nvidia.spark.rapids.{GpuProjectExec, TestStats}
 import org.apache.commons.io.{FileUtils => fu}
 import org.apache.commons.math3.util.Precision
@@ -40,7 +38,6 @@ import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, MapData,
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsQueryTestUtil.isNaNOrInf
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.UTF8String
 
 trait RapidsTestsTrait extends RapidsTestsCommonTrait {
 
@@ -94,9 +91,7 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
           SQLConf.OPTIMIZER_EXCLUDED_RULES.key,
           ConvertToLocalRelation.ruleName +
             "," + ConstantFolding.ruleName + "," + NullPropagation.ruleName)
-        //      .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "true")
-        //      .config("spark.rapids.sql.test.enabled", "false")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
@@ -276,8 +271,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
 
   def shouldNotFallback(): Unit = {
     TestStats.offloadRapids = false
-
-    // TODO
   }
 
   def canConvertToDataFrame(inputRow: InternalRow): Boolean = {
@@ -301,38 +294,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
 
   def convertInternalRowToDataFrame(inputRow: InternalRow): DataFrame = {
     val structFileSeq = new ArrayBuffer[StructField]()
-    val values = inputRow match {
-      case genericInternalRow: GenericInternalRow =>
-        genericInternalRow.values
-      case _ => throw new UnsupportedOperationException("Unsupported InternalRow.")
-    }
-    @nowarn
-    val inputValues = values.map {
-      case boolean: java.lang.Boolean =>
-        structFileSeq.append(StructField("bool", BooleanType, boolean == null))
-      case short: java.lang.Short =>
-        structFileSeq.append(StructField("i16", ShortType, short == null))
-      case byte: java.lang.Byte =>
-        structFileSeq.append(StructField("i8", ByteType, byte == null))
-      case integer: java.lang.Integer =>
-        structFileSeq.append(StructField("i32", IntegerType, integer == null))
-      case long: java.lang.Long =>
-        structFileSeq.append(StructField("i64", LongType, long == null))
-      case float: java.lang.Float =>
-        structFileSeq.append(StructField("fp32", FloatType, float == null))
-      case double: java.lang.Double =>
-        structFileSeq.append(StructField("fp64", DoubleType, double == null))
-      case utf8String: UTF8String =>
-        structFileSeq.append(StructField("str", StringType, utf8String == null))
-      case byteArr: Array[Byte] =>
-        structFileSeq.append(StructField("vbin", BinaryType, byteArr == null))
-      case decimal: Decimal =>
-        structFileSeq.append(
-          StructField("dec", DecimalType(decimal.precision, decimal.scale), decimal == null))
-      case _ =>
-        // for null
-        structFileSeq.append(StructField("n", IntegerType, nullable = true))
-    }
     val fields = structFileSeq.toSeq
     _spark.internalCreateDataFrame(
       _spark.sparkContext.parallelize(Seq(inputRow)),

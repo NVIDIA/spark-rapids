@@ -77,11 +77,5 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("length for string / binary", UNKNOWN_ISSUE())
     .exclude("ParseUrl", UNKNOWN_ISSUE())
   enableSuite[RapidsStringFunctionsSuite]
-
-   override def getSQLQueryTestSettings: SQLQueryTestSettings = new SQLQueryTestSettings {
-    override def getSupportedSQLQueryTests: Set[String] = Set()
-
-    override def getOverwriteSQLQueryTests: Set[String] = Set()
-  }
 }
 // scalastyle:on line.size.limit

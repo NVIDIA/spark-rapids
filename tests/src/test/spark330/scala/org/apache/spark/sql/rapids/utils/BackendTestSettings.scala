@@ -190,8 +190,6 @@ abstract class BackendTestSettings {
       false
     }
   }
-
-  def getSQLQueryTestSettings: SQLQueryTestSettings
 }
 
 object BackendTestSettings {

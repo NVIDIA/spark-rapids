@@ -28,7 +28,3 @@ class RapidsDataFrameAggregateSuite extends DataFrameAggregateSuite with RapidsS
     // println("...")
   }
 }
-
-
-
-
