@@ -168,7 +168,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
 
   override def toString: String = s"gpustartswith($left, $right)"
 
-  def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = 
+  def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
     lhs.getBase.startsWith(rhs.getBase)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -1059,7 +1059,7 @@ class GpuRLikeMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
-    
+
     private var originalPattern: String = ""
     private var pattern: Option[String] = None
 
