@@ -2036,12 +2036,10 @@ object RegexRewriteUtils {
     }
   }
 
-  private def stripLeadingWildcards(astLs: List[RegexAST]): List[RegexAST] = {
-    if (astLs.headOption == Some(RegexChar('^'))) {
+  private def stripLeadingWildcards(astLs: List[RegexAST]): List[RegexAST] = astLs match {
+    case RegexChar('^') :: _  =>
       astLs.drop(1).dropWhile(isWildcard)
-    } else {
-      astLs.dropWhile(isWildcard)
-    }
+    case _ => astLs.dropWhile(isWildcard)
   }
 
   private def stripTailingWildcards(astLs: List[RegexAST]): List[RegexAST] = {
@@ -2085,9 +2083,9 @@ object RegexRewriteUtils {
           // (pattern)$ => endsWith pattern
           RegexOptimizationType.EndsWith(RegexCharsToString(parts.toList))
         }
-        case ast if ast.lastOption == Some(RegexChar('$')) && isSimplePattern(ast.init) => {
+        case astInit :+ RegexChar('$') if isSimplePattern(astInit) => {
           // pattern$ => endsWith pattern
-          RegexOptimizationType.EndsWith(RegexCharsToString(ast.init))
+          RegexOptimizationType.EndsWith(RegexCharsToString(astInit))
         }
         case RegexGroup(_, RegexSequence(parts), None) :: rest
             if isSimplePattern(parts.toList) && (rest.forall(isWildcard)) => {
