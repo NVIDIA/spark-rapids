@@ -28,34 +28,19 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
     assert(results == excepted)
   }
 
-  test("regex rewrite equals") {
-    import RegexOptimizationType._
-    val patterns = Seq("^abc\\Z", "^(abc)\\Z", "^火花急流\\Z", "^abc\n^def\\Z")
-    val excepted = Seq(Equals("abc"), Equals("abc"), Equals("火花急流"), NoOptimization)
-    verifyRewritePattern(patterns, excepted)
-  }
-
   test("regex rewrite startsWith") {
     import RegexOptimizationType._
-    val patterns = Seq("^abc.*", "^(abc).*\\Z", "^(abc).*def", "^(abc).*(.*).*", "^abc.*(.*).*\\Z")
+    val patterns = Seq("^abc.*", "\\A(abc).*", "^(abc).*def", "\\Aabc.*(.*).*", "^abc.*(.*).*", "^(abc)\\Z)")
     val excepted = Seq(StartsWith("abc"), StartsWith("abc"), NoOptimization, StartsWith("abc"), 
-        StartsWith("abc"))
-    verifyRewritePattern(patterns, excepted)
-  }
-
-  test("regex rewrite endsWith") {
-    import RegexOptimizationType._
-    val patterns = Seq(".*abc\\Z", ".*(abc)\\Z", "(.*).*abc\\Z", "^.*(.*)abc\\Z", ".*a\nbc\\Z")
-    val excepted = Seq(EndsWith("abc"), EndsWith("abc"), EndsWith("abc"), EndsWith("abc"), 
-        EndsWith("a\nbc"))
+        StartsWith("abc"), NoOptimization)
     verifyRewritePattern(patterns, excepted)
   }
 
   test("regex rewrite contains") {
     import RegexOptimizationType._
-    val patterns = Seq(".*abc.*", ".*(abc).*\\Z", "^.*(abc).*\\Z", "^.*(.*)(abc).*.*\\Z", 
+    val patterns = Seq(".*abc.*", ".*(abc).*", "^.*(abc).*$", "^.*(.*)(abc).*.*", 
         ".*\\w.*\\Z", ".*..*\\Z")
-    val excepted = Seq(Contains("abc"), Contains("abc"), Contains("abc"), Contains("abc"), 
+    val excepted = Seq(Contains("abc"), Contains("abc"), NoOptimization, Contains("abc"), 
         NoOptimization, NoOptimization)
     verifyRewritePattern(patterns, excepted)
   }

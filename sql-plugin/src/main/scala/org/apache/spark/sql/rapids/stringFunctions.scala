@@ -1067,9 +1067,7 @@ class GpuRLikeMeta(
       import RegexOptimizationType._
       val originalAst = new RegexParser(originalPattern).parse()
       RegexRewriteUtils.matchSimplePattern(originalAst) match {
-        case Equals(s) => GpuEqualTo(lhs, GpuLiteral(s, StringType))
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
-        case EndsWith(s) => GpuEndsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
         case NoOptimization => {
           val patternStr = pattern.getOrElse(throw new IllegalStateException(

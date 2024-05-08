@@ -446,7 +446,7 @@ def test_regexp_like():
 
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
 def test_regexp_rlike_rewrite_optimization():
-    gen = mk_str_gen('[ab\n\r]{3,7}abb')
+    gen = mk_str_gen('[ab\n]{3,6}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a',
@@ -455,15 +455,15 @@ def test_regexp_rlike_rewrite_optimization():
                 'regexp_like(a, "(.*)(abb)(.*)")',
                 'regexp_like(a, "^(abb)(.*)")',
                 'regexp_like(a, "^abb")',
-                'regexp_like(a, "(abb)\\\\Z")',
-                'regexp_like(a, ".*abb\\\\Z")',
+                'regexp_like(a, "\\\\A(abb)(.*)")',
+                'regexp_like(a, "\\\\Aabb")',
                 'regexp_like(a, "^(abb)\\\\Z")',
-                'regexp_like(a, "^abb\\\\Z")',
+                'regexp_like(a, "^abb$")',
                 'regexp_like(a, "ab(.*)cd")',
                 'regexp_like(a, "^^abb")',
                 'regexp_like(a, "(.*)(.*)abb")',
                 'regexp_like(a, "(.*).*abb.*(.*).*")',
-                'regexp_like(a, ".*^abb\\\\Z")'),
+                'regexp_like(a, ".*^abb$")'),
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():

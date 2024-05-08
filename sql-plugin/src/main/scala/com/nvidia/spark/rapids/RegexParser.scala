@@ -2011,9 +2011,7 @@ class RegexUnsupportedException(message: String, index: Option[Int])
 
 sealed trait RegexOptimizationType
 object RegexOptimizationType {
-  case class Equals(pattern: String) extends RegexOptimizationType
   case class StartsWith(pattern: String) extends RegexOptimizationType
-  case class EndsWith(pattern: String) extends RegexOptimizationType
   case class Contains(pattern: String) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
@@ -2037,21 +2035,17 @@ object RegexRewriteUtils {
   }
 
   private def stripLeadingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = astLs match {
-    case RegexChar('^') :: _  =>
+    case (RegexChar('^') | RegexEscaped('A')) :: _  =>
       astLs.drop(1).dropWhile(isWildcard)
     case _ => astLs.dropWhile(isWildcard)
   }
 
-  private def isTailingWildcards(astLs: Seq[RegexAST]): Boolean = astLs match {
-    case _ :+ RegexEscaped('Z') =>
-      astLs.reverse.drop(1).forall(isWildcard)
-    case _ => astLs.reverse.forall(isWildcard)
+  private def isTailingWildcards(astLs: Seq[RegexAST]): Boolean = {
+    astLs.reverse.forall(isWildcard)
   }
 
-  private def stripTailingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = astLs match {
-    case _ :+ RegexEscaped('Z') =>
-      astLs.reverse.drop(1).dropWhile(isWildcard).reverse
-    case _ => astLs.reverse.dropWhile(isWildcard).reverse
+  private def stripTailingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = {
+    astLs.reverse.dropWhile(isWildcard).reverse
   }
 
   private def RegexCharsToString(chars: Seq[RegexAST]): String = {
@@ -2063,34 +2057,17 @@ object RegexRewriteUtils {
 
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
     ast.children().toList match {
-      case RegexChar('^') :: RegexGroup(_, RegexSequence(parts), None) :: List(RegexEscaped('Z')) 
-          if isSimplePattern(parts.toList) => {
-        // ^(pattern)$ => Equals pattern
-        RegexOptimizationType.Equals(RegexCharsToString(parts.toList))
-      }
-      case RegexChar('^') +: patternChars :+ RegexEscaped('Z') if isSimplePattern(patternChars) => {
-        // ^pattern$ => Equals pattern
-        RegexOptimizationType.Equals(RegexCharsToString(patternChars))
-      }
-      case RegexChar('^') :: RegexGroup(_, RegexSequence(parts), None) :: rest
+      case (RegexChar('^') | RegexEscaped('A')) :: RegexGroup(_, RegexSequence(parts), None) :: rest
           if isSimplePattern(parts.toList) && isTailingWildcards(rest) => {
         // ^(pattern).* => startsWith pattern
         RegexOptimizationType.StartsWith(RegexCharsToString(parts.toList))
       }
-      case RegexChar('^') :: ast if isSimplePattern(stripTailingWildcards(ast)) => {
-          // ^pattern.* => startsWith pattern
+      case (RegexChar('^') | RegexEscaped('A')) :: ast 
+          if isSimplePattern(stripTailingWildcards(ast)) => {
+        // ^pattern.* => startsWith pattern
         RegexOptimizationType.StartsWith(RegexCharsToString(stripTailingWildcards(ast)))
       }
       case noStartsWithAst => stripLeadingWildcards(noStartsWithAst) match {
-        case RegexGroup(_, RegexSequence(parts), None) :: List(RegexEscaped('Z'))
-            if isSimplePattern(parts.toList) => {
-          // (pattern)$ => endsWith pattern
-          RegexOptimizationType.EndsWith(RegexCharsToString(parts.toList))
-        }
-        case astInit :+ RegexEscaped('Z') if isSimplePattern(astInit) => {
-          // pattern$ => endsWith pattern
-          RegexOptimizationType.EndsWith(RegexCharsToString(astInit))
-        }
         case RegexGroup(_, RegexSequence(parts), None) :: rest
             if isSimplePattern(parts.toList) && isTailingWildcards(rest) => {
           // (pattern).* => contains pattern
