@@ -79,7 +79,7 @@ abstract class BackendTestSettings {
   }
 
   sealed trait ExcludeReason
-  case class UNKNOWN_ISSUE() extends ExcludeReason
+  case object UNKNOWN_ISSUE extends ExcludeReason
   case class KNOWN_ISSUE(issueLink: String) extends ExcludeReason
   case class WONT_FIX_ISSUE(issueLink: String) extends ExcludeReason
 

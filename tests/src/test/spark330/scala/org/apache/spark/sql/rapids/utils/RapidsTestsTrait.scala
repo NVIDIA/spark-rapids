@@ -300,7 +300,7 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         genericInternalRow.values
       case _ => throw new UnsupportedOperationException("Unsupported InternalRow.")
     }
-    values.map {
+    values.foreach {
       case boolean: java.lang.Boolean =>
         structFileSeq.append(StructField("bool", BooleanType, boolean == null))
       case short: java.lang.Short =>
@@ -322,9 +322,10 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       case decimal: Decimal =>
         structFileSeq.append(
           StructField("dec", DecimalType(decimal.precision, decimal.scale), decimal == null))
-      case _ =>
-        // for null
-        structFileSeq.append(StructField("n", IntegerType, nullable = true))
+      case null =>
+        structFileSeq.append(StructField("null", IntegerType, nullable = true))
+      case unsupported @ _ =>
+        throw new UnsupportedOperationException(s"Unsupported type: ${unsupported.getClass}")
     }
     val fields = structFileSeq.toSeq
     _spark.internalCreateDataFrame(
