@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long,
   override protected def compress(
       tables: Array[ContiguousTable],
       stream: Cuda.Stream): Array[CompressedTable] = {
-    val batchCompressor = new BatchedLZ4Compressor(codecConfigs.lz4ChunkSize,
+    val batchCompressor = new BatchedLZ4Compressor(codecConfigs.chunkSize,
       maxBatchMemorySize)
     val inputBuffers: Array[BaseDeviceMemoryBuffer] = tables.map { table =>
       val buffer = table.getBuffer
@@ -89,7 +89,7 @@ class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long,
           s"buffers (${bufferMetas.length}")
     val outputBuffers = allocateOutputBuffers(inputBuffers, bufferMetas)
     BatchedLZ4Decompressor.decompressAsync(
-      codecConfigs.lz4ChunkSize,
+      codecConfigs.chunkSize,
       inputBuffers,
       outputBuffers.asInstanceOf[Array[BaseDeviceMemoryBuffer]],
       stream)

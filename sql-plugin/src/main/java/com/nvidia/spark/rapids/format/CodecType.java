@@ -17,7 +17,9 @@ public final class CodecType {
    */
   public static final byte NVCOMP_LZ4 = 1;
 
-  public static final String[] names = { "COPY", "UNCOMPRESSED", "NVCOMP_LZ4", };
+  public static final byte NVCOMP_ZSTD = 2;
+
+  public static final String[] names = { "COPY", "UNCOMPRESSED", "NVCOMP_LZ4", "NVCOMP_ZSTD"};
 
   public static String name(int e) { return names[e - COPY]; }
 }
