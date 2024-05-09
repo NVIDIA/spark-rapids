@@ -49,11 +49,11 @@ import org.apache.spark.util.MutableURLClassLoader
     Each shim can see a consistent parallel world without conflicts by referencing
     only one conflicting directory.
     E.g., Spark 3.2.0 Shim will use
-    jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.04.1.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.04.1.jar!/spark320/
     Spark 3.1.1 will use
-    jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.04.1.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.04.1.jar!/spark311/
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
