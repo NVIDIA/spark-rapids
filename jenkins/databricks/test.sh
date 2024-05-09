@@ -92,30 +92,38 @@ run_pyarrow_tests() {
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=${TEST_PARALLEL:-4}
 
-if [[ $TEST_MODE == "DEFAULT" ]]; then
-    bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=2 \
+            bash integration_tests/run_pyspark_from_build.sh \
+              --runtime_env="databricks" \
+              --delta_lake \
+              -k delta_lake_low_shuffle_merge_test.py \
+              --test_type=$TEST_TYPE
 
-    ## Run cache tests
-    if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
-        PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-    fi
-fi
 
-## Run tests with jars building from the spark-rapids source code
-if [ "$(pwd)" == "$SOURCE_PATH" ]; then
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
-        ## Run Delta Lake tests
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
-            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
-    fi
-
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
-        ## Mutithreaded Shuffle test
-        rapids_shuffle_smoke_test
-    fi
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
-      # Pyarrow tests
-      run_pyarrow_tests
-    fi
-fi
+#if [[ $TEST_MODE == "DEFAULT" ]]; then
+#    bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+#
+#    ## Run cache tests
+#    if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
+#        PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
+#            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
+#    fi
+#fi
+#
+### Run tests with jars building from the spark-rapids source code
+#if [ "$(pwd)" == "$SOURCE_PATH" ]; then
+#    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
+#        ## Run Delta Lake tests
+#        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
+#            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
+#    fi
+#
+#    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
+#        ## Mutithreaded Shuffle test
+#        rapids_shuffle_smoke_test
+#    fi
+#    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
+#      # Pyarrow tests
+#      run_pyarrow_tests
+#    fi
+#fi

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * This file was derived from DeltaSQLConf.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -67,13 +67,6 @@ trait RapidsDeltaSQLConf {
       .doc("Maximum amount of data for auto compaction.")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefaultString("20GB")
-
-  val ENABLE_LOW_SHUFFLE_MERGE =
-    DeltaSQLConf.buildConf("enableLowShuffleMerge")
-      .internal()
-      .doc("Enable low shuffle merge for Delta Lake.")
-      .booleanConf
-      .createWithDefault(false)
 }
 
 object RapidsDeltaSQLConf extends RapidsDeltaSQLConf

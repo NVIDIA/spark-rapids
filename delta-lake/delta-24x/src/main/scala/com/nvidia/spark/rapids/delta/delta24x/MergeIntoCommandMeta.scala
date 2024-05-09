@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.commands.MergeIntoCommand
 import org.apache.spark.sql.delta.rapids.GpuDeltaLog
-import org.apache.spark.sql.delta.rapids.delta24x.GpuMergeIntoCommand
+import org.apache.spark.sql.delta.rapids.delta24x.{GpuLowShuffleMergeCommand, GpuMergeIntoCommand}
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class MergeIntoCommandMeta(
@@ -48,14 +48,26 @@ class MergeIntoCommandMeta(
   }
 
   override def convertToGpu(): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.notMatchedBySourceClauses,
-      mergeCmd.migratedSchema)(conf)
+    if (conf.isDeltaLowShuffleMergeEnabled) {
+      GpuLowShuffleMergeCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    } else {
+      GpuMergeIntoCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    }
   }
 }

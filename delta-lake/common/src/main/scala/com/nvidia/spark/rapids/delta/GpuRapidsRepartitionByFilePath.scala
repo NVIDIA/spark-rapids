@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,26 @@ case class RapidsRepartitionByFilePath(optNumPartition: Option[Int],
     copy(child = newChild)
 }
 
+/**
+ * This class is used to repartition the input data based on the file path when doing low shuffle
+ * merge.
+ *
+ * In low shuffle merge, when saving unmodified target table data, we need to do an anti-join
+ * from the touched target files to modified row ids to get the untouched target data like
+ * following condition
+ *    t.__metadata_file_path=m.__metadata_file_path AND (t.__metadata_row_id-m.__metadata_row_id=0)
+ *
+ * The query optimizer will generate a
+ * [[org.apache.spark.sql.execution.joins.ShuffledHashJoinExec]] with forcing children from both
+ * sides to meet satisfying [[HashPartitioning]](numPartition, `__metadata_file_path`). This usually
+ * requires a [[org.apache.spark.sql.execution.exchange.ShuffleExchangeExec]] to shuffle
+ * the data based on the file path. The scan of touched target table files already meets one file
+ * per partition, so we can avoid the shuffle by a special kind of coalescing that repartition the
+ * data based on the file path.
+ * @param optNumPartition Number of partitions to repartition the data, if not set, use the
+ *                        numShufflePartitions in spark conf.
+ * @param child Input table scan with `__metadata_file_path` column.
+ */
 case class RapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
     child: SparkPlan) extends UnaryExecNode {
 

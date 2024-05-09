@@ -19,21 +19,13 @@
  * limitations under the License.
  */
 
-package com.databricks.sql.transaction.tahoe.rapids
+package org.apache.spark.sql.delta.rapids.delta24x
 
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.databricks.sql.transaction.tahoe._
-import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
-import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
-import com.databricks.sql.transaction.tahoe.commands.DeltaCommand
-import com.databricks.sql.transaction.tahoe.rapids.GpuLowShuffleMergeCommand.{InsertOnlyMergeExecutor, LowShuffleMergeExecutor}
-import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.databricks.sql.transaction.tahoe.util.{AnalysisHelper, SetAccumulator}
 import com.nvidia.spark.rapids.{BaseExprMeta, GpuOverrides, RapidsConf}
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.RapidsRepartitionByFilePath.{FILE_PATH_FIELD, ROW_ID_FIELD}
@@ -49,6 +41,15 @@ import org.apache.spark.sql.catalyst.expressions.Literal.TrueLiteral
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
 import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeAction, DeltaMergeIntoClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoMatchedDeleteClause, DeltaMergeIntoMatchedUpdateClause, DeltaMergeIntoNotMatchedBySourceClause, DeltaMergeIntoNotMatchedBySourceDeleteClause, DeltaMergeIntoNotMatchedBySourceUpdateClause, DeltaMergeIntoNotMatchedClause, DeltaMergeIntoNotMatchedInsertClause, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.delta.{DeltaErrors, DeltaLog, DeltaOperations, DeltaTableUtils, NoMapping, OptimisticTransaction}
+import org.apache.spark.sql.delta.DeltaOperations.MergePredicate
+import org.apache.spark.sql.delta.actions.{AddCDCFile, AddFile, FileAction}
+import org.apache.spark.sql.delta.commands.DeltaCommand
+import org.apache.spark.sql.delta.rapids.GpuDeltaLog
+import org.apache.spark.sql.delta.rapids.delta24x.GpuLowShuffleMergeCommand.{InsertOnlyMergeExecutor, LowShuffleMergeExecutor}
+import org.apache.spark.sql.delta.schema.ImplicitMetadataOperation
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
+import org.apache.spark.sql.delta.util.{AnalysisHelper, SetAccumulator}
 import org.apache.spark.sql.execution.{ExtendedMode, SQLExecution}
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
@@ -231,7 +232,11 @@ case class GpuLowShuffleMergeCommand(
 
         // Record metrics
         val stats = GpuMergeStats.fromMergeSQLMetrics(
-          metrics, condition, matchedClauses, notMatchedClauses,
+          metrics,
+          condition,
+          matchedClauses,
+          notMatchedClauses,
+          notMatchedBySourceClauses,
           deltaTxn.metadata.partitionColumns.nonEmpty)
         recordDeltaEvent(targetDeltaLog, "delta.dml.merge.stats", data = stats)
 
@@ -587,6 +592,18 @@ object GpuLowShuffleMergeCommand {
   /**
    * This is an optimized algorithm for merge statement, where we avoid shuffling the unmodified
    * target data.
+   *
+   * The algorithm is as follows:
+   * 1. Find touched target files in the target table by joining the source and target data.
+   * 2. Read the touched files again and write new files with updated and/or inserted rows
+   * without coping unmodified data from target table.
+   * 3. Calculating unmodified data by reading the touched files again and do anti join against
+   * output of [[JoinedRowProcessor]] using `__metadata_file_path` and `row_id`. Here we avoid
+   * shuffle of target files with too methods:
+   *  a. Pushing down a flag to [[org.apache.spark.sql.execution.FileSourceScanExec]] to enforce
+   *  one file per partition.
+   *  b. Adding [[RapidsRepartitionByFilePath]] to repartition the data by `__metadata_file_path`
+   *  without shuffle.
    */
   class LowShuffleMergeExecutor(
       override val spark: SparkSession,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import org.apache.spark.util.SerializableConfiguration
 trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
   val columnMappingMode: DeltaColumnMappingMode
   val referenceSchema: StructType
-  val disableFilterPushdown: Boolean = false
 
   def prepareSchema(inputSchema: StructType): StructType = {
     DeltaColumnMapping.createPhysicalSchema(inputSchema, referenceSchema, columnMappingMode)
@@ -72,7 +71,7 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       prepareSchema(dataSchema),
       prepareSchema(partitionSchema),
       prepareSchema(requiredSchema),
-      if (disableFilterPushdown) Seq.empty else filters,
+      filters,
       options,
       hadoopConf,
       metrics,

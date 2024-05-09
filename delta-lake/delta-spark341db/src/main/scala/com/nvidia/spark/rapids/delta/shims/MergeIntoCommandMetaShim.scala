@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
-    if (mergeCmd.conf.getConf(RapidsDeltaSQLConf.ENABLE_LOW_SHUFFLE_MERGE)) {
+    if (conf.isDeltaLowShuffleMergeEnabled) {
       GpuLowShuffleMergeCommand(
         mergeCmd.source,
         mergeCmd.target,
@@ -63,7 +63,7 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
-    if (mergeCmd.conf.getConf(RapidsDeltaSQLConf.ENABLE_LOW_SHUFFLE_MERGE)) {
+    if (conf.isDeltaLowShuffleMergeEnabled) {
       GpuLowShuffleMergeCommand(
         mergeCmd.source,
         mergeCmd.target,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -33,7 +33,6 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
 trait GpuReadFileFormatWithMetrics extends FileFormat {
-
   final override def supportBatch(spark: SparkSession, dataSchema: StructType): Boolean = true
 
   final override def buildReaderWithPartitionValues(
