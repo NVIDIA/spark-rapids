@@ -29,9 +29,9 @@ CUDA 11.8 through CUDA 12.0.
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
 * Verify the signature for Scala 2.12 jar:
-    `gpg --verify rapids-4-spark_2.12-24.04.1.jar.asc rapids-4-spark_2.12-24.04.1.jar`
+    `gpg --verify rapids-4-spark_2.12-24.04.0.jar.asc rapids-4-spark_2.12-24.04.0.jar`
 * Verify the signature for Scala 2.13 jar:
-    `gpg --verify rapids-4-spark_2.13-24.04.1.jar.asc rapids-4-spark_2.13-24.04.1.jar`
+    `gpg --verify rapids-4-spark_2.13-24.04.0.jar.asc rapids-4-spark_2.13-24.04.0.jar`
 
 The output of signature verify:
 
