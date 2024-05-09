@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent_2.12</artifactId>
-        <version>24.04.0</version>
+        <version>24.04.1-SNAPSHOT</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
     <packaging>pom</packaging>
     <description>Shim JDK Profiles</description>
-    <version>24.04.0</version>
+    <version>24.04.1-SNAPSHOT</version>
     <profiles>
         <profile>
             <id>jdk9plus</id>

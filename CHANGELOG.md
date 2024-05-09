@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-04-15
+Generated on 2024-05-09
 
 ## Release 24.04
 
@@ -29,6 +29,7 @@ Generated on 2024-04-15
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#10645](https://github.com/NVIDIA/spark-rapids/issues/10645)|[BUG] java.lang.IllegalStateException: Expected to only receive a single batch|
 |[#10665](https://github.com/NVIDIA/spark-rapids/issues/10665)|[BUG] Need to update private jar's version to v24.04.1 for spark-rapids v24.04.0 release|
 |[#10589](https://github.com/NVIDIA/spark-rapids/issues/10589)|[BUG] ZSTD version mismatch in integration tests|
 |[#10255](https://github.com/NVIDIA/spark-rapids/issues/10255)|[BUG] parquet_tests are skipped on Dataproc CI|
@@ -83,6 +84,8 @@ Generated on 2024-04-15
 ### PRs
 |||
 |:---|:---|
+|[#10777](https://github.com/NVIDIA/spark-rapids/pull/10777)|Update rapids JNI dependency: private to 24.04.2|
+|[#10683](https://github.com/NVIDIA/spark-rapids/pull/10683)|Update latest changelog [skip ci]|
 |[#10681](https://github.com/NVIDIA/spark-rapids/pull/10681)|Update rapids JNI dependency to 24.04.0, private to 24.04.1|
 |[#10660](https://github.com/NVIDIA/spark-rapids/pull/10660)|Ensure an executor broadcast is in a single batch|
 |[#10676](https://github.com/NVIDIA/spark-rapids/pull/10676)|[DOC] Update docs for 24.04.0 release [skip ci]|
