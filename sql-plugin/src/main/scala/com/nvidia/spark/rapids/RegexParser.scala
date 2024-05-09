@@ -2035,13 +2035,9 @@ object RegexRewriteUtils {
   }
 
   private def stripLeadingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = astLs match {
-    case (RegexChar('^') | RegexEscaped('A')) :: _  =>
-      astLs.drop(1).dropWhile(isWildcard)
+    case (RegexChar('^') | RegexEscaped('A')) :: tail  =>
+      tail.dropWhile(isWildcard)
     case _ => astLs.dropWhile(isWildcard)
-  }
-
-  private def isTailingWildcards(astLs: Seq[RegexAST]): Boolean = {
-    astLs.reverse.forall(isWildcard)
   }
 
   private def stripTailingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = {
@@ -2058,7 +2054,7 @@ object RegexRewriteUtils {
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
     ast.children().toList match {
       case (RegexChar('^') | RegexEscaped('A')) :: RegexGroup(_, RegexSequence(parts), None) :: rest
-          if isSimplePattern(parts.toList) && isTailingWildcards(rest) => {
+          if isSimplePattern(parts.toList) && rest.forall(isWildcard) => {
         // ^(pattern).* => startsWith pattern
         RegexOptimizationType.StartsWith(RegexCharsToString(parts.toList))
       }
@@ -2069,7 +2065,7 @@ object RegexRewriteUtils {
       }
       case noStartsWithAst => stripLeadingWildcards(noStartsWithAst) match {
         case RegexGroup(_, RegexSequence(parts), None) :: rest
-            if isSimplePattern(parts.toList) && isTailingWildcards(rest) => {
+            if isSimplePattern(parts.toList) && rest.forall(isWildcard) => {
           // (pattern).* => contains pattern
           RegexOptimizationType.Contains(RegexCharsToString(parts.toList))
         }
