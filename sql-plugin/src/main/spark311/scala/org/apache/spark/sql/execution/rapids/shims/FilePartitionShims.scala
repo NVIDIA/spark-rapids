@@ -111,4 +111,11 @@ object FilePartitionShims {
     }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
   }
 
+  def getFiles(selectedPartitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
+    selectedPartitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
+      }
+    }
+  }
 }
