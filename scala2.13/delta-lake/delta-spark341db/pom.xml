@@ -22,14 +22,14 @@
     <parent>
 	<groupId>com.nvidia</groupId>
 	<artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
-        <version>24.04.1-SNAPSHOT</version>
+        <version>24.04.1</version>
         <relativePath>../../jdk-profiles/pom.xml</relativePath>
     </parent>
 
     <artifactId>rapids-4-spark-delta-spark341db_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Databricks 13.3 Delta Lake Support</name>
     <description>Databricks 13.3 Delta Lake support for the RAPIDS Accelerator for Apache Spark</description>
-    <version>24.04.1-SNAPSHOT</version>
+    <version>24.04.1</version>
 
     <properties>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
