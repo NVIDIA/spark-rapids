@@ -368,10 +368,8 @@ In versions of Spark before 3.5.0 there is no maximum to how deeply nested JSON 
 no matter what version of Spark is used. If the nesting level is over this the JSON is considered
 invalid and all values will be returned as nulls.
 
-Only structs are supported for nested types. There are also some issues with arrays of structs. If
-your data includes this, even if you are not reading it, you might get an exception. You can
-try to set `spark.rapids.sql.json.read.mixedTypesAsString.enabled` to true to work around this,
-but it also has some issues with it.
+Mixed types can have some problems. If an item being read could have some lines that are arrays 
+and others that are structs/dictionaries it is possible an error will be thrown.
 
 Dates and Timestamps have some issues and may return values for technically invalid inputs.
 
@@ -440,11 +438,7 @@ Known issues are:
 ### get_json_object
 
 Known issue:
-- [Non-string output is not normalized](https://github.com/NVIDIA/spark-rapids/issues/10218)
-  When returning a result for things other than strings, a number of things are normalized by
-  Apache Spark, but are not normalized by the GPU, like removing unnecessary white space,
-  parsing and then serializing floating point numbers, turning single quotes to double quotes,
-  and removing unneeded escapes for single quotes.
+- [Floating-point number normalization error](https://github.com/NVIDIA/spark-rapids-jni/issues/1922). `get_json_object` floating-point number normalization on the GPU could sometimes return incorrect results if the string contains high-precision values, see the String to Float and Float to String section for more details.
 
 ## Avro
 

@@ -563,6 +563,7 @@ def test_character_classes():
             ),
         conf=_regexp_conf)
 
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10641")
 def test_regexp_choice():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(

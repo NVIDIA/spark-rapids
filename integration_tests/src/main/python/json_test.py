@@ -382,8 +382,7 @@ def test_read_invalid_json(spark_tmp_table_factory, std_input_path, read_func, f
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 def test_read_valid_json(spark_tmp_table_factory, std_input_path, read_func, filename, schema, v1_enabled_list):
     conf = copy_and_update(_enable_all_types_conf,
-        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-         'spark.rapids.sql.json.read.mixedTypesAsString.enabled': True})
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
                   schema,
@@ -898,11 +897,10 @@ def test_from_json_struct_of_list(schema):
 @pytest.mark.xfail(reason = 'https://github.com/NVIDIA/spark-rapids/issues/10351')
 def test_from_json_mixed_types_list_struct(schema):
     json_string_gen = StringGen(r'{"a": (\[1,2,3\]|{"b":"[a-z]{2}"}) }')
-    conf = copy_and_update(_enable_all_types_conf, {'spark.rapids.sql.json.read.mixedTypesAsString.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select('a', f.from_json('a', schema)),
-        conf=conf)
+        conf=_enable_all_types_conf)
 
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
 @allow_non_gpu(*non_utc_allow)
