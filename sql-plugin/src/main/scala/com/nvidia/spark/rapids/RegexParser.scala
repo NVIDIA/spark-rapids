@@ -17,6 +17,7 @@ package com.nvidia.spark.rapids
 
 import java.sql.SQLException
 
+import scala.collection
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
@@ -2017,7 +2018,7 @@ object RegexOptimizationType {
 }
 
 object RegexRewriteUtils {
-  private def isliteralString(astLs: Seq[RegexAST]): Boolean = {
+  private def isliteralString(astLs: collection.Seq[RegexAST]): Boolean = {
     astLs.forall {
       case RegexChar('^') | RegexChar('$') | RegexChar('.') => false
       case RegexChar(_) => true
@@ -2034,17 +2035,19 @@ object RegexRewriteUtils {
     }
   }
 
-  private def stripLeadingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = astLs match {
+  private def stripLeadingWildcards(astLs: collection.Seq[RegexAST]): 
+      collection.Seq[RegexAST] = astLs match {
     case (RegexChar('^') | RegexEscaped('A')) :: tail  =>
       tail.dropWhile(isWildcard)
     case _ => astLs.dropWhile(isWildcard)
   }
 
-  private def stripTailingWildcards(astLs: Seq[RegexAST]): Seq[RegexAST] = {
+  private def stripTailingWildcards(astLs: collection.Seq[RegexAST]): 
+      collection.Seq[RegexAST] = {
     astLs.reverse.dropWhile(isWildcard).reverse
   }
 
-  private def RegexCharsToString(chars: Seq[RegexAST]): String = {
+  private def RegexCharsToString(chars: collection.Seq[RegexAST]): String = {
     chars.map {
       case RegexChar(ch) => ch
       case _ => throw new IllegalArgumentException("Invalid character")
