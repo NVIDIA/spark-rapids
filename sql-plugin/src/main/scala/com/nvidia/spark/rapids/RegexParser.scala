@@ -2011,13 +2011,13 @@ class RegexUnsupportedException(message: String, index: Option[Int])
 
 sealed trait RegexOptimizationType
 object RegexOptimizationType {
-  case class StartsWith(pattern: String) extends RegexOptimizationType
-  case class Contains(pattern: String) extends RegexOptimizationType
+  case class StartsWith(literal: String) extends RegexOptimizationType
+  case class Contains(literal: String) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
 
 object RegexRewriteUtils {
-  private def isSimplePattern(astLs: Seq[RegexAST]): Boolean = {
+  private def isliteralString(astLs: Seq[RegexAST]): Boolean = {
     astLs.forall {
       case RegexChar('^') | RegexChar('$') | RegexChar('.') => false
       case RegexChar(_) => true
@@ -2052,25 +2052,25 @@ object RegexRewriteUtils {
   }
 
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
-    ast.children().toList match {
+    ast.children() match {
       case (RegexChar('^') | RegexEscaped('A')) :: RegexGroup(_, RegexSequence(parts), None) :: rest
-          if isSimplePattern(parts.toList) && rest.forall(isWildcard) => {
-        // ^(pattern).* => startsWith pattern
-        RegexOptimizationType.StartsWith(RegexCharsToString(parts.toList))
+          if isliteralString(parts) && rest.forall(isWildcard) => {
+        // ^(literal).* => startsWith literal
+        RegexOptimizationType.StartsWith(RegexCharsToString(parts))
       }
       case (RegexChar('^') | RegexEscaped('A')) :: ast 
-          if isSimplePattern(stripTailingWildcards(ast)) => {
-        // ^pattern.* => startsWith pattern
+          if isliteralString(stripTailingWildcards(ast)) => {
+        // ^literal.* => startsWith literal
         RegexOptimizationType.StartsWith(RegexCharsToString(stripTailingWildcards(ast)))
       }
       case noStartsWithAst => stripLeadingWildcards(noStartsWithAst) match {
         case RegexGroup(_, RegexSequence(parts), None) :: rest
-            if isSimplePattern(parts.toList) && rest.forall(isWildcard) => {
-          // (pattern).* => contains pattern
-          RegexOptimizationType.Contains(RegexCharsToString(parts.toList))
+            if isliteralString(parts) && rest.forall(isWildcard) => {
+          // (literal).* => contains literal
+          RegexOptimizationType.Contains(RegexCharsToString(parts))
         }
-        case ast if isSimplePattern(stripTailingWildcards(ast)) => {
-          // pattern.* => contains pattern
+        case ast if isliteralString(stripTailingWildcards(ast)) => {
+          // literal.* => contains literal
           RegexOptimizationType.Contains(RegexCharsToString(stripTailingWildcards(ast)))
         }
         case _ => {
