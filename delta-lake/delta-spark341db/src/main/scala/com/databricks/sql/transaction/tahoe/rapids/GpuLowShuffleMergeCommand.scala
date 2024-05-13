@@ -63,7 +63,7 @@ import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructFiel
  *
  * Issues an error message when the ON search_condition of the MERGE statement can match
  * a single row from the target table with multiple rows of the source table-reference.
- * Different from the original implementation, it optimized writing unmodified target rows.
+ * Different from the original implementation, it optimized writing touched unmodified target files.
  *
  * Algorithm:
  *
@@ -587,6 +587,18 @@ object GpuLowShuffleMergeCommand {
   /**
    * This is an optimized algorithm for merge statement, where we avoid shuffling the unmodified
    * target data.
+   *
+   * The algorithm is as follows:
+   * 1. Find touched target files in the target table by joining the source and target data.
+   * 2. Read the touched files again and write new files with updated and/or inserted rows
+   * without coping unmodified data from target table.
+   * 3. Calculating unmodified data by reading the touched files again and do anti join against
+   * output of [[JoinedRowProcessor]] using `__metadata_file_path` and `row_id`. Here we avoid
+   * shuffle of target files with too methods:
+   *  a. Pushing down a flag to [[org.apache.spark.sql.execution.FileSourceScanExec]] to enforce
+   *  one file per partition.
+   *  b. Adding [[RapidsRepartitionByFilePath]] to repartition the data by `__metadata_file_path`
+   *  without shuffle.
    */
   class LowShuffleMergeExecutor(
       override val spark: SparkSession,

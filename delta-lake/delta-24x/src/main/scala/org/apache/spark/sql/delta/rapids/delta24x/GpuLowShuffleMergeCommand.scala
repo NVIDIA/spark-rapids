@@ -64,7 +64,7 @@ import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructFiel
  *
  * Issues an error message when the ON search_condition of the MERGE statement can match
  * a single row from the target table with multiple rows of the source table-reference.
- * Different from the original implementation, it optimized writing unmodified target rows.
+ * Different from the original implementation, it optimized writing touched unmodified target files.
  *
  * Algorithm:
  *
