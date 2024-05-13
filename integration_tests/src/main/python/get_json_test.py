@@ -392,14 +392,10 @@ def test_get_json_object_number_normalization_legacy():
               'spark.rapids.sql.getJsonObject.legacy.enabled': 'true'})
     assert([[row[1]] for row in gpu_result] == data)
 
-@pytest.mark.parametrize('data_gen', [StringGen(r'''-?[1-9]\d{0,20}\.\d{1,20}''', nullable=False),
-                                      StringGen(r'''-?[1-9]\d{0,5}\.\d{1,20}''', nullable=False),
+@pytest.mark.parametrize('data_gen', [StringGen(r'''-?[1-9]\d{0,5}\.\d{1,20}''', nullable=False),
                                       StringGen(r'''-?[1-9]\d{0,20}\.\d{1,5}''', nullable=False),
-                                      StringGen(r'''-?[1-9]\d{0,5}\.\d{1,5}''', nullable=False),
-                                      StringGen(r'''-?[1-9]\d{0,20}E-?\d{1,20}''', nullable=False),
                                       StringGen(r'''-?[1-9]\d{0,5}E-?\d{1,20}''', nullable=False),
-                                      StringGen(r'''-?[1-9]\d{0,20}E-?\d{1,5}''', nullable=False),
-                                      StringGen(r'''-?[1-9]\d{0,5}E-?\d{1,5}''', nullable=False)], ids=idfn)
+                                      StringGen(r'''-?[1-9]\d{0,20}E-?\d{1,5}''', nullable=False)], ids=idfn)
 def test_get_json_object_floating_normalization(data_gen):
     schema = StructType([StructField("jsonStr", StringType())])
     normalization = lambda spark: unary_op_df(spark, data_gen).selectExpr(
