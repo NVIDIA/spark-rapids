@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.delta.shims
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuLowShuffleMergeCommand, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta, RapidsDeltaSQLConf}
+import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
