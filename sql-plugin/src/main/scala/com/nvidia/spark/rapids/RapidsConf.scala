@@ -2201,7 +2201,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_DELTA_LOW_SHUFFLE_MERGE = conf("spark.rapids.sql.delta.lowShuffleMerge.enable")
+  val ENABLE_DELTA_LOW_SHUFFLE_MERGE = conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
     .doc("Option to turn on the low shuffle merge for Delta Lake.")
     .booleanConf
     .createWithDefault(true)

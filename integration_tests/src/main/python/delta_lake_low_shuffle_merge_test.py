@@ -30,7 +30,7 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {
                             "spark.rapids.sql.command.MergeIntoCommand": "true",
                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true",
-                            "spark.rapids.sql.delta.lowShuffleMerge.enable": "true"
+                            "spark.rapids.sql.delta.lowShuffleMerge.enabled": "true"
                                             })
 
 def make_df(spark, gen, num_slices):
