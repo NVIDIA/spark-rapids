@@ -418,4 +418,5 @@ def test_get_json_object_floating_normalization(data_gen):
         else:
             return float(x)
     for i in range(len(gpu_res)):
+        # verify relatively diff < 1e-9 (default value for is_close)
         assert math.isclose(json_string_to_float(gpu_res[i][0]), json_string_to_float(cpu_res[i][0]))
