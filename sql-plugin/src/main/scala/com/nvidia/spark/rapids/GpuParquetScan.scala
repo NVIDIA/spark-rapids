@@ -38,7 +38,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter}
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -683,12 +683,10 @@ private case class GpuParquetFileFilterHandler(
           conf.unset(encryptConf)
         }
       }
-      val fileHadoopConf =
-        ReaderUtils.getHadoopConfForReaderThread(new Path(file.filePath.toString), conf)
       val footer: ParquetMetadata = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
-            val serialized = withResource(readAndFilterFooter(file, fileHadoopConf,
+            val serialized = withResource(readAndFilterFooter(file, conf,
               readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
@@ -712,7 +710,7 @@ private case class GpuParquetFileFilterHandler(
               }
             }
           case _ =>
-            readAndSimpleFilterFooter(file, fileHadoopConf, filePath)
+            readAndSimpleFilterFooter(file, conf, filePath)
         }
       } catch {
         case e if GpuParquetCrypto.isColumnarCryptoException(e) =>
@@ -739,9 +737,9 @@ private case class GpuParquetFileFilterHandler(
       val blocks = if (pushedFilters.isDefined) {
         withResource(new NvtxRange("getBlocksWithFilter", NvtxColor.CYAN)) { _ =>
           // Use the ParquetFileReader to perform dictionary-level filtering
-          ParquetInputFormat.setFilterPredicate(fileHadoopConf, pushedFilters.get)
+          ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
           //noinspection ScalaDeprecation
-          withResource(new ParquetFileReader(fileHadoopConf, footer.getFileMetaData, filePath,
+          withResource(new ParquetFileReader(conf, footer.getFileMetaData, filePath,
             footer.getBlocks, Collections.emptyList[ColumnDescriptor])) { parquetReader =>
             parquetReader.getRowGroups
           }
@@ -1084,8 +1082,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     rapidsConf, alluxioPathReplacementMap) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val useChunkedReader = rapidsConf.chunkedReaderEnabled
-  private val useSubPageChunked = rapidsConf.chunkedSubPageReaderEnabled
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
   private val numThreads = rapidsConf.multiThreadReadNumThreads
@@ -1151,10 +1147,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-      targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader, subPageChunked, metrics,
-      partitionSchema, numThreads, maxNumFileProcessed, ignoreMissingFiles, ignoreCorruptFiles,
-      readUseFieldId, alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
-      queryUsesInputFile, keepReadsInOrderFromConf, combineConf)
+      targetBatchSizeBytes, maxGpuColumnSizeBytes,
+      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+      metrics, partitionSchema, numThreads, maxNumFileProcessed, ignoreMissingFiles,
+      ignoreCorruptFiles, readUseFieldId, alluxioPathReplacementMap.getOrElse(Map.empty),
+      alluxioReplacementTaskTime, queryUsesInputFile, keepReadsInOrderFromConf, combineConf)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1266,9 +1263,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
-      debugDumpPrefix, debugDumpAlways, useChunkedReader, useSubPageChunked, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes, metrics, partitionSchema,
-      numThreads, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
+      debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+      targetBatchSizeBytes, maxGpuColumnSizeBytes,
+      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+      metrics, partitionSchema, numThreads, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
   }
 
   /**
@@ -1302,7 +1300,12 @@ case class GpuParquetPartitionReaderFactory(
   private val targetSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
   private val maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes
   private val useChunkedReader = rapidsConf.chunkedReaderEnabled
-  private val useSubPageChunked = rapidsConf.chunkedSubPageReaderEnabled
+  private val maxChunkedReaderMemoryUsageSizeBytes =
+    if(rapidsConf.limitChunkedReaderMemoryUsage) {
+      (rapidsConf.chunkedReaderMemoryUsageRatio * targetSizeBytes).toLong
+    } else {
+      0L
+    }
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf, metrics)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
@@ -1333,7 +1336,8 @@ case class GpuParquetPartitionReaderFactory(
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema, debugDumpPrefix, debugDumpAlways,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, targetSizeBytes,
-      useChunkedReader, useSubPageChunked, metrics, singleFileInfo.dateRebaseMode,
+      useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+      metrics, singleFileInfo.dateRebaseMode,
       singleFileInfo.timestampRebaseMode, singleFileInfo.hasInt96Timestamps, readUseFieldId)
   }
 }
@@ -1545,14 +1549,13 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     val filePathString: String = filePath.toString
     val remoteItems = new ArrayBuffer[CopyRange](blocks.length)
     var totalBytesToCopy = 0L
-    val fileHadoopConf = ReaderUtils.getHadoopConfForReaderThread(filePath, conf)
     withResource(new ArrayBuffer[LocalCopy](blocks.length)) { localItems =>
       blocks.foreach { block =>
         block.getColumns.asScala.foreach { column =>
           val columnSize = column.getTotalSize
           val outputOffset = totalBytesToCopy + startPos
           val channel = FileCache.get.getDataRangeChannel(filePathString,
-            column.getStartingPos, columnSize, fileHadoopConf)
+            column.getStartingPos, columnSize, conf)
           if (channel.isDefined) {
             localItems += LocalCopy(channel.get, columnSize, outputOffset)
           } else {
@@ -1583,14 +1586,13 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       return 0L
     }
 
-    val fileHadoopConf = ReaderUtils.getHadoopConfForReaderThread(filePath, conf)
     val coalescedRanges = coalesceReads(remoteCopies)
 
     val totalBytesCopied = PerfIO.readToHostMemory(
-        fileHadoopConf, out.buffer, filePath.toUri,
+        conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
       ).getOrElse {
-        withResource(filePath.getFileSystem(fileHadoopConf).open(filePath)) { in =>
+        withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
           val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
           coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
             acc + copyDataRange(blockCopy, in, out, copyBuffer)
@@ -1602,7 +1604,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES, NoopMetric) += 1
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES_SIZE, NoopMetric) += range.length
       val cacheToken = FileCache.get.startDataRangeCache(
-        filePathString, range.offset, range.length, fileHadoopConf)
+        filePathString, range.offset, range.length, conf)
       // If we get a filecache token then we can complete the caching by providing the data.
       // If we do not get a token then we should not cache this data.
       cacheToken.foreach { token =>
@@ -1851,6 +1853,11 @@ private case class ParquetSingleDataBlockMeta(
  * @param debugDumpAlways whether to debug dump always or only on errors
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param targetBatchSizeBytes the target size of a batch
+ * @param maxGpuColumnSizeBytes the maximum size of a GPU column
+ * @param useChunkedReader whether to read Parquet by chunks or read all at once
+ * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
+ *                                             usage that the reader will use
  * @param execMetrics metrics
  * @param partitionSchema Schema of partitions.
  * @param numThreads the size of the threadpool
@@ -1864,12 +1871,12 @@ class MultiFileParquetPartitionReader(
     override val isSchemaCaseSensitive: Boolean,
     debugDumpPrefix: Option[String],
     debugDumpAlways: Boolean,
-    useChunkedReader: Boolean,
-    useSubPageChunked: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
+    useChunkedReader: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
@@ -1975,7 +1982,7 @@ class MultiFileParquetPartitionReader(
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    MakeParquetTableProducer(useChunkedReader, useSubPageChunked,
+    MakeParquetTableProducer(useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
       conf, currentTargetBatchSize, parseOpts,
       dataBuffer, 0, dataSize, metrics,
       extraInfo.dateRebaseMode, extraInfo.timestampRebaseMode,
@@ -2033,6 +2040,11 @@ class MultiFileParquetPartitionReader(
  * @param debugDumpAlways whether to debug dump always or only on errors
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param targetBatchSizeBytes the target size of the batch
+ * @param maxGpuColumnSizeBytes the maximum size of a GPU column
+ * @param useChunkedReader whether to read Parquet by chunks or read all at once
+ * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
+ *                                             usage that the reader will use
  * @param execMetrics metrics
  * @param partitionSchema Schema of partitions.
  * @param numThreads the size of the threadpool
@@ -2060,7 +2072,7 @@ class MultiFileCloudParquetPartitionReader(
     targetBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
     useChunkedReader: Boolean,
-    subPageChunked: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
@@ -2549,7 +2561,8 @@ class MultiFileCloudParquetPartitionReader(
       // The MakeParquetTableProducer will close the input buffer, and that would be bad
       // because we don't want to close it until we know that we are done with it
       hostBuffer.incRefCount()
-      val tableReader = MakeParquetTableProducer(useChunkedReader, subPageChunked,
+      val tableReader = MakeParquetTableProducer(useChunkedReader,
+        maxChunkedReaderMemoryUsageSizeBytes,
         conf, targetBatchSizeBytes,
         parseOpts,
         hostBuffer, 0, dataSize, metrics,
@@ -2581,7 +2594,7 @@ class MultiFileCloudParquetPartitionReader(
 object MakeParquetTableProducer extends Logging {
   def apply(
       useChunkedReader: Boolean,
-      useSubPageChunked: Boolean,
+      maxChunkedReaderMemoryUsageSizeBytes: Long,
       conf: Configuration,
       chunkSizeByteLimit: Long,
       opts: ParquetOptions,
@@ -2601,12 +2614,8 @@ object MakeParquetTableProducer extends Logging {
       debugDumpAlways: Boolean
   ): GpuDataProducer[Table] = {
     if (useChunkedReader) {
-      val passReadLimit = if (useSubPageChunked) {
-        4 * chunkSizeByteLimit
-      } else {
-        0L
-      }
-      ParquetTableReader(conf, chunkSizeByteLimit, passReadLimit, opts, buffer, offset,
+      ParquetTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
+        opts, buffer, offset,
         len, metrics, dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,
         splits, debugDumpPrefix, debugDumpAlways)
@@ -2655,7 +2664,7 @@ object MakeParquetTableProducer extends Logging {
 case class ParquetTableReader(
     conf: Configuration,
     chunkSizeByteLimit: Long,
-    passReadLimit: Long,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     opts: ParquetOptions,
     buffer: HostMemoryBuffer,
     offset: Long,
@@ -2671,8 +2680,8 @@ case class ParquetTableReader(
     splits: Array[PartitionedFile],
     debugDumpPrefix: Option[String],
     debugDumpAlways: Boolean) extends GpuDataProducer[Table] with Logging {
-  private[this] val reader = new ParquetChunkedReader(chunkSizeByteLimit, passReadLimit, opts,
-    buffer, offset, len)
+  private[this] val reader = new ParquetChunkedReader(chunkSizeByteLimit,
+    maxChunkedReaderMemoryUsageSizeBytes, opts, buffer, offset, len)
 
   private[this] lazy val splitsString = splits.mkString("; ")
 
@@ -2750,7 +2759,7 @@ class ParquetPartitionReader(
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
     useChunkedReader: Boolean,
-    useSubPageChunked: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
     override val execMetrics: Map[String, GpuMetric],
     dateRebaseMode: DateTimeRebaseMode,
     timestampRebaseMode: DateTimeRebaseMode,
@@ -2818,7 +2827,8 @@ class ParquetPartitionReader(
               // Inc the ref count because MakeParquetTableProducer will try to close the dataBuffer
               // which we don't want until we know that the retry is done with it.
               dataBuffer.incRefCount()
-              val producer = MakeParquetTableProducer(useChunkedReader, useSubPageChunked, conf,
+              val producer = MakeParquetTableProducer(useChunkedReader,
+                maxChunkedReaderMemoryUsageSizeBytes, conf,
                 targetBatchSizeBytes, parseOpts,
                 dataBuffer, 0, dataSize, metrics,
                 dateRebaseMode, timestampRebaseMode,

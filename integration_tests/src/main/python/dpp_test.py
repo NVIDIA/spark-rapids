@@ -19,7 +19,7 @@ from pyspark.sql.types import IntegerType
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from conftest import spark_tmp_table_factory
 from data_gen import *
-from marks import ignore_order, allow_non_gpu
+from marks import ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later
 
 # non-positive values here can produce a degenerative join, so here we ensure that most values are
@@ -171,6 +171,7 @@ _statements = [
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
 # DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
 @ignore_order
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10147")
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [

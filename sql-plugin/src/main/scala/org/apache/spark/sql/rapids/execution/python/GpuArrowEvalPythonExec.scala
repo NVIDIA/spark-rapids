@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -71,13 +71,31 @@ class RebatchingRoundoffIterator(
     }
   }
 
+  private[this] def concatRowsOnlyBatch(cbs: ColumnarBatch*): ColumnarBatch = {
+    if (cbs.length == 1) {
+      return cbs.head
+    }
+    withResource(cbs) { _ =>
+      val totalRowsNum = cbs.map(_.numRows().toLong).sum
+      if (totalRowsNum != totalRowsNum.toInt) {
+        throw new IllegalStateException("Cannot support a batch larger that MAX INT rows")
+      }
+      new ColumnarBatch(Array.empty, totalRowsNum.toInt)
+    }
+  }
+
   private[this] def concat(l: ColumnarBatch, r: ColumnarBatch): ColumnarBatch = {
-    withResource(GpuColumnVector.from(l)) { lTable =>
-      withResource(GpuColumnVector.from(r)) { rTable =>
-        withResource(Table.concatenate(lTable, rTable)) { concatTable =>
-          GpuColumnVector.from(concatTable, GpuColumnVector.extractTypes(l))
+    assert(l.numCols() == r.numCols())
+    if (l.numCols() > 0) {
+      withResource(GpuColumnVector.from(l)) { lTable =>
+        withResource(GpuColumnVector.from(r)) { rTable =>
+          withResource(Table.concatenate(lTable, rTable)) { concatTable =>
+            GpuColumnVector.from(concatTable, GpuColumnVector.extractTypes(l))
+          }
         }
       }
+    } else { // rows only batches
+      concatRowsOnlyBatch(l, r)
     }
   }
 
@@ -91,7 +109,13 @@ class RebatchingRoundoffIterator(
       batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
     }
     val toConcat = batches.toArray.safeMap(_.getColumnarBatch())
-    ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
+    assert(toConcat.nonEmpty, "no batches to be concatenated")
+    // expect all batches have the same number of columns
+    if (toConcat.head.numCols() > 0) {
+      ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
+    } else {
+      concatRowsOnlyBatch(toConcat: _*)
+    }
   }
 
   override def next(): ColumnarBatch = {
@@ -148,8 +172,9 @@ class RebatchingRoundoffIterator(
     }
 
     val rc: Long = combined.numRows()
+    val numCols = combined.numCols()
 
-    if (rc % targetRoundoff == 0 || rc < targetRoundoff) {
+    if (rc % targetRoundoff == 0 || rc < targetRoundoff || numCols == 0) {
       return combined
     }
 

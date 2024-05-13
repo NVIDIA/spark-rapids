@@ -15,8 +15,8 @@
 import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
-from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
+from conftest import is_at_least_precommit_run, is_databricks_runtime
+from spark_session import is_before_spark_330, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -98,6 +98,8 @@ def test_pandas_scalar_udf_nested_type(data_gen):
 # ======= Test aggregate in Pandas =======
 @approximate_float
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_single_aggregate_udf(data_gen):
     @f.pandas_udf('double')
     def pandas_sum(to_process: pd.Series) -> float:
@@ -111,6 +113,8 @@ def test_single_aggregate_udf(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_single_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('double')
     def group_size_udf(to_process: pd.Series) -> float:
@@ -124,6 +128,8 @@ def test_single_aggregate_udf_more_types(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
@@ -141,6 +147,8 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -238,6 +246,8 @@ def test_window_aggregate_udf_array_input(data_gen, window):
 @ignore_order(local=True)
 @pytest.mark.parametrize('zero_enabled', [False, True])
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
     def pandas_add(data):
         data.sum = data.b + data.a
@@ -271,6 +281,8 @@ def test_group_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
+    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
@@ -464,3 +476,13 @@ def test_map_in_arrow_with_barrier_mode(is_barrier):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.range(0, 10, 1, 1).mapInArrow(func, "id long", is_barrier))
+
+
+def test_pandas_udf_rows_only():
+    def add_one(a):
+        return a + 1
+    my_udf = f.pandas_udf(add_one, returnType=IntegerType())
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, int_gen, num_slices=4, length=52345)
+            .select(my_udf(f.lit(0))),
+        conf=arrow_udf_conf)

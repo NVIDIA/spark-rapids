@@ -917,6 +917,7 @@ def exact_percentile_reduction(df):
         'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'
     )
 
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10233")
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -993,6 +994,7 @@ def exact_percentile_groupby(df):
     )
 
 @ignore_order
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10719")
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 def test_exact_percentile_groupby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1010,6 +1012,7 @@ exact_percentile_groupby_cpu_fallback_data_gen = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
                'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
                'Percentile')
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10738")
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_cpu_fallback_data_gen, ids=idfn)
 @pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
@@ -1080,6 +1083,7 @@ def test_hash_multiple_mode_query(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10234")
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
     ids=idfn)
@@ -1093,6 +1097,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10388")
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):

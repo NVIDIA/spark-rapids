@@ -2737,6 +2737,25 @@ object GpuOverrides extends Logging {
           )
         }
       }),
+    expr[ArrayFilter](
+      "Filter an input array using a given predicate",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes +
+        TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("function", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
+      (in, conf, p, r) => new ExprMeta[ArrayFilter](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuArrayFilter(
+            childExprs.head.convertToGpu(),
+            childExprs(1).convertToGpu()
+          )
+        }
+      }),
     // TODO: fix the signature https://github.com/NVIDIA/spark-rapids/issues/5327
     expr[ArraysZip](
       "Returns a merged array of structs in which the N-th struct contains" +
@@ -3257,7 +3276,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
-            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST | QUERY"), 
+            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST | QUERY | PATH"), 
             TypeSig.STRING)),
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
@@ -3689,8 +3708,7 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
-          GpuJsonToStructs(a.schema, a.options, child, conf.isJsonMixedTypesAsStringEnabled,
-            a.timeZoneId)
+          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
       }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
       " Please consult the "+
       "[compatibility documentation](../compatibility.md#json-supporting-types)"+
@@ -3730,24 +3748,10 @@ object GpuOverrides extends Logging {
             // potential performance problems.
             willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
           }
-          // If any field argument contains special characters as follows, fall back to CPU.
-          (a.children.tail).map { fieldExpr =>
-            extractLit(fieldExpr).foreach { field =>
-              if (field.value != null) {
-                val fieldStr = field.value.asInstanceOf[UTF8String].toString
-                val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
-                if (specialCharacters.exists(fieldStr.contains(_))) {
-                  willNotWorkOnGpu(s"""JsonTuple with special character in field \"$fieldStr\" """
-                     + "is not supported on GPU")
-                }
-              }
-            }
-          }
         }
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
-    ).disabledByDefault("JsonTuple on the GPU does not support all of the normalization " +
-        "that the CPU supports."),
+    ).disabledByDefault("Experimental feature that could be unstable or have performance issues."),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -3883,8 +3887,7 @@ object GpuOverrides extends Logging {
             a.dataFilters,
             conf.maxReadBatchSizeRows,
             conf.maxReadBatchSizeBytes,
-            conf.maxGpuColumnSizeBytes,
-            conf.isJsonMixedTypesAsStringEnabled)
+            conf.maxGpuColumnSizeBytes)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
