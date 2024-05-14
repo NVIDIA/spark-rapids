@@ -224,7 +224,7 @@ object TrampolineUtil {
   def newDaemonCachedThreadPool(
       prefix: String,
       maxThreadNumber: Int,
-      keepAliveSeconds: Int): ThreadPoolExecutor = {
+      keepAliveSeconds: Int = 60): ThreadPoolExecutor = {
     org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber,
       keepAliveSeconds)
   }
