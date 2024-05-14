@@ -251,10 +251,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     threadPoolExecutor.setCorePoolSize(1)
     threadPoolExecutor.setThreadFactory(
       GpuDeviceManager.wrapThreadFactory(
-        new ThreadFactoryBuilder()
-          .setNameFormat("shuffle-transport-client-exec-%d")
-          .setDaemon(true)
-          .build,
+        threadPoolExecutor.getThreadFactory,
         null,
         () => RmmSpark.removeAllCurrentThreadAssociation()))
     // if we can't hand off because we are too busy, block the caller (in UCX's case,

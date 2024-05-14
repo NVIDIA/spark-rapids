@@ -515,7 +515,7 @@ abstract class GpuBroadcastExchangeExecBase(
 
 object GpuBroadcastExchangeExecBase {
   val executionContext = ExecutionContext.fromExecutorService(
-    TrampolineUtil.newDaemonCachedThreadPool("gpu-broadcast-exchange",
+    org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool("gpu-broadcast-exchange",
       SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
 
   protected def checkRowLimit(numRows: Int) = {
