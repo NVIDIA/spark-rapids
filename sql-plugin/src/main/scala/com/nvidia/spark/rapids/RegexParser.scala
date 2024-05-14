@@ -2018,8 +2018,16 @@ object RegexOptimizationType {
 }
 
 object RegexRewriteUtils {
+
+  private def removeBrackets(astLs: collection.Seq[RegexAST]): collection.Seq[RegexAST] = {
+    astLs match {
+      case collection.Seq(RegexGroup(_, term, None)) => removeBrackets(term.children())
+      case _ => astLs
+    }
+  }
+
   private def isliteralString(astLs: collection.Seq[RegexAST]): Boolean = {
-    astLs.forall {
+    removeBrackets(astLs).forall {
       case RegexChar('^') | RegexChar('$') | RegexChar('.') => false
       case RegexChar(_) => true
       case _ => false
@@ -2048,7 +2056,7 @@ object RegexRewriteUtils {
   }
 
   private def RegexCharsToString(chars: collection.Seq[RegexAST]): String = {
-    chars.map {
+    removeBrackets(chars).map {
       case RegexChar(ch) => ch
       case _ => throw new IllegalArgumentException("Invalid character")
     }.mkString
@@ -2056,24 +2064,14 @@ object RegexRewriteUtils {
 
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
     ast.children() match {
-      case (RegexChar('^') | RegexEscaped('A')) :: RegexGroup(_, RegexSequence(parts), None) :: rest
-          if isliteralString(parts) && rest.forall(isWildcard) => {
-        // ^(literal).* => startsWith literal
-        RegexOptimizationType.StartsWith(RegexCharsToString(parts))
-      }
       case (RegexChar('^') | RegexEscaped('A')) :: ast 
           if isliteralString(stripTailingWildcards(ast)) => {
         // ^literal.* => startsWith literal
         RegexOptimizationType.StartsWith(RegexCharsToString(stripTailingWildcards(ast)))
       }
       case noStartsWithAst => stripLeadingWildcards(noStartsWithAst) match {
-        case RegexGroup(_, RegexSequence(parts), None) :: rest
-            if isliteralString(parts) && rest.forall(isWildcard) => {
-          // (literal).* => contains literal
-          RegexOptimizationType.Contains(RegexCharsToString(parts))
-        }
         case ast if isliteralString(stripTailingWildcards(ast)) => {
-          // literal.* => contains literal
+          // literal.* or (literal).* => contains literal
           RegexOptimizationType.Contains(RegexCharsToString(stripTailingWildcards(ast)))
         }
         case _ => {
