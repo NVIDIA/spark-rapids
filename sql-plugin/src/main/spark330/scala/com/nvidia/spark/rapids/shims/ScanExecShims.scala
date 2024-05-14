@@ -41,6 +41,7 @@ import org.apache.spark.sql.catalyst.expressions.FileSourceMetadataAttribute
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.types.DataType
 
 object ScanExecShims {
   def tagGpuFileSourceScanExecSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -62,13 +63,29 @@ object ScanExecShims {
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
+    FILE_SOURCE_SCAN_EXEC_RULE,
+  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
+  private val FILE_SOURCE_SCAN_EXEC_SUPPORTED_TYPES: TypeSig = (TypeSig.commonCudfTypes +
+    TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.DECIMAL_128 +
+    TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested()
+
+  private val FILE_SOURCE_SCAN_EXEC_RULE =
     GpuOverrides.exec[FileSourceScanExec](
       "Reading data from files, often from Hive tables",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+        FILE_SOURCE_SCAN_EXEC_SUPPORTED_TYPES,
         TypeSig.all),
       (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
-  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
+  def isGpuFileSourceScanExecRuleEnabled(conf: RapidsConf): Boolean = {
+    val rule = FILE_SOURCE_SCAN_EXEC_RULE
+    val inCompact = rule.incompatDoc.isDefined
+    val disabledByDefault = rule.disabledMsg.isDefined
+    conf.isOperatorEnabled(rule.confKey, inCompact, disabledByDefault)
+  }
+
+  def supportByGpuFileSourceScanExec(dataType: DataType): Boolean = {
+    FILE_SOURCE_SCAN_EXEC_SUPPORTED_TYPES.isSupportedByPlugin(dataType)
+  }
 }

@@ -35,13 +35,7 @@ object ScanExecShims {
     GpuFileSourceScanExec.tagSupport(meta)
 
   def execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-    GpuOverrides.exec[FileSourceScanExec](
-      "Reading data from files, often from Hive tables",
-      ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(),
-        TypeSig.all),
-      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
+    FILE_SOURCE_SCAN_EXEC_RULE,
     GpuOverrides.exec[BatchScanExec](
       "The backend for most file input",
       ExecChecks(
@@ -51,4 +45,26 @@ object ScanExecShims {
       (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
+  private val FILE_SOURCE_SCAN_EXEC_SUPPORTED_TYPES: TypeSig = (TypeSig.commonCudfTypes +
+    TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.DECIMAL_128 +
+    TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested()
+
+  private val FILE_SOURCE_SCAN_EXEC_RULE =
+    GpuOverrides.exec[FileSourceScanExec](
+      "Reading data from files, often from Hive tables",
+      ExecChecks(
+        FILE_SOURCE_SCAN_EXEC_SUPPORTED_TYPES,
+        TypeSig.all),
+      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
+
+  def isGpuFileSourceScanExecRuleEnabled(conf: RapidsConf): Boolean = {
+    val rule = FILE_SOURCE_SCAN_EXEC_RULE
+    val inCompact = rule.incompatDoc.isDefined
+    val disabledByDefault = rule.disabledMsg.isDefined
+    conf.isOperatorEnabled(rule.confKey, inCompact, disabledByDefault)
+  }
+
+  def supportByGpuFileSourceScanExec(dataType: DataType): Boolean = {
+    FILE_SOURCE_SCAN_EXEC_SUPPORTED_TYPES.isSupportedByPlugin(dataType)
+  }
 }

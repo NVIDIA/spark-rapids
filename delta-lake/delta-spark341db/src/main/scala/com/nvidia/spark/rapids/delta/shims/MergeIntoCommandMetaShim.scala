@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@
 package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuLowShuffleMergeCommand, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
+import com.nvidia.spark.rapids.delta.RapidsDeltaUtils.shouldUseLowShuffleMerge
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
@@ -39,26 +40,50 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.notMatchedBySourceClauses,
-      mergeCmd.migratedSchema)(conf)
+    if (shouldUseLowShuffleMerge(conf, mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema))) {
+      GpuLowShuffleMergeCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    } else {
+      GpuMergeIntoCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    }
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.notMatchedBySourceClauses,
-      mergeCmd.migratedSchema)(conf)
+    if (shouldUseLowShuffleMerge(conf, mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema))) {
+      GpuLowShuffleMergeCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    } else {
+      GpuMergeIntoCommand(
+        mergeCmd.source,
+        mergeCmd.target,
+        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+        mergeCmd.condition,
+        mergeCmd.matchedClauses,
+        mergeCmd.notMatchedClauses,
+        mergeCmd.notMatchedBySourceClauses,
+        mergeCmd.migratedSchema)(conf)
+    }
   }
 }

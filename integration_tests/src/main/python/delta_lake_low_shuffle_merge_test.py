@@ -81,6 +81,30 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
                            "delta 2.4")
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+def test_delta_merge_when_gpu_file_scan_disabled(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+                                       num_slices):
+    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+    src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
+    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
+    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
+                " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
+
+    conf = copy_and_update(delta_merge_enabled_conf, {"spark.rapids.sql.exec.FileSourceScanExec": "false"})
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+                                   src_table_func, dest_table_func, merge_sql, conf=conf)
+
+
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+                           "delta 2.4")
 @pytest.mark.parametrize("table_ranges", [(range(20), range(10)),  # partial insert of source
                                           (range(5), range(5)),  # no-op insert
                                           (range(10), range(20, 30))  # full insert of source

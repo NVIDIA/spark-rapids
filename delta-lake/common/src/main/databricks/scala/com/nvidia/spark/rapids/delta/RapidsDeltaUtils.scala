@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,17 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
-import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
+import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsConf, RapidsMeta, WriteFileOp}
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
+import com.nvidia.spark.rapids.shims.ScanExecShims
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
-object RapidsDeltaUtils {
+object RapidsDeltaUtils extends Logging {
   def tagForDeltaWrite(
       meta: RapidsMeta[_, _, _],
       schema: StructType,
@@ -99,4 +101,35 @@ object RapidsDeltaUtils {
     spark.sessionState.conf
       .getConfString("deletionVectors.disableTightBoundOnFileCreationForDevOnly", "false")
       .toBoolean
+
+  /**
+   * Helper method to check if low shuffle merge could be enabled.
+   */
+  def shouldUseLowShuffleMerge(conf: RapidsConf, targetTableSchema: StructType): Boolean = {
+    if (!conf.isDeltaLowShuffleMergeEnabled) {
+      false
+    } else {
+      if (!ScanExecShims.isGpuFileSourceScanExecRuleEnabled(conf)) {
+        logWarning(
+          s"""Delta lake low shuffle merge can't be enabled because GpuFileSourceScanExec is
+             |disabled""".stripMargin)
+        false
+      } else {
+        // Check if all target file types supported by [[GpuFileSourceScanExec]]
+        val unsupportedFields = targetTableSchema.fields
+          .filterNot(f => ScanExecShims.supportByGpuFileSourceScanExec(f.dataType))
+
+        if (unsupportedFields.nonEmpty) {
+          logWarning(
+            s"""Delta lake low shuffle merge can't be enabled because following fields in
+               |target table could be supported by GpuFileSourceScanExec:
+               |${unsupportedFields.mkString("Array(", ", ", ")")}"""
+              .stripMargin)
+          false
+        } else {
+          true
+        }
+      }
+    }
+  }
 }

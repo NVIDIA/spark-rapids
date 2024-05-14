@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids.delta.delta24x
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
 import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
+import com.nvidia.spark.rapids.delta.RapidsDeltaUtils.shouldUseLowShuffleMerge
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.commands.MergeIntoCommand
 import org.apache.spark.sql.delta.rapids.GpuDeltaLog
@@ -30,12 +32,12 @@ class MergeIntoCommandMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends RunnableCommandMeta[MergeIntoCommand](mergeCmd, conf, parent, rule) {
+  extends RunnableCommandMeta[MergeIntoCommand](mergeCmd, conf, parent, rule) with Logging {
 
   override def tagSelfForGpu(): Unit = {
     if (!conf.isDeltaWriteEnabled) {
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-          s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
     if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
       // https://github.com/NVIDIA/spark-rapids/issues/8415
@@ -48,16 +50,16 @@ class MergeIntoCommandMeta(
   }
 
   override def convertToGpu(): RunnableCommand = {
-    if (conf.isDeltaLowShuffleMergeEnabled) {
-      GpuLowShuffleMergeCommand(
-        mergeCmd.source,
-        mergeCmd.target,
-        new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-        mergeCmd.condition,
-        mergeCmd.matchedClauses,
-        mergeCmd.notMatchedClauses,
-        mergeCmd.notMatchedBySourceClauses,
-        mergeCmd.migratedSchema)(conf)
+    if (shouldUseLowShuffleMerge(conf, mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema))) {
+        GpuLowShuffleMergeCommand(
+          mergeCmd.source,
+          mergeCmd.target,
+          new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+          mergeCmd.condition,
+          mergeCmd.matchedClauses,
+          mergeCmd.notMatchedClauses,
+          mergeCmd.notMatchedBySourceClauses,
+          mergeCmd.migratedSchema)(conf)
     } else {
       GpuMergeIntoCommand(
         mergeCmd.source,
@@ -70,4 +72,5 @@ class MergeIntoCommandMeta(
         mergeCmd.migratedSchema)(conf)
     }
   }
+
 }
