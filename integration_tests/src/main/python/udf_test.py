@@ -98,8 +98,6 @@ def test_pandas_scalar_udf_nested_type(data_gen):
 # ======= Test aggregate in Pandas =======
 @approximate_float
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_single_aggregate_udf(data_gen):
     @f.pandas_udf('double')
     def pandas_sum(to_process: pd.Series) -> float:
@@ -113,8 +111,6 @@ def test_single_aggregate_udf(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
-@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_single_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('double')
     def group_size_udf(to_process: pd.Series) -> float:
@@ -128,8 +124,6 @@ def test_single_aggregate_udf_more_types(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
@@ -147,8 +141,6 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
-@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -246,8 +238,6 @@ def test_window_aggregate_udf_array_input(data_gen, window):
 @ignore_order(local=True)
 @pytest.mark.parametrize('zero_enabled', [False, True])
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
-@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
     def pandas_add(data):
         data.sum = data.b + data.a
@@ -281,8 +271,6 @@ def test_group_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
-@pytest.mark.xfail(condition=is_databricks_runtime() and is_spark_341(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/10797')
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
