@@ -447,6 +447,8 @@ object GpuDeviceManager extends Logging {
     } else {
       (conf.pinnedPoolSize, -1L)
     }
+    // disable the cuDF provided default pinned pool for now
+    PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)
     if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
       logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
       PinnedMemoryPool.initialize(pinnedSize, gpuId, setCuioDefaultResource)
