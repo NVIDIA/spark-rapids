@@ -165,5 +165,5 @@ if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
         -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
 
-#cd /home/ubuntu
-#tar -zcf spark-rapids-built.tgz spark-rapids
+cd /home/ubuntu
+tar -zcf spark-rapids-built.tgz spark-rapids
