@@ -27,11 +27,9 @@ from spark_session import *
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
-                                           {
-                            "spark.rapids.sql.command.MergeIntoCommand": "true",
+                                           {"spark.rapids.sql.command.MergeIntoCommand": "true",
                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true",
-                            "spark.rapids.sql.delta.lowShuffleMerge.enabled": "true"
-                                            })
+                            "spark.rapids.sql.delta.lowShuffleMerge.enabled": "true"})
 
 def make_df(spark, gen, num_slices):
     return three_col_df(spark, gen, SetValuesGen(StringType(), string.ascii_lowercase),

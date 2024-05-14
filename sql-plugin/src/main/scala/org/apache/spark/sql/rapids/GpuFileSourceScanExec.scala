@@ -558,6 +558,9 @@ case class GpuFileSourceScanExec(
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     val partitions = if (forceOneFilePerPartition) {
+      // The one file per partition scanning strategy is currently only used by
+      // [[GpuLowShuffleMergeCommand]] to avoid shuffling the data. It's not supposed to
+      // be universally applied to all cases.
       FilePartitionShims.getFiles(selectedPartitions)
         .zipWithIndex.map(p => FilePartition(p._2, Array(p._1))).toSeq
     } else {

@@ -2194,17 +2194,19 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
-  val FORCE_ONE_FILE_PER_PARITION = conf("spark.rapids.sql.scan.forceOneFilePerPartition")
+  val FORCE_ONE_FILE_PER_PARITION =
+    conf("spark.rapids.sql.scan.forceOneFilePerPartition")
     .doc("When true, forces the plugin have only one file per partitioning for " +
       "all file based data sources.")
     .internal()
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_DELTA_LOW_SHUFFLE_MERGE = conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
+  val ENABLE_DELTA_LOW_SHUFFLE_MERGE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
     .doc("Option to turn on the low shuffle merge for Delta Lake.")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

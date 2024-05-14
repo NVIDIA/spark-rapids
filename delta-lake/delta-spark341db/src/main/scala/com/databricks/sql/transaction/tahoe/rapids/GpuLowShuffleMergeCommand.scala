@@ -286,6 +286,8 @@ case class GpuLowShuffleMergeCommand(
       spark: SparkSession,
       df: DataFrame,
       partitionColumns: Seq[String]): DataFrame = {
+    // TODO: We should remove this method and use optimized write instead, see
+    // https://github.com/NVIDIA/spark-rapids/issues/10417
     if (partitionColumns.nonEmpty && spark.conf.get(DeltaSQLConf.MERGE_REPARTITION_BEFORE_WRITE)) {
       df.repartition(partitionColumns.map(col): _*)
     } else {
@@ -634,7 +636,9 @@ object GpuLowShuffleMergeCommand {
       val baseTargetDF = buildTargetDFWithFiles(filesToRewrite)
 
       // Here we enforce that the targetDF to read each file per partition. This is to ensure
-      // that the `_metadata_row_id` column is correctly populated for each row in the targetDF.
+      // that we can avoid shuffling the target data when doing left anti join in the second step
+      // of low shuffle merge. See [[com.nvidia.spark.rapids.delta
+      // .RapidsRepartitionByFilePathExec]] for more details.
       val newPlan = baseTargetDF.queryExecution.analyzed.transform {
         case r@LogicalRelation(fs: HadoopFsRelation, _, _, _) =>
           val newFs = fs.copy(options = fs.options +
