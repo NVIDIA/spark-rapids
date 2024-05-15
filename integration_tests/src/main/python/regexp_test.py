@@ -462,7 +462,8 @@ def test_rlike_rewrite_optimization():
                 'rlike(a, "^^abb")',
                 'rlike(a, "(.*)(.*)abb")',
                 'rlike(a, "(.*).*abb.*(.*).*")',
-                'rlike(a, ".*^abb$")'),
+                'rlike(a, ".*^abb$")',
+                'rlike(a, "ab[a-c]\{3\}")'),
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():

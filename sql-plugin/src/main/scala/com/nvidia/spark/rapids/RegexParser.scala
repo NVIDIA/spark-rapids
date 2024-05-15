@@ -2119,14 +2119,11 @@ object RegexRewriteUtils {
         if (prefixRangeInfo.isDefined) {
           val (prefix, start, end, length) = prefixRangeInfo.get
           // (literal[a-b]{x,y}) => prefix range pattern
-          println("Prefix range optimization")
           RegexOptimizationType.PrefixRange(prefix, (start, end), length)
         } else if (isliteralString(noStartsWithAst)) {
           // literal.* or (literal).* => contains literal
-          println("Contains optimization")
           RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
         } else {
-          println("No optimization")
           RegexOptimizationType.NoOptimization
         }
       }
