@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{BaseExprMeta, GpuOverrides, RapidsConf}
+import com.nvidia.spark.rapids.{BaseExprMeta, GpuOverrides, GpuProjectExec, RapidsConf}
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.RapidsRepartitionByFilePath.{FILE_PATH_FIELD, ROW_ID_FIELD}
 
@@ -55,6 +55,7 @@ import org.apache.spark.sql.execution.command.LeafRunnableCommand
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructField, StructType}
 
 /**
@@ -603,9 +604,9 @@ object GpuLowShuffleMergeCommand {
    * output of [[JoinedRowProcessor]] using `__metadata_file_path` and `row_id`. Here we avoid
    * shuffle of target files with too methods:
    *  a. Pushing down a flag to [[org.apache.spark.sql.execution.FileSourceScanExec]] to enforce
-   *  one file per partition.
-   *  b. Adding [[RapidsRepartitionByFilePath]] to repartition the data by `__metadata_file_path`
-   *  without shuffle.
+   *     one file per partition.
+   *     b. Adding [[RapidsRepartitionByFilePath]] to repartition the data by `__metadata_file_path`
+   *     without shuffle.
    */
   class LowShuffleMergeExecutor(
       override val spark: SparkSession,
@@ -860,6 +861,9 @@ object GpuLowShuffleMergeCommand {
 
         // Get the AddFiles using the touched file names.
         val touchedFileNames = touchedFilesAccum.value.iterator().asScala.toSeq
+        if (touchedFileNames.exists(_.trim.isEmpty)) {
+          throw new IllegalStateException("Empty file name found in touched files")
+        }
         logTrace(s"findTouchedFiles: matched files:\n\t${touchedFileNames.mkString("\n\t")}")
 
         val nameToAddFileMap = cmd.generateCandidateFileMap(
@@ -914,22 +918,30 @@ object GpuLowShuffleMergeCommand {
 
       var baseTargetDF = targetDF.drop(TARGET_ROW_PRESENT_COL)
 
-      baseTargetDF = repartitionByFilePath(baseTargetDF)
+      val unModifiedTargetRows = {
+        baseTargetDF = addRepartitionByFilePath(baseTargetDF)
+        val df = makeUnmodifiedTargetDF(baseTargetDF, modifiedTargetRows)
 
-      // We make the join condition as following:
-      // left._metadata_file_path = right._metadata_file_path &&
-      //  (left._metadata_row_id + right._metadata_row_id) = 0
-      // to ensure that the generated physical plan only requires repartition
-      // by `_metadata_file_path`, so that we can avoid shuffle of target table.
-      val joinCondition = baseTargetDF(FILE_PATH_COL) === modifiedTargetRows(FILE_PATH_COL) &&
-        ((baseTargetDF(ROW_ID_COL) + modifiedTargetRows(ROW_ID_COL)) === 0)
+        // The correctness of RapidsRepartitionByFilePath relies on the fact we can enable
+        // FORCE_ONE_FILE_PER_PARITION in file scan, which currently only works for
+        // GpuFileSourceScanExec, so we have to rollback to original input if for some reason we
+        // can use GpuFileSourceScanExec.
+        val gpuFileScanOverride = checkGpuFileSourceScanExecOverride(df)
+
+        if (!gpuFileScanOverride) {
+          logWarning(
+            s"""We are not able to override file scan with GpuFileSourceScanExec, so we can not
+               |guarantee the assumption of RapidsRepartitionByFilePath, we have to fallback to
+               |original one."""
+              .stripMargin)
+          makeUnmodifiedTargetDF(baseTargetDF, modifiedTargetRows)
+        } else {
+          df
+        }
+      }
 
 
-      val unModifiedTargetRows = baseTargetDF.join(modifiedTargetRows,
-          joinCondition, "anti")
-        .drop(ROW_DROPPED_COL, ROW_MATCHED_COL, ROW_ID_COL, FILE_PATH_COL)
-
-      logDebug("Unmodified target rows:\n" +
+      logInfo("Unmodified target rows plan:\n" +
         unModifiedTargetRows.queryExecution.explainString(ExtendedMode))
 
       // Note we don't need to repartition here since they are unmodified.
@@ -1076,9 +1088,9 @@ object GpuLowShuffleMergeCommand {
         .mapPartitions(processor.processPartition)(processedRowEncoder)
     }
 
-    private def repartitionByFilePath(input: DataFrame): DataFrame = {
-      logInfo(s"Adding RapidsRepartitionByFilePath plan node")
-      val newPlan = input.queryExecution.analyzed.transformUp({
+    private def addRepartitionByFilePath(input: DataFrame): DataFrame = {
+      logInfo(s"Trying to adding RapidsRepartitionByFilePath plan node")
+      val newLogicalPlan = input.queryExecution.optimizedPlan.transformUp({
         case p@Project(projectList, _: LogicalRelation) =>
           if (projectList.exists(_.name == FILE_PATH_COL)) {
             RapidsRepartitionByFilePath(None, p)
@@ -1086,7 +1098,41 @@ object GpuLowShuffleMergeCommand {
             p
           }
       })
-      Dataset.ofRows(spark, newPlan)
+
+      Dataset.ofRows(spark, newLogicalPlan)
+    }
+
+    private def makeUnmodifiedTargetDF(
+        baseTargetDF: DataFrame,
+        modifiedTargetRows: DataFrame): DataFrame = {
+      // We make the join condition as following:
+      // left._metadata_file_path = right._metadata_file_path &&
+      //  (left._metadata_row_id + right._metadata_row_id) = 0
+      // to ensure that the generated physical plan only requires repartition
+      // by `_metadata_file_path`, so that we can avoid shuffle of target table.
+      val joinCondition = baseTargetDF(FILE_PATH_COL) === modifiedTargetRows(FILE_PATH_COL) &&
+        ((baseTargetDF(ROW_ID_COL) + modifiedTargetRows(ROW_ID_COL)) === 0)
+
+
+      baseTargetDF.join(modifiedTargetRows,
+          joinCondition, "anti")
+        .drop(ROW_DROPPED_COL, ROW_MATCHED_COL, ROW_ID_COL, FILE_PATH_COL)
+    }
+
+    private def checkGpuFileSourceScanExecOverride(input: DataFrame): Boolean = {
+        val executedPlan = input.queryExecution
+          .executedPlan
+
+        var pushed = false
+        GpuOverrides().applyWithContext(executedPlan.clone(), Some(
+          """Detecting GpuFileSourceScanExec could be pushed down""".stripMargin)).foreachUp {
+          case GpuRapidsRepartitionByFilePathExec(_, _,
+          GpuProjectExec(_, _: GpuFileSourceScanExec)) =>
+            pushed = true
+          case _ =>
+        }
+
+        pushed
     }
   }
 }

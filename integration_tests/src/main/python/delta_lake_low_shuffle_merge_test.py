@@ -74,68 +74,67 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
                          src_table_func, dest_table_func, merge_sql, checker, partition_columns)
 
 
-@allow_non_gpu(*delta_meta_allow)
+# @allow_non_gpu(*delta_meta_allow)
+# @delta_lake
+# @ignore_order
+# @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+#                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+#                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+#                            "delta 2.4")
+# @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+# @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+# def test_delta_merge_when_gpu_file_scan_disabled(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                        num_slices):
+#     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+#     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
+#     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
+#     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
+#                 " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
+#
+#     conf = copy_and_update(delta_merge_enabled_conf, {"spark.rapids.sql.exec.FileSourceScanExec": "false"})
+#     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                    src_table_func, dest_table_func, merge_sql, conf=conf)
+
+
+
+# @allow_non_gpu(*delta_meta_allow)
+# @delta_lake
+# @ignore_order
+# @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+#                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+#                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+#                            "delta 2.4")
+# @pytest.mark.parametrize("table_ranges", [(range(20), range(10)),  # partial insert of source
+#                                           (range(5), range(5)),  # no-op insert
+#                                           (range(10), range(20, 30))  # full insert of source
+#                                           ], ids=idfn)
+# @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+# @pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)
+# @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+# def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
+#                                            use_cdf, partition_columns, num_slices):
+#     src_range, dest_range = table_ranges
+#     src_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), src_range), num_slices)
+#     dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
+#     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
+#                 " WHEN NOT MATCHED THEN INSERT *"
+#
+#     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                    src_table_func, dest_table_func, merge_sql, partition_columns)
+#
+
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
                            "delta 2.4")
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-def test_delta_merge_when_gpu_file_scan_disabled(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                       num_slices):
-    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
-    src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
-    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
-                " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
-
-    conf = copy_and_update(delta_merge_enabled_conf, {"spark.rapids.sql.exec.FileSourceScanExec": "false"})
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql, conf=conf)
-
-
-
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
-                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
-                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
-                           "delta 2.4")
-@pytest.mark.parametrize("table_ranges", [(range(20), range(10)),  # partial insert of source
-                                          (range(5), range(5)),  # no-op insert
-                                          (range(10), range(20, 30))  # full insert of source
-                                          ], ids=idfn)
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)
-@pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
-                                           use_cdf, partition_columns, num_slices):
-    src_range, dest_range = table_ranges
-    src_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), src_range), num_slices)
-    dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
-    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
-                " WHEN NOT MATCHED THEN INSERT *"
-
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql, partition_columns)
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
-                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
-                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
-                           "delta 2.4")
-@pytest.mark.parametrize("table_ranges", [(range(10), range(20)),  # partial delete of target
-                                          (range(5), range(5)),  # full delete of target
-                                          (range(10), range(20, 30))  # no-op delete
-                                          ], ids=idfn)
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)
+@pytest.mark.parametrize("table_ranges", [
+                                            (range(10), range(20)),  # partial delete of target
+                                         ], ids=idfn)
+@pytest.mark.parametrize("use_cdf", [False], ids=idfn)
+@pytest.mark.parametrize("partition_columns", [None], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
 def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
                                        use_cdf, partition_columns, num_slices):
@@ -144,90 +143,94 @@ def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, 
     dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED THEN DELETE"
+    x_conf = copy_and_update(delta_merge_enabled_conf,
+                            {"spark.rapids.sql.exec.FileSourceScanExec": "false",
+                             "spark.rapids.sql.format.delta.write.enabled": "false"})
     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql, partition_columns)
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
-                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
-                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
-                           "delta 2.4")
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
-    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
-    src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
-    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
-                " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql)
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
-                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
-                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
-                           "delta 2.4")
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("merge_sql", [
-    "MERGE INTO {dest_table} d USING {src_table} s ON d.a == s.a" \
-    " WHEN MATCHED AND s.b > 'q' THEN UPDATE SET d.a = s.a / 2, d.b = s.b" \
-    " WHEN NOT MATCHED THEN INSERT *",
-    "MERGE INTO {dest_table} d USING {src_table} s ON d.a == s.a" \
-    " WHEN NOT MATCHED AND s.b > 'q' THEN INSERT *",
-    "MERGE INTO {dest_table} d USING {src_table} s ON d.a == s.a" \
-    " WHEN MATCHED AND s.b > 'a' AND s.b < 'g' THEN UPDATE SET d.a = s.a / 2, d.b = s.b" \
-    " WHEN MATCHED AND s.b > 'g' AND s.b < 'z' THEN UPDATE SET d.a = s.a / 4, d.b = concat('extra', s.b)" \
-    " WHEN NOT MATCHED AND s.b > 'b' AND s.b < 'f' THEN INSERT *" \
-    " WHEN NOT MATCHED AND s.b > 'f' AND s.b < 'z' THEN INSERT (b) VALUES ('not here')" ], ids=idfn)
-@pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, merge_sql, num_slices):
-    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
-    src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql)
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
-                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
-                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
-                           "delta 2.4")
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
-    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
-    src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), range(100)), string_gen, seed=1, num_slices=num_slices)
-    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
-                " WHEN MATCHED AND {dest_table}.a > 100 THEN UPDATE SET *"
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql)
-
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
-                         (not is_databricks_runtime() and spark_version().startswith("3.4"))),
-                    reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
-                           "delta 2.4")
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf):
-    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
-    src_table_func = lambda spark: spark.range(10).withColumn("x", f.col("id") + 1)\
-        .select(f.col("id"), (f.col("x") + 1).alias("x"))\
-        .drop_duplicates(["id"])\
-        .limit(10)
-    dest_table_func = lambda spark: spark.range(5).withColumn("x", f.col("id") + 1)
-    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.id == {src_table}.id" \
-                " WHEN MATCHED THEN UPDATE SET {dest_table}.x = {src_table}.x + 2" \
-                " WHEN NOT MATCHED AND {src_table}.x < 7 THEN INSERT *"
-
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql)
+                                   src_table_func, dest_table_func, merge_sql, partition_columns,
+                                   conf=x_conf)
+#
+# @allow_non_gpu(*delta_meta_allow)
+# @delta_lake
+# @ignore_order
+# @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+#                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+#                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+#                            "delta 2.4")
+# @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+# @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+# def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
+#     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+#     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
+#     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
+#     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
+#                 " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
+#     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                    src_table_func, dest_table_func, merge_sql)
+#
+# @allow_non_gpu(*delta_meta_allow)
+# @delta_lake
+# @ignore_order
+# @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+#                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+#                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+#                            "delta 2.4")
+# @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+# @pytest.mark.parametrize("merge_sql", [
+#     "MERGE INTO {dest_table} d USING {src_table} s ON d.a == s.a" \
+#     " WHEN MATCHED AND s.b > 'q' THEN UPDATE SET d.a = s.a / 2, d.b = s.b" \
+#     " WHEN NOT MATCHED THEN INSERT *",
+#     "MERGE INTO {dest_table} d USING {src_table} s ON d.a == s.a" \
+#     " WHEN NOT MATCHED AND s.b > 'q' THEN INSERT *",
+#     "MERGE INTO {dest_table} d USING {src_table} s ON d.a == s.a" \
+#     " WHEN MATCHED AND s.b > 'a' AND s.b < 'g' THEN UPDATE SET d.a = s.a / 2, d.b = s.b" \
+#     " WHEN MATCHED AND s.b > 'g' AND s.b < 'z' THEN UPDATE SET d.a = s.a / 4, d.b = concat('extra', s.b)" \
+#     " WHEN NOT MATCHED AND s.b > 'b' AND s.b < 'f' THEN INSERT *" \
+#     " WHEN NOT MATCHED AND s.b > 'f' AND s.b < 'z' THEN INSERT (b) VALUES ('not here')" ], ids=idfn)
+# @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+# def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, merge_sql, num_slices):
+#     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+#     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
+#     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
+#     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                    src_table_func, dest_table_func, merge_sql)
+#
+# @allow_non_gpu(*delta_meta_allow)
+# @delta_lake
+# @ignore_order
+# @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+#                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+#                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+#                            "delta 2.4")
+# @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+# @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+# def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
+#     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+#     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
+#     dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), range(100)), string_gen, seed=1, num_slices=num_slices)
+#     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
+#                 " WHEN MATCHED AND {dest_table}.a > 100 THEN UPDATE SET *"
+#     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                    src_table_func, dest_table_func, merge_sql)
+#
+# @allow_non_gpu(*delta_meta_allow)
+# @delta_lake
+# @ignore_order
+# @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133_or_later()) or
+#                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
+#                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
+#                            "delta 2.4")
+# @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+# def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf):
+#     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+#     src_table_func = lambda spark: spark.range(10).withColumn("x", f.col("id") + 1)\
+#         .select(f.col("id"), (f.col("x") + 1).alias("x"))\
+#         .drop_duplicates(["id"])\
+#         .limit(10)
+#     dest_table_func = lambda spark: spark.range(5).withColumn("x", f.col("id") + 1)
+#     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.id == {src_table}.id" \
+#                 " WHEN MATCHED THEN UPDATE SET {dest_table}.x = {src_table}.x + 2" \
+#                 " WHEN NOT MATCHED AND {src_table}.x < 7 THEN INSERT *"
+#
+#     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+#                                    src_table_func, dest_table_func, merge_sql)

@@ -101,35 +101,4 @@ object RapidsDeltaUtils extends Logging {
     spark.sessionState.conf
       .getConfString("deletionVectors.disableTightBoundOnFileCreationForDevOnly", "false")
       .toBoolean
-
-  /**
-   * Helper method to check if low shuffle merge could be enabled.
-   */
-  def shouldUseLowShuffleMerge(conf: RapidsConf, targetTableSchema: StructType): Boolean = {
-    if (!conf.isDeltaLowShuffleMergeEnabled) {
-      false
-    } else {
-      if (!ScanExecShims.isGpuFileSourceScanExecRuleEnabled(conf)) {
-        logWarning(
-          s"""Delta lake low shuffle merge can't be enabled because GpuFileSourceScanExec is
-             |disabled""".stripMargin)
-        false
-      } else {
-        // Check if all target file types supported by [[GpuFileSourceScanExec]]
-        val unsupportedFields = targetTableSchema.fields
-          .filterNot(f => ScanExecShims.supportByGpuFileSourceScanExec(f.dataType))
-
-        if (unsupportedFields.nonEmpty) {
-          logWarning(
-            s"""Delta lake low shuffle merge can't be enabled because following fields in
-               |target table could be supported by GpuFileSourceScanExec:
-               |${unsupportedFields.mkString("Array(", ", ", ")")}"""
-              .stripMargin)
-          false
-        } else {
-          true
-        }
-      }
-    }
-  }
 }

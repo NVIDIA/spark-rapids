@@ -169,9 +169,11 @@ def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_facto
                 " WHEN NOT MATCHED THEN INSERT *"
     # Non-deterministic input for each task means we can only reliably compare record counts when using only one task
     compare_logs = num_slices == 1
+    x_conf = copy_and_update(delta_merge_enabled_conf,
+                             { "spark.rapids.sql.exec.FileSourceScanExec": "false" })
     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                                    src_table_func, dest_table_func, merge_sql, compare_logs,
-                                   partition_columns)
+                                   partition_columns, conf=x_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

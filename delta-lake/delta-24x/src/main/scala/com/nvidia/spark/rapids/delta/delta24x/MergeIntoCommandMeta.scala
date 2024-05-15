@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.delta.delta24x
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
 import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
-import com.nvidia.spark.rapids.delta.RapidsDeltaUtils.shouldUseLowShuffleMerge
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -50,7 +49,7 @@ class MergeIntoCommandMeta(
   }
 
   override def convertToGpu(): RunnableCommand = {
-    if (shouldUseLowShuffleMerge(conf, mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema))) {
+    if (conf.isDeltaLowShuffleMergeEnabled) {
         GpuLowShuffleMergeCommand(
           mergeCmd.source,
           mergeCmd.target,
