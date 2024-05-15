@@ -89,7 +89,7 @@ object JsonPathParser extends RegexParsers {
 
   def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
     // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
-    instructions.length > 16
+    instructions.length > JSONUtils.MAX_PATH_DEPTH
   }
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
