@@ -2027,25 +2027,28 @@ object RegexRewriteUtils {
       case _ => astLs
     }
   }
-
-  private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]): Option[(String, Int, Int, Int)] = {
+  private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]): 
+      Option[(String, Int, Int, Int)] = {
     val endsWithRange = astLs.last match {
-      case RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(a,b))), QuantifierFixedLength(x))
-          => {
-            val (start, end) = (a, b) match {
-              case (RegexChar(start), RegexChar(end)) => (start, end)
-              case _ => return None
-            }
-            Some((start.toInt, end.toInt, x))
+      case RegexRepetition(
+          RegexCharacterClass(false,ListBuffer(RegexCharacterRange(a,b))), 
+          quantifier) => {
+        val (start, end) = (a, b) match {
+          case (RegexChar(start), RegexChar(end)) => (start, end)
+          case _ => return None
+        }
+        val x = quantifier match {
+          case QuantifierVariableLength(start, _) => start
+          case QuantifierFixedLength(length) => length
+          case SimpleQuantifier(ch) => ch match {
+            case '*' | '?' => 0
+            case '+' => 1
+            case _ => return None
           }
-      case RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(a,b))), QuantifierVariableLength(x,_))
-          => {
-            val (start, end) = (a, b) match {
-              case (RegexChar(start), RegexChar(end)) => (start, end)
-              case _ => return None
-            }
-            Some((start.toInt, end.toInt, x))
-          }
+          case _ => return None
+        }
+        Some((start.toInt, end.toInt, x))
+      }
       case _ => None
     }
     val literalPrefix = isliteralString(astLs.dropRight(1))
