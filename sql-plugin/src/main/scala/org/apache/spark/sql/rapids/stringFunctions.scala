@@ -1060,7 +1060,23 @@ class GpuRLikeMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
 
+    private var originalPattern: String = ""
     private var pattern: Option[String] = None
+
+    def optimizeSimplePattern(lhs: Expression, rhs: Expression): GpuExpression = {
+      import RegexOptimizationType._
+      val originalAst = new RegexParser(originalPattern).parse()
+      RegexRewriteUtils.matchSimplePattern(originalAst) match {
+        case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
+        case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case NoOptimization => {
+          val patternStr = pattern.getOrElse(throw new IllegalStateException(
+            "Expression has not been tagged with cuDF regex pattern"))
+          GpuRLike(lhs, rhs, patternStr)
+        }
+        case _ => throw new IllegalStateException("Unexpected optimization type")
+      }
+    }
 
     override def tagExprForGpu(): Unit = {
       GpuRegExpUtils.tagForRegExpEnabled(this)
@@ -1068,8 +1084,9 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            val (transpiledAST, _) =
-                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None, None)
+            originalPattern = str.toString
+            val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
+                .getTranspiledAST(originalPattern, None, None)
             GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
           } catch {
@@ -1082,8 +1099,15 @@ class GpuRLikeMeta(
     }
 
     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-      GpuRLike(lhs, rhs, pattern.getOrElse(
-        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+      if (conf.isRlikeRegexRewriteEnabled) {
+        // if the pattern can be converted to a startswith or endswith pattern, we can use
+        // GpuStartsWith, GpuEndsWith or GpuContains instead to get better performance
+        optimizeSimplePattern(lhs, rhs)
+      } else {
+        val patternStr = pattern.getOrElse(throw new IllegalStateException(
+            "Expression has not been tagged with cuDF regex pattern"))
+        GpuRLike(lhs, rhs, patternStr)
+      }
     }
 }
 
