@@ -2098,6 +2098,13 @@ object RegexRewriteUtils {
     }.mkString
   }
 
+  /**
+   * Matches the given regex ast to a regex optimization type for regex rewrite
+   * optimization.
+   *
+   * @param ast The Abstract Syntax Tree parsed from a regex pattern.
+   * @return The `RegexOptimizationType` for the given pattern.
+   */
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
     ast.children() match {
       case (RegexChar('^') | RegexEscaped('A')) :: ast 
