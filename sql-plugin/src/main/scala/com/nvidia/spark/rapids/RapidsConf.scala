@@ -2274,6 +2274,41 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  /**
+   * refer to dev doc: `replay-exec.md`
+   * only supports "project" now
+   */
+  val DEBUG_REPLAY_EXEC_TYPE =
+    conf("spark.rapids.sql.debug.replay.exec.types")
+        .doc("Only for debug: Define the Exec types for dumping, separated by comma, e.g.: " +
+            "project,aggregate,sort. Note currently only support project")
+        .internal()
+        .stringConf
+        .createWithDefault("")
+
+  val DEBUG_REPLAY_EXEC_DUMP_DIR =
+    conf("spark.rapids.sql.debug.replay.exec.dumpDir")
+        .doc("Only for debug: Define the directory when dumping Exec runtime " +
+            "meta and column batch data")
+        .internal()
+        .stringConf
+        .createWithDefault("file:/tmp")
+
+  val DEBUG_REPLAY_EXEC_THRESHOLD_MS =
+    conf("spark.rapids.sql.debug.replay.exec.threshold.MS")
+        .doc("Only for debug: Only dump the column batch when executing time against it " +
+            " exceeds this threshold time in MS")
+        .internal()
+        .integerConf
+        .createWithDefault(1000)
+
+  val DEBUG_REPLAY_EXEC_BATCH_LIMIT =
+    conf("spark.rapids.sql.debug.replay.batch.limit")
+        .doc("Only for debug: Max dumping number of column batches")
+        .internal()
+        .integerConf
+        .createWithDefault(1)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -3082,6 +3117,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
+
+  lazy val debugReplayExecDumpDir: String = get(DEBUG_REPLAY_EXEC_DUMP_DIR)
+
+  lazy val debugReplayExecType: String = get(DEBUG_REPLAY_EXEC_TYPE)
+
+  lazy val debugReplayExecThresholdMS: Int = get(DEBUG_REPLAY_EXEC_THRESHOLD_MS)
+
+  lazy val debugReplayExecBatchLimit: Int = get(DEBUG_REPLAY_EXEC_BATCH_LIMIT)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

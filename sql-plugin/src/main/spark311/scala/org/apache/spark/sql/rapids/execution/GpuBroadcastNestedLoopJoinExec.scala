@@ -40,7 +40,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-
+import org.apache.spark.sql.rapids.debug.ReplayDumper
 
 class GpuBroadcastNestedLoopJoinMeta(
     join: BroadcastNestedLoopJoinExec,
@@ -67,10 +67,19 @@ class GpuBroadcastNestedLoopJoinMeta(
         conditionMeta, left.output, right.output, true)
 
       // Reconstruct the childern with wrapped project node if needed.
+      val dumpForReplay = ReplayDumper.enabledReplayForProject(conf)
       val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+        if (!leftExpr.isEmpty) {
+          GpuProjectExec(leftExpr ++ left.output, left, dumpForReplay)(true)
+        } else {
+          left
+        }
       val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+        if (!rightExpr.isEmpty) {
+          GpuProjectExec(rightExpr ++ right.output, right, dumpForReplay)(true)
+        } else {
+          right
+        }
       val postBuildCondition =
         if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
 
@@ -92,7 +101,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         GpuProjectExec(
           GpuBroadcastNestedLoopJoinExecBase.output(
             join.joinType, left.output, right.output).toList,
-          joinExec)(false)
+          joinExec, dumpForReplay)(false)
       }
     } else {
       join.joinType match {

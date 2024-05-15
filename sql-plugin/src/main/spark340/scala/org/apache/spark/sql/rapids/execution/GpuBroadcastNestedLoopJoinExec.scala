@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-
+import org.apache.spark.sql.rapids.debug.ReplayDumper
 
 class GpuBroadcastNestedLoopJoinMeta(
     join: BroadcastNestedLoopJoinExec,
@@ -51,7 +51,7 @@ class GpuBroadcastNestedLoopJoinMeta(
 
     // If ast-able, try to split if needed. Otherwise, do post-filter
     val isAstCondition = canJoinCondAstAble()
-
+    val dumpForReplay = ReplayDumper.enabledReplayForProject(conf)
     if (isAstCondition) {
       // Try to extract non-ast-able conditions from join conditions
       val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
@@ -59,9 +59,17 @@ class GpuBroadcastNestedLoopJoinMeta(
 
       // Reconstruct the child with wrapped project node if needed.
       val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+        if (!leftExpr.isEmpty){
+          GpuProjectExec(leftExpr ++ left.output, left, dumpForReplay)(true)
+        } else {
+          left
+        }
       val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+        if (!rightExpr.isEmpty) {
+          GpuProjectExec(rightExpr ++ right.output, right, dumpForReplay)(true)
+        } else {
+          right
+        }
       val postBuildCondition =
         if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
 
@@ -83,7 +91,8 @@ class GpuBroadcastNestedLoopJoinMeta(
         GpuProjectExec(
           GpuBroadcastNestedLoopJoinExecBase.output(
             join.joinType, left.output, right.output).toList,
-          joinExec)(false)
+          joinExec,
+          dumpForReplay)(false)
       }
     } else {
       val condition = conditionMeta.map(_.convertToGpu())
