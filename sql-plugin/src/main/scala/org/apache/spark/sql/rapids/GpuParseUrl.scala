@@ -79,7 +79,7 @@ case class GpuParseUrl(children: Seq[Expression])
 
   def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, key: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
-    if (part != QUERY) {
+    if (part != QUERY || key == null || !key.isValid) {
       // return a null columnvector
       return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
     }
