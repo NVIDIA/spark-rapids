@@ -23,7 +23,7 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       Unit = {
     val results = patterns.map { pattern =>
       val ast = new RegexParser(pattern).parse()
-      RegexRewriteUtils.matchSimplePattern(ast)
+      RegexRewrite.matchSimplePattern(ast)
     }
     assert(results == excepted)
   }

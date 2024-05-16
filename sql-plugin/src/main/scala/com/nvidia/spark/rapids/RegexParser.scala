@@ -2019,7 +2019,7 @@ object RegexOptimizationType {
   case object NoOptimization extends RegexOptimizationType
 }
 
-object RegexRewriteUtils {
+object RegexRewrite {
 
   private def removeBrackets(astLs: collection.Seq[RegexAST]): collection.Seq[RegexAST] = {
     astLs match {
