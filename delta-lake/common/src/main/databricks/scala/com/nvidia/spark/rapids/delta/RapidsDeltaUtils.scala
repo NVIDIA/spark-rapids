@@ -17,9 +17,8 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
-import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsConf, RapidsMeta, WriteFileOp}
+import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
-import com.nvidia.spark.rapids.shims.ScanExecShims
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession

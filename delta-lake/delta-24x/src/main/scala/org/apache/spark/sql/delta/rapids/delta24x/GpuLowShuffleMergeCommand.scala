@@ -28,7 +28,8 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.{BaseExprMeta, GpuOverrides, GpuProjectExec, RapidsConf}
 import com.nvidia.spark.rapids.delta._
-import com.nvidia.spark.rapids.delta.RapidsRepartitionByFilePath.{FILE_PATH_FIELD, ROW_ID_FIELD}
+import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat._
+import com.nvidia.spark.rapids.delta.RapidsRepartitionByFilePath.FILE_PATH_FIELD
 
 import org.apache.spark.SparkContext
 import org.apache.spark.internal.Logging
@@ -41,7 +42,7 @@ import org.apache.spark.sql.catalyst.expressions.Literal.TrueLiteral
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
 import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeAction, DeltaMergeIntoClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoMatchedDeleteClause, DeltaMergeIntoMatchedUpdateClause, DeltaMergeIntoNotMatchedBySourceClause, DeltaMergeIntoNotMatchedBySourceDeleteClause, DeltaMergeIntoNotMatchedBySourceUpdateClause, DeltaMergeIntoNotMatchedClause, DeltaMergeIntoNotMatchedInsertClause, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
-import org.apache.spark.sql.delta.{DeltaErrors, DeltaLog, DeltaOperations, DeltaTableUtils, NoMapping, OptimisticTransaction}
+import org.apache.spark.sql.delta.{DeltaErrors, DeltaLog, DeltaOperations, DeltaParquetFileFormat, DeltaTableUtils, NoMapping, OptimisticTransaction}
 import org.apache.spark.sql.delta.DeltaOperations.MergePredicate
 import org.apache.spark.sql.delta.actions.{AddCDCFile, AddFile, FileAction}
 import org.apache.spark.sql.delta.commands.DeltaCommand
@@ -641,23 +642,39 @@ object GpuLowShuffleMergeCommand {
       // This allows us to apply the existing resolved update/insert expressions.
       val baseTargetDF = buildTargetDFWithFiles(filesToRewrite)
 
-      // Here we enforce that the targetDF to read each file per partition. This is to ensure
-      // that we can avoid shuffling the target data when doing left anti join in the second step
-      // of low shuffle merge. See [[com.nvidia.spark.rapids.delta
-      // .RapidsRepartitionByFilePathExec]] for more details.
-      val newPlan = baseTargetDF.queryExecution.analyzed.transform {
-        case r@LogicalRelation(fs: HadoopFsRelation, _, _, _) =>
-          val newFs = fs.copy(options = fs.options +
-            (RapidsConf.FORCE_ONE_FILE_PER_PARITION.key -> "true"))(spark)
-          r.copy(relation = newFs)
+      val newPlan = {
+        val rowIdxAttr = AttributeReference(
+          GpuDeltaParquetFileFormat.METADATA_ROW_IDX_COLUMN ,
+          GpuDeltaParquetFileFormat.METADATA_ROW_IDX_FIELD.dataType,
+          GpuDeltaParquetFileFormat.METADATA_ROW_IDX_FIELD.nullable)()
+
+        baseTargetDF.queryExecution.analyzed.transformUp {
+          case r@LogicalRelation(fs: HadoopFsRelation, _, _, _) =>
+            val newSchema = StructType(fs.dataSchema.fields).add(
+              GpuDeltaParquetFileFormat.METADATA_ROW_IDX_FIELD)
+
+            // This is required to ensure that row index is correctly calculated.
+            val newFileFormat = fs.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+              .copy(isSplittable = false)
+
+            val newFs = fs.copy(dataSchema = newSchema, fileFormat = newFileFormat)(spark)
+
+            val newOutput = r.output :+ rowIdxAttr
+            r.copy(relation = newFs, output = newOutput)
+          case p@Project(projectList, _) =>
+            val newProjectList = projectList :+ rowIdxAttr
+            p.copy(projectList = newProjectList)
+        }
       }
 
-      Dataset.ofRows(spark, newPlan)
+      val df = Dataset.ofRows(spark, newPlan)
         .withColumns(Map(
           TARGET_ROW_PRESENT_COL -> lit(true),
-          ROW_ID_COL -> monotonically_increasing_id(),
           FILE_PATH_COL -> input_file_name(),
         ))
+
+      logInfo(s"TargetDF plan: ${df.queryExecution.analyzed}")
+      df
     }
 
     private val joinType = if (cmd.hasNoInserts &&
@@ -752,14 +769,18 @@ object GpuLowShuffleMergeCommand {
     // original approach.
     private def updateOutputMetrics(processedDF: DataFrame): Unit = {
       val result = processedDF.selectExpr(
-        s"count_if($ROW_ID_COL IS NULL AND !$ROW_DROPPED_COL) as insertedCount",
-        s"""count_if($ROW_DROPPED_COL AND $ROW_MATCHED_COL AND $ROW_ID_COL IS NOT NULL)
-           |as deletedMatchedCount""".stripMargin,
-        s"""count_if($ROW_DROPPED_COL AND !$ROW_MATCHED_COL AND $ROW_ID_COL IS NOT NULL)
+        s"""count_if($METADATA_ROW_IDX_COLUMN IS NULL AND
+           |!$ROW_DROPPED_COL) as insertedCount""".stripMargin,
+        s"""count_if($ROW_DROPPED_COL AND $ROW_MATCHED_COL AND
+           |$METADATA_ROW_IDX_COLUMN IS NOT NULL) as deletedMatchedCount""".stripMargin,
+        s"""count_if($ROW_DROPPED_COL AND !$ROW_MATCHED_COL AND
+           |$METADATA_ROW_IDX_COLUMN IS NOT NULL)
            |as deletedNotMatchedBySourceCount""".stripMargin,
-        s"""count_if(!$ROW_DROPPED_COL AND $ROW_MATCHED_COL AND $ROW_ID_COL IS NOT NULL)
+        s"""count_if(!$ROW_DROPPED_COL AND $ROW_MATCHED_COL AND
+           |$METADATA_ROW_IDX_COLUMN IS NOT NULL)
            |as updatedMatchedCount""".stripMargin,
-        s"""count_if(!$ROW_DROPPED_COL AND !$ROW_MATCHED_COL AND $ROW_ID_COL IS NOT NULL)
+        s"""count_if(!$ROW_DROPPED_COL AND !$ROW_MATCHED_COL AND
+           |$METADATA_ROW_IDX_COLUMN IS NOT NULL)
            |as updatedNotMatchedBySourceCount""".stripMargin,
       ).head()
 
@@ -861,14 +882,11 @@ object GpuLowShuffleMergeCommand {
 
         // Get the AddFiles using the touched file names.
         val touchedFileNames = touchedFilesAccum.value.iterator().asScala.toSeq
-        if (touchedFileNames.exists(_.trim.isEmpty)) {
-          throw new IllegalStateException("Empty file name found in touched files")
-        }
-        logTrace(s"findTouchedFiles: matched files:\n\t${touchedFileNames.mkString("\n\t")}")
 
         val nameToAddFileMap = cmd.generateCandidateFileMap(
           cmd.targetDeltaLog.dataPath,
           dataSkippedFiles)
+
         val touchedAddFiles = touchedFileNames.map(f =>
           cmd.getTouchedFile(cmd.targetDeltaLog.dataPath, f, nameToAddFileMap))
 
@@ -901,26 +919,29 @@ object GpuLowShuffleMergeCommand {
     private def writeModified(processedDF: DataFrame): Seq[FileAction] = {
       val outputDF = processedDF
         .filter(!col(ROW_DROPPED_COL)) // Filter out dropped rows
-        .drop(ROW_DROPPED_COL, ROW_MATCHED_COL, ROW_ID_COL, FILE_PATH_COL)
+        .drop(ROW_DROPPED_COL, ROW_MATCHED_COL, METADATA_ROW_IDX_COLUMN, FILE_PATH_COL)
 
-      deltaTxn
-        .writeFiles(cmd.repartitionIfNeeded(spark, outputDF, deltaTxn.metadata.partitionColumns))
+      val repartitionedDF = cmd.repartitionIfNeeded(spark,
+        outputDF,
+        deltaTxn.metadata.partitionColumns)
+
+      deltaTxn.writeFiles(repartitionedDF)
     }
 
     private def writeUnmodified(processedDF: DataFrame): Seq[FileAction] = {
 
       // We filter out the modified target rows ids and file paths
       val modifiedTargetRows = processedDF
-        .filter(col(ROW_ID_COL).isNotNull) // Filter out unmatched source rows
+        .filter(col(METADATA_ROW_IDX_COLUMN).isNotNull) // Filter out unmatched source rows
         .select(
-          (col(ROW_ID_COL) * -1).as(ROW_ID_COL),
+          (col(METADATA_ROW_IDX_COLUMN) * -1).as(METADATA_ROW_IDX_COLUMN),
           col(FILE_PATH_COL))
 
-      var baseTargetDF = targetDF.drop(TARGET_ROW_PRESENT_COL)
+      val baseTargetDF = targetDF.drop(TARGET_ROW_PRESENT_COL)
 
       val unModifiedTargetRows = {
-        baseTargetDF = addRepartitionByFilePath(baseTargetDF)
-        val df = makeUnmodifiedTargetDF(baseTargetDF, modifiedTargetRows)
+        val partitionedTargetDF = addRepartitionByFilePath(baseTargetDF)
+        val df = makeUnmodifiedTargetDF(partitionedTargetDF, modifiedTargetRows)
 
         // The correctness of RapidsRepartitionByFilePath relies on the fact we can enable
         // FORCE_ONE_FILE_PER_PARITION in file scan, which currently only works for
@@ -940,9 +961,9 @@ object GpuLowShuffleMergeCommand {
         }
       }
 
-
       logInfo("Unmodified target rows plan:\n" +
         unModifiedTargetRows.queryExecution.explainString(ExtendedMode))
+
 
       // Note we don't need to repartition here since they are unmodified.
       deltaTxn.writeFiles(unModifiedTargetRows)
@@ -958,7 +979,7 @@ object GpuLowShuffleMergeCommand {
         val mainDataOutput = resolvedActions.map(_.expr) :+
           Literal.FalseLiteral :+
           matched :+
-          UnresolvedAttribute(ROW_ID_COL) :+
+          UnresolvedAttribute(METADATA_ROW_IDX_COLUMN) :+
           UnresolvedAttribute(FILE_PATH_COL)
 
         Seq(mainDataOutput)
@@ -971,7 +992,7 @@ object GpuLowShuffleMergeCommand {
         val mainDataOutput = targetOutputCols :+
           TrueLiteral :+
           matched :+
-          UnresolvedAttribute(ROW_ID_COL) :+
+          UnresolvedAttribute(METADATA_ROW_IDX_COLUMN) :+
           UnresolvedAttribute(FILE_PATH_COL)
 
         Seq(mainDataOutput)
@@ -985,7 +1006,7 @@ object GpuLowShuffleMergeCommand {
         val mainDataOutput = resolvedActions.map(_.expr) :+
           Literal.FalseLiteral :+
           Literal.FalseLiteral :+
-          UnresolvedAttribute(ROW_ID_COL) :+
+          UnresolvedAttribute(METADATA_ROW_IDX_COLUMN) :+
           UnresolvedAttribute(FILE_PATH_COL)
 
         Seq(mainDataOutput)
@@ -1066,7 +1087,7 @@ object GpuLowShuffleMergeCommand {
       val processedRowSchema = outputRowSchema
         .add(ROW_DROPPED_FIELD)
         .add(ROW_MATCHED_FIELD)
-        .add(ROW_ID_FIELD.copy(nullable = true))
+        .add(METADATA_ROW_IDX_FIELD.copy(nullable = true))
         .add(FILE_PATH_FIELD.copy(nullable = true))
 
       val processedRowEncoder = RowEncoder(processedRowSchema).resolveAndBind()
@@ -1089,11 +1110,20 @@ object GpuLowShuffleMergeCommand {
     }
 
     private def addRepartitionByFilePath(input: DataFrame): DataFrame = {
-      logInfo(s"Trying to adding RapidsRepartitionByFilePath plan node")
+      logDebug(s"Trying to adding RapidsRepartitionByFilePath plan node")
       val newLogicalPlan = input.queryExecution.optimizedPlan.transformUp({
-        case p@Project(projectList, _: LogicalRelation) =>
+        case p@Project(projectList, r @ LogicalRelation(fs: HadoopFsRelation, _, _, _)) =>
           if (projectList.exists(_.name == FILE_PATH_COL)) {
-            RapidsRepartitionByFilePath(None, p)
+            // Here we enforce that the targetDF to read each file per partition. This is to ensure
+            // that we can avoid shuffling the target data when doing left anti join in the second
+            // step of low shuffle merge. See
+            // [[com.nvidia.spark.rapids.delta .RapidsRepartitionByFilePathExec]] for more details.
+            val newOptions = fs.options + (RapidsConf.FORCE_ONE_FILE_PER_PARITION.key -> "true")
+            val newFs = fs.copy(options = newOptions)(spark)
+            val newRelation = r.copy(relation = newFs)
+
+            val newProjection = p.copy(child = newRelation)
+            RapidsRepartitionByFilePath(None, newProjection)
           } else {
             p
           }
@@ -1111,12 +1141,13 @@ object GpuLowShuffleMergeCommand {
       // to ensure that the generated physical plan only requires repartition
       // by `_metadata_file_path`, so that we can avoid shuffle of target table.
       val joinCondition = baseTargetDF(FILE_PATH_COL) === modifiedTargetRows(FILE_PATH_COL) &&
-        ((baseTargetDF(ROW_ID_COL) + modifiedTargetRows(ROW_ID_COL)) === 0)
+        ((baseTargetDF(METADATA_ROW_IDX_COLUMN) +
+          modifiedTargetRows(METADATA_ROW_IDX_COLUMN)) === 0L)
 
 
       baseTargetDF.join(modifiedTargetRows,
           joinCondition, "anti")
-        .drop(ROW_DROPPED_COL, ROW_MATCHED_COL, ROW_ID_COL, FILE_PATH_COL)
+        .drop(METADATA_ROW_IDX_COLUMN, FILE_PATH_COL)
     }
 
     private def checkGpuFileSourceScanExecOverride(input: DataFrame): Boolean = {

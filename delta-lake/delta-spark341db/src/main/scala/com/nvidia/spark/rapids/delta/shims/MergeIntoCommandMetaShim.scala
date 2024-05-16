@@ -20,7 +20,6 @@ import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeInt
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuLowShuffleMergeCommand, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
-import com.nvidia.spark.rapids.delta.RapidsDeltaUtils.shouldUseLowShuffleMerge
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
@@ -40,7 +39,7 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
-    if (conf.isDeltaLowShuffleMergeEnabled) {
+    if (conf.isDeltaLowShuffleMergeEnabled && conf.isParquetPerFileReadEnabled) {
       GpuLowShuffleMergeCommand(
         mergeCmd.source,
         mergeCmd.target,
@@ -64,7 +63,7 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
-    if (conf.isDeltaLowShuffleMergeEnabled) {
+    if (conf.isDeltaLowShuffleMergeEnabled && conf.isParquetPerFileReadEnabled) {
       GpuLowShuffleMergeCommand(
         mergeCmd.source,
         mergeCmd.target,

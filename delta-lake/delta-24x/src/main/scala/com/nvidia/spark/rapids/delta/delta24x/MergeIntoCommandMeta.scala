@@ -49,7 +49,9 @@ class MergeIntoCommandMeta(
   }
 
   override def convertToGpu(): RunnableCommand = {
-    if (conf.isDeltaLowShuffleMergeEnabled) {
+    // TODO: Currently we only support low shuffler merge only when parquet per file read is enabled
+    // due to the limitation of implementing row index metadata column.
+    if (conf.isDeltaLowShuffleMergeEnabled && conf.isParquetPerFileReadEnabled) {
         GpuLowShuffleMergeCommand(
           mergeCmd.source,
           mergeCmd.target,

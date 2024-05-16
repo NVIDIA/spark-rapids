@@ -51,7 +51,7 @@ case class RapidsRepartitionByFilePath(optNumPartition: Option[Int],
  * In low shuffle merge, when saving unmodified target table data, we need to do an anti-join
  * from the touched target files to modified row ids to get the untouched target data like
  * following condition
- *    t.__metadata_file_path=m.__metadata_file_path AND (t.__metadata_row_id-m.__metadata_row_id=0)
+ * t.__metadata_file_path=m.__metadata_file_path AND (t.__metadata_row_id-m.__metadata_row_id=0)
  *
  * The query optimizer will generate a
  * [[org.apache.spark.sql.execution.joins.ShuffledHashJoinExec]] with forcing children from both
@@ -60,9 +60,10 @@ case class RapidsRepartitionByFilePath(optNumPartition: Option[Int],
  * the data based on the file path. The scan of touched target table files already meets one file
  * per partition, so we can avoid the shuffle by a special kind of coalescing that repartition the
  * data based on the file path.
+ *
  * @param optNumPartition Number of partitions to repartition the data, if not set, use the
  *                        numShufflePartitions in spark conf.
- * @param child Input table scan with `__metadata_file_path` column.
+ * @param child           Input table scan with `__metadata_file_path` column.
  */
 case class RapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
     child: SparkPlan) extends UnaryExecNode {
@@ -109,7 +110,10 @@ case class GpuRapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val rdd = child.executeColumnar()
+    val rdd = child.executeColumnar().cache()
+    logInfo(
+      s"""Repartitioning by file path with numPartitions=$numPartitions,
+         |input partitions=${rdd.getNumPartitions}""".stripMargin)
     if (numPartitions == 1 && rdd.getNumPartitions < 1) {
       // Make sure we don't output an RDD with 0 partitions, when claiming that we have a
       // `SinglePartition`.
@@ -117,7 +121,7 @@ case class GpuRapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
     } else {
       rdd.coalesce(numPartitions,
         shuffle = false,
-        Some(HashPartitioningByFilePathCoalescer(numPartitions, gpuPartitionIdExpr)))
+        Some(HashPartitioningByFilePathCoalescer(gpuPartitionIdExpr)))
     }
   }
 
@@ -125,12 +129,16 @@ case class GpuRapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
     copy(child = newChild)
 }
 
-case class HashPartitioningByFilePathCoalescer(numPartitions: Int,
-    partitionIdExpr: GpuExpression)
-  extends PartitionCoalescer {
+case class HashPartitioningByFilePathCoalescer(partitionIdExpr: GpuExpression)
+  extends PartitionCoalescer with Logging {
   override def coalesce(maxPartitions: Int, parent: RDD[_]): Array[PartitionGroup] = {
-    val partitionGroups = new Array[PartitionGroup](numPartitions)
-    for (i <- 0 until numPartitions) {
+    logInfo(s"""maxPartitions in HashPartitioningByFilePathCoalescer: $maxPartitions""")
+
+    if (maxPartitions <= 0) {
+      throw new IllegalArgumentException(s"Number of partitions ($maxPartitions) must be positive.")
+    }
+    val partitionGroups = new Array[PartitionGroup](maxPartitions)
+    for (i <- 0 until maxPartitions) {
       partitionGroups(i) = new PartitionGroup()
     }
 
@@ -147,6 +155,10 @@ case class HashPartitioningByFilePathCoalescer(numPartitions: Int,
       case (parentRddPartitionId, partitionId) =>
         partitionGroups(partitionId).partitions += parent.partitions(parentRddPartitionId)
     })
+
+    logInfo(
+      s"""partitionGroups in HashPartitioningByFilePathCoalescer:
+         |${partitionGroups.map(pg => pg.partitions.mkString(",")).mkString("|")}""".stripMargin)
 
     partitionGroups
   }
