@@ -224,7 +224,10 @@ object TrampolineUtil {
   def newDaemonCachedThreadPool(
       prefix: String,
       maxThreadNumber: Int,
-      keepAliveSeconds: Int): ThreadPoolExecutor = {
+      keepAliveSeconds: Int = 60): ThreadPoolExecutor = {
+    // We want to utilize the ThreadUtils class' ThreadPoolExecutor creation
+    // which gives us important Hadoop config variables that are needed for the
+    // Unity Catalog authentication
     org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber,
       keepAliveSeconds)
   }
