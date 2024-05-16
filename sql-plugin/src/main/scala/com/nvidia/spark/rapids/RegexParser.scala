@@ -720,6 +720,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
     (cudfRegex.toRegexString, replacement.map(_.toRegexString))
   }
 
+  def getTranspiledAST(
+      regex: RegexAST,
+      extractIndex: Option[Int],
+      repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
+    // if we have a replacement, parse the replacement string using the regex parser to account
+    // for backrefs
+    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
+
+    // validate that the regex is supported by cuDF
+    val cudfRegex = transpile(regex, extractIndex, replacement, None)
+
+    (cudfRegex, replacement)
+  }
+
   /**
    * Parse Java regular expression and translate into cuDF regular expression in AST form.
    *
@@ -734,14 +748,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
-    // if we have a replacement, parse the replacement string using the regex parser to account
-    // for backrefs
-    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
-
-    // validate that the regex is supported by cuDF
-    val cudfRegex = transpile(regex, extractIndex, replacement, None)
-
-    (cudfRegex, replacement)
+    getTranspiledAST(regex, extractIndex, repl)
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
@@ -2014,7 +2021,7 @@ sealed trait RegexOptimizationType
 object RegexOptimizationType {
   case class StartsWith(literal: String) extends RegexOptimizationType
   case class Contains(literal: String) extends RegexOptimizationType
-  case class PrefixRange(literal: String, charsRange: (Int, Int), length: Int) 
+  case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
     extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
@@ -2037,9 +2044,9 @@ object RegexRewrite {
           case (RegexChar(start), RegexChar(end)) => (start, end)
           case _ => return None
         }
-        val x = quantifier match {
+        val length = quantifier match {
           case QuantifierVariableLength(start, _) => start
-          case QuantifierFixedLength(length) => length
+          case QuantifierFixedLength(len) => len
           case SimpleQuantifier(ch) => ch match {
             case '*' | '?' => 0
             case '+' => 1
@@ -2047,25 +2054,23 @@ object RegexRewrite {
           }
           case _ => return None
         }
-        Some((start.toInt, end.toInt, x))
+        Some((length, start.toInt, end.toInt))
       }
       case _ => None
     }
     val literalPrefix = isliteralString(astLs.dropRight(1))
     (literalPrefix, endsWithRange) match {
-      case (true, Some((start, end, x))) => {
+      case (true, Some((length, start, end))) => {
         val prefix = RegexCharsToString(astLs.dropRight(1))
-        Some((prefix, start, end, x))
+        Some((prefix, length, start, end))
       }
       case _ => None
     }
-    
   }
 
   private def isliteralString(astLs: collection.Seq[RegexAST]): Boolean = {
     removeBrackets(astLs).forall {
-      case RegexChar('^') | RegexChar('$') | RegexChar('.') => false
-      case RegexChar(_) => true
+      case RegexChar(ch) if !regexMetaChars.contains(ch) => true
       case _ => false
     }
   }
@@ -2117,9 +2122,9 @@ object RegexRewrite {
         val noStartsWithAst = stripTailingWildcards(stripLeadingWildcards(astLs))
         val prefixRangeInfo = getPrefixRangePattern(noStartsWithAst)
         if (prefixRangeInfo.isDefined) {
-          val (prefix, start, end, length) = prefixRangeInfo.get
+          val (prefix, length, start, end) = prefixRangeInfo.get
           // (literal[a-b]{x,y}) => prefix range pattern
-          RegexOptimizationType.PrefixRange(prefix, (start, end), length)
+          RegexOptimizationType.PrefixRange(prefix, length, start, end)
         } else if (isliteralString(noStartsWithAst)) {
           // literal.* or (literal).* => contains literal
           RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))

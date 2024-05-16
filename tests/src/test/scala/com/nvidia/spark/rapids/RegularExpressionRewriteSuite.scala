@@ -54,11 +54,11 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       "(.*)abc[0-9]{2}.*",
       "^abc[0-9]{1,3}",
       "火花急流[\u4e00-\u9fa5]{1}")
-    val excepted = Seq(PrefixRange("abc", (48, 57), 1),
+    val excepted = Seq(PrefixRange("abc", 1, 48, 57),
       NoOptimization,
-      PrefixRange("abc", (48, 57), 2),
-      PrefixRange("abc", (48, 57), 1),
-      PrefixRange("火花急流", (19968, 40869), 1))
+      PrefixRange("abc", 2, 48, 57),
+      PrefixRange("abc", 1, 48, 57),
+      PrefixRange("火花急流", 1, 19968, 40869))
     verifyRewritePattern(patterns, excepted)
   }
 }
