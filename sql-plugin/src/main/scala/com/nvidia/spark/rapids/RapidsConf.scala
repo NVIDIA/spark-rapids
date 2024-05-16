@@ -1790,11 +1790,12 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
 
   val SHUFFLE_GPU_SERDE_ENABLED =
     conf("spark.rapids.shuffle.serde.enabled")
-      .doc("When false, disable the GPU serialization and deserialization for shuffle.")
+      .doc("When true, enable the GPU serialization and deserialization for the" +
+        " normal shuffle.")
       .internal()
       .startupOnly()
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   // ALLUXIO CONFIGS
   val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
