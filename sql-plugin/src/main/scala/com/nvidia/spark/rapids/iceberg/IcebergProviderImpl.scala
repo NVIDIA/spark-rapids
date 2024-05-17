@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,18 +30,18 @@ class IcebergProviderImpl extends IcebergProvider {
     Seq(new ScanRule[Scan](
       (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
         private lazy val convertedScan: Try[GpuSparkBatchQueryScan] = Try {
-          GpuSparkBatchQueryScan.fromCpu(a, conf)
+          GpuSparkBatchQueryScan.fromCpu(a, this.conf)
         }
 
         override def supportsRuntimeFilters: Boolean = true
 
         override def tagSelfForGpu(): Unit = {
-          if (!conf.isIcebergEnabled) {
+          if (!this.conf.isIcebergEnabled) {
             willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
                 s"${RapidsConf.ENABLE_ICEBERG} to true")
           }
 
-          if (!conf.isIcebergReadEnabled) {
+          if (!this.conf.isIcebergReadEnabled) {
             willNotWorkOnGpu("Iceberg input has been disabled. To enable set " +
                 s"${RapidsConf.ENABLE_ICEBERG_READ} to true")
           }
