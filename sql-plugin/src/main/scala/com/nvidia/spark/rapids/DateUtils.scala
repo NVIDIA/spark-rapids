@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
+import com.nvidia.spark.rapids.shims.DateTimeUtilsShims
 
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuToTimestamp, LegacyTimeParserPolicy}
@@ -79,7 +79,7 @@ object DateUtils {
     Map.empty
   } else {
     val today = currentDate()
-    val now = DateTimeUtils.currentTimestamp()
+    val now = DateTimeUtilsShims.currentTimestamp
     Map(
       EPOCH -> 0,
       NOW -> now / 1000000L,
@@ -93,7 +93,7 @@ object DateUtils {
     Map.empty
   } else {
     val today = currentDate()
-    val now = DateTimeUtils.currentTimestamp()
+    val now = DateTimeUtilsShims.currentTimestamp
     Map(
       EPOCH -> 0,
       NOW -> now,
