@@ -87,10 +87,16 @@ object JsonPathParser extends RegexParsers {
     }
   }
 
-  def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
-    // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
+  def filterInstructionsForJni(instructions: List[PathInstruction]): List[PathInstruction] =
+    instructions.filter {
+      // The JNI implementation does not need/use these types.
+      case Subscript => false
+      case Key => false
+      case _ => true
+    }
+
+  def fallbackCheck(instructions: List[PathInstruction]): Boolean =
     instructions.length > JSONUtils.MAX_PATH_DEPTH
-  }
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
     instruction match {
@@ -107,11 +113,11 @@ object JsonPathParser extends RegexParsers {
     instructions.map { instruction =>
       val (tpe, name, index) = unzipInstruction(instruction)
       new JSONUtils.PathInstructionJni(tpe match {
-        case "subscript" => JSONUtils.PathInstructionType.SUBSCRIPT
-        case "key" => JSONUtils.PathInstructionType.KEY
         case "wildcard" => JSONUtils.PathInstructionType.WILDCARD
         case "index" => JSONUtils.PathInstructionType.INDEX
         case "named" => JSONUtils.PathInstructionType.NAMED
+        case other =>
+          throw new IllegalArgumentException(s"Internal Error should not see a $other instruction")
       }, name, index)
     }.toArray
   }
@@ -150,8 +156,11 @@ class GpuGetJsonObjectMeta(
     lit.foreach { l =>
       val instructions = JsonPathParser.parse(l.value.asInstanceOf[UTF8String].toString)
       if (!conf.isLegacyGetJsonObjectEnabled) {
-        if (instructions.exists(JsonPathParser.fallbackCheck)) {
-          willNotWorkOnGpu("get_json_object on GPU does not support more than 16 nested paths")
+        val updated = instructions.map(JsonPathParser.filterInstructionsForJni)
+        if (updated.exists(JsonPathParser.fallbackCheck)) {
+          willNotWorkOnGpu(s"get_json_object on GPU does not support more " +
+            s"than ${JSONUtils.MAX_PATH_DEPTH} nested paths." +
+            s"(Found ${instructions.map(_.length)})")
         }
       } else {
         if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {
@@ -246,8 +255,10 @@ case class GpuGetJsonObject(
         // If has separate wildcard path, should return all nulls
         None
       } else {
-        pathInstructions
+        // Filter out the unneeded instructions before we cache it
+        pathInstructions.map(JsonPathParser.filterInstructionsForJni)
       }
+
       cachedInstructions = Some(checkedPathInstructions)
       checkedPathInstructions
     } match {
