@@ -74,7 +74,7 @@ trait TableCompressionCodec {
 /**
  * A small case class used to carry codec-specific settings.
  */
-case class TableCompressionCodecConfig(chunkSize: Long)
+case class TableCompressionCodecConfig(lz4ChunkSize: Long, zstdChunkSize: Long)
 
 object TableCompressionCodec extends Logging {
   private val codecNameToId = Map(
@@ -85,7 +85,8 @@ object TableCompressionCodec extends Logging {
   /** Make a codec configuration object which can be serialized (can be used in tasks) */
   def makeCodecConfig(rapidsConf: RapidsConf): TableCompressionCodecConfig =
     TableCompressionCodecConfig(
-      rapidsConf.shuffleCompressionChunkSize)
+      rapidsConf.shuffleCompressionLz4ChunkSize,
+      rapidsConf.shuffleCompressionZstdChunkSize)
 
   /** Get a compression codec by short name or fully qualified class name */
   def getCodec(name: String, codecConfigs: TableCompressionCodecConfig): TableCompressionCodec = {

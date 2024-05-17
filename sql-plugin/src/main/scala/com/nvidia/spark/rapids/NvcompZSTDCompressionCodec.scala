@@ -46,7 +46,7 @@ class BatchedNvcompZSTDCompressor(maxBatchMemorySize: Long,
     stream: Cuda.Stream) extends BatchedTableCompressor(maxBatchMemorySize, stream) {
 
   private val batchCompressor =
-    new BatchedZstdCompressor(codecConfigs.chunkSize, maxBatchMemorySize)
+    new BatchedZstdCompressor(codecConfigs.zstdChunkSize, maxBatchMemorySize)
 
   override protected def compress(tables: Array[ContiguousTable],
       stream: Cuda.Stream): Array[CompressedTable] = {
@@ -69,7 +69,7 @@ class BatchedNvcompZSTDCompressor(maxBatchMemorySize: Long,
 class BatchedNvcompZSTDDecompressor(maxBatchMemory: Long,
     codecConfigs: TableCompressionCodecConfig,
     stream: Cuda.Stream) extends BatchedBufferDecompressor(maxBatchMemory, stream) {
-  private val batchDecompressor = new BatchedZstdDecompressor(codecConfigs.chunkSize)
+  private val batchDecompressor = new BatchedZstdDecompressor(codecConfigs.zstdChunkSize)
 
   override val codecId: Byte = CodecType.NVCOMP_ZSTD
 

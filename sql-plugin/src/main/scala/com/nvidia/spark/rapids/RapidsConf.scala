@@ -1750,12 +1750,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("none")
 
-val SHUFFLE_COMPRESSION_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.chunkSize")
-    .doc("A configurable chunk size to use when compressing with LZ4 or ZSTD.")
+val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+    .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
     .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
+
+  val SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE =
+    conf("spark.rapids.shuffle.compression.zstd.chunkSize")
+      .doc("A configurable chunk size to use when compressing with ZSTD.")
+      .internal()
+      .startupOnly()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024)
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
@@ -2820,7 +2828,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
-  lazy val shuffleCompressionChunkSize: Long = get(SHUFFLE_COMPRESSION_CHUNK_SIZE)
+  lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
+
+  lazy val shuffleCompressionZstdChunkSize: Long = get(SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
