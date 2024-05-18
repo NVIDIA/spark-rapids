@@ -4156,15 +4156,8 @@ object GpuOverrides extends Logging {
             "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
-      (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
-        override def convertToGpu(): GpuExec = {
-          GpuFilterExec(childExprs.head.convertToGpu(),
-            childPlans.head.convertIfNeeded())(useTieredProject = this.conf.isTieredProjectEnabled)
-        }
-      }),
+      GpuFilterExec.typeChecks,
+      GpuFilterExec.wrapMeta),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
