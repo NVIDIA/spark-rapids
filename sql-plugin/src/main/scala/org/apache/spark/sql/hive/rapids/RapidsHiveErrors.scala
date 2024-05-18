@@ -19,9 +19,9 @@ package org.apache.spark.sql.hive.rapids
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.Literal
+import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 
 object RapidsHiveErrors {
@@ -53,8 +53,9 @@ object RapidsHiveErrors {
   }
 
   def cannotResolveAttributeError(name: String, outputStr: String): Throwable = {
-    new AnalysisException(
-      s"Unable to resolve $name given [$outputStr]") {}
+    AnalysisExceptionShim.throwException(
+      errorClass = "_LEGACY_ERROR_TEMP_1137",
+      Map("name" -> s"$name", "outputStr" -> s"$outputStr"))
   }
 
   def writePartitionExceedConfigSizeWhenDynamicPartitionError(

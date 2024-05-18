@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -84,10 +84,8 @@ object GpuDataWritingCommand {
       if (fs.exists(filePath) &&
           fs.getFileStatus(filePath).isDirectory &&
           fs.listStatus(filePath).length != 0) {
-        TrampolineUtil.throwAnalysisException(
-          s"CREATE-TABLE-AS-SELECT cannot create table with location to a non-empty directory " +
-              s"${tablePath} . To allow overwriting the existing non-empty directory, " +
-              s"set '$allowNonEmptyLocationInCTASKey' to true.")
+        AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1241",
+          Map("tablePath" -> s"$tablePath", "config" -> s"$allowNonEmptyLocationInCTASKey"))
       }
     }
   }

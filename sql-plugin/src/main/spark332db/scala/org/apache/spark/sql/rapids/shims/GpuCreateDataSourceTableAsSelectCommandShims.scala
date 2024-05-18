@@ -64,8 +64,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         s"Expect the table $tableName has been dropped when the save mode is Overwrite")
 
       if (mode == SaveMode.ErrorIfExists) {
-        throw new AnalysisException(s"Table $tableName already exists. " +
-          "You need to drop it first.") {}
+        AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1288",
+          Map("tableName" -> s"$tableName"))
       }
       if (mode == SaveMode.Ignore) {
         // Since the table already exists and the save mode is Ignore, we will just return.

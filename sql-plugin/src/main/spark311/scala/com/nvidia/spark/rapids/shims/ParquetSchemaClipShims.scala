@@ -26,7 +26,7 @@ import org.apache.parquet.schema.OriginalType._
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
 
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
 import org.apache.spark.sql.types._
 
 object ParquetSchemaClipShims {
@@ -64,13 +64,15 @@ object ParquetSchemaClipShims {
       if (originalType == null) s"$typeName" else s"$typeName ($originalType)"
 
     def typeNotSupported() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not supported: $typeString")
+      AnalysisExceptionShim.throwException(s"Parquet type not supported: $typeString")
 
     def typeNotImplemented() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $typeString")
+      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1172",
+        Map("parquetType" -> s"$typeString"))
 
     def illegalType() =
-      TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $typeString")
+      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1173",
+        Map("parquetType" -> s"$typeString"))
 
     // When maxPrecision = -1, we skip precision range check, and always respect the precision
     // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored
@@ -80,8 +82,7 @@ object ParquetSchemaClipShims {
       val scale = field.getDecimalMetadata.getScale
 
       if (!(maxPrecision == -1 || 1 <= precision && precision <= maxPrecision)) {
-       TrampolineUtil.throwAnalysisException(
-         s"Invalid decimal precision: $typeName " +
+       AnalysisExceptionShim.throwException(s"Invalid decimal precision: $typeName " +
              s"cannot store $precision digits (max $maxPrecision)")
       }
 
@@ -121,7 +122,7 @@ object ParquetSchemaClipShims {
 
       case INT96 =>
         if (!SQLConf.get.isParquetINT96AsTimestamp) {
-          TrampolineUtil.throwAnalysisException(
+          AnalysisExceptionShim.throwException(
             "INT96 is not supported unless it's interpreted as timestamp. " +
                 s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
         }
