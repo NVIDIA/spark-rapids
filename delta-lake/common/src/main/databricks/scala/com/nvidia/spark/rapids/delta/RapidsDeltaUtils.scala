@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,12 @@ import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOption
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
-object RapidsDeltaUtils extends Logging {
+object RapidsDeltaUtils {
   def tagForDeltaWrite(
       meta: RapidsMeta[_, _, _],
       schema: StructType,
