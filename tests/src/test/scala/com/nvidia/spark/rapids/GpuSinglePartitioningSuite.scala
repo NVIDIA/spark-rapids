@@ -47,7 +47,6 @@ class GpuSinglePartitioningSuite extends AnyFunSuite {
       // set up as UCX because that's what triggers nvcomp
       .set("spark.rapids.shuffle.mode", RapidsConf.RapidsShuffleManagerMode.UCX.toString)
       .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
-      .set(RapidsConf.SHUFFLE_GPU_SERDE_ENABLED.key, "false")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val partitioner = GpuSinglePartitioning

@@ -85,6 +85,8 @@ case class GpuOptimizeWriteExchangeExec(
         createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle combine time"),
     "rapidsShuffleWriteIoTime" ->
         createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle write io time"),
+    "rapidsShufflePartitionTime" ->
+      createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle partition time"),
     "rapidsShuffleReadTime" ->
         createNanoTimingMetric(ESSENTIAL_LEVEL, "rs. shuffle read time")
   ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)

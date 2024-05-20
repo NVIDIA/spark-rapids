@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import ai.rapids.cudf.nvcomp.{BatchedLZ4Compressor, BatchedLZ4Decompressor}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 
 /** A table compression codec that uses nvcomp's LZ4-GPU codec */
@@ -79,6 +78,7 @@ class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long,
     codecConfigs: TableCompressionCodecConfig, stream: Cuda.Stream)
     extends BatchedBufferDecompressor(maxBatchMemory, stream) {
   override val codecId: Byte = CodecType.NVCOMP_LZ4
+  private val decompressor = new BatchedLZ4Decompressor(codecConfigs.lz4ChunkSize)
 
   override def decompressAsync(
       inputBuffers: Array[BaseDeviceMemoryBuffer],
@@ -94,32 +94,10 @@ class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long,
         DeviceBuffersUtils.allocateBuffers(bufferMetas.map(_.uncompressedSize()))
       }
     }
-    BatchedLZ4Decompressor.decompressAsync(
-      codecConfigs.lz4ChunkSize,
+    decompressor.decompressAsync(
       inputBuffers,
       outputBuffers.asInstanceOf[Array[BaseDeviceMemoryBuffer]],
       stream)
     outputBuffers
   }
-}
-
-object DeviceBuffersUtils {
-  def incRefCount(bufs: Array[BaseDeviceMemoryBuffer]): Array[BaseDeviceMemoryBuffer] = {
-    bufs.safeMap { b =>
-      b.incRefCount()
-      b
-    }
-  }
-
-  def allocateBuffers(bufSizes: Array[Long]): Array[DeviceMemoryBuffer] = {
-    var curPos = 0L
-    withResource(DeviceMemoryBuffer.allocate(bufSizes.sum)) { singleBuf =>
-      bufSizes.safeMap { len =>
-        val ret = singleBuf.slice(curPos, len)
-        curPos += len
-        ret
-      }
-    }
-  }
-
 }

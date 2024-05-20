@@ -310,7 +310,7 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         "test",
-        TableCompressionCodecConfig(1024)) with CoalesceIteratorMocks {
+        TableCompressionCodecConfig(1024, 1024)) with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()
       injectError(injectRetry, injectSplitAndRetry)

@@ -923,6 +923,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_RLIKE_REGEX_REWRITE = conf("spark.rapids.sql.rLikeRegexRewrite.enabled")
+      .doc("Enable the optimization to rewrite rlike regex to contains in some cases.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getJsonObject.legacy.enabled")
       .doc("When set to true, the get_json_object function will use the legacy implementation " +
           "on the GPU. The legacy implementation is faster than the current implementation, but " +
@@ -1738,7 +1744,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
     .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-      "Supported codecs: lz4, copy, none")
+      "Supported codecs: zstd, lz4, copy, none")
     .internal()
     .startupOnly()
     .stringConf
@@ -1750,6 +1756,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
+
+  val SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE =
+    conf("spark.rapids.shuffle.compression.zstd.chunkSize")
+      .doc("A configurable chunk size to use when compressing with ZSTD.")
+      .internal()
+      .startupOnly()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024)
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
@@ -2637,6 +2651,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
 
+  lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
+
   lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
 
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
@@ -2826,6 +2842,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
   lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
+
+  lazy val shuffleCompressionZstdChunkSize: Long = get(SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 

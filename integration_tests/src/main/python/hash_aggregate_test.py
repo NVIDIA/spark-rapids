@@ -994,7 +994,6 @@ def exact_percentile_groupby(df):
     )
 
 @ignore_order
-@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10719")
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 def test_exact_percentile_groupby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1012,7 +1011,6 @@ exact_percentile_groupby_cpu_fallback_data_gen = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
                'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
                'Percentile')
-@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10738")
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_cpu_fallback_data_gen, ids=idfn)
 @pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)

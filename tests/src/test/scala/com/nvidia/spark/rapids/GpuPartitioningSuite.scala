@@ -129,13 +129,14 @@ class GpuPartitioningSuite extends AnyFunSuite {
     }
   }
 
-  private def testGpuPartition(isGpuSerde: Boolean): Unit = {
+  private def testGpuPartition(serdeType: String): Unit = {
     TrampolineUtil.cleanupAnyExistingSession()
     val conf = new SparkConf()
       .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
-      .set(RapidsConf.SHUFFLE_GPU_SERDE_ENABLED.key, isGpuSerde.toString)
+      .set(RapidsConf.SHUFFLE_SERDE_TYPE.key, serdeType)
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
+      val rapidsConf = new RapidsConf(conf)
+      GpuShuffleEnv.init(rapidsConf, new RapidsDiskBlockManager(conf))
       val partitionIndices = Array(0, 2, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length
@@ -157,7 +158,7 @@ class GpuPartitioningSuite extends AnyFunSuite {
             }
             val expectedRows = endRow - startRow
             assertResult(expectedRows)(partBatch.numRows)
-            if (isGpuSerde) {
+            if (rapidsConf.isGpuSerdeEnabled) {
               assert(PackedTableHostColumnVector.isBatchPackedOnHost(partBatch))
             } else {
               assert(GpuPackedTableColumn.isBatchPacked(partBatch))
@@ -171,10 +172,10 @@ class GpuPartitioningSuite extends AnyFunSuite {
     }
   }
 
-  private def testGpuPartitionWithCompression(isGpuSerde: Boolean): Unit = {
+  private def testGpuPartitionWithCompression(serdeType: String, codecName: String): Unit = {
     val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "lz4")
-        .set(RapidsConf.SHUFFLE_GPU_SERDE_ENABLED.key, isGpuSerde.toString)
+      .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, codecName)
+      .set(RapidsConf.SHUFFLE_SERDE_TYPE.key, serdeType)
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val spillPriority = 7L
@@ -254,19 +255,23 @@ class GpuPartitioningSuite extends AnyFunSuite {
   }
 
   test("GPU partition") {
-    testGpuPartition(true)
+    testGpuPartition("GPU")
   }
 
   test("GPU partition with CPU Serde") {
-    testGpuPartition(false)
+    testGpuPartition("CPU")
   }
 
-  test("GPU partition with compression") {
-    testGpuPartitionWithCompression(true)
+  test("GPU partition with lz4 compression") {
+    testGpuPartitionWithCompression("GPU", "lz4")
   }
 
-  test("GPU partition with compression with CPU Serde") {
-    testGpuPartitionWithCompression(false)
+  test("GPU partition with zstd compression") {
+    testGpuPartitionWithCompression("GPU", "zstd")
+  }
+
+  test("GPU partition with lz4 compression and CPU Serde") {
+    testGpuPartitionWithCompression("CPU", "lz4")
   }
 }
 

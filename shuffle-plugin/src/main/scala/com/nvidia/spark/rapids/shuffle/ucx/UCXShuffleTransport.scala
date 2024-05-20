@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.shuffle._
 import com.nvidia.spark.rapids.shuffle.{BounceBufferManager, BufferReceiveState, ClientConnection, PendingTransferRequest, RapidsShuffleClient, RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport, RefCountedDirectByteBuffer}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.BlockManagerId
 
 /**
@@ -240,21 +241,24 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   }
 
   // NOTE: this pool, as is, will add a new thread per task. This will likely change.
-  private[this] val clientExecutor = new ThreadPoolExecutor(1,
-    rapidsConf.shuffleMaxClientThreads,
-    rapidsConf.shuffleClientThreadKeepAliveTime,
-    TimeUnit.SECONDS,
-    new ArrayBlockingQueue[Runnable](1),
-    GpuDeviceManager.wrapThreadFactory(
-      new ThreadFactoryBuilder()
-        .setNameFormat("shuffle-transport-client-exec-%d")
-        .setDaemon(true)
-        .build,
-      null,
-      () => RmmSpark.removeAllCurrentThreadAssociation()),
+  private[this] val clientExecutor = {
+    // We are using the TrampolineUtil to create a ThreadPoolExecutor even though we are
+    // resetting most of the params that were set using the ThreadUtils class.
+    // The reason is that this way we will get the Hadoop conf necessary for Unity Catalog
+    val threadPoolExecutor = TrampolineUtil.newDaemonCachedThreadPool("ucx-shuffle-transport",
+      rapidsConf.shuffleMaxClientThreads,
+      rapidsConf.shuffleClientThreadKeepAliveTime)
+    threadPoolExecutor.setCorePoolSize(1)
+    threadPoolExecutor.setThreadFactory(
+      GpuDeviceManager.wrapThreadFactory(
+        threadPoolExecutor.getThreadFactory,
+        null,
+        () => RmmSpark.removeAllCurrentThreadAssociation()))
     // if we can't hand off because we are too busy, block the caller (in UCX's case,
     // the progress thread)
-    new CallerRunsAndLogs())
+    threadPoolExecutor.setRejectedExecutionHandler(new CallerRunsAndLogs())
+    threadPoolExecutor
+  }
 
   // This executor handles any task that would block (e.g. wait for spill synchronously due to OOM)
   private[this] val clientCopyExecutor = Executors.newSingleThreadExecutor(
