@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -206,7 +206,7 @@ ci_scala213() {
     cd .. # Run integration tests in the project root dir to leverage test cases and resource files
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
+    export TEST_PARALLEL=4
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         ./integration_tests/run_pyspark_from_build.sh
