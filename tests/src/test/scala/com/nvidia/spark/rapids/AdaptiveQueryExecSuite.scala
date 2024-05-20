@@ -504,7 +504,6 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
-      .set(RapidsConf.SHUFFLE_GPU_SERDE_ENABLED.key, "false")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -536,7 +535,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
-      .set(RapidsConf.SHUFFLE_GPU_SERDE_ENABLED.key, "false")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -653,7 +651,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "100")
       .set(SQLConf.SKEW_JOIN_SKEWED_PARTITION_THRESHOLD.key, "800")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "800")
-      .set(RapidsConf.SHUFFLE_GPU_SERDE_ENABLED.key, "false")
 
     withGpuSparkSession(spark => {
       import spark.implicits._

@@ -1788,14 +1788,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         .integerConf
         .createWithDefault(20)
 
-  val SHUFFLE_GPU_SERDE_ENABLED =
-    conf("spark.rapids.shuffle.serde.enabled")
+  private val SHUFFLE_SERDE_TYPES = Set("CPU", "GPU")
+
+  val SHUFFLE_SERDE_TYPE =
+    conf("spark.rapids.shuffle.serde.type")
       .doc("When true, enable the GPU serialization and deserialization for the" +
         " normal shuffle.")
       .internal()
       .startupOnly()
-      .booleanConf
-      .createWithDefault(false)
+      .stringConf
+      .checkValue(v => SHUFFLE_SERDE_TYPES.contains(v.toUpperCase(java.util.Locale.ROOT)),
+        s"The shuffle type should be one of ${SHUFFLE_SERDE_TYPES.mkString(", ")}")
+      .createWithDefault("CPU")
 
   // ALLUXIO CONFIGS
   val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
@@ -2832,7 +2836,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
-  lazy val isGpuSerdeEnabled: Boolean = get(SHUFFLE_GPU_SERDE_ENABLED)
+  lazy val isGpuSerdeEnabled: Boolean =
+    get(SHUFFLE_SERDE_TYPE).toUpperCase(java.util.Locale.ROOT) == "GPU"
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
