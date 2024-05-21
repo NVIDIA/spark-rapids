@@ -20,27 +20,28 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
 import java.io.File
+import java.util.TimeZone
 
 import com.nvidia.spark.rapids.{GpuProjectExec, TestStats}
 import org.apache.commons.io.{FileUtils => fu}
 import org.apache.commons.math3.util.Precision
 import org.scalactic.TripleEqualsSupport.Spread
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{Column, Row, SparkSession}
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.analysis.ResolveTimeZone
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
-import org.apache.spark.sql.catalyst.optimizer.{ConstantFolding, ConvertToLocalRelation, NullPropagation}
+import org.apache.spark.sql.catalyst.optimizer.{ConstantFolding, ConvertToLocalRelation}
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, MapData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsQueryTestUtil.isNaNOrInf
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.UTF8String
+
 
 trait RapidsTestsTrait extends RapidsTestsCommonTrait {
+
+  val originalTimeZone = TimeZone.getDefault
 
   override def beforeAll(): Unit = {
     // prepare working paths
@@ -54,9 +55,12 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     super.beforeAll()
     initializeSession()
     _spark.sparkContext.setLogLevel("WARN")
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
   }
 
   override def afterAll(): Unit = {
+    TimeZone.setDefault(originalTimeZone)
+
     try {
       super.afterAll()
     } finally {
@@ -91,12 +95,17 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         .config(
           SQLConf.OPTIMIZER_EXCLUDED_RULES.key,
           ConvertToLocalRelation.ruleName +
-            "," + ConstantFolding.ruleName + "," + NullPropagation.ruleName)
+            "," + ConstantFolding.ruleName)
         .config("spark.rapids.sql.enabled", "true")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", warehouse)
+        .config("spark.sql.session.timeZone","UTC")
+        .config("spark.rapids.sql.explain", "ALL")
+        .config("spark.rapids.sql.test.isFoldableNonLitAllowed", "true")
+        // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
+        // .config("spark.rapids.sql.test.enabled", "true")
         .appName("rapids spark plugin running Vanilla Spark UT")
 
       _spark = sparkBuilder
@@ -115,31 +124,20 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     val expr = resolver.resolveTimeZones(expression)
     assert(expr.resolved)
 
-    if (canConvertToDataFrame(inputRow)) {
-      rapidsCheckExpression(expr, expected, inputRow)
-    } else {
-      logWarning(s"The status of this unit test is not guaranteed.")
-      val catalystValue = CatalystTypeConverters.convertToCatalyst(expected)
-      checkEvaluationWithoutCodegen(expr, catalystValue, inputRow)
-      checkEvaluationWithMutableProjection(expr, catalystValue, inputRow)
-      if (GenerateUnsafeProjection.canSupport(expr.dataType)) {
-        checkEvaluationWithUnsafeProjection(expr, catalystValue, inputRow)
-      }
-      checkEvaluationWithOptimization(expr, catalystValue, inputRow)
-    }
+    rapidsCheckExpression(expr, expected, inputRow)
   }
 
   /**
    * Sort map data by key and return the sorted key array and value array.
    *
    * @param input
-   *   : input map data.
+   * : input map data.
    * @param kt
-   *   : key type.
+   * : key type.
    * @param vt
-   *   : value type.
+   * : value type.
    * @return
-   *   the sorted key array and value array.
+   * the sorted key array and value array.
    */
   private def getSortedArrays(
       input: MapData,
@@ -202,7 +200,7 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       case (result: Double, expected: Double) =>
         if (
           (isNaNOrInf(result) || isNaNOrInf(expected))
-          || (result == -0.0) || (expected == -0.0)
+            || (result == -0.0) || (expected == -0.0)
         ) {
           java.lang.Double.doubleToRawLongBits(result) ==
             java.lang.Double.doubleToRawLongBits(expected)
@@ -221,20 +219,23 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     RapidsTestConstants.SUPPORTED_DATA_TYPE.acceptsType(expr.dataType)
   }
 
-  def rapidsCheckExpression(expression: Expression, expected: Any, inputRow: InternalRow): Unit = {
-    val df = if (inputRow != EmptyRow && inputRow != InternalRow.empty) {
-      convertInternalRowToDataFrame(inputRow)
-    } else {
-      val schema = StructType(StructField("a", IntegerType, nullable = true) :: Nil)
-      val empData = Seq(Row(1))
-      _spark.createDataFrame(_spark.sparkContext.parallelize(empData), schema)
+  def rapidsCheckExpression(origExpr: Expression, expected: Any, inputRow: InternalRow): Unit = {
+    // many of of the expressions in RAPIDS do not support
+    // vectorized parameters. (e.g. regexp_replace)
+    // So we downgrade all expression
+    // evaluation to use scalar parameters.
+    // In a follow-up issue we'll take care of the expressions
+    // those already support vectorized paramters.
+    val expression = origExpr.transformUp {
+      case BoundReference(ordinal, dataType, _) =>
+        Literal(inputRow.asInstanceOf[GenericInternalRow].get(ordinal, dataType), dataType)
     }
-    val resultDF = df.select(Column(expression))
+    val resultDF = _spark.range(0, 1).select(Column(expression))
     val result = resultDF.collect()
     TestStats.testUnitNumber = TestStats.testUnitNumber + 1
     if (
       checkDataTypeSupported(expression) &&
-      expression.children.forall(checkDataTypeSupported)
+        expression.children.forall(checkDataTypeSupported)
     ) {
       val projectTransformer = resultDF.queryExecution.executedPlan.collect {
         case p: GpuProjectExec => p
@@ -254,13 +255,13 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     if (
       !(checkResult(result.head.get(0), expected, expression.dataType, expression.nullable)
         || checkResult(
-          CatalystTypeConverters.createToCatalystConverter(expression.dataType)(
-            result.head.get(0)
-          ), // decimal precision is wrong from value
-          CatalystTypeConverters.convertToCatalyst(expected),
-          expression.dataType,
-          expression.nullable
-        ))
+        CatalystTypeConverters.createToCatalystConverter(expression.dataType)(
+          result.head.get(0)
+        ), // decimal precision is wrong from value
+        CatalystTypeConverters.convertToCatalyst(expected),
+        expression.dataType,
+        expression.nullable
+      ))
     ) {
       val input = if (inputRow == EmptyRow) "" else s", input: $inputRow"
       fail(
@@ -291,45 +292,5 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       }
     }
     true
-  }
-
-  def convertInternalRowToDataFrame(inputRow: InternalRow): DataFrame = {
-    val structFileSeq = new ArrayBuffer[StructField]()
-    val values = inputRow match {
-      case genericInternalRow: GenericInternalRow =>
-        genericInternalRow.values
-      case _ => throw new UnsupportedOperationException("Unsupported InternalRow.")
-    }
-    values.foreach {
-      case boolean: java.lang.Boolean =>
-        structFileSeq.append(StructField("bool", BooleanType, boolean == null))
-      case short: java.lang.Short =>
-        structFileSeq.append(StructField("i16", ShortType, short == null))
-      case byte: java.lang.Byte =>
-        structFileSeq.append(StructField("i8", ByteType, byte == null))
-      case integer: java.lang.Integer =>
-        structFileSeq.append(StructField("i32", IntegerType, integer == null))
-      case long: java.lang.Long =>
-        structFileSeq.append(StructField("i64", LongType, long == null))
-      case float: java.lang.Float =>
-        structFileSeq.append(StructField("fp32", FloatType, float == null))
-      case double: java.lang.Double =>
-        structFileSeq.append(StructField("fp64", DoubleType, double == null))
-      case utf8String: UTF8String =>
-        structFileSeq.append(StructField("str", StringType, utf8String == null))
-      case byteArr: Array[Byte] =>
-        structFileSeq.append(StructField("vbin", BinaryType, byteArr == null))
-      case decimal: Decimal =>
-        structFileSeq.append(
-          StructField("dec", DecimalType(decimal.precision, decimal.scale), decimal == null))
-      case null =>
-        structFileSeq.append(StructField("null", IntegerType, nullable = true))
-      case unsupported @ _ =>
-        throw new UnsupportedOperationException(s"Unsupported type: ${unsupported.getClass}")
-    }
-    val fields = structFileSeq.toSeq
-    _spark.internalCreateDataFrame(
-      _spark.sparkContext.parallelize(Seq(inputRow)),
-      StructType(fields))
   }
 }

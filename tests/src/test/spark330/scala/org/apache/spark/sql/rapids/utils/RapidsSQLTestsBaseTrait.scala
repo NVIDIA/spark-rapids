@@ -121,6 +121,8 @@ object RapidsSQLTestsBaseTrait {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
+      .set("spark.sql.session.timeZone", "UTC")
+      .set("spark.rapids.sql.explain", "ALL")
       .setAppName("rapids spark plugin running Vanilla Spark UT")
 
     conf
