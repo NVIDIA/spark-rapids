@@ -160,7 +160,7 @@ class GpuGetJsonObjectMeta(
         if (updated.exists(JsonPathParser.fallbackCheck)) {
           willNotWorkOnGpu(s"get_json_object on GPU does not support more " +
             s"than ${JSONUtils.MAX_PATH_DEPTH} nested paths." +
-            s"(Found ${instructions.map(_.length)})")
+            instructions.map(i => s" (Found ${i.length})").getOrElse(""))
         }
       } else {
         if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {
