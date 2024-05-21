@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta.delta24x
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RapidsReaderType, RunnableCommandMeta}
 import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
 
 import org.apache.spark.internal.Logging
@@ -51,7 +51,8 @@ class MergeIntoCommandMeta(
   override def convertToGpu(): RunnableCommand = {
     // TODO: Currently we only support low shuffler merge only when parquet per file read is enabled
     // due to the limitation of implementing row index metadata column.
-    if (conf.isDeltaLowShuffleMergeEnabled && conf.isParquetPerFileReadEnabled) {
+    if (conf.isDeltaLowShuffleMergeEnabled) {
+      if (conf.isParquetPerFileReadEnabled) {
         GpuLowShuffleMergeCommand(
           mergeCmd.source,
           mergeCmd.target,
@@ -61,6 +62,19 @@ class MergeIntoCommandMeta(
           mergeCmd.notMatchedClauses,
           mergeCmd.notMatchedBySourceClauses,
           mergeCmd.migratedSchema)(conf)
+      } else {
+        logWarning(s"""Low shuffle merge is still disable since ${RapidsConf.PARQUET_READER_TYPE} is
+          not set to ${RapidsReaderType.PERFILE}. Falling back to classic merge.""")
+        GpuMergeIntoCommand(
+          mergeCmd.source,
+          mergeCmd.target,
+          new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+          mergeCmd.condition,
+          mergeCmd.matchedClauses,
+          mergeCmd.notMatchedClauses,
+          mergeCmd.notMatchedBySourceClauses,
+          mergeCmd.migratedSchema)(conf)
+      }
     } else {
       GpuMergeIntoCommand(
         mergeCmd.source,

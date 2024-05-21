@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.RapidsRepartitionByFilePath.FILE_PATH_FIELD
+import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.FILE_PATH_FIELD
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{PartitionCoalescer, PartitionGroup, RDD}
@@ -26,15 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryNode}
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy, UnaryExecNode}
-import org.apache.spark.sql.types.{LongType, StringType, StructField}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-object RapidsRepartitionByFilePath {
-  val ROW_ID_COL = "_metadata_row_id"
-  val ROW_ID_FIELD = StructField(ROW_ID_COL, LongType, nullable = false)
-  val FILE_PATH_COL = "_metadata_file_path"
-  val FILE_PATH_FIELD = StructField(FILE_PATH_COL, StringType, nullable = false)
-}
 
 case class RapidsRepartitionByFilePath(optNumPartition: Option[Int],
     child: LogicalPlan) extends UnaryNode {
@@ -111,7 +103,7 @@ case class GpuRapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val rdd = child.executeColumnar().cache()
-    logInfo(
+    logDebug(
       s"""Repartitioning by file path with numPartitions=$numPartitions,
          |input partitions=${rdd.getNumPartitions}""".stripMargin)
     if (numPartitions == 1 && rdd.getNumPartitions < 1) {
@@ -132,7 +124,7 @@ case class GpuRapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
 case class HashPartitioningByFilePathCoalescer(partitionIdExpr: GpuExpression)
   extends PartitionCoalescer with Logging {
   override def coalesce(maxPartitions: Int, parent: RDD[_]): Array[PartitionGroup] = {
-    logInfo(s"""maxPartitions in HashPartitioningByFilePathCoalescer: $maxPartitions""")
+    logDebug(s"""maxPartitions in HashPartitioningByFilePathCoalescer: $maxPartitions""")
 
     if (maxPartitions <= 0) {
       throw new IllegalArgumentException(s"Number of partitions ($maxPartitions) must be positive.")
@@ -155,10 +147,6 @@ case class HashPartitioningByFilePathCoalescer(partitionIdExpr: GpuExpression)
       case (parentRddPartitionId, partitionId) =>
         partitionGroups(partitionId).partitions += parent.partitions(parentRddPartitionId)
     })
-
-    logInfo(
-      s"""partitionGroups in HashPartitioningByFilePathCoalescer:
-         |${partitionGroups.map(pg => pg.partitions.mkString(",")).mkString("|")}""".stripMargin)
 
     partitionGroups
   }

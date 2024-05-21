@@ -16,11 +16,8 @@
 
 package com.nvidia.spark.rapids.delta
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector => CudfColmnVector, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuReadParquetFileFormat}
-import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat.addMetadataColumnToIterator
+import com.nvidia.spark.rapids.{GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuReadParquetFileFormat}
+import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -31,8 +28,8 @@ import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, N
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{LongType, StructField, StructType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
@@ -78,16 +75,6 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
     val preparedRequiredSchema = prepareSchema(requiredSchema)
     val preparedPartitionSchema = prepareSchema(partitionSchema)
 
-    logDebug(s"""Schema passed to GpuDeltaParquetFileFormat:
-               |dataSchema=$dataSchema
-               |partitionSchema=$partitionSchema
-               |requiredSchema=$requiredSchema
-               |preparedDataSchema=$preparedDataSchema
-               |preparedPartitionSchema=$preparedPartitionSchema
-               |preparedRequiredSchema=$preparedRequiredSchema
-               |referenceSchema=$referenceSchema
-               |""".stripMargin)
-
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
       preparedDataSchema,
@@ -111,48 +98,4 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
     if (columnMappingMode != NoMapping) true else super.supportFieldName(name)
   }
 
-}
-
-object GpuDeltaParquetFileFormat {
-  val METADATA_ROW_IDX_COLUMN: String = "__metadata_row_index"
-  val METADATA_ROW_IDX_FIELD: StructField = StructField(METADATA_ROW_IDX_COLUMN, LongType,
-    nullable = false)
-
-
-  private def addMetadataColumnToIterator(
-      schema: StructType,
-      input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
-    val metadataRowIndexCol = schema.fieldNames.indexOf(METADATA_ROW_IDX_COLUMN)
-    if (metadataRowIndexCol == -1) {
-      return input
-    }
-    var rowIndex = 0L
-    input.map { batch =>
-      val newBatch = addRowIdxColumn(metadataRowIndexCol, rowIndex, batch)
-      rowIndex += batch.numRows()
-      newBatch
-    }
-  }
-
-  private def addRowIdxColumn(
-      rowIdxPos: Int,
-      rowIdxStart: Long,
-      batch: ColumnarBatch): ColumnarBatch = {
-    val rowIdxCol = {
-      val cv = CudfColmnVector.sequence(Scalar.fromLong(rowIdxStart), batch.numRows())
-      GpuColumnVector.from(cv.incRefCount(), METADATA_ROW_IDX_FIELD.dataType)
-    }
-
-    // Replace row_idx column
-    val columns = ArrayBuffer[ColumnVector]()
-    for (i <- 0 until batch.numCols()) {
-      if (i == rowIdxPos) {
-        columns += rowIdxCol
-      } else {
-        columns += batch.column(i)
-      }
-    }
-
-    new ColumnarBatch(columns.toArray, batch.numRows())
-  }
 }
