@@ -315,7 +315,6 @@ def test_get_json_object_jni_java_tests():
             conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 
-@allow_non_gpu('ProjectExec')
 def test_get_json_object_deep_nested_json():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
