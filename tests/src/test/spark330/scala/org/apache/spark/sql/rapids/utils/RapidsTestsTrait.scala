@@ -106,6 +106,8 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         .config("spark.rapids.sql.test.isFoldableNonLitAllowed", "true")
         // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
         // .config("spark.rapids.sql.test.enabled", "true")
+        // .config("spark.rapids.sql.test.allowedNonGpu",
+        // "SerializeFromObjectExec,DeserializeToObjectExec,ExternalRDDScanExec")
         .appName("rapids spark plugin running Vanilla Spark UT")
 
       _spark = sparkBuilder

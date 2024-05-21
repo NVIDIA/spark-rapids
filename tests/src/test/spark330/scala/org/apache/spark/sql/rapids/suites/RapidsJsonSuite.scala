@@ -31,6 +31,22 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 class RapidsJsonSuite extends JsonSuite with RapidsSQLTestsBaseTrait {
 
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    SQLConf.get.setConfString("spark.rapids.sql.expression.JsonTuple", "true")
+    SQLConf.get.setConfString("spark.rapids.sql.expression.GetJsonObject", "true")
+    SQLConf.get.setConfString("spark.rapids.sql.expression.JsonToStructs", "true")
+    SQLConf.get.setConfString("spark.rapids.sql.expression.StructsToJson", "true")
+  }
+
+  override def afterAll(): Unit = {
+    super.afterAll()
+    SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonTuple")
+    SQLConf.get.unsetConf("spark.rapids.sql.expression.GetJsonObject")
+    SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonToStructs")
+    SQLConf.get.unsetConf("spark.rapids.sql.expression.StructsToJson")
+  }
+
   /** Returns full path to the given file in the resource folder */
   override protected def testFile(fileName: String): String = {
     getWorkspaceFilePath("sql", "core", "src", "test", "resources").toString + "/" + fileName

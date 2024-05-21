@@ -123,6 +123,10 @@ object RapidsSQLTestsBaseTrait {
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
       .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
+      // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
+      // .set("spark.rapids.sql.test.enabled", "true")
+      // .set("spark.rapids.sql.test.allowedNonGpu",
+      // "SerializeFromObjectExec,DeserializeToObjectExec,ExternalRDDScanExec")
       .setAppName("rapids spark plugin running Vanilla Spark UT")
 
     conf
