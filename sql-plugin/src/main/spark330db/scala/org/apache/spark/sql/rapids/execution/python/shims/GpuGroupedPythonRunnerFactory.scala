@@ -20,7 +20,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -30,7 +30,8 @@ case class GpuGroupedPythonRunnerFactory(
   chainedFunc: Seq[ChainedPythonFunctions],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
-  pythonOutputSchema: StructType) {
+  pythonOutputSchema: StructType,
+  evalType: Int) {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
@@ -41,7 +42,7 @@ case class GpuGroupedPythonRunnerFactory(
     if (zeroConfEnabled && maxBytes > 0L) {
       new GpuGroupUDFArrowPythonRunner(
         chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        evalType,
         argOffsets,
         dedupAttrs,
         sessionLocalTimeZone,
@@ -52,7 +53,7 @@ case class GpuGroupedPythonRunnerFactory(
     } else {
       new GpuArrowPythonRunner(
         chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        evalType,
         argOffsets,
         dedupAttrs,
         sessionLocalTimeZone,

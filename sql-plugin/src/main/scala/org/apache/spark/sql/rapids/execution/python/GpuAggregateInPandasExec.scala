@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
-import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
+import org.apache.spark.sql.rapids.execution.python.shims.GpuGroupedPythonRunnerFactory
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -109,8 +109,6 @@ case class GpuAggregateInPandasExec(
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
     val childOutput = child.output
     val resultExprs = resultExpressions
 
@@ -204,27 +202,22 @@ case class GpuAggregateInPandasExec(
         }
       }
 
+      val runnerFactory = GpuGroupedPythonRunnerFactory(conf, pyFuncs, argOffsets,
+        aggInputSchema, DataTypeUtilsShim.fromAttributes(pyOutAttributes),
+        PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF)
+
       // Third, sends to Python to execute the aggregate and returns the result.
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        val pyRunner = new GpuArrowPythonRunner(
-          pyFuncs,
-          PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF,
-          argOffsets,
-          aggInputSchema,
-          sessionLocalTimeZone,
-          pythonRunnerConf,
-          // The whole group data should be written in a single call, so here is unlimited
-          Int.MaxValue,
-          DataTypeUtilsShim.fromAttributes(pyOutAttributes))
-
+        val pyRunner = runnerFactory.getRunner()
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 
         val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
         val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
         // Gets the combined batch for each group and projects for the output.
-        new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator, pyRunner,
-            mNumOutputRows, mNumOutputBatches).map { combinedBatch =>
+        new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator,
+            pyRunner.asInstanceOf[GpuArrowOutput], mNumOutputRows,
+            mNumOutputBatches).map { combinedBatch =>
           withResource(combinedBatch) { batch =>
             GpuProjectExec.project(batch, resultRefs)
           }
