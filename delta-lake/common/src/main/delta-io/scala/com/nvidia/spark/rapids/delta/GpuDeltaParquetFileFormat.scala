@@ -45,13 +45,12 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    val preparedRequiredSchema = prepareSchema(fileScan.requiredSchema)
 
     GpuParquetMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
       prepareSchema(fileScan.relation.dataSchema),
-      preparedRequiredSchema,
+      prepareSchema(fileScan.requiredSchema),
       prepareSchema(fileScan.readPartitionSchema),
       pushedFilters,
       fileScan.rapidsConf,
@@ -71,6 +70,7 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
       metrics: Map[String, GpuMetric],
       alluxioPathReplacementMap: Option[Map[String, String]])
   : PartitionedFile => Iterator[InternalRow] = {
+
     val preparedDataSchema = prepareSchema(dataSchema)
     val preparedRequiredSchema = prepareSchema(requiredSchema)
     val preparedPartitionSchema = prepareSchema(partitionSchema)

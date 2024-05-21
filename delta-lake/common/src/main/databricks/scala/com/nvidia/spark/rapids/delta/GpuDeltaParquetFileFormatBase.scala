@@ -70,22 +70,22 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       alluxioPathReplacementMap: Option[Map[String, String]])
   : PartitionedFile => Iterator[InternalRow] = {
 
+    val preparedDataSchema = prepareSchema(dataSchema)
+    val preparedRequiredSchema = prepareSchema(requiredSchema)
+    val preparedPartitionSchema = prepareSchema(partitionSchema)
+
+    val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
+      sparkSession,
+      preparedDataSchema,
+      preparedPartitionSchema,
+      preparedRequiredSchema,
+      filters,
+      options,
+      hadoopConf,
+      metrics,
+      alluxioPathReplacementMap)
+
     (file: PartitionedFile) => {
-      val preparedDataSchema = prepareSchema(dataSchema)
-      val preparedRequiredSchema = prepareSchema(requiredSchema)
-      val preparedPartitionSchema = prepareSchema(partitionSchema)
-
-      val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
-        sparkSession,
-        preparedDataSchema,
-        preparedPartitionSchema,
-        preparedRequiredSchema,
-        filters,
-        options,
-        hadoopConf,
-        metrics,
-        alluxioPathReplacementMap)
-
       val input = dataReader(file)
       addMetadataColumnToIterator(preparedRequiredSchema,
         input.asInstanceOf[Iterator[ColumnarBatch]])
