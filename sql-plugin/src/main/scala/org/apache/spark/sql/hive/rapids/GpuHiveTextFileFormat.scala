@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.shims.GpuBucketingUtils
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
@@ -86,9 +87,8 @@ object GpuHiveTextFileFormat extends Logging {
       meta.willNotWorkOnGpu("only UTF-8 is supported as the charset")
     }
 
-    if (insertCommand.table.bucketSpec.isDefined) {
-      meta.willNotWorkOnGpu("bucketed tables are not supported")
-    }
+    GpuBucketingUtils.tagForHiveBucketingWrite(meta,
+      insertCommand.table.bucketSpec, insertCommand.table.schema, false)
 
     if (insertCommand.conf.getConfString("hive.exec.compress.output", "false").toLowerCase
           != "false") {

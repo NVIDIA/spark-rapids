@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -217,17 +217,6 @@ def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_f
             data_path,
             'DataWritingCommandExec',
             conf=all_confs)
-
-@ignore_order
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_fallback_write(
-            lambda spark, path: spark.range(10e4).write.bucketBy(4, "id").sortBy("id").format('orc').mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.orc(path),
-            data_path,
-            'DataWritingCommandExec',
-            conf = {'spark.rapids.sql.format.orc.write.enabled': True})
 
 
 @ignore_order

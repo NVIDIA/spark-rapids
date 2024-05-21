@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -406,15 +406,30 @@ def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_fact
             conf=all_confs)
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
+def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    assert_gpu_fallback_write(
-            lambda spark, path: spark.range(10e4).write.bucketBy(4, "id").sortBy("id").format('parquet').mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            'DataWritingCommandExec')
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).selectExpr("id % 100 as b_id", "data").write
+            .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=writer_confs)
 
+@ignore_order
+def test_partitions_and_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list)
+            .selectExpr("id % 5 as b_id", "id % 10 as p_id", "data").write
+            .partitionBy("p_id")
+            .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=writer_confs)
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')

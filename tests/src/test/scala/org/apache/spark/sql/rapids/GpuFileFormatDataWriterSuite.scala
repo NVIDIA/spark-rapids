@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar.mock
 
-import org.apache.spark.TaskContext
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
@@ -39,7 +38,6 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   private var mockJobDescription: GpuWriteJobDescription = _
-  private var mockTaskContext: TaskContext = _
   private var mockTaskAttemptContext: TaskAttemptContext = _
   private var mockCommitter: FileCommitProtocol = _
   private var mockOutputWriterFactory: ColumnarOutputWriterFactory = _
@@ -104,7 +102,6 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     dataSpec = null
     mockJobDescription = mock[GpuWriteJobDescription]
     when(mockJobDescription.statsTrackers).thenReturn(Seq.empty)
-    mockTaskContext = mock[TaskContext]
     mockTaskAttemptContext = mock[TaskAttemptContext]
     mockCommitter = mock[FileCommitProtocol]
     mockOutputWriterFactory = mock[ColumnarOutputWriterFactory]
@@ -226,8 +223,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       mockJobDescription,
       mockTaskAttemptContext,
       mockCommitter,
-      concurrentSpec,
-      mockTaskContext))
+      concurrentSpec))
   }
 
   test("empty directory data writer") {
@@ -313,18 +309,6 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
             .writeSpillableAndClose(any(), any())
         // three because we wrote 3 files (15 rows, limit was 5 rows per file)
         verify(mockOutputWriter, times(3)).close()
-      }
-    }
-  }
-
-  test("dynamic partition data writer doesn't support bucketing") {
-    resetMocksWithAndWithoutRetry {
-      withColumnarBatchesVerifyClosed(Seq.empty) {
-        when(mockJobDescription.bucketSpec).thenReturn(Some(GpuWriterBucketSpec(null, null)))
-        assertThrows[UnsupportedOperationException] {
-          new GpuDynamicPartitionDataSingleWriter(
-            mockJobDescription, mockTaskAttemptContext, mockCommitter)
-        }
       }
     }
   }
@@ -438,8 +422,9 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           prepareDynamicPartitionConcurrentWriter(maxWriters = 1, batchSize = 1)
         dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
         dynamicConcurrentWriter.commit()
-        // 5 batches written, one per partition (no splitting)
-        verify(mockOutputWriter, times(5))
+        // 6 batches written, one per partition (no splitting) plus one written by
+        // the concurrent writer.
+        verify(mockOutputWriter, times(6))
             .writeSpillableAndClose(any(), any())
         verify(dynamicConcurrentWriter, times(5)).newWriter(any(), any(), any())
         // 5 files written because this is the single writer mode

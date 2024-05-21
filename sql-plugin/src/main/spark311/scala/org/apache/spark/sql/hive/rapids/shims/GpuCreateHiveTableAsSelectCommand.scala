@@ -36,7 +36,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, GpuOverrides, RapidsConf, RapidsMeta}
-import com.nvidia.spark.rapids.shims.GpuCreateHiveTableAsSelectBase
+import com.nvidia.spark.rapids.shims.{GpuBucketingUtils, GpuCreateHiveTableAsSelectBase}
 
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
@@ -61,9 +61,8 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
         willNotWorkOnGpu("partitioned writes are not supported")
       }
 
-      if (tableDesc.bucketSpec.isDefined) {
-        willNotWorkOnGpu("bucketing is not supported")
-      }
+      GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec,
+        cmd.query.schema, false)
 
       val catalog = spark.sessionState.catalog
       val tableExists = catalog.tableExists(tableDesc.identifier)
