@@ -728,7 +728,7 @@ object GpuLowShuffleMergeCommand {
         notMatchedConditions = notMatchedConditions,
         notMatchedOutputs = notMatchedOutputs,
         notMatchedBySourceConditions = notMatchedBySourceConditions,
-        notMatchedBySourceOutputs = notMatchedBySourceOutputs)
+        notMatchedBySourceOutputs = notMatchedBySourceOutputs).localCheckpoint(true)
 
       // Write to Delta
       val newFiles = cmd.withStatusCode("DELTA", "Writing modified data") {

@@ -103,7 +103,7 @@ case class GpuRapidsRepartitionByFilePathExec(optNumPartition: Option[Int],
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val rdd = child.executeColumnar().cache()
+    val rdd = child.executeColumnar()
     logDebug(
       s"""Repartitioning by file path with numPartitions=$numPartitions,
          |input partitions=${rdd.getNumPartitions}""".stripMargin)
@@ -138,11 +138,12 @@ case class HashPartitioningByFilePathCoalescer(partitionIdExpr: GpuExpression)
     parent.mapPartitionsWithIndex({
       case (parentRddPartitionId, iter) =>
         if (iter.hasNext) {
-          val firstRow = iter.next().asInstanceOf[ColumnarBatch]
-          withResource(partitionIdExpr.columnarEval(firstRow)) { gpuCol =>
-            withResource(gpuCol.copyToHost()) { hostCol =>
-              val partitionId = hostCol.getInt(0)
-              Seq((parentRddPartitionId, partitionId)).iterator
+          withResource(iter.next().asInstanceOf[ColumnarBatch]) { firstRow =>
+            withResource(partitionIdExpr.columnarEval(firstRow)) { gpuCol =>
+              withResource(gpuCol.copyToHost()) { hostCol =>
+                val partitionId = hostCol.getInt(0)
+                Seq((parentRddPartitionId, partitionId)).iterator
+              }
             }
           }
         } else {

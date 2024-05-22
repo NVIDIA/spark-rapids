@@ -51,9 +51,11 @@ object GpuDeltaParquetFileFormatUtils {
     }
     var rowIndex = 0L
     input.map { batch =>
-      val newBatch = addRowIdxColumn(metadataRowIndexCol, rowIndex, batch)
-      rowIndex += batch.numRows()
-      newBatch
+      withResource(batch) { _ =>
+        val newBatch = addRowIdxColumn(metadataRowIndexCol, rowIndex, batch)
+        rowIndex += batch.numRows()
+        newBatch
+      }
     }
   }
 
@@ -66,22 +68,21 @@ object GpuDeltaParquetFileFormatUtils {
         METADATA_ROW_IDX_FIELD.dataType)
     }
 
-    val originalCol = batch.column(rowIdxPos)
-
     closeOnExcept(rowIdxCol) { rowIdxCol =>
-      withResource(originalCol) { _ =>
-        // Replace row_idx column
-        val columns = new Array[ColumnVector](batch.numCols())
-        for (i <- 0 until batch.numCols()) {
-          if (i == rowIdxPos) {
-            columns(i) = rowIdxCol
-          } else {
-            columns(i) = batch.column(i)
+      // Replace row_idx column
+      val columns = new Array[ColumnVector](batch.numCols())
+      for (i <- 0 until batch.numCols()) {
+        if (i == rowIdxPos) {
+          columns(i) = rowIdxCol
+        } else {
+          columns(i) = batch.column(i) match {
+            case gpuCol: GpuColumnVector => gpuCol.incRefCount()
+            case col => col
           }
         }
-
-        new ColumnarBatch(columns, batch.numRows())
       }
+
+      new ColumnarBatch(columns, batch.numRows())
     }
   }
 }
