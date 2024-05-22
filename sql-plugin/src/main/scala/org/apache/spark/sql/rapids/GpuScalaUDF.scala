@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ object GpuScalaUDFMeta {
       lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance(expr.function)
 
       override def tagExprForGpu(): Unit = {
-        if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
+        if (opRapidsFunc.isEmpty && !this.conf.isCpuBasedUDFEnabled) {
           val udfName = expr.udfName.getOrElse("UDF")
           val udfClass = expr.function.getClass
           willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
@@ -76,7 +76,7 @@ object GpuScalaUDFMeta {
             expr.udfDeterministic)
         }.getOrElse {
           // This `require` is just for double check.
-          require(conf.isCpuBasedUDFEnabled)
+          require(this.conf.isCpuBasedUDFEnabled)
           GpuRowBasedScalaUDF(
             expr.function,
             expr.dataType,
