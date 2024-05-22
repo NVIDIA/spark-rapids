@@ -1127,7 +1127,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
 }
 
 case class GpuLiteralRangePattern(left: Expression, right: Expression, 
-    from: Int, start: Int, end: Int)
+    length: Int, start: Int, end: Int)
   extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerant {
 
   override def dataType: DataType = BooleanType
@@ -1135,7 +1135,7 @@ case class GpuLiteralRangePattern(left: Expression, right: Expression,
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    RegexRewriteUtils.literalRangePattern(lhs.getBase, rhs.getBase, from, start, end)
+    RegexRewriteUtils.literalRangePattern(lhs.getBase, rhs.getBase, length, start, end)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {

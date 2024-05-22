@@ -2034,8 +2034,17 @@ object RegexRewrite {
       case _ => astLs
     }
   }
+
+  /* 
+   * Extracts the prefix range pattern info from the given AST sequence.
+   * 
+   * @param astLs The AST sequence to extract the prefix range pattern from.
+   * @return Some(prefix, length, start, end) if astLs is a `prefix[start-end]{x}` pattern
+   * None otherwise. start and end are the code points of the start and end characters.
+   */
   private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]): 
       Option[(String, Int, Int, Int)] = {
+    val haveLiteralPrefix = isliteralString(astLs.dropRight(1))
     val endsWithRange = astLs.last match {
       case RegexRepetition(
           RegexCharacterClass(false,ListBuffer(RegexCharacterRange(a,b))), 
@@ -2045,7 +2054,10 @@ object RegexRewrite {
           case _ => return None
         }
         val length = quantifier match {
-          case QuantifierVariableLength(start, _) => start
+          // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
+          // [a-b]{minLen} because the matching will return the result once it finds the 
+          // minimum match so y here is unnecessary.
+          case QuantifierVariableLength(minLen, _) => minLen
           case QuantifierFixedLength(len) => len
           case SimpleQuantifier(ch) => ch match {
             case '*' | '?' => 0
@@ -2054,12 +2066,12 @@ object RegexRewrite {
           }
           case _ => return None
         }
+        // Convert start and end to code points
         Some((length, start.toInt, end.toInt))
       }
       case _ => None
     }
-    val literalPrefix = isliteralString(astLs.dropRight(1))
-    (literalPrefix, endsWithRange) match {
+    (haveLiteralPrefix, endsWithRange) match {
       case (true, Some((length, start, end))) => {
         val prefix = RegexCharsToString(astLs.dropRight(1))
         Some((prefix, length, start, end))
@@ -2087,6 +2099,7 @@ object RegexRewrite {
   private def stripLeadingWildcards(astLs: collection.Seq[RegexAST]): 
       collection.Seq[RegexAST] = astLs match {
     case (RegexChar('^') | RegexEscaped('A')) :: tail  =>
+      // if the pattern starts with ^ or \A, strip it too
       tail.dropWhile(isWildcard)
     case _ => astLs.dropWhile(isWildcard)
   }
