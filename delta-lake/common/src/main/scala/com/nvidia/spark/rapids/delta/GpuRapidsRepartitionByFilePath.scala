@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.FILE_PATH_FIELD
 
 import org.apache.spark.internal.Logging
@@ -138,8 +139,12 @@ case class HashPartitioningByFilePathCoalescer(partitionIdExpr: GpuExpression)
       case (parentRddPartitionId, iter) =>
         if (iter.hasNext) {
           val firstRow = iter.next().asInstanceOf[ColumnarBatch]
-          val partitionId = partitionIdExpr.columnarEval(firstRow).copyToHost().getInt(0)
-          Seq((parentRddPartitionId, partitionId)).iterator
+          withResource(partitionIdExpr.columnarEval(firstRow)) { gpuCol =>
+            withResource(gpuCol.copyToHost()) { hostCol =>
+              val partitionId = hostCol.getInt(0)
+              Seq((parentRddPartitionId, partitionId)).iterator
+            }
+          }
         } else {
           Seq((parentRddPartitionId, 0)).iterator
         }

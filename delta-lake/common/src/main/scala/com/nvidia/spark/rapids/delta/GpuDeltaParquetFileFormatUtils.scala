@@ -16,10 +16,8 @@
 
 package com.nvidia.spark.rapids.delta
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuColumnVector
 
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
@@ -28,7 +26,8 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 object GpuDeltaParquetFileFormatUtils {
   /**
    * Row number of the row in the file. When used with [[FILE_PATH_COL]] together, it can be used
-   * as unique id of the row.
+   * as unique id of a row in file. Currently to correctly calculate this, the called needs to
+   * set both [[isSplitable]] to false, and [[RapidsConf.PARQUET_READER_TYPE]] to "PERFILE".
    */
   val METADATA_ROW_IDX_COL: String = "__metadata_row_index"
   val METADATA_ROW_IDX_FIELD: StructField = StructField(METADATA_ROW_IDX_COL, LongType,
@@ -67,16 +66,22 @@ object GpuDeltaParquetFileFormatUtils {
         METADATA_ROW_IDX_FIELD.dataType)
     }
 
-    // Replace row_idx column
-    val columns = ArrayBuffer[ColumnVector]()
-    for (i <- 0 until batch.numCols()) {
-      if (i == rowIdxPos) {
-        columns += rowIdxCol
-      } else {
-        columns += batch.column(i)
+    val originalCol = batch.column(rowIdxPos)
+
+    closeOnExcept(rowIdxCol) { rowIdxCol =>
+      withResource(originalCol) { _ =>
+        // Replace row_idx column
+        val columns = new Array[ColumnVector](batch.numCols())
+        for (i <- 0 until batch.numCols()) {
+          if (i == rowIdxPos) {
+            columns(i) = rowIdxCol
+          } else {
+            columns(i) = batch.column(i)
+          }
+        }
+
+        new ColumnarBatch(columns, batch.numRows())
       }
     }
-
-    new ColumnarBatch(columns.toArray, batch.numRows())
   }
 }

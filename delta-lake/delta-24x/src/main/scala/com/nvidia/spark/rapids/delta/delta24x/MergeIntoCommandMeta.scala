@@ -63,7 +63,7 @@ class MergeIntoCommandMeta(
           mergeCmd.notMatchedBySourceClauses,
           mergeCmd.migratedSchema)(conf)
       } else {
-        logWarning(s"""Low shuffle merge is still disable since ${RapidsConf.PARQUET_READER_TYPE} is
+        logWarning(s"""Low shuffle merge disabled since ${RapidsConf.PARQUET_READER_TYPE} is
           not set to ${RapidsReaderType.PERFILE}. Falling back to classic merge.""")
         GpuMergeIntoCommand(
           mergeCmd.source,

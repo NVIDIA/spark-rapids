@@ -35,8 +35,9 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                            "delta 2.4")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-def test_delta_merge_when_fallback(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                       num_slices):
+def test_delta_low_shuffle_merge_when_gpu_file_scan_override_failed(spark_tmp_path,
+                                                                    spark_tmp_table_factory,
+                                                                    use_cdf, num_slices):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
