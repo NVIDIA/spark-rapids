@@ -44,7 +44,7 @@ import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport.containsFieldIds
 import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
+import org.apache.spark.sql.rapids.shims.{AnalysisExceptionShim, RapidsErrorUtils}
 import org.apache.spark.sql.types._
 
 object ParquetSchemaClipShims {
@@ -109,12 +109,11 @@ object ParquetSchemaClipShims {
       if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
 
     def typeNotImplemented() =
-      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1172",
-        Map("parquetType" -> s"$typeString"))
+      throw RapidsErrorUtils.parquetTypeUnsupportedYetError(typeString)
 
     def illegalType() =
-      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1173",
-        Map("parquetType" -> s"$typeString"))
+      throw RapidsErrorUtils.illegalParquetTypeError(typeString)
+
 
     // When maxPrecision = -1, we skip precision range check, and always respect the precision
     // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored

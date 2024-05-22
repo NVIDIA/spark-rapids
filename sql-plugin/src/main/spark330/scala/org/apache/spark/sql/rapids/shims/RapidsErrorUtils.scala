@@ -31,7 +31,7 @@ import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
-object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
+object RapidsErrorUtils extends RapidsErrorUtilsFor330plus with RapidsQueryErrorUtils {
 
   def mapKeyNotExistError(
       key: String,

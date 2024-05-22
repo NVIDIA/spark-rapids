@@ -44,7 +44,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.{AnalysisExceptionShim, SchemaUtilsShims}
+import org.apache.spark.sql.rapids.shims.{RapidsErrorUtils, SchemaUtilsShims}
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
@@ -144,8 +144,8 @@ abstract class GpuDataSourceBase(
             }
             inferredOpt
           }.getOrElse {
-            AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1128",
-              Map("format" -> s"$format", "partitionColumn" -> s"$partitionColumn"))
+            throw RapidsErrorUtils.
+              partitionColumnNotSpecifiedError(format.toString, partitionColumn)
           }
         }
         StructType(partitionFields)
@@ -162,8 +162,7 @@ abstract class GpuDataSourceBase(
         caseInsensitiveOptions - "path",
         SparkShimImpl.filesFromFileIndex(tempFileIndex))
     }.getOrElse {
-      AnalysisExceptionShim.
-        throwException("UNABLE_TO_INFER_SCHEMA", Map("format" -> s"$format"))
+      throw RapidsErrorUtils.dataSchemaNotSpecifiedError(format.toString)
     }
 
     // We just print a waring message if the data schema and partition schema have the duplicate
@@ -201,14 +200,13 @@ abstract class GpuDataSourceBase(
       case (dataSource: RelationProvider, None) =>
         dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
       case (_: SchemaRelationProvider, None) =>
-        AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1132",
-          Map("className" -> s"$className"))
+        throw RapidsErrorUtils.schemaNotSpecifiedForSchemaRelationProviderError(className)
       case (dataSource: RelationProvider, Some(schema)) =>
         val baseRelation =
           dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
         if (!DataType.equalsIgnoreCompatibleNullability(baseRelation.schema, schema)) {
-          AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1133",
-            Map("schema" -> s"${schema.toDDL}", "actualSchema" -> s"${baseRelation.schema.toDDL}"))
+          throw RapidsErrorUtils.userSpecifiedSchemaMismatchActualSchemaError(schema,
+            baseRelation.schema)
         }
         baseRelation
 
@@ -230,9 +228,8 @@ abstract class GpuDataSourceBase(
             caseInsensitiveOptions - "path",
             SparkShimImpl.filesFromFileIndex(fileCatalog))
         }.getOrElse {
-          AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1134",
-            Map("format" -> s"$format",
-              "fileCatalog" -> s"${fileCatalog.allFiles().mkString(",")}"))
+          throw RapidsErrorUtils.
+            dataSchemaNotSpecifiedError(format.toString, fileCatalog.allFiles().mkString(","))
         }
 
         HadoopFsRelation(
@@ -273,8 +270,7 @@ abstract class GpuDataSourceBase(
           caseInsensitiveOptions)(sparkSession)
 
       case _ =>
-        AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1135",
-          Map("className" -> s"$className"))
+        throw RapidsErrorUtils.invalidDataSourceError(className)
     }
 
     relation match {
@@ -408,16 +404,13 @@ object GpuDataSourceBase extends Logging {
                 dataSource
               case Failure(error) =>
                 if (provider1.startsWith("org.apache.spark.sql.hive.orc")) {
-                  AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1138",
-                    Map.empty[String, String])
+                  throw RapidsErrorUtils.orcNotUsedWithHiveEnabledError()
                 } else if (provider1.toLowerCase(Locale.ROOT) == "avro" ||
                   provider1 == "com.databricks.spark.avro" ||
                   provider1 == "org.apache.spark.sql.avro") {
-                  AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1139",
-                    Map("provider" -> s"$provider1"))
+                  throw RapidsErrorUtils.failedToFindAvroDataSourceError(provider1)
                 } else if (provider1.toLowerCase(Locale.ROOT) == "kafka") {
-                  AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1140",
-                    Map("provider" -> s"$provider1"))
+                  throw RapidsErrorUtils.failedToFindKafkaDataSourceError(provider1)
                 } else {
                   throw new ClassNotFoundException(
                     s"Failed to find data source: $provider1. Please find packages at " +
@@ -450,9 +443,7 @@ object GpuDataSourceBase extends Logging {
               s"defaulting to the internal datasource (${internalSources.head.getClass.getName}).")
             internalSources.head.getClass
           } else {
-            AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1141",
-              Map("provider" -> s"$provider1",
-                "sourceNames" -> s"${sourceNames.mkString(", ")}"))
+            throw RapidsErrorUtils.findMultipleDataSourceError(provider1, sourceNames)
           }
       }
     } catch {
@@ -505,7 +496,7 @@ object GpuDataSourceBase extends Logging {
           }
 
           if (checkEmptyGlobPath && globResult.isEmpty) {
-            AnalysisExceptionShim.throwException("PATH_NOT_FOUND", Map("path" -> s"$globPath"))
+            throw RapidsErrorUtils.dataPathNotExistError(globPath.toString)
           }
 
           globResult
@@ -519,7 +510,7 @@ object GpuDataSourceBase extends Logging {
         ThreadUtils.parmap(nonGlobPaths, "checkPathsExist", numThreads) { path =>
           val fs = path.getFileSystem(hadoopConf)
           if (!fs.exists(path)) {
-            AnalysisExceptionShim.throwException("PATH_NOT_FOUND", Map("path" -> s"$path"))
+            throw RapidsErrorUtils.dataPathNotExistError(path.toString)
           }
         }
       } catch {

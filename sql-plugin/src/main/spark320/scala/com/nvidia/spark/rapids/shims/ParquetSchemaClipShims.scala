@@ -67,12 +67,10 @@ object ParquetSchemaClipShims {
       if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
 
     def typeNotImplemented() =
-      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1172",
-        Map("parquetType" -> s"$typeString"))
+      throw RapidsErrorUtils.parquetTypeUnsupportedYetError(typeString)
 
     def illegalType() =
-      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1173",
-        Map("parquetType" -> s"$typeString"))
+      throw RapidsErrorUtils.illegalParquetTypeError(typeString)
 
     // When maxPrecision = -1, we skip precision range check, and always respect the precision
     // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored

@@ -24,9 +24,8 @@ package com.nvidia.spark.rapids.shims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.OriginalType._
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
-
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
+import org.apache.spark.sql.rapids.shims.{AnalysisExceptionShim, RapidsErrorUtils}
 import org.apache.spark.sql.types._
 
 object ParquetSchemaClipShims {
@@ -67,12 +66,10 @@ object ParquetSchemaClipShims {
       AnalysisExceptionShim.throwException(s"Parquet type not supported: $typeString")
 
     def typeNotImplemented() =
-      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1172",
-        Map("parquetType" -> s"$typeString"))
+      throw RapidsErrorUtils.parquetTypeUnsupportedYetError(typeString)
 
     def illegalType() =
-      AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1173",
-        Map("parquetType" -> s"$typeString"))
+      throw RapidsErrorUtils.illegalParquetTypeError(typeString)
 
     // When maxPrecision = -1, we skip precision range check, and always respect the precision
     // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored

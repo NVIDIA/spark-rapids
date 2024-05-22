@@ -48,7 +48,7 @@ import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
 import org.apache.spark.sql.hive.rapids.{GpuHiveTextFileFormat, GpuSaveAsHiveFile, RapidsHiveErrors}
-import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
+import org.apache.spark.sql.rapids.shims.{AnalysisExceptionShim, RapidsErrorUtils}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
@@ -182,7 +182,7 @@ case class GpuInsertIntoHiveTable(
       // Report error if any static partition appears after a dynamic partition
       val isDynamic = partitionColumnNames.map(partitionSpec(_).isEmpty)
       if (isDynamic.init.zip(isDynamic.tail).contains((true, false))) {
-        AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_3079", Map.empty)
+        throw RapidsErrorUtils.dynamicPartitionParentError
       }
     }
 

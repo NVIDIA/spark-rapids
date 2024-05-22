@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
-import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -82,8 +82,9 @@ object GpuRunnableCommand {
       if (fs.exists(filePath) &&
           fs.getFileStatus(filePath).isDirectory &&
           fs.listStatus(filePath).length != 0) {
-        AnalysisExceptionShim.throwException("_LEGACY_ERROR_TEMP_1241",
-          Map("tablePath" -> s"$tablePath", "config" -> s"$allowNonEmptyLocationInCTASKey"))
+        throw RapidsErrorUtils.
+          createTableAsSelectWithNonEmptyDirectoryError(tablePath.toString,
+            allowNonEmptyLocationInCTASKey)
       }
     }
   }
