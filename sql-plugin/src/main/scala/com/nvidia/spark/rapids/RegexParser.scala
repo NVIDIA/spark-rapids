@@ -2115,7 +2115,6 @@ object RegexRewrite {
       case (RegexChar('^') | RegexEscaped('A')) :: ast 
           if isliteralString(stripTailingWildcards(ast)) => {
         // ^literal.* => startsWith literal
-        println("Starts with optimization")
         RegexOptimizationType.StartsWith(RegexCharsToString(stripTailingWildcards(ast)))
       }
       case astLs => {
