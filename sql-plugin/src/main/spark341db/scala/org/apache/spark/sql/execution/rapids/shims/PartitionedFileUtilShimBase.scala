@@ -14,27 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
+{"spark": "341db"}
+{"spark": "350"}
+{"spark": "351"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.{FileStatusWithMetadata, PartitionedFile}
 
-object PartitionedFileUtilShim extends PartitionedFileUtilShimBase {
+trait PartitionedFileUtilShimBase {
 
   // In Spark 4.0, PartitionedFileUtil.splitFiles lost its `sparkSession` parameter.
-  // This Spark-4.0+ shim ignores the `sparkSession` parameter.
-  override def splitFiles(sparkSession: SparkSession,
-                          file: FileStatusWithMetadata,
-                          isSplitable: Boolean,
-                          maxSplitBytes: Long,
-                          partitionValues: InternalRow): Seq[PartitionedFile] = {
-    PartitionedFileUtil.splitFiles(file, isSplitable, maxSplitBytes, partitionValues)
-  }
+  // This trait helps insulate the plugin code from that change.
+  def splitFiles(sparkSession: SparkSession,
+                 file: FileStatusWithMetadata,
+                 isSplitable: Boolean,
+                 maxSplitBytes: Long,
+                 partitionValues: InternalRow): Seq[PartitionedFile]
 
-} // object PartitionFileUtilsShim;
+} // trait PartitionFileUtilShimBase;

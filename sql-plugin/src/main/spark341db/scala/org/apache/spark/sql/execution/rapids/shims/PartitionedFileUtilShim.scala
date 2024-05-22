@@ -27,15 +27,15 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.{FileStatusWithMetadata, PartitionedFile}
 
-object PartitionedFileUtilShim {
+object PartitionedFileUtilShim extends PartitionedFileUtilShimBase {
 
   // In Spark 4.0, PartitionedFileUtil.splitFiles lost its `sparkSession` parameter.
   // This pre-Spark-4.0 shim keeps the `sparkSession` parameter.
-  def splitFiles(sparkSession: SparkSession,
-                 file: FileStatusWithMetadata,
-                 isSplitable: Boolean,
-                 maxSplitBytes: Long,
-                 partitionValues: InternalRow): Seq[PartitionedFile] = {
+  override def splitFiles(sparkSession: SparkSession,
+                          file: FileStatusWithMetadata,
+                          isSplitable: Boolean,
+                          maxSplitBytes: Long,
+                          partitionValues: InternalRow): Seq[PartitionedFile] = {
     PartitionedFileUtil.splitFiles(sparkSession, file, isSplitable, maxSplitBytes, partitionValues)
   }
 
