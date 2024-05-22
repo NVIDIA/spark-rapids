@@ -465,20 +465,6 @@ object GpuOverrides extends Logging {
 
   val pluginSupportedOrderableSig: TypeSig = (gpuCommonTypes + TypeSig.STRUCT).nested()
 
-  private[this] def isStructType(dataType: DataType) = dataType match {
-    case StructType(_) => true
-    case _ => false
-  }
-
-  private[this] def isArrayOfStructType(dataType: DataType) = dataType match {
-    case ArrayType(elementType, _) =>
-      elementType match {
-        case StructType(_) => true
-        case _ => false
-      }
-    case _ => false
-  }
-
   // this listener mechanism is global and is intended for use by unit tests only
   private lazy val listeners: ListBuffer[GpuOverridesListener] =
     new ListBuffer[GpuOverridesListener]()
@@ -2091,36 +2077,8 @@ object GpuOverrides extends Logging {
       }),
     expr[SortOrder](
       "Sort order",
-      ExprChecks.projectOnly(
-        pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-            .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
-        TypeSig.orderable,
-        Seq(ParamCheck(
-          "input",
-          pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-             .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
-          TypeSig.orderable))),
-      (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (isStructType(sortOrder.dataType)) {
-            val nullOrdering = sortOrder.nullOrdering
-            val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
-            val direction = sortOrder.direction.sql
-            if (nullOrdering != directionDefaultNullOrdering) {
-              willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
-                s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
-            }
-          }
-          if (isArrayOfStructType(sortOrder.dataType)) {
-            willNotWorkOnGpu("STRUCT is not supported as a child type for ARRAY, " +
-              s"actual data type: ${sortOrder.dataType}")
-          }
-        }
-
-        // One of the few expressions that are not replaced with a GPU version
-        override def convertToGpu(): Expression =
-          sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
-      }),
+      GpuSortOrder.pluginChecks,
+      GpuSortOrderMeta),
     expr[PivotFirst](
       "PivotFirst operator",
       ExprChecks.reductionAndGroupByAgg(
@@ -4157,7 +4115,7 @@ object GpuOverrides extends Logging {
     exec[FilterExec](
       "The backend for most filter statements",
       GpuFilterExec.typeChecks,
-      GpuFilterExec.wrapMeta),
+      GpuFilterExecMeta),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +

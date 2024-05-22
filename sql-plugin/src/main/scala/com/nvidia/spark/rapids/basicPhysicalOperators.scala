@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.Retryable
@@ -27,6 +28,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
+
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -37,7 +39,7 @@ import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, Spar
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.util.random.BernoulliCellSampler
 
 class GpuProjectExecMeta(
@@ -778,23 +780,20 @@ object GpuFilter {
   }
 }
 
-object GpuFilterExec {
-  def wrapMeta(
-    filter: FilterExec,
-    conf: RapidsConf,
-    p: Option[RapidsMeta[_, _, _]],
-    r: DataFromReplacementRule
-  ): SparkPlanMeta[FilterExec] = {
-    new SparkPlanMeta[FilterExec](filter, conf, p, r) {
-      override def convertToGpu(): GpuExec = {
-        sys.error("convertToGpu failed")
-        GpuFilterExec(childExprs.head.convertToGpu(),
-          childPlans.head.convertIfNeeded())(useTieredProject = this.conf.isTieredProjectEnabled)
-      }
-    }
+case class GpuFilterExecMeta(
+  filter: FilterExec,
+  override val conf: RapidsConf,
+  parentMetaOpt: Option[RapidsMeta[_, _, _]],
+  rule: DataFromReplacementRule
+) extends SparkPlanMeta[FilterExec](filter, conf, parentMetaOpt, rule) {
+  override def convertToGpu(): GpuExec = {
+    GpuFilterExec(childExprs.head.convertToGpu(),
+      childPlans.head.convertIfNeeded())(useTieredProject = this.conf.isTieredProjectEnabled)
   }
+}
 
-  val typeChecks = ExecChecks(
+object GpuFilterExec {
+  val typeChecks: ExecChecks = ExecChecks(
     (TypeSig.commonCudfTypes +
       TypeSig.NULL +
       TypeSig.STRUCT +

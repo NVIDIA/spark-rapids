@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,12 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.GpuOverrides.{gpuCommonTypes, pluginSupportedOrderableSig}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils {
@@ -406,4 +407,57 @@ class GpuSorter(
       }
     }
   }
+}
+
+case class GpuSortOrderMeta(
+   sortOrder: SortOrder,
+   override val conf: RapidsConf,
+   parentOpt: Option[RapidsMeta[_, _, _]],
+   rule: DataFromReplacementRule
+) extends BaseExprMeta[SortOrder](sortOrder, conf, parentOpt, rule) {
+  override def tagExprForGpu(): Unit = {
+    if (isStructType(sortOrder.dataType)) {
+      val nullOrdering = sortOrder.nullOrdering
+      val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
+      val direction = sortOrder.direction.sql
+      if (nullOrdering != directionDefaultNullOrdering) {
+        willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
+          s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
+      }
+    }
+    if (isArrayOfStructType(sortOrder.dataType)) {
+      willNotWorkOnGpu("STRUCT is not supported as a child type for ARRAY, " +
+        s"actual data type: ${sortOrder.dataType}")
+    }
+  }
+
+  // One of the few expressions that are not replaced with a GPU version
+  override def convertToGpu(): Expression =
+    sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
+
+  private[this] def isStructType(dataType: DataType) = dataType match {
+    case StructType(_) => true
+    case _ => false
+  }
+
+  private[this] def isArrayOfStructType(dataType: DataType) = dataType match {
+    case ArrayType(elementType, _) =>
+      elementType match {
+        case StructType(_) => true
+        case _ => false
+      }
+    case _ => false
+  }
+}
+
+object GpuSortOrder {
+  val pluginChecks: ExprChecks = ExprChecks.projectOnly(
+    pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
+      .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+    TypeSig.orderable,
+    Seq(ParamCheck(
+      "input",
+      pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
+        .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+      TypeSig.orderable)))
 }
