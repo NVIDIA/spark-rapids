@@ -20,23 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import org.apache.spark.sql.JsonFunctionsSuite
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
+import org.apache.spark.sql.rapids.utils.{RapidsJsonConfTrait, RapidsSQLTestsTrait}
 
-class RapidsJsonFunctionsSuite extends JsonFunctionsSuite with RapidsSQLTestsTrait {
-  override def beforeAll(): Unit = {
-    super.beforeAll()
-    SQLConf.get.setConfString("spark.rapids.sql.expression.JsonTuple", "true")
-    SQLConf.get.setConfString("spark.rapids.sql.expression.GetJsonObject", "true")
-    SQLConf.get.setConfString("spark.rapids.sql.expression.JsonToStructs", "true")
-    SQLConf.get.setConfString("spark.rapids.sql.expression.StructsToJson", "true")
-  }
-
-  override def afterAll(): Unit = {
-    super.afterAll()
-    SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonTuple")
-    SQLConf.get.unsetConf("spark.rapids.sql.expression.GetJsonObject")
-    SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonToStructs")
-    SQLConf.get.unsetConf("spark.rapids.sql.expression.StructsToJson")
-  }
-}
+class RapidsJsonFunctionsSuite
+  extends JsonFunctionsSuite with RapidsSQLTestsTrait with RapidsJsonConfTrait {}

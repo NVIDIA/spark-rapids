@@ -222,12 +222,10 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
   }
 
   def rapidsCheckExpression(origExpr: Expression, expected: Any, inputRow: InternalRow): Unit = {
-    // many of of the expressions in RAPIDS do not support
-    // vectorized parameters. (e.g. regexp_replace)
-    // So we downgrade all expression
-    // evaluation to use scalar parameters.
-    // In a follow-up issue we'll take care of the expressions
-    // those already support vectorized paramters.
+    // many of the expressions in RAPIDS do not support vectorized parameters(e.g. regexp_replace).
+    // So we downgrade all expression evaluation to use scalar parameters.
+    // In a follow-up issue (https://github.com/NVIDIA/spark-rapids/issues/10859),
+    // we'll take care of the expressions those already support vectorized parameters.
     val expression = origExpr.transformUp {
       case BoundReference(ordinal, dataType, _) =>
         Literal(inputRow.asInstanceOf[GenericInternalRow].get(ordinal, dataType), dataType)
