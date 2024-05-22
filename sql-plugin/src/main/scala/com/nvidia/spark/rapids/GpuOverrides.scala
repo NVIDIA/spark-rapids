@@ -30,7 +30,6 @@ import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercent
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -56,7 +55,7 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -4045,44 +4044,8 @@ object GpuOverrides extends Logging {
       (p, conf, parent, r) => new ExecutedCommandExecMeta(p, conf, parent, r)),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed",
-      // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
-      // The types below are allowed as inputs and outputs.
-      ExecChecks((pluginSupportedOrderableSig +
-          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
-      (takeExec, conf, p, r) =>
-        new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
-          val sortOrder: Seq[BaseExprMeta[SortOrder]] =
-            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-          val projectList: Seq[BaseExprMeta[NamedExpression]] =
-            takeExec.projectList.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-          override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
-
-          override def convertToGpu(): GpuExec = {
-            // To avoid metrics confusion we split a single stage up into multiple parts but only
-            // if there are multiple partitions to make it worth doing.
-            val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
-            if (takeExec.child.outputPartitioning.numPartitions == 1) {
-              GpuTopN(takeExec.limit, so,
-                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
-            } else {
-              GpuTopN(
-                takeExec.limit,
-                so,
-                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                GpuShuffleExchangeExec(
-                  GpuSinglePartitioning,
-                  GpuTopN(
-                    takeExec.limit,
-                    so,
-                    takeExec.child.output,
-                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
-                  ENSURE_REQUIREMENTS
-                )(SinglePartition)
-              )(takeExec.sortOrder)
-            }
-          }
-        }),
+      GpuTakeOrderedAndProjectExec.pluginChecks,
+      GpuTakeOrderedAndProjectExecMeta),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
@@ -4105,17 +4068,16 @@ object GpuOverrides extends Logging {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-        TypeSig.all),
-      (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
+      GpuCollectLimit.pluginChecks,
+      GpuCollectLimitMeta)
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
             "of rows in a batch it could help by limiting the number of rows transferred from " +
             "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       GpuFilterExec.typeChecks,
-      GpuFilterExecMeta),
+      GpuFilterExecMeta
+    ),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
