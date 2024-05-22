@@ -29,11 +29,11 @@ object PartitionedFileUtilsShim extends PartitionedFileUtilsShimBase {
 
   // In Spark 4.0, PartitionedFileUtil.splitFiles lost its `sparkSession` parameter.
   // This Spark-4.0+ shim ignores the `sparkSession` parameter.
-  override def splitFiles(sparkSession: SparkSession,
-                          file: FileStatusWithMetadata,
-                          isSplitable: Boolean,
-                          maxSplitBytes: Long,
-                          partitionValues: InternalRow): Seq[PartitionedFile] = {
+  def splitFiles(sparkSession: SparkSession,
+                 file: FileStatusWithMetadata,
+                 isSplitable: Boolean,
+                 maxSplitBytes: Long,
+                 partitionValues: InternalRow): Seq[PartitionedFile] = {
     PartitionedFileUtil.splitFiles(file, isSplitable, maxSplitBytes, partitionValues)
   }
 
