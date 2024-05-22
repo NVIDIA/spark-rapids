@@ -23,6 +23,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
 
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
@@ -48,7 +50,7 @@ trait SplitFiles {
 
     selectedPartitions.flatMap { partition =>
       partition.files.flatMap { f =>
-        PartitionedFileUtilShim.splitFiles(
+        PartitionedFileUtilsShim.splitFiles(
           sparkSession,
           f,
           isSplitable = canBeSplit(f.getPath, hadoopConf),
@@ -70,7 +72,7 @@ trait SplitFiles {
         val filePath = file.getPath
         val isSplitable = relation.fileFormat.isSplitable(
           relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtilShim.splitFiles(
+        PartitionedFileUtilsShim.splitFiles(
           sparkSession = relation.sparkSession,
           file = file,
           isSplitable = isSplitable,

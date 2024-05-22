@@ -20,7 +20,9 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.paths.SparkPath
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 
 object PartitionedFileUtilsShim {
@@ -37,4 +39,16 @@ object PartitionedFileUtilsShim {
   def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
     pf.copy(locations = locations)
   }
+
+  // In Spark 4.0, PartitionedFileUtil.splitFiles lost its `sparkSession` parameter.
+  // This pre-Spark-4.0 shim keeps the `sparkSession` parameter.
+  def splitFiles(sparkSession: SparkSession,
+                 file: FileStatusWithMetadata,
+                 isSplitable: Boolean,
+                 maxSplitBytes: Long,
+                 partitionValues: InternalRow): Seq[PartitionedFile] = {
+    PartitionedFileUtil.splitFiles(sparkSession, file, isSplitable, maxSplitBytes, partitionValues)
+  }
+
+
 }

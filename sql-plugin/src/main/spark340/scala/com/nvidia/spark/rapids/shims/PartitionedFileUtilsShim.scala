@@ -21,25 +21,22 @@
 {"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.paths.SparkPath
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.PartitionedFileUtil
+import org.apache.spark.sql.execution.datasources.{FileStatusWithMetadata, PartitionedFile}
 
-object PartitionedFileUtilsShim {
-  // Wrapper for case class constructor so Java code can access
-  // the default values across Spark versions.
-  def newPartitionedFile(
-      partitionValues: InternalRow,
-      filePath: String,
-      start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues,
-    SparkPath.fromPathString(filePath), start, length)
-
-  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
-    pf.copy(locations = locations.toArray)
+object PartitionedFileUtilsShim extends PartitionedFileUtilsShimBase {
+  // In Spark 4.0, PartitionedFileUtil.splitFiles lost its `sparkSession` parameter.
+  // This pre-Spark-4.0 shim keeps the `sparkSession` parameter.
+  override def splitFiles(sparkSession: SparkSession,
+                          file: FileStatusWithMetadata,
+                          isSplitable: Boolean,
+                          maxSplitBytes: Long,
+                          partitionValues: InternalRow): Seq[PartitionedFile] = {
+    PartitionedFileUtil.splitFiles(sparkSession, file, isSplitable, maxSplitBytes, partitionValues)
   }
 }
