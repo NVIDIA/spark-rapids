@@ -207,6 +207,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
 <a name="sql.expression.BitwiseOr"></a>spark.rapids.sql.expression.BitwiseOr|`\|`|Returns the bitwise OR of the operands|true|None|
 <a name="sql.expression.BitwiseXor"></a>spark.rapids.sql.expression.BitwiseXor|`^`|Returns the bitwise XOR of the operands|true|None|
+<a name="sql.expression.BoundReference"></a>spark.rapids.sql.expression.BoundReference| |Reference to a bound variable|true|None|
 <a name="sql.expression.CaseWhen"></a>spark.rapids.sql.expression.CaseWhen|`when`|CASE WHEN expression|true|None|
 <a name="sql.expression.Cast"></a>spark.rapids.sql.expression.Cast|`bigint`, `binary`, `boolean`, `cast`, `date`, `decimal`, `double`, `float`, `int`, `smallint`, `string`, `timestamp`, `tinyint`|Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.Cbrt"></a>spark.rapids.sql.expression.Cbrt|`cbrt`|Cube root|true|None|
