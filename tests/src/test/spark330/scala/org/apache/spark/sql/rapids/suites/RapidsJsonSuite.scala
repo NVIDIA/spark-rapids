@@ -33,7 +33,7 @@ class RapidsJsonSuite extends JsonSuite with RapidsSQLTestsBaseTrait {
 
   /** Returns full path to the given file in the resource folder */
   override protected def testFile(fileName: String): String = {
-    getWorkspaceFilePath("sql", "core", "src", "test", "resources").toString + "/" + fileName
+    "src/test/resources/" + fileName
   }
 }
 
