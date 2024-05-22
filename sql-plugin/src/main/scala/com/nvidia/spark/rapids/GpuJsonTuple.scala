@@ -63,11 +63,9 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
           withResourceIfAllowed(field.columnarEvalAny(inputBatch)) {
             case fieldScalar: GpuScalar =>
               val fieldString = fieldScalar.getBase.getJavaString
-              val key = new JSONUtils.PathInstructionJni(
-                  JSONUtils.PathInstructionType.KEY, "", -1)
               val named = new JSONUtils.PathInstructionJni(
                   JSONUtils.PathInstructionType.NAMED, fieldString, -1)
-              Array(key, named)
+              Array(named)
             case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
           }
         }
