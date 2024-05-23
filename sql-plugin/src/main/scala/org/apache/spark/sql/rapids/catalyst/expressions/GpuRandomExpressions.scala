@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExpressionWithRandomSeed}
-import org.apache.spark.sql.rapids.shims.AnalysisExceptionShim
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -52,7 +52,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   @transient protected lazy val seed: Long = child match {
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
     case GpuLiteral(s, LongType) => s.asInstanceOf[Long]
-    case _ => AnalysisExceptionShim.throwException(
+    case _ => TrampolineUtil.throwAnalysisException(
       s"Input argument to $prettyName must be an integer, long or null literal.")
   }
 

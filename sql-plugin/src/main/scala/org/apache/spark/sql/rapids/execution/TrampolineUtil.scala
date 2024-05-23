@@ -31,7 +31,7 @@ import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.security.CryptoStreamUtils
 import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
@@ -156,6 +156,9 @@ object TrampolineUtil {
     TaskContext.get.taskMemoryManager()
   }
 
+  /** Throw a Spark analysis exception */
+  def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
+
   /** Set the task context for the current thread */
   def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)
 
@@ -232,4 +235,6 @@ object TrampolineUtil {
   def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
     sc.listenerBus.post(sparkEvent)
   }
+
+  class RapidsAnalysisException(msg: String) extends AnalysisException(msg)
 }
