@@ -26,7 +26,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 object GpuDeltaParquetFileFormatUtils {
   /**
    * Row number of the row in the file. When used with [[FILE_PATH_COL]] together, it can be used
-   * as unique id of a row in file. Currently to correctly calculate this, the called needs to
+   * as unique id of a row in file. Currently to correctly calculate this, the caller needs to
    * set both [[isSplitable]] to false, and [[RapidsConf.PARQUET_READER_TYPE]] to "PERFILE".
    */
   val METADATA_ROW_IDX_COL: String = "__metadata_row_index"
