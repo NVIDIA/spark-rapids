@@ -2078,12 +2078,12 @@ object GpuOverrides extends Logging {
       "Sort order",
       ExprChecks.projectOnly(
         pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-          .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+            .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
           pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-            .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+              .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
           TypeSig.orderable))),
       GpuSortOrderMeta),
     expr[PivotFirst](
@@ -4055,7 +4055,7 @@ object GpuOverrides extends Logging {
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
       ExecChecks((pluginSupportedOrderableSig +
-        TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       GpuTakeOrderedAndProjectExecMeta),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
@@ -4080,7 +4080,7 @@ object GpuOverrides extends Logging {
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-        TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
@@ -4089,8 +4089,8 @@ object GpuOverrides extends Logging {
     exec[FilterExec](
       "The backend for most filter statements",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-        TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-        GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
       GpuFilterExecMeta),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
