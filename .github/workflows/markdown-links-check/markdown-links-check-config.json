@@ -16,7 +16,7 @@
       "pattern": "https://www.nvidia.com/en-us/security/pgp-key"
     },
     {
-      "pattern": "https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/*"
+      "pattern": "https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.*"
     }
   ],
   "timeout": "15s",
