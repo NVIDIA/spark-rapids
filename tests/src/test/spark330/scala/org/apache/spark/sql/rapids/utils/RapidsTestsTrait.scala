@@ -102,6 +102,7 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", warehouse)
+        // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
         .config("spark.sql.session.timeZone","UTC")
         .config("spark.rapids.sql.explain", "ALL")
         .config("spark.rapids.sql.test.isFoldableNonLitAllowed", "true")

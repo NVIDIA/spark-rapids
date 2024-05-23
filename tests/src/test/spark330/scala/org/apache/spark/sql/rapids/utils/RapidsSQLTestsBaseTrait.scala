@@ -121,6 +121,7 @@ object RapidsSQLTestsBaseTrait {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
+      // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
       .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
