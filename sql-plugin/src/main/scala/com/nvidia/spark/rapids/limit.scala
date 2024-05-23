@@ -181,22 +181,12 @@ case class GpuGlobalLimitExec(limit: Int = -1, child: SparkPlan,
   }
 }
 
-case object GpuCollectLimit {
-  val pluginChecks: ExecChecks = ExecChecks(
-    (TypeSig.commonCudfTypes +
-      TypeSig.DECIMAL_128 +
-      TypeSig.NULL +
-      TypeSig.STRUCT +
-      TypeSig.ARRAY +
-      TypeSig.MAP).nested(),
-    TypeSig.all)
-}
-case class GpuCollectLimitMeta(
+class GpuCollectLimitMeta(
                       collectLimit: CollectLimitExec,
-                      override val conf: RapidsConf,
-                      parentOpt: Option[RapidsMeta[_, _, _]],
+                      conf: RapidsConf,
+                      parent: Option[RapidsMeta[_, _, _]],
                       rule: DataFromReplacementRule)
-  extends SparkPlanMeta[CollectLimitExec](collectLimit, conf, parentOpt, rule) {
+  extends SparkPlanMeta[CollectLimitExec](collectLimit, conf, parent, rule) {
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
 

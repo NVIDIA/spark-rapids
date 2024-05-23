@@ -4082,13 +4082,15 @@ object GpuOverrides extends Logging {
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
         TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
-      GpuCollectLimitMeta)
+      (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
             "of rows in a batch it could help by limiting the number of rows transferred from " +
             "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
-      GpuFilterExec.typeChecks,
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+        GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
       GpuFilterExecMeta),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
