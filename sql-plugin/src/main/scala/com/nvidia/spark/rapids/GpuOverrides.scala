@@ -2078,12 +2078,12 @@ object GpuOverrides extends Logging {
       "Sort order",
       ExprChecks.projectOnly(
         pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-           .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+            .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
           pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-              .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+             .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
           TypeSig.orderable))),
       GpuSortOrderMeta),
     expr[PivotFirst](
