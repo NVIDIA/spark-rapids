@@ -70,7 +70,8 @@ object GpuShuffleEnv extends Logging {
 
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
 
-  lazy val shuffleManagerName: String = SparkEnv.get.conf.get("spark.shuffle.manager")
+  lazy val shuffleManagerName: String = SparkEnv.get.conf.getOption("spark.shuffle.manager")
+  .getOrElse("none")
 
 
   @volatile private var env: GpuShuffleEnv = _
