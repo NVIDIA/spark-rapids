@@ -792,19 +792,6 @@ case class GpuFilterExecMeta(
   }
 }
 
-object GpuFilterExec {
-  val typeChecks: ExecChecks = ExecChecks(
-    (TypeSig.commonCudfTypes +
-      TypeSig.NULL +
-      TypeSig.STRUCT +
-      TypeSig.MAP +
-      TypeSig.ARRAY +
-      TypeSig.DECIMAL_128 +
-      TypeSig.BINARY +
-      GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-    TypeSig.all)
-}
-
 case class GpuFilterExec(
     condition: Expression,
     child: SparkPlan)(
