@@ -469,7 +469,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
       }
     } else {
       logWarning("Rapids shuffle is not available, configured shuffle manager is " +
-        GpuShuffleEnv.shuffleManagerName)
+        GpuShuffleEnv.shuffleManagerClassName)
     }
 
     FileCacheLocalityManager.init(sc)
