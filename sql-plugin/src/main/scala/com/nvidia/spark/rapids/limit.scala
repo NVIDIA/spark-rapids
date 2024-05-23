@@ -431,13 +431,6 @@ case class GpuTopN(
   }
 }
 
-case object GpuTakeOrderedAndProjectExec {
-  // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
-  // The types below are allowed as inputs and outputs.
-  val pluginChecks = ExecChecks((pluginSupportedOrderableSig +
-    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all)
-}
-
 case class GpuTakeOrderedAndProjectExecMeta(
    takeExec: TakeOrderedAndProjectExec,
    rapidsConf: RapidsConf,

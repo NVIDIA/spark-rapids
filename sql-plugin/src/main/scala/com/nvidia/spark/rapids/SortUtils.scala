@@ -20,12 +20,11 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuOverrides.{gpuCommonTypes, pluginSupportedOrderableSig}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils {
@@ -448,16 +447,4 @@ case class GpuSortOrderMeta(
       }
     case _ => false
   }
-}
-
-object GpuSortOrder {
-  val pluginChecks: ExprChecks = ExprChecks.projectOnly(
-    pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-      .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
-    TypeSig.orderable,
-    Seq(ParamCheck(
-      "input",
-      pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
-        .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
-      TypeSig.orderable)))
 }
