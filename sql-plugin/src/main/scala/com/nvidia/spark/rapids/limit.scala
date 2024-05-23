@@ -21,7 +21,6 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
