@@ -116,7 +116,7 @@ object GpuShuffleEnv extends Logging {
         val shuffleManagerClass = shuffleManager.getClass
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager: " +
         s"ShuffleManager class: ${shuffleManagerClass.getName}, with class loader: " +
-        "${shuffleManagerClass.getClassLoader.getClass.getName}")
+        s"${shuffleManagerClass.getClassLoader.getClass.getName}")
 
     }
   }
