@@ -467,9 +467,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatInterval,
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
-    } else {
-      logWarning("RAPIDS shuffle is not available, configured shuffle manager is " +
-        GpuShuffleEnv.shuffleManagerName)
     }
 
     FileCacheLocalityManager.init(sc)
