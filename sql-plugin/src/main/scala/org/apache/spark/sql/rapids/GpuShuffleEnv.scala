@@ -115,15 +115,12 @@ object GpuShuffleEnv extends Logging {
         s"RapidsShuffleManagerLike class used class loader: " +
         s"${caseClassLoader.toString}, with hash code: ${caseClassLoader.hashCode}. " +
         s"ShuffleManager instance contains the following RapidsShuffleManagerLike class loader: " +
-        s"${
-          shuffleManager.getClass.getSuperclass.getInterfaces.collect { case c if
-            c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
+        s"${shuffleManager.getClass.getSuperclass.getInterfaces
+          .collect {
+            case c if c.getName == classOf[RapidsShuffleManagerLike].getName =>
+              s"${c.getClassLoader} with hash code: ${c.getClassLoader.hashCode}"
           }.mkString("Array(", ", ", ")")
-        } with hash code: " +
-          s"${
-            shuffleManager.getClass.getSuperclass.getInterfaces.collect { case c if
-              c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader.hashCode
-            }.mkString("Array(", ", ", ")" )}"
+        }"
         )
     }
   }
