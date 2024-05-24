@@ -108,11 +108,16 @@ object GpuShuffleEnv extends Logging {
   // this forces the initialization when we know we are ready in the driver and executor.
   //
   def initShuffleManager(): Unit = {
-    SparkEnv.get.shuffleManager match {
+    val shuffleManager = SparkEnv.get.shuffleManager
+    shuffleManager match {
       case rapidsShuffleManager: RapidsShuffleManagerLike =>
         rapidsShuffleManager.initialize
       case _ =>
-        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
+        val shuffleManagerClass = shuffleManager.getClass
+        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager: " +
+        s"ShuffleManager class: ${shuffleManagerClass.getName}, with class loader: " +
+        "${shuffleManagerClass.getClassLoader.getClass.getName}")
+
     }
   }
 
