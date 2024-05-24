@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.execution.rapids.shims
+package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.execution.PartitionedFileUtil
-import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.catalyst.expressions.JsonExpressionsSuite
+import org.apache.spark.sql.rapids.utils.{RapidsJsonConfTrait, RapidsTestsTrait}
 
-object FilePartitionShims extends SplitFiles {
-  def getPartitions(selectedPartitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
-    selectedPartitions.flatMap { p =>
-      p.files.map { f =>
-        PartitionedFileUtil.getPartitionedFile(f, p.values)
-      }
-    }
-  }
-}
+class RapidsJsonExpressionsSuite
+  extends JsonExpressionsSuite with RapidsTestsTrait with RapidsJsonConfTrait {}

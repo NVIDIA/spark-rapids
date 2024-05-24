@@ -30,7 +30,6 @@ import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercent
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -56,7 +55,7 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -464,20 +463,6 @@ object GpuOverrides extends Logging {
   val gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
 
   val pluginSupportedOrderableSig: TypeSig = (gpuCommonTypes + TypeSig.STRUCT).nested()
-
-  private[this] def isStructType(dataType: DataType) = dataType match {
-    case StructType(_) => true
-    case _ => false
-  }
-
-  private[this] def isArrayOfStructType(dataType: DataType) = dataType match {
-    case ArrayType(elementType, _) =>
-      elementType match {
-        case StructType(_) => true
-        case _ => false
-      }
-    case _ => false
-  }
 
   // this listener mechanism is global and is intended for use by unit tests only
   private lazy val listeners: ListBuffer[GpuOverridesListener] =
@@ -944,6 +929,19 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
+      }),
+    expr[BoundReference](
+      "Reference to a bound variable",
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes + GpuTypeShims.additionalCommonOperatorSupportedTypes,
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT +
+          TypeSig.DECIMAL_128 + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+        TypeSig.all),
+      (currentRow, conf, p, r) => new ExprMeta[BoundReference](currentRow, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuBoundReference(
+          currentRow.ordinal, currentRow.dataType, currentRow.nullable)(
+          NamedExpression.newExprId, "")
       }),
     expr[AttributeReference](
       "References an input column",
@@ -2100,27 +2098,7 @@ object GpuOverrides extends Logging {
           pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
              .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
           TypeSig.orderable))),
-      (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (isStructType(sortOrder.dataType)) {
-            val nullOrdering = sortOrder.nullOrdering
-            val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
-            val direction = sortOrder.direction.sql
-            if (nullOrdering != directionDefaultNullOrdering) {
-              willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
-                s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
-            }
-          }
-          if (isArrayOfStructType(sortOrder.dataType)) {
-            willNotWorkOnGpu("STRUCT is not supported as a child type for ARRAY, " +
-              s"actual data type: ${sortOrder.dataType}")
-          }
-        }
-
-        // One of the few expressions that are not replaced with a GPU version
-        override def convertToGpu(): Expression =
-          sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
-      }),
+      GpuSortOrderMeta),
     expr[PivotFirst](
       "PivotFirst operator",
       ExprChecks.reductionAndGroupByAgg(
@@ -4091,40 +4069,7 @@ object GpuOverrides extends Logging {
       // The types below are allowed as inputs and outputs.
       ExecChecks((pluginSupportedOrderableSig +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
-      (takeExec, conf, p, r) =>
-        new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
-          val sortOrder: Seq[BaseExprMeta[SortOrder]] =
-            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-          val projectList: Seq[BaseExprMeta[NamedExpression]] =
-            takeExec.projectList.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-          override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
-
-          override def convertToGpu(): GpuExec = {
-            // To avoid metrics confusion we split a single stage up into multiple parts but only
-            // if there are multiple partitions to make it worth doing.
-            val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
-            if (takeExec.child.outputPartitioning.numPartitions == 1) {
-              GpuTopN(takeExec.limit, so,
-                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
-            } else {
-              GpuTopN(
-                takeExec.limit,
-                so,
-                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                GpuShuffleExchangeExec(
-                  GpuSinglePartitioning,
-                  GpuTopN(
-                    takeExec.limit,
-                    so,
-                    takeExec.child.output,
-                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
-                  ENSURE_REQUIREMENTS
-                )(SinglePartition)
-              )(takeExec.sortOrder)
-            }
-          }
-        }),
+      GpuTakeOrderedAndProjectExecMeta),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
@@ -4159,12 +4104,7 @@ object GpuOverrides extends Logging {
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
           TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
-      (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
-        override def convertToGpu(): GpuExec = {
-          GpuFilterExec(childExprs.head.convertToGpu(),
-            childPlans.head.convertIfNeeded())(useTieredProject = this.conf.isTieredProjectEnabled)
-        }
-      }),
+      GpuFilterExecMeta),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +

@@ -72,6 +72,7 @@ BitwiseAnd,4
 BitwiseNot,4
 BitwiseOr,4
 BitwiseXor,4
+BoundReference,4
 CaseWhen,4
 Cbrt,4
 Ceil,4
