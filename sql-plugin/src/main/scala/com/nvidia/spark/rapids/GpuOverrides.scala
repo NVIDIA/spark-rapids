@@ -930,6 +930,19 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
+    expr[BoundReference](
+      "Reference to a bound variable",
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes + GpuTypeShims.additionalCommonOperatorSupportedTypes,
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT +
+          TypeSig.DECIMAL_128 + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+        TypeSig.all),
+      (currentRow, conf, p, r) => new ExprMeta[BoundReference](currentRow, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuBoundReference(
+          currentRow.ordinal, currentRow.dataType, currentRow.nullable)(
+          NamedExpression.newExprId, "")
+      }),
     expr[AttributeReference](
       "References an input column",
       ExprChecks.projectAndAst(

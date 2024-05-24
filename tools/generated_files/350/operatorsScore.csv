@@ -81,6 +81,7 @@ BitwiseOr,4
 BitwiseXor,4
 BloomFilterAggregate,4
 BloomFilterMightContain,4
+BoundReference,4
 CaseWhen,4
 Cbrt,4
 Ceil,4
