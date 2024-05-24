@@ -22,7 +22,7 @@ import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -692,49 +692,6 @@ object GpuCast {
           throwIfAnyNan()
         }
         throwIfOutOfRange(getValue(minInput), getValue(maxInput))
-      }
-    }
-  }
-
-  /**
-   * Detects outlier values of a column given with specific range, and replaces them with
-   * a inputted substitution value.
-   *
-   * @param values ColumnVector to be performed with range check
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
-   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
-   * @param inclusiveMin Whether the min value is included in the valid range or not
-   * @param inclusiveMax Whether the max value is included in the valid range or not
-   */
-  private def replaceOutOfRangeValues(values: ColumnView,
-      minValue: => Scalar,
-      maxValue: => Scalar,
-      replaceValue: => Scalar,
-      inclusiveMin: Boolean,
-      inclusiveMax: Boolean): ColumnVector = {
-
-    withResource(minValue) { minValue =>
-      withResource(maxValue) { maxValue =>
-        val minPredicate = if (inclusiveMin) {
-          values.lessThan(minValue)
-        } else {
-          values.lessOrEqualTo(minValue)
-        }
-        withResource(minPredicate) { minPredicate =>
-          val maxPredicate = if (inclusiveMax) {
-            values.greaterThan(maxValue)
-          } else {
-            values.greaterOrEqualTo(maxValue)
-          }
-          withResource(maxPredicate) { maxPredicate =>
-            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
-              withResource(replaceValue) { nullScalar =>
-                rangePredicate.ifElse(nullScalar, values)
-              }
-            }
-          }
-        }
       }
     }
   }
@@ -1639,63 +1596,8 @@ object GpuCast {
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
 
-    // Approach to minimize difference between CPUCast and GPUCast:
-    // step 1. cast input to FLOAT64 (if necessary)
-    // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
-    // step 3. perform HALF_UP rounding on container DECIMAL
-    val checkedInput = withResource(input.castTo(DType.FLOAT64)) { double =>
-      val roundedDouble = double.round(dt.scale, cudf.RoundMode.HALF_UP)
-      withResource(roundedDouble) { rounded =>
-        // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
-        // space cost of container into consideration when we run bound check.
-        val containerScaleBound = DType.DECIMAL128_MAX_PRECISION - (dt.scale + 1)
-        val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
-        if (ansiMode) {
-          assertValuesInRange[Double](rounded,
-            minValue = -bound,
-            maxValue = bound,
-            inclusiveMin = false,
-            inclusiveMax = false)
-          rounded.incRefCount()
-        } else {
-          replaceOutOfRangeValues(rounded,
-            minValue = Scalar.fromDouble(-bound),
-            maxValue = Scalar.fromDouble(bound),
-            inclusiveMin = false,
-            inclusiveMax = false,
-            replaceValue = Scalar.fromNull(DType.FLOAT64))
-        }
-      }
-    }
-
-    withResource(checkedInput) { checked =>
-      val targetType = DecimalUtil.createCudfDecimal(dt)
-      // If target scale reaches DECIMAL128_MAX_PRECISION, container DECIMAL can not
-      // be created because of precision overflow. In this case, we perform casting op directly.
-      val casted = if (DType.DECIMAL128_MAX_PRECISION == dt.scale) {
-        checked.castTo(targetType)
-      } else {
-        // Increase precision by one along with scale in case of overflow, which may lead to
-        // the upcast of cuDF decimal type. If precision already hits the max precision, it is safe
-        // to increase the scale solely because we have checked and replaced out of range values.
-        val containerType = DecimalUtils.createDecimalType(
-          dt.precision + 1 min DType.DECIMAL128_MAX_PRECISION, dt.scale + 1)
-        withResource(checked.castTo(containerType)) { container =>
-          withResource(container.round(dt.scale, cudf.RoundMode.HALF_UP)) { rd =>
-            // The cast here is for cases that cuDF decimal type got promoted as precision + 1.
-            // Need to convert back to original cuDF type, to keep align with the precision.
-            rd.castTo(targetType)
-          }
-        }
-      }
-      // Cast NaN values to nulls
-      withResource(casted) { casted =>
-        withResource(input.isNan) { inputIsNan =>
-          withResource(Scalar.fromNull(targetType)) { nullScalar =>
-            inputIsNan.ifElse(nullScalar, casted)
-          }
-        }
-      }
+    withResource(CastStrings.fromFloat(input)) { inputStr =>
+      CastStrings.toDecimal(inputStr, ansiMode, dt.precision, -dt.scale)
     }
   }
 

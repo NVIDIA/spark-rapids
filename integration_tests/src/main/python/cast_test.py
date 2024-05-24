@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -260,6 +260,23 @@ def test_cast_long_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, long_gen).select(
             f.col('a').cast(DecimalType(18, -1))))
+
+@datagen_overrides(seed=0, reason='edge cases')
+@approximate_float
+@pytest.mark.parametrize('to_type', [
+    DecimalType(7, 1),
+    DecimalType(9, 9),
+    DecimalType(15, 2),
+    DecimalType(15, 15),
+    DecimalType(30, 3),
+    DecimalType(5, -3),
+    DecimalType(3, 0)], ids=idfn)
+def test_cast_float_to_decimal(to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, double_gen).select(
+            f.col('a'), f.col('a').cast(to_type).cast('double')), 
+            conf = {'spark.rapids.sql.castFloatToDecimal.enabled': 'true',
+                    'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
 
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen]

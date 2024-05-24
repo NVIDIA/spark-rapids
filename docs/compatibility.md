@@ -692,10 +692,10 @@ disabled on the GPU by default and require configuration options to be specified
 
 ### Float to Decimal
 
-The GPU will use a different strategy from Java's BigDecimal to handle/store decimal values, which
-leads to restrictions:
-* Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
-* The results produced by GPU slightly differ from the default results of Spark.
+The GPU will convert floating-point values to strings first with the same approach as 
+[float to string on gpu](#float-to-string), then convert the string to a decimal value. So the results
+produced by the GPU may slightly differ from the default results of Spark in the same way as the
+float to string conversion. 
 
 This configuration is enabled by default. To disable this operation on the GPU set
 [`spark.rapids.sql.castFloatToDecimal.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToDecimal.enabled) to `false`

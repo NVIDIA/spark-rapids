@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -967,7 +967,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     dataType: DataType,
     scale: Int,
     precision: Int = ai.rapids.cudf.DType.DECIMAL128_MAX_PRECISION,
-    floatEpsilon: Double = 1e-9,
+    floatEpsilon: Double = 1e-5,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,
