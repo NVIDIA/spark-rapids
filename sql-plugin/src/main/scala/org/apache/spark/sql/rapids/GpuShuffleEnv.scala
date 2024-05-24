@@ -109,11 +109,22 @@ object GpuShuffleEnv extends Logging {
       case rapidsShuffleManager: RapidsShuffleManagerLike =>
         rapidsShuffleManager.initialize
       case _ =>
-        val shuffleManagerClass = shuffleManager.getClass
+        val caseClassLoader =
+          classOf[RapidsShuffleManagerLike].getClassLoader
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager: " +
-        s"ShuffleManager class: ${shuffleManagerClass.getName}, with class loader: " +
-        s"${shuffleManagerClass.getClassLoader.getClass.getName}")
-
+        s"RapidsShuffleManagerLike class used class loader: " +
+        s"${caseClassLoader.toString}, with hash code: ${caseClassLoader.hashCode}. " +
+        s"ShuffleManager instance contains the following RapidsShuffleManagerLike class loader: " +
+        s"${
+          shuffleManager.getClass.getSuperclass.getInterfaces.collect { case c if
+            c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
+          }.mkString("Array(", ", ", ")")
+        } with hash code: " +
+          s"${
+            shuffleManager.getClass.getSuperclass.getInterfaces.collect { case c if
+              c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader.hashCode
+            }.mkString("Array(", ", ", ")" )}"
+        )
     }
   }
 
