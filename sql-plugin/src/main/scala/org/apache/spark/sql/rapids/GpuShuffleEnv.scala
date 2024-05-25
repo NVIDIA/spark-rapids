@@ -110,9 +110,9 @@ object GpuShuffleEnv extends Logging {
         rapidsShuffleManager.initialize
       case _ =>
         val rsmLoaderViaShuffleManager = shuffleManager.getClass.getSuperclass.getInterfaces
-        .collectFirst {
-          case c if c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
-        }
+          .collectFirst {
+            case c if c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
+          }
         val rsmLoaderDirect = classOf[RapidsShuffleManagerLike].getClassLoader
  
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager " +
