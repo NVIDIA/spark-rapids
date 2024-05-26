@@ -50,6 +50,8 @@ pipeline {
             description: 'Merged commit of specific PR')
         string(name: 'GITHUB_DATA', defaultValue: '',
             description: 'Json-formatted github data from upstream blossom-ci')
+        string(name: 'EXTRA_ENV', defaultValue: '',
+            description: 'Extra environments for integration test, e.g. IT_PART=part2')
     }
 
     environment {
@@ -63,7 +65,7 @@ pipeline {
         DATABRICKS_HOST = DbUtils.getHost("$DB_TYPE")
         DATABRICKS_TOKEN = credentials("${DbUtils.getToken("$DB_TYPE")}")
         DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
-        DATABRICKS_DRIVER = DbUtils.getDriver("$DB_TYPE")
+        DATABRICKS_DRIVER = 'Standard_NV36ads_A10_v5'
         DATABRICKS_WORKER = DbUtils.getWorker("$DB_TYPE")
         INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}"
     }
@@ -88,7 +90,7 @@ pipeline {
                         // 'name' and 'value' only supprt literal string in the declarative Jenkins
                         // Refer to Jenkins issue https://issues.jenkins.io/browse/JENKINS-62127
                         name 'DB_RUNTIME'
-                        values '11.3', '12.2', '13.3'
+                        values '13.3'
                     }
                 }
                 stages {
@@ -182,6 +184,7 @@ void databricksBuild() {
                             if (params.SPARK_CONF) {
                                 TEST_PARAMS += " -f ${params.SPARK_CONF}"
                             }
+                            TEST_PARAMS += params.EXTRA_ENV ? " -e  ${params.EXTRA_ENV}" : ''
                             sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
                         }
                     } finally {

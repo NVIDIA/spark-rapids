@@ -89,21 +89,20 @@ run_pyarrow_tests() {
         bash integration_tests/run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
 
-## limit parallelism to avoid OOM kill
-export TEST_PARALLEL=${TEST_PARALLEL:-4}
-
-if [[ $TEST_MODE == "DEFAULT" ]]; then
+## Divide integration tests into two parts, and run them in different DB clusters in parallel to accelerate the tests.
+IT_PART=${IT_PART:-"part1"}
+if [[ $TEST_MODE == "DEFAULT" && $IT_PART == "part1" ]]; then
     bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+fi
 
+## Run tests with jars building from the spark-rapids source code
+if [[ "$(pwd)" == "$SOURCE_PATH" && $IT_PART == "part2" ]]; then
     ## Run cache tests
     if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
         PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
             bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
     fi
-fi
 
-## Run tests with jars building from the spark-rapids source code
-if [ "$(pwd)" == "$SOURCE_PATH" ]; then
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
