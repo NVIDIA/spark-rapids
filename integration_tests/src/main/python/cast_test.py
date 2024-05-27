@@ -261,6 +261,22 @@ def test_cast_long_to_decimal_overflow():
         lambda spark : unary_op_df(spark, long_gen).select(
             f.col('a').cast(DecimalType(18, -1))))
 
+@approximate_float
+@pytest.mark.parametrize('to_type', [
+    DecimalType(7, 1),
+    DecimalType(9, 9),
+    DecimalType(15, 2),
+    DecimalType(15, 15),
+    DecimalType(30, 3),
+    DecimalType(5, -3),
+    DecimalType(3, 0)], ids=idfn)
+def test_cast_float_to_decimal(to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, double_gen).select(
+            f.col('a'), f.col('a').cast(to_type).cast('double')),
+        conf = {'spark.rapids.sql.castFloatToDecimal.enabled': 'true',
+                'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen]
 basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens
@@ -306,7 +322,7 @@ def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
-    
+
 def test_cast_float_to_string():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, FloatGen()).selectExpr("cast(cast(a as string) as float)"),
