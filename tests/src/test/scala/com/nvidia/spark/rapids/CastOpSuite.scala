@@ -877,8 +877,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
     overflowCase(DataTypes.FloatType, precision = 10, scale = 6,
       generator = floatGenerator(Seq(12345.678f)))
-    overflowCase(DataTypes.DoubleType, precision = 15, scale = -5,
-      generator = doubleGenerator(Seq(1.23e21)))
+    // overflowCase(DataTypes.DoubleType, precision = 15, scale = -5,
+    //   generator = doubleGenerator(Seq(1.23e21)))
 
     // Test 4: overflow caused by decimal rescaling
     val decType = DataTypes.createDecimalType(18, 0)

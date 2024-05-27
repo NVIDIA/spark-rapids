@@ -26,7 +26,7 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType,
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{CastStrings, GpuTimeZoneDB}
+import com.nvidia.spark.rapids.jni.{CastException, CastStrings, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 import org.apache.commons.text.StringEscapeUtils
 
@@ -1597,7 +1597,12 @@ object GpuCast {
       ansiMode: Boolean): ColumnVector = {
 
     withResource(CastStrings.fromFloat(input)) { inputStr =>
-      CastStrings.toDecimal(inputStr, ansiMode, dt.precision, -dt.scale)
+      try {
+        CastStrings.toDecimal(inputStr, ansiMode, dt.precision, -dt.scale)
+      } catch {
+        case _: CastException =>
+          throw new ArithmeticException(OVERFLOW_MESSAGE)
+      }
     }
   }
 
