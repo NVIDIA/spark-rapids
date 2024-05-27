@@ -88,7 +88,9 @@ public final class PackedTableHostColumnVector extends ColumnVector {
 
   @Override
   public void close() {
-    tableBuffer.close();
+    if (tableBuffer != null) {
+      tableBuffer.close();
+    }
   }
 
   @Override

@@ -19,8 +19,11 @@ package com.nvidia.spark.rapids
 import java.io.{DataInputStream, DataOutputStream, EOFException}
 import java.nio.ByteBuffer
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableColumn, AutoCloseableSeq}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -92,29 +95,7 @@ private[rapids] class PackedTableSerializer extends TableSerde {
   }
 }
 
-private[rapids] class PackedTableDeserializer extends TableSerde with AutoCloseable {
-  private var hostBuffer: HostMemoryBuffer = _
-
-  private def getHostBuffer(len: Long): HostMemoryBuffer = {
-    assert(len >= 0)
-    if (hostBuffer != null && len <= hostBuffer.getLength) {
-      hostBuffer.slice(0, len)
-    } else { // hostBuffer is null or len is larger than the current one
-      if (hostBuffer != null) {
-        hostBuffer.close()
-      }
-      hostBuffer = HostMemoryBuffer.allocate(len)
-      hostBuffer.slice(0, len)
-    }
-  }
-
-  override def close(): Unit = {
-    if (hostBuffer != null) {
-      hostBuffer.close()
-      hostBuffer = null
-    }
-  }
-
+private[rapids] class PackedTableDeserializer extends TableSerde {
   private def readProtocolHeader(dIn: DataInputStream): Unit = {
     val magicNum = dIn.readInt()
     if (magicNum != P_MAGIC_NUM) {
@@ -146,7 +127,7 @@ private[rapids] class PackedTableDeserializer extends TableSerde with AutoClosea
 
   private def readHostBufferFromStream(dIn: DataInputStream): HostMemoryBuffer = {
     val bufLen = dIn.readLong()
-    closeOnExcept(getHostBuffer(bufLen)) { hostBuf =>
+    closeOnExcept(HostMemoryBuffer.allocate(bufLen)) { hostBuf =>
       var leftLen = bufLen
       var hOffset = 0L
       while (leftLen > 0) {
@@ -181,93 +162,169 @@ private[rapids] class PackedTableDeserializer extends TableSerde with AutoClosea
   }
 }
 
-private[rapids] class PackedTableIterator(dIn: DataInputStream,
-    sparkTypes: Array[DataType],
-    deserTime: GpuMetric) extends Iterator[(Int, ColumnarBatch)] {
+private[rapids] class PackedTableIterator(dIn: DataInputStream, sparkTypes: Array[DataType],
+    bundleSize: Long, deserTime: GpuMetric) extends Iterator[(Int, ColumnarBatch)] {
 
   private val tableDeserializer = new PackedTableDeserializer
+  private val bundleTargetSize = Math.max(bundleSize, 128 * 1024 * 1024L) // at least 128M
+  private val readTables: mutable.ListBuffer[PackedTableHostColumnVector] =
+    mutable.ListBuffer.empty
+
+  private val curOffsetsAndMetas: mutable.Queue[(Long, TableMeta)] = mutable.Queue.empty
+  private var curTablesDeviceBuf: Option[DeviceMemoryBuffer] = None
   private var closed = false
-  private var onDeck: Option[SpillableColumnarBatch] = None
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
-      onDeck.foreach(_.close())
-      onDeck = None
-      tableDeserializer.close()
+      closeBuffer()
       if (!closed) {
         dIn.close()
       }
     }
   }
 
+  private def closeBuffer(): Unit = {
+    readTables.safeClose()
+    readTables.clear()
+    curTablesDeviceBuf.foreach(_.safeClose())
+    curTablesDeviceBuf = None
+  }
+
   override def hasNext: Boolean = {
-    if (onDeck.isEmpty) {
-      tryReadNextBatch()
+    if (curOffsetsAndMetas.isEmpty) {
+      tryReadNextBundle()
     }
-    onDeck.isDefined
+    curOffsetsAndMetas.nonEmpty
   }
 
   override def next(): (Int, ColumnarBatch) = {
     if (!hasNext) {
       throw new NoSuchElementException()
     }
-    val ret = withResource(onDeck) { _ =>
-      onDeck.get.getColumnarBatch()
-    }
-    onDeck = None
-    (0, ret)
+    (0, nextBatchFromBundle())
   }
 
-  private def tryReadNextBatch(): Unit = {
-    val taskContext = TaskContext.get()
-    // IO operation is coming, so leave GPU for a while
-    GpuSemaphore.releaseIfNecessary(taskContext)
+  private def tryReadNextBundle(): Unit = {
     if (closed) {
       return
     }
+    assert(curOffsetsAndMetas.isEmpty)
+    // IO operation is coming, so leave GPU for a while
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    var (accSize, accRows) = (0L, 0L)
+    readTables.foreach { p =>
+      curOffsetsAndMetas.enqueue((accSize, p.getTableMeta))
+      accSize += (if (p.getTableBuffer != null) p.getTableBuffer.getLength else 0L)
+      accRows += p.getTableMeta.rowCount()
+    }
     try {
-      val packedHostCol = deserTime.ns {
-        withResource(new NvtxRange("Read Host Table", NvtxColor.ORANGE)) { _ =>
-          tableDeserializer.readFromStream(dIn)
-        }
-      }
-      val tableMeta = packedHostCol.getTableMeta
-      val hostBuf = packedHostCol.getTableBuffer
-      // Begin to use GPU
-      GpuSemaphore.acquireIfNecessary(taskContext)
       deserTime.ns {
-        val cb = if (hostBuf == null) {
-          // A rows-only batch. Also acquires GPU semaphore because the downstream
-          // operators expect the batch producer already holds the semaphore and may
-          // generate empty batches.
-          new ColumnarBatch(Array.empty, tableMeta.rowCount().toInt)
-        } else {
-          val data = withResource(hostBuf) { _ =>
-            withResource(new NvtxRange("Table to Device", NvtxColor.RED)) { _ =>
-              closeOnExcept(DeviceMemoryBuffer.allocate(hostBuf.getLength)) { devBuf =>
-                devBuf.copyFromHostBuffer(hostBuf)
-                devBuf
-              }
-            }
+        while (!closed && accSize < bundleTargetSize && accRows < Int.MaxValue) {
+          val p = withResource(new NvtxRange("Read Table", NvtxColor.ORANGE)) { _ =>
+            tableDeserializer.readFromStream(dIn)
           }
-          withResource(new NvtxRange("Deserialize Table", NvtxColor.YELLOW)) { _ =>
-            withResource(data) { _ =>
-              val bufferMeta = tableMeta.bufferMeta()
-              if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
-                MetaUtils.getBatchFromMeta(data, tableMeta, sparkTypes)
-              } else {
-                GpuCompressedColumnVector.from(data, tableMeta)
-              }
-            }
+          // Always cache the read table to the queue, even the total size may
+          // go beyond the target size. But we stop reading the next one.
+          readTables.append(p)
+          val startPos = if (p.getTableBuffer != null) {
+            val preAccSize = accSize
+            accSize += p.getTableBuffer.getLength
+            preAccSize
+          } else {
+            -1L // Indicate a rows-only batch. Since 0 is a valid for an empty buffer.
+          }
+          accRows += p.getTableMeta.rowCount()
+          if (accSize <= bundleTargetSize && accRows <= Int.MaxValue) {
+            // Take it to the current status only when no size and rows number overflow.
+            curOffsetsAndMetas.enqueue((startPos, p.getTableMeta))
           }
         }
-        onDeck = Some(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
       }
     } catch {
       case _: EOFException => // we reach the end
         dIn.close()
         closed = true
-        onDeck.foreach(_.close())
-        onDeck = None
+    }
+  }
+
+  // Merge host buffers in the current bundle into a single big contiguous buffer.
+  // It requires the buffered tables are NOT rows-only.
+  private def getCurrentTablesHostBuf: HostMemoryBuffer = {
+    val numCurTables = curOffsetsAndMetas.length
+    withResource(readTables.take(numCurTables).toArray) { curTables =>
+      readTables.remove(0, numCurTables)
+      if (curTables.length == 1) {
+        val ret = curTables.head.getTableBuffer
+        curTables(0) = null
+        ret
+      } else {
+        val totoSize = curTables.map(_.getTableBuffer.getLength).sum
+        closeOnExcept(HostMemoryBuffer.allocate(totoSize)) { bigHostBuf =>
+          curTables.zipWithIndex.foreach { case (p, idx) =>
+            withResource(p) { _ =>
+              curTables(idx) = null
+              bigHostBuf.copyFromHostBuffer(curOffsetsAndMetas(idx)._1, p.getTableBuffer,
+                0, p.getTableBuffer.getLength)
+            }
+          }
+          bigHostBuf
+        }
+      }
+    }
+  }
+
+  private def nextBatchFromBundle(): ColumnarBatch = {
+    val (start, tableMeta) = curOffsetsAndMetas.head
+    if (start < 0) {
+      GpuSemaphore.acquireIfNecessary(TaskContext.get)
+      // Rows-only batches. Also acquires GPU semaphore because the downstream
+      // operators expect the batch producer already holds the semaphore and may
+      // generate empty batches.
+      deserTime.ns {
+        val rowsNum = curOffsetsAndMetas.map(_._2.rowCount()).sum
+        curOffsetsAndMetas.clear()
+        new ColumnarBatch(Array.empty, rowsNum.toInt)
+      }
+    } else {
+      if (curTablesDeviceBuf.isEmpty) {
+        // Refresh the device buffer by lazily moving buffered small tables from host
+        // with a single copying.
+        curTablesDeviceBuf = withResource(getCurrentTablesHostBuf) { tablesHostBuf =>
+          // Begin to use GPU
+          GpuSemaphore.acquireIfNecessary(TaskContext.get)
+          deserTime.ns {
+            withResource(new NvtxRange("Table to Device", NvtxColor.RED)) { _ =>
+              closeOnExcept(DeviceMemoryBuffer.allocate(tablesHostBuf.getLength)) { devBuf =>
+                devBuf.copyFromHostBuffer(tablesHostBuf)
+                Some(devBuf)
+              }
+            }
+          }
+        }
+      }
+      assert(curTablesDeviceBuf.isDefined, "The device buffer holding tables is missing")
+      deserTime.ns {
+        curOffsetsAndMetas.dequeue()
+        val end = curOffsetsAndMetas.headOption.map(_._1)
+          .getOrElse(curTablesDeviceBuf.get.getLength)
+        val ret = withResource(curTablesDeviceBuf.get.slice(start, end - start)) { sliced =>
+          withResource(new NvtxRange("Deserialize Table", NvtxColor.YELLOW)) { _ =>
+            val bufferMeta = tableMeta.bufferMeta()
+            if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
+              MetaUtils.getBatchFromMeta(sliced, tableMeta, sparkTypes)
+            } else {
+              GpuCompressedColumnVector.from(sliced, tableMeta)
+            }
+          }
+        }
+        closeOnExcept(ret) { _ =>
+          if (curOffsetsAndMetas.isEmpty) {
+            // All the tables on the current buffer are consumed, close the current buffer
+            curTablesDeviceBuf.foreach(_.safeClose())
+            curTablesDeviceBuf = None
+          }
+        }
+        ret
+      }
     }
   }
 }

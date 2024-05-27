@@ -143,16 +143,17 @@ class GpuColumnarBatchSerializer(dataSize: GpuMetric,
     serTime: GpuMetric = NoopMetric,
     deserTime: GpuMetric = NoopMetric,
     isSerializedTable: Boolean = false,
-    sparkTypes: Array[DataType] = Array.empty) extends Serializer with Serializable {
+    sparkTypes: Array[DataType] = Array.empty,
+    bundleSize: Long = 0L) extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
     new GpuColumnarBatchSerializerInstance(dataSize, serTime, deserTime,
-      isSerializedTable, sparkTypes)
+      isSerializedTable, sparkTypes, bundleSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
 private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric, serTime: GpuMetric,
-    deserTime: GpuMetric, isSerializedTable: Boolean, sparkTypes: Array[DataType]
-) extends SerializerInstance {
+    deserTime: GpuMetric, isSerializedTable: Boolean, sparkTypes: Array[DataType],
+    bundleSize: Long) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut = new DataOutputStream(new BufferedOutputStream(out))
@@ -248,7 +249,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric, serTime: G
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         if (isSerializedTable) {
-          new PackedTableIterator(dIn, sparkTypes, deserTime)
+          new PackedTableIterator(dIn, sparkTypes, bundleSize, deserTime)
         } else {
           new SerializedBatchIterator(dIn, deserTime)
         }
