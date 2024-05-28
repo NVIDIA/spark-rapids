@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.reflect.Method
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util.concurrent.{ConcurrentHashMap, Future, ScheduledExecutorService, TimeUnit}
@@ -24,7 +25,6 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.jni.Profiler
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.ipc.CallerContext
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.api.plugin.PluginContext
@@ -48,6 +48,8 @@ object ProfilerOnExecutor extends Logging {
   private var driverPollMillis = 0
   private val startTimestamp = System.nanoTime()
   private var isProfileActive = false
+  private var currentContextMethod: Method = null
+  private var getContextMethod: Method = null
 
   def init(pluginCtx: PluginContext, conf: RapidsConf): Unit = {
     require(writer.isEmpty, "Already initialized")
@@ -58,6 +60,12 @@ object ProfilerOnExecutor extends Logging {
     if (timeRanges.isDefined && (stageRanges.nonEmpty || jobRanges.nonEmpty)) {
       throw new UnsupportedOperationException(
         "Profiling with time ranges and stage or job ranges simultaneously is not supported")
+    }
+    if (jobRanges.nonEmpty) {
+      // Hadoop's CallerContext is used to identify the job ID of a task on the executor.
+      val callerContextClass = TrampolineUtil.classForName("org.apache.hadoop.ipc.CallerContext")
+      currentContextMethod = callerContextClass.getMethod("getCurrent")
+      getContextMethod = callerContextClass.getMethod("getContext")
     }
     writer = conf.profilePath.flatMap { pathPrefix =>
       val executorId = pluginCtx.executorID()
@@ -85,9 +93,9 @@ object ProfilerOnExecutor extends Logging {
 
   def onTaskStart(): Unit = {
     if (jobRanges.nonEmpty) {
-      val callerCtx = CallerContext.getCurrent
+      val callerCtx = currentContextMethod.invoke(null)
       if (callerCtx != null) {
-        callerCtx.getContext match {
+        getContextMethod.invoke(callerCtx).asInstanceOf[String] match {
           case jobPattern(jid) =>
             val jobId = jid.toInt
             if (jobRanges.contains(jobId)) {
@@ -325,6 +333,13 @@ object ProfilerOnDriver extends Logging {
         numStagesToProfile = stageRanges.size
         if (jobRanges.nonEmpty) {
           // Need caller context enabled to get the job ID of a task on the executor
+          try {
+            TrampolineUtil.classForName("org.apache.hadoop.ipc.CallerContext")
+          } catch {
+            case _: ClassNotFoundException =>
+              throw new UnsupportedOperationException(s"${RapidsConf.PROFILE_JOBS} requires " +
+                "Hadoop CallerContext which is unavailable.")
+          }
           sc.getConf.set("hadoop.caller.context.enabled", "true")
         }
         sc.addSparkListener(Listener)
