@@ -2384,7 +2384,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, dataType)) { col =>
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { col =>
       doColumnar(col, rhs)
     }
   }
