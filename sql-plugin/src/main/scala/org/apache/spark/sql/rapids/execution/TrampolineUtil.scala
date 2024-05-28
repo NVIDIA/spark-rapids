@@ -236,5 +236,9 @@ object TrampolineUtil {
     sc.listenerBus.post(sparkEvent)
   }
 
+  /**
+   *  This class is to only be used when there is no equivalent helper method in
+   *  Spark to throw an AnalysisException.
+   */
   class RapidsAnalysisException(msg: String) extends AnalysisException(msg)
 }
