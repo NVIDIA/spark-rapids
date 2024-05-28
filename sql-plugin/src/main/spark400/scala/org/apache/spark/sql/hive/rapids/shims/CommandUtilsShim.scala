@@ -23,7 +23,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.execution.command.CommandUtils
 
-object CommandUtilsShim extends CommandUtilsShimBase {
+object CommandUtilsShim {
 
   // Shim for CommandUtils.uncacheTableOrView, whose signature changed in Apache Spark 4.0.
   def uncacheTableOrView(sparkSession: SparkSession, tableId: TableIdentifier): Unit = {
