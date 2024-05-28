@@ -372,7 +372,7 @@ object ProfilerOnDriver extends Logging {
     override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
       val jobId = jobEnd.jobId
       if (jobRanges.contains(jobId)) {
-        completedJobs.putIfAbsent(jobId, Unit)
+        completedJobs.putIfAbsent(jobId, ())
         isJobsStageProfilingComplete = completedJobs.size == numJobsToProfile &&
           completedStages.size == numStagesToProfile
       }
@@ -381,7 +381,7 @@ object ProfilerOnDriver extends Logging {
     override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
       val stageId = stageCompleted.stageInfo.stageId
       if (stageRanges.contains(stageId)) {
-        completedStages.putIfAbsent(stageId, Unit)
+        completedStages.putIfAbsent(stageId, ())
         isJobsStageProfilingComplete = completedJobs.size == numJobsToProfile &&
           completedStages.size == numStagesToProfile
       }
