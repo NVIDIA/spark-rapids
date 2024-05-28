@@ -2301,6 +2301,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  val CASE_WHEN_FUSE =
+    conf("spark.rapids.sql.case_when.fuse")
+      .doc("If when branches is greater than 3 and all then values in case when are string " +
+          "scalar, fuse mode improves the performance. By default this is enabled.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -3113,6 +3121,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
+
+  lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

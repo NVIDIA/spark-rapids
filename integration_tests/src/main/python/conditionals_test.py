@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
@@ -295,4 +295,18 @@ def test_conditional_with_side_effects_unary_minus(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'CASE WHEN a > -32768 THEN -a ELSE null END'),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
+
+def test_case_when_all_then_values_are_scalars():
+    data_gen = [
+        ("a", boolean_gen),
+        ("b", boolean_gen),
+        ("c", boolean_gen),
+        ("d", boolean_gen),
+        ("e", boolean_gen)]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen),
+        "tab",
+        "select case when a then 'aaa' when b then 'bbb' when c then 'ccc' " +
+        "when d then 'ddd' when e then 'eee' else 'unknown' end from tab",
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
 
