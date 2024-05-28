@@ -24,7 +24,6 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
 
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
