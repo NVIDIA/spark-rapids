@@ -19,7 +19,7 @@
 {"spark": "332db"}
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.shims
+package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 
@@ -94,7 +94,7 @@ class GpuSubqueryBroadcastMeta(
   override def convertToCpu(): SparkPlan = s
 
   override def convertToGpu(): GpuExec = {
-    GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, broadcastBuilder())(
+    GpuSubqueryBroadcastExec(s.name, Seq(s.index), s.buildKeys, broadcastBuilder())(
       getBroadcastModeKeyExprs)
   }
 
