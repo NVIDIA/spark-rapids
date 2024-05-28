@@ -116,7 +116,7 @@ object GpuShuffleEnv extends Logging {
         val rsmLoaderDirect = classOf[RapidsShuffleManagerLike].getClassLoader
  
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager " +
-          s"${shuffleManager}! Expected: an instance of  RapidsShuffleManagerLike loaded by " +
+          s"${shuffleManager}! Expected: an instance of RapidsShuffleManagerLike loaded by " +
           s"${rsmLoaderDirect}. Actual: ${shuffleManager} tagged with RapidsShuffleManagerLike " +
           s"loaded by: ${rsmLoaderViaShuffleManager}"
         )
