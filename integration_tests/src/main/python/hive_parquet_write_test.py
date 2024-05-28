@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_before_spark_320
 
 # Disable the meta conversion from Hive write to FrameData write in Spark, to test
 # "GpuInsertIntoHiveTable" for Parquet write.
@@ -137,9 +137,12 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
         all_confs)
 
 
+zstd_param = pytest.param('ZSTD',
+    marks=pytest.mark.skipif(is_before_spark_320(), reason="zstd is not supported before 320"))
+
 @allow_non_gpu(*non_utc_allow)
 @ignore_order(local=True)
-@pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'ZSTD', 'SNAPPY'])
+@pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'SNAPPY', zstd_param])
 def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type):
     # Generate hive table in Parquet format
     def gen_table(spark):
