@@ -15,22 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -39,15 +24,15 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, PythonUDF}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python.PythonMapInArrowExec
+import org.apache.spark.sql.execution.python.MapInArrowExec
 import org.apache.spark.sql.rapids.execution.python.GpuMapInBatchExec
 
-class GpuPythonMapInArrowExecMetaBase(
-    mapArrow: PythonMapInArrowExec,
+class GpuMapInArrowExecMetaBase(
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends SparkPlanMeta[PythonMapInArrowExec](mapArrow, conf, parent, rule) {
+  extends SparkPlanMeta[MapInArrowExec](mapArrow, conf, parent, rule) {
 
   override def replaceMessage: String = "partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =
@@ -61,7 +46,7 @@ class GpuPythonMapInArrowExecMetaBase(
   override val childExprs: Seq[BaseExprMeta[_]] = resultAttrs :+ udf
 
   override def convertToGpu(): GpuExec =
-    GpuPythonMapInArrowExec(
+    GpuMapInArrowExec(
       udf.convertToGpu(),
       resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       childPlans.head.convertIfNeeded(),
@@ -77,7 +62,7 @@ class GpuPythonMapInArrowExecMetaBase(
  * JVM and Python, and scheduling GPU resources for its Python processes.
  *
  */
-case class GpuPythonMapInArrowExec(
+case class GpuMapInArrowExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan,

@@ -15,25 +15,24 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.python.PythonMapInArrowExec
+import org.apache.spark.sql.execution.python.MapInArrowExec
 
-class GpuPythonMapInArrowExecMeta(
-    mapArrow: PythonMapInArrowExec,
+class GpuMapInArrowExecMeta(
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends GpuPythonMapInArrowExecMetaBase(mapArrow, conf, parent, rule) {
+  extends GpuMapInArrowExecMetaBase(mapArrow, conf, parent, rule) {
 
   override def convertToGpu(): GpuExec =
-    GpuPythonMapInArrowExec(
+    GpuMapInArrowExec(
       udf.convertToGpu(),
       resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       childPlans.head.convertIfNeeded(),
