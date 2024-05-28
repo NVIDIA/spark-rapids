@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -417,5 +417,44 @@ case class GpuTopN(
     val outputString = truncatedString(output, "[", ",", "]", maxFields)
 
     s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString, offset=$offset)"
+  }
+}
+
+case class GpuTakeOrderedAndProjectExecMeta(
+   takeExec: TakeOrderedAndProjectExec,
+   rapidsConf: RapidsConf,
+   parentOpt: Option[RapidsMeta[_, _, _]],
+   rule: DataFromReplacementRule
+) extends SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, rapidsConf, parentOpt, rule) {
+  val sortOrder: Seq[BaseExprMeta[SortOrder]] =
+    takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
+  private val projectList: Seq[BaseExprMeta[NamedExpression]] =
+    takeExec.projectList.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
+  override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
+
+  override def convertToGpu(): GpuExec = {
+    // To avoid metrics confusion we split a single stage up into multiple parts but only
+    // if there are multiple partitions to make it worth doing.
+    val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
+    if (takeExec.child.outputPartitioning.numPartitions == 1) {
+      GpuTopN(takeExec.limit, so,
+        projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+        childPlans.head.convertIfNeeded())(takeExec.sortOrder)
+    } else {
+      GpuTopN(
+        takeExec.limit,
+        so,
+        projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+        GpuShuffleExchangeExec(
+          GpuSinglePartitioning,
+          GpuTopN(
+            takeExec.limit,
+            so,
+            takeExec.child.output,
+            childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+          ENSURE_REQUIREMENTS
+        )(SinglePartition)
+      )(takeExec.sortOrder)
+    }
   }
 }

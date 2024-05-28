@@ -1550,6 +1550,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault(false.toString)
 
+  val FOLDABLE_NON_LIT_ALLOWED = conf("spark.rapids.sql.test.isFoldableNonLitAllowed")
+    .doc("Only to be used in tests. If `true` the foldable expressions that are not literals " +
+      "will be allowed")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -2510,6 +2517,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
   /**
    * Convert a string value to the injection configuration OomInjection.
