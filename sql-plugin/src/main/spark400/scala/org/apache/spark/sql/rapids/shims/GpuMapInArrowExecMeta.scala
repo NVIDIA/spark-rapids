@@ -21,15 +21,29 @@ package org.apache.spark.sql.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.api.python.PythonEvalType
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, PythonUDF}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.MapInArrowExec
+import org.apache.spark.sql.rapids.execution.python.GpuMapInBatchExec
 
 class GpuMapInArrowExecMeta(
     mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends GpuMapInArrowExecMetaBase(mapArrow, conf, parent, rule) {
+  extends SparkPlanMeta[MapInArrowExec](mapArrow, conf, parent, rule) {
+  override def replaceMessage: String = "partially run on GPU"
+
+  override def noReplacementPossibleMessage(reasons: String): String =
+    s"cannot run even partially on the GPU because $reasons"
+
+  protected val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
+    mapArrow.func.asInstanceOf[PythonUDF], conf, Some(this))
+  protected val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+    mapArrow.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = resultAttrs :+ udf
 
   override def convertToGpu(): GpuExec =
     GpuMapInArrowExec(
@@ -38,4 +52,21 @@ class GpuMapInArrowExecMeta(
       childPlans.head.convertIfNeeded(),
       isBarrier = mapArrow.isBarrier,
     )
+}
+
+/*
+ * A relation produced by applying a function that takes an iterator of PyArrow's record
+ * batches and outputs an iterator of PyArrow's record batches.
+ *
+ * This GpuMapInPandasExec aims at accelerating the data transfer between
+ * JVM and Python, and scheduling GPU resources for its Python processes.
+ *
+ */
+case class GpuMapInArrowExec(
+    func: Expression,
+    output: Seq[Attribute],
+    child: SparkPlan,
+    override val isBarrier: Boolean) extends GpuMapInBatchExec {
+
+  override protected val pythonEvalType: Int = PythonEvalType.SQL_MAP_ARROW_ITER_UDF
 }
