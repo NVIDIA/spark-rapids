@@ -447,6 +447,12 @@ object GpuDeviceManager extends Logging {
     } else {
       (conf.pinnedPoolSize, -1L)
     }
+    // disable the cuDF provided default pinned pool for now
+    if (!PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)) {
+      // This is OK in tests because they don't unload/reload our shared
+      // library, and in prod it would be nice to know about it.
+      logWarning("The default cuDF host pool was already configured")
+    }
     if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
       logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
       PinnedMemoryPool.initialize(pinnedSize, gpuId, setCuioDefaultResource)
