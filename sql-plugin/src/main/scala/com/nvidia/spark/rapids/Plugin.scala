@@ -20,12 +20,13 @@ import java.lang.reflect.InvocationTargetException
 import java.net.URL
 import java.time.ZoneId
 import java.util.Properties
+import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.JavaConverters._
 import scala.sys.process._
 import scala.util.Try
 
-import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
@@ -33,7 +34,7 @@ import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
-import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
+import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.SparkListenerEvent
@@ -133,11 +134,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.06.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.08.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-24.06.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.08.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-24.06.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.08.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -494,6 +495,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
+  private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxRange]()
 
   override def init(
       pluginContext: PluginContext,
@@ -684,14 +686,32 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
     extraExecutorPlugins.foreach(_.onTaskFailed(failureReason))
+    endTaskNvtx()
   }
 
   override def onTaskStart(): Unit = {
+    startTaskNvtx(TaskContext.get)
     extraExecutorPlugins.foreach(_.onTaskStart())
   }
 
   override def onTaskSucceeded(): Unit = {
     extraExecutorPlugins.foreach(_.onTaskSucceeded())
+    endTaskNvtx()
+  }
+
+  private def startTaskNvtx(taskCtx: TaskContext): Unit = {
+    val stageId = taskCtx.stageId()
+    val taskAttemptId = taskCtx.taskAttemptId()
+    val attemptNumber = taskCtx.attemptNumber()
+    activeTaskNvtx.put(Thread.currentThread(),
+      new NvtxRange(s"Stage $stageId Task $taskAttemptId-$attemptNumber", NvtxColor.DARK_GREEN))
+  }
+
+  private def endTaskNvtx(): Unit = {
+    val nvtx = activeTaskNvtx.remove(Thread.currentThread())
+    if (nvtx != null) {
+      nvtx.close()
+    }
   }
 }
 
