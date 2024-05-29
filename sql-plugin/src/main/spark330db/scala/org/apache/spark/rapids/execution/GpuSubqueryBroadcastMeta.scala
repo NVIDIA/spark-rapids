@@ -29,7 +29,6 @@ import org.apache.spark.sql.execution.{SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
-import org.apache.spark.sql.rapids.execution._
 
 class GpuSubqueryBroadcastMeta(
     s: SubqueryBroadcastExec,
