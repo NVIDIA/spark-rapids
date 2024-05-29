@@ -275,7 +275,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
 
                 stage('Databricks IT1') {
                     when {
-                        expression { db_build }
+                        expression { db_build && skipped }
                     }
                     steps {
                         script {
@@ -299,7 +299,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
 
                 stage('Databricks IT2') {
                     when {
-                        expression { db_build }
+                        expression { db_build && skipped }
                     }
                     steps {
                         script {

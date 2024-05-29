@@ -79,7 +79,7 @@ mvn_verify() {
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     # Let the pytest script itself calculate the parallel num
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL= -Dcuda.version=$CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=8 -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
@@ -164,7 +164,7 @@ ci_2() {
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     # Let the pytest script itself calculate the parallel num
-    # export TEST_PARALLEL=5 
+    export TEST_PARALLEL=8 
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
@@ -209,7 +209,7 @@ ci_scala213() {
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     # Let the pytest script itself calculate the parallel num
-    # export TEST_PARALLEL=5
+    export TEST_PARALLEL=8
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         ./integration_tests/run_pyspark_from_build.sh
