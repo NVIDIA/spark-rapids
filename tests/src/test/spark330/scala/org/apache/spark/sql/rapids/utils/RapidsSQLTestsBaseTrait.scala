@@ -118,7 +118,7 @@ trait RapidsSQLTestsBaseTrait extends SharedSparkSession with RapidsTestsBaseTra
 
 object RapidsSQLTestsBaseTrait extends Logging {
   private val resourceMap = scala.collection.mutable.Map.empty[String, java.nio.file.Path]
-  private val jarUrlRegex = raw"jar:file:(/.*)!.*".r
+  private val testJarUrlRegex = raw"jar:file:(/.*-tests.jar)!.*".r
   TrampolineUtil.addShutdownHook(10000, () => {
     resourceMap.valuesIterator.foreach { dirPath =>
       logWarning(s"Deleting expanded test jar dir $dirPath")
@@ -135,11 +135,15 @@ object RapidsSQLTestsBaseTrait extends Logging {
   }
 
   def sparkTestResourcesDir(testClass: Class[_]): java.nio.file.Path = {
-    val sparkTestClassResource = "/" + testClass.getSuperclass.getName.replace(".", "/") + ".class"
-    val resourceURL = getClass.getResource(sparkTestClassResource).toString
+    var sparkTestClass = testClass
+    while (sparkTestClass.getName.contains("rapids")) {
+      sparkTestClass = sparkTestClass.getSuperclass
+    }
+    val sparkTestClassResource = "/" + sparkTestClass.getName.replace(".", "/") + ".class"
+    val resourceURL = sparkTestClass.getResource(sparkTestClassResource).toString
     val resourceJar = resourceURL match {
-      case jarUrlRegex(jarPath) => jarPath
-      case _ => sys.error(s"Could not extract jar path from $resourceURL")
+      case testJarUrlRegex(testJarPath) => testJarPath
+      case _ => sys.error(s"Could not extract tests jar path from $resourceURL")
     }
     this.synchronized {
       resourceMap.getOrElseUpdate(resourceJar, expandJar(resourceJar))
