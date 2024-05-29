@@ -72,7 +72,7 @@ object GpuHiveFileFormat extends Logging {
 
     // FIXME Need to check serde and output format classes ?
     if (storage.outputFormat.getOrElse("") != parquetOutputFormatClass) {
-      meta.willNotWorkOnGpu(s"unsupported output-format found: ${storage.outputFormat}, " +
+      meta.willNotWorkOnGpu(s"unsupported output format found: ${storage.outputFormat}, " +
         s"only $parquetOutputFormatClass is currently supported for Parquet")
     }
     if (storage.serde.getOrElse("") != parquetSerdeClass) {
