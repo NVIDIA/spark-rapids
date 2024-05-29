@@ -16,8 +16,9 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
 
+import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
 
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
@@ -40,7 +41,7 @@ import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
-import org.apache.spark.util.{ShutdownHookManager, Utils}
+import org.apache.spark.util.{ShutdownHookManager, ThreadUtils, Utils}
 
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
@@ -228,11 +229,16 @@ object TrampolineUtil {
     // We want to utilize the ThreadUtils class' ThreadPoolExecutor creation
     // which gives us important Hadoop config variables that are needed for the
     // Unity Catalog authentication
-    org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber,
-      keepAliveSeconds)
+    ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber, keepAliveSeconds)
+  }
+
+  def newDaemonSingleThreadScheduledExecutor(threadName: String): ScheduledExecutorService = {
+    ThreadUtils.newDaemonSingleThreadScheduledExecutor(threadName)
   }
 
   def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
     sc.listenerBus.post(sparkEvent)
   }
+
+  def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
 }
