@@ -88,9 +88,9 @@ object GpuHiveFileFormat extends Logging {
       })
     }
     if (hasIntOrLongBackedDec) {
-      meta.willNotWorkOnGpu("decimal can fit inside an int or a long is not supported " +
-        s"for Parquet. Hive always writes decimal as binary array but GPU writes it " +
-        s"as an int or a long")
+      meta.willNotWorkOnGpu("decimals that fit in a long are not supported " +
+        s"for Parquet. Hive always writes decimals as binary arrays but the GPU writes them " +
+        s"as integral types")
     }
 
     // FIXME Need a new format type for Hive Parquet write ?
