@@ -708,6 +708,71 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
       .createWithDefault("MODERATE")
 
+  val PROFILE_PATH = conf("spark.rapids.profile.pathPrefix")
+    .doc("Enables profiling and specifies a URI path to use when writing profile data")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_EXECUTORS = conf("spark.rapids.profile.executors")
+    .doc("Comma-separated list of executors IDs and hyphenated ranges of executor IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createWithDefault("0")
+
+  val PROFILE_TIME_RANGES_SECONDS = conf("spark.rapids.profile.timeRangesInSeconds")
+    .doc("Comma-separated list of start-end ranges of time, in seconds, since executor startup " +
+      "to start and stop profiling. For example, a value of 10-30,100-110 will have the profiler " +
+      "wait for 10 seconds after executor startup then profile for 20 seconds, then wait for " +
+      "70 seconds then profile again for the next 10 seconds")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_JOBS = conf("spark.rapids.profile.jobs")
+    .doc("Comma-separated list of job IDs and hyphenated ranges of job IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_STAGES = conf("spark.rapids.profile.stages")
+    .doc("Comma-separated list of stage IDs and hyphenated ranges of stage IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
+    .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
+      "stage-level profiling is used.")
+    .internal()
+    .integerConf
+    .createWithDefault(1000)
+
+  val PROFILE_COMPRESSION = conf("spark.rapids.profile.compression")
+    .doc("Specifies the compression codec to use when writing profile data, one of " +
+      "zstd or none")
+    .internal()
+    .stringConf
+    .transform(_.toLowerCase(java.util.Locale.ROOT))
+    .checkValues(Set("zstd", "none"))
+    .createWithDefault("zstd")
+
+  val PROFILE_FLUSH_PERIOD_MILLIS = conf("spark.rapids.profile.flushPeriodMillis")
+    .doc("Specifies the time period in milliseconds to flush profile records. " +
+      "A value <= 0 will disable time period flushing.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
+  val PROFILE_WRITE_BUFFER_SIZE = conf("spark.rapids.profile.writeBufferSize")
+    .doc("Buffer size to use when writing profile records.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(1024 * 1024)
+
   // ENABLE/DISABLE PROCESSING
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
@@ -1485,6 +1550,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault(false.toString)
 
+  val FOLDABLE_NON_LIT_ALLOWED = conf("spark.rapids.sql.test.isFoldableNonLitAllowed")
+    .doc("Only to be used in tests. If `true` the foldable expressions that are not literals " +
+      "will be allowed")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -2237,7 +2309,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.06.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.08.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2390,6 +2462,24 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
+  lazy val profilePath: Option[String] = get(PROFILE_PATH)
+
+  lazy val profileExecutors: String = get(PROFILE_EXECUTORS)
+
+  lazy val profileTimeRangesSeconds: Option[String] = get(PROFILE_TIME_RANGES_SECONDS)
+
+  lazy val profileJobs: Option[String] = get(PROFILE_JOBS)
+
+  lazy val profileStages: Option[String] = get(PROFILE_STAGES)
+
+  lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
+
+  lazy val profileCompression: String = get(PROFILE_COMPRESSION)
+
+  lazy val profileFlushPeriodMillis: Int = get(PROFILE_FLUSH_PERIOD_MILLIS)
+
+  lazy val profileWriteBufferSize: Long = get(PROFILE_WRITE_BUFFER_SIZE)
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
@@ -2427,6 +2517,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
   /**
    * Convert a string value to the injection configuration OomInjection.

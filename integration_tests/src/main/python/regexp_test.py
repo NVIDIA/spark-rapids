@@ -462,7 +462,11 @@ def test_rlike_rewrite_optimization():
                 'rlike(a, "^^abb")',
                 'rlike(a, "(.*)(.*)abb")',
                 'rlike(a, "(.*).*abb.*(.*).*")',
-                'rlike(a, ".*^abb$")'),
+                'rlike(a, ".*^abb$")',
+                'rlike(a, "ab[a-c]{3}")',
+                'rlike(a, "a[a-c]{1,3}")',
+                'rlike(a, "a[a-c]{1,}")',
+                'rlike(a, "a[a-c]+")'),
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():
@@ -783,6 +787,15 @@ def test_rlike_fallback_empty_group():
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a()?"'),
+            'RLike',
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_empty_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike ""'),
             'RLike',
         conf=_regexp_conf)
 
