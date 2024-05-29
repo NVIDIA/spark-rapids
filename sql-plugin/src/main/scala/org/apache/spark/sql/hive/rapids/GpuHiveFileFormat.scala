@@ -68,9 +68,7 @@ object GpuHiveFileFormat extends Logging {
   private def tagGpuSupportForParquet(meta: GpuInsertIntoHiveTableMeta): ColumnarFileFormat = {
     val insertCmd = meta.wrapped
     val storage = insertCmd.table.storage
-    // Configs check for Parquet write enabling/disabling
 
-    // FIXME Need to check serde and output format classes ?
     if (storage.outputFormat.getOrElse("") != parquetOutputFormatClass) {
       meta.willNotWorkOnGpu(s"unsupported output format found: ${storage.outputFormat}, " +
         s"only $parquetOutputFormatClass is currently supported for Parquet")
@@ -93,7 +91,6 @@ object GpuHiveFileFormat extends Logging {
         s"as integral types")
     }
 
-    // FIXME Need a new format type for Hive Parquet write ?
     FileFormatChecks.tag(meta, insertCmd.table.schema, ParquetFormatType, WriteFileOp)
 
     // Compression type
