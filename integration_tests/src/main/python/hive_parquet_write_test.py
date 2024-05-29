@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect
+from conftest import is_databricks_runtime
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
@@ -53,8 +54,11 @@ _hive_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), 
 
 _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive_map_gens]
 
+# ProjectExec falls back on databricks due to a new expression named "MapFromArrays".
+fallback_nodes = ['ProjectExec'] if is_databricks_runtime() else []
 
-@allow_non_gpu(*non_utc_allow)
+
+@allow_non_gpu(*non_utc_allow, *fallback_nodes)
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_ctas", [True, False], ids=['CTAS', 'CTTW'])
 @pytest.mark.parametrize("gens", _hive_write_gens, ids=idfn)
@@ -140,7 +144,7 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
 zstd_param = pytest.param('ZSTD',
     marks=pytest.mark.skipif(is_before_spark_320(), reason="zstd is not supported before 320"))
 
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow, fallback_nodes)
 @ignore_order(local=True)
 @pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'SNAPPY', zstd_param])
 def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type):
