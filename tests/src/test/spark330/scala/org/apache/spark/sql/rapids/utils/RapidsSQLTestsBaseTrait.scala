@@ -19,8 +19,10 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
+import java.net.JarURLConnection
 import java.util.{Locale, TimeZone}
 
+import org.apache.hadoop.fs.FileUtil
 import org.scalactic.source.Position
 import org.scalatest.Tag
 
@@ -36,10 +38,29 @@ import org.apache.spark.sql.test.SharedSparkSession
 /** Basic trait for Rapids SQL test cases. */
 trait RapidsSQLTestsBaseTrait extends SharedSparkSession with RapidsTestsBaseTrait {
 
+  val sparkTestResourcesDir: java.nio.file.Path =
+    java.nio.file.Files.createTempDirectory(getClass.getSimpleName)
+
+  protected override def beforeAll(): Unit = {
+    super.beforeAll()
+    val sparkTestClassResource = "/" + getClass.getSuperclass.getName.replace(".", "/") + ".class"
+    val jarURLConnection = getClass.getResource(sparkTestClassResource)
+      .openConnection()
+      .asInstanceOf[JarURLConnection]
+    val jarFile = new java.io.File(jarURLConnection.getJarFile.getName)
+    FileUtil.unZip(jarFile, sparkTestResourcesDir.toFile)
+  }
+
   protected override def afterAll(): Unit = {
     // SparkFunSuite will set this to true, and forget to reset to false
     System.clearProperty(IS_TESTING.key)
+    FileUtil.fullyDelete(sparkTestResourcesDir.toFile)
     super.afterAll()
+  }
+
+  override protected def testFile(fileName: String): String = {
+    java.nio.file.Paths.get(sparkTestResourcesDir.toString, fileName)
+      .toString
   }
 
   protected def testRapids(testName: String, testTag: Tag*)(testFun: => Any)(implicit
