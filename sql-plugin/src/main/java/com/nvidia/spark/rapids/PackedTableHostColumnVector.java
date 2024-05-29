@@ -52,6 +52,15 @@ public final class PackedTableHostColumnVector extends ColumnVector {
     this.tableBuffer = tableBuffer;
   }
 
+  /**
+   * Create a columnar batch from a table meta and a host buffer.
+   * The host buffer will be taken over, so do not use it any longer.
+   */
+  public static ColumnarBatch from(TableMeta meta, HostMemoryBuffer hostBuf) {
+    ColumnVector column = new PackedTableHostColumnVector(meta, hostBuf);
+    return new ColumnarBatch(new ColumnVector[] { column }, (int) meta.rowCount());
+  }
+
   private static ColumnarBatch from(TableMeta meta, DeviceMemoryBuffer devBuf) {
     HostMemoryBuffer tableBuf;
     try(HostMemoryBuffer buf = HostMemoryBuffer.allocate(devBuf.getLength())) {

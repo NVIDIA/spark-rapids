@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -55,28 +55,6 @@ trait GpuPartitioning extends Partitioning {
 
   def serdeOnGPU: Boolean = _isSerdeOnGPU
 
-  private lazy val toPackedBatch: ContiguousTable => ColumnarBatch =
-    if (_isSerdeOnGPU) {
-      table =>
-        withResource(new NvtxRange("Table to Host", NvtxColor.BLUE)) { _ =>
-          withResource(table) { _ =>
-            PackedTableHostColumnVector.from(table)
-          }
-        }
-    } else {
-      GpuPackedTableColumn.from
-    }
-
-  private lazy val toCompressedBatch: CompressedTable => ColumnarBatch =
-    if (_isSerdeOnGPU) {
-      table =>
-        withResource(new NvtxRange("Table to Host", NvtxColor.BLUE)) { _ =>
-          PackedTableHostColumnVector.from(table)
-        }
-    } else {
-      GpuCompressedColumnVector.from
-    }
-
   def sliceBatch(vectors: Array[RapidsHostColumnVector], start: Int, end: Int): ColumnarBatch = {
     var ret: ColumnarBatch = null
     val count = end - start
@@ -102,10 +80,11 @@ trait GpuPartitioning extends Partitioning {
           case Some(codec) =>
             compressSplits(splits, codec, contiguousTables)
           case None =>
-            // ColumnarBatch takes ownership of the contiguous tables
-            closeOnExcept(contiguousTables)(_.foreach(ct => splits.append(toPackedBatch(ct))))
+            // GpuPackedTableColumn takes ownership of the contiguous tables
+            closeOnExcept(contiguousTables) { cts =>
+              cts.foreach { ct => splits.append(GpuPackedTableColumn.from(ct)) }
+            }
         }
-
         // synchronize our stream to ensure we have caught up with contiguous split
         // as downstream consumers (RapidsShuffleManager) will add hundreds of buffers
         // to the spill framework, this makes it so here we synchronize once.
@@ -117,10 +96,62 @@ trait GpuPartitioning extends Partitioning {
     }
 
     if (_isSerdeOnGPU) {
-      // All the data should be on host now for shuffle, leaving GPU for a while.
-      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+      closeOnExcept(moveToHostAndClose(batches)) { hostBatches =>
+        // All the data should be on host now for shuffle, leaving GPU for a while.
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        hostBatches
+      }
+    } else {
+      batches
     }
-    batches
+  }
+
+  /**
+   * Move the small split batches from device to host in the following steps:
+   *   1) Concatenate all the split device buffers into a single contiguous buffer,
+   *   2) Move the single device buffer to host,
+   *   3) Rebuild the split batches on host.
+   * to avoid too many small data copying between device and host.
+   */
+  private def moveToHostAndClose(batches: Array[ColumnarBatch]): Array[ColumnarBatch] = {
+    // 1) Merge all the split device buffers and collect offsets and table metas
+    val (singleDevBuf, metas, offsets) = withResource(batches) { _ =>
+      val devBufs = new Array[DeviceMemoryBuffer](batches.length)
+      val metas = batches.zipWithIndex.map { case (cb, idx) =>
+        cb.column(0) match {
+          case packCol: GpuPackedTableColumn =>
+            devBufs(idx) = packCol.getTableBuffer
+            MetaUtils.buildTableMeta(0, packCol.getContiguousTable)
+          case compCol: GpuCompressedColumnVector =>
+            devBufs(idx) = compCol.getTableBuffer
+            compCol.getTableMeta
+        }
+      }
+      val offsets = devBufs.scanLeft(0L)(_ + _.getLength)
+      closeOnExcept(DeviceMemoryBuffer.allocate(offsets.last)) { buf =>
+        devBufs.zipWithIndex.foreach { case (b, idx) =>
+          buf.copyFromDeviceBufferAsync(offsets(idx), b, 0, b.getLength,
+            Cuda.DEFAULT_STREAM)
+        }
+        Cuda.DEFAULT_STREAM.sync()
+        (buf, metas, offsets)
+      }
+    }
+    // 2) Move the single device buffer to host
+    val singleHostBuf = withResource(singleDevBuf) { _ =>
+      closeOnExcept(HostMemoryBuffer.allocate(singleDevBuf.getLength)) { buf =>
+        buf.copyFromDeviceBuffer(singleDevBuf)
+        buf
+      }
+    }
+    // 3) Rebuild the split batches on host
+    withResource(singleHostBuf) { _ =>
+      metas.zipWithIndex.safeMap { case (meta, idx) =>
+        val start = offsets(idx)
+        val end = offsets(idx + 1)
+        PackedTableHostColumnVector.from(meta, singleHostBuf.slice(start, end - start))
+      }
+    }
   }
 
   private def reslice(batch: ColumnarBatch, numSlices: Int): Seq[ColumnarBatch] = {
@@ -241,7 +272,7 @@ trait GpuPartitioning extends Partitioning {
       contiguousTables.zipWithIndex.foreach { case (ct, i) =>
         // Buffer is empty when no rows or all rows are null, so check the buffer directly.
         if (ct.getBuffer == null || ct.getBuffer.getLength == 0) {
-          emptyBatches.append((toPackedBatch(ct), i))
+          emptyBatches.append((GpuPackedTableColumn.from(ct), i))
         } else {
           compressor.addTableToCompress(ct)
         }
@@ -255,15 +286,18 @@ trait GpuPartitioning extends Partitioning {
           // add any compressed batches that need to appear before the next empty batch
           val numCompressedToAdd = emptyOutputIndex - outputIndex
           (0 until numCompressedToAdd).foreach { _ =>
-            outputBatches.append(toCompressedBatch(compressedTables(compressedTableIndex)))
+            val compressedTable = compressedTables(compressedTableIndex)
+            outputBatches.append(GpuCompressedColumnVector.from(compressedTable))
             compressedTableIndex += 1
           }
           outputBatches.append(emptyBatch)
           outputIndex = emptyOutputIndex + 1
         }
+
         // add any compressed batches that remain after the last empty batch
         (compressedTableIndex until compressedTables.length).foreach { i =>
-          outputBatches.append(toCompressedBatch(compressedTables(i)))
+          val ct = compressedTables(i)
+          outputBatches.append(GpuCompressedColumnVector.from(ct))
         }
       }
     }
