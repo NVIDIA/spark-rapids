@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
@@ -41,7 +41,28 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-17641: collect functions should not collect null values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10772"))
     .exclude("SPARK-19471: AggregationIterator does not initialize the generated result projection before using it", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10772"))
     .exclude("SPARK-24788: RelationalGroupedDataset.toString with unresolved exprs should not fail", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10801"))
+  enableSuite[RapidsJsonExpressionsSuite]
+    .exclude("from_json - invalid data", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("from_json - input=empty object, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("SPARK-20549: from_json bad UTF-8", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("from_json with timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("to_json - array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("to_json - array with single empty row", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("to_json - empty array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("to_json with timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("SPARK-21513: to_json support map[string, struct] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("SPARK-21513: to_json support map[struct, struct] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("SPARK-21513: to_json support map[string, integer] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("to_json - array with maps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("to_json - array with single map", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
+    .exclude("from_json missing fields", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10849"))
   enableSuite[RapidsJsonFunctionsSuite]
+    .exclude("from_json invalid json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10852"))
+    .exclude("to_json - array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10852"))
+    .exclude("to_json - map", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10852"))
+    .exclude("to_json - array of primitive types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10852"))
+    .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10852"))
   enableSuite[RapidsJsonSuite]
     .exclude("Casting long as timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("Write timestamps correctly with timestampFormat option and timeZone option", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
@@ -55,27 +76,15 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-31716: inferring should handle malformed input", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("SPARK-24190: restrictions for JSONOptions in read", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
     .exclude("exception mode for parsing date/timestamp string", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("SPARK-37360: Timestamp type inference for a mix of TIMESTAMP_NTZ and TIMESTAMP_LTZ", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
   enableSuite[RapidsMathFunctionsSuite]
   enableSuite[RapidsRegexpExpressionsSuite]
-    .exclude("RegexReplace", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10774"))
-    .exclude("RegexExtract", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10774"))
-    .exclude("RegexExtractAll", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10774"))
-    .exclude("SPLIT", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10774"))
   enableSuite[RapidsStringExpressionsSuite]
+    .exclude("concat", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
+    .exclude("string substring_index function", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22498: Concat should not generate codes beyond 64KB", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22549: ConcatWs should not generate codes beyond 64KB", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22550: Elt should not generate codes beyond 64KB", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("StringComparison", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("Substring", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("ascii for string", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("base64/unbase64 for string", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("encode/decode for string", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22603: FormatString should not generate codes beyond 64KB", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("LOCATE", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("LPAD/RPAD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("REPEAT", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
-    .exclude("length for string / binary", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("ParseUrl", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
   enableSuite[RapidsStringFunctionsSuite]
 }
