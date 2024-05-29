@@ -2045,10 +2045,10 @@ object RegexRewrite {
   private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]): 
       Option[(String, Int, Int, Int)] = {
     val haveLiteralPrefix = isliteralString(astLs.dropRight(1))
-    val endsWithRange = astLs.last match {
-      case RegexRepetition(
-          RegexCharacterClass(false,ListBuffer(RegexCharacterRange(a,b))), 
-          quantifier) => {
+    val endsWithRange = astLs.lastOption match {
+      case Some(RegexRepetition(
+          RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
+          quantifier)) => {
         val (start, end) = (a, b) match {
           case (RegexChar(start), RegexChar(end)) => (start, end)
           case _ => return None
