@@ -58,7 +58,7 @@ _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive
 fallback_nodes = ['ProjectExec'] if is_databricks_runtime() else []
 
 
-@allow_non_gpu(*non_utc_allow, *fallback_nodes)
+@allow_non_gpu(*(non_utc_allow + fallback_nodes))
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_ctas", [True, False], ids=['CTAS', 'CTTW'])
 @pytest.mark.parametrize("gens", _hive_write_gens, ids=idfn)
@@ -144,7 +144,7 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
 zstd_param = pytest.param('ZSTD',
     marks=pytest.mark.skipif(is_before_spark_320(), reason="zstd is not supported before 320"))
 
-@allow_non_gpu(*non_utc_allow, fallback_nodes)
+@allow_non_gpu(*(non_utc_allow + fallback_nodes))
 @ignore_order(local=True)
 @pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'SNAPPY', zstd_param])
 def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type):
