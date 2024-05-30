@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 
 class BatchScanExecMeta(p: BatchScanExec,
@@ -32,7 +33,6 @@ class BatchScanExecMeta(p: BatchScanExec,
   override def convertToGpu(): GpuExec = {
     val spj = p.spjParams
     GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters,
-      spj.keyGroupedPartitioning, p.ordering, p.table, spj.commonPartitionValues,
-      spj.applyPartialClustering, spj.replicatePartitions)
+      p.ordering, p.table, spj)
   }
 }

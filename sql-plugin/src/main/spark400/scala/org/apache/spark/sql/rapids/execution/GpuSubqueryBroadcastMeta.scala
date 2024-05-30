@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,26 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta}
 
-import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.SubqueryBroadcastExec
 
-class BatchScanExecMeta(p: BatchScanExec,
+class GpuSubqueryBroadcastMeta(
+    s: SubqueryBroadcastExec,
     conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends BatchScanExecMetaBase(p, conf, parent, rule) {
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends
+    GpuSubqueryBroadcastMetaBase(s, conf, p, r) {
   override def convertToGpu(): GpuExec = {
-    val spj = p.spjParams
-    GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters,
-      spj.keyGroupedPartitioning, p.ordering, p.table, spj.commonPartitionValues,
-      spj.applyPartialClustering, spj.replicatePartitions)
+    GpuSubqueryBroadcastExec(s.name, s.indices, s.buildKeys, broadcastBuilder())(
+      getBroadcastModeKeyExprs)
   }
 }
