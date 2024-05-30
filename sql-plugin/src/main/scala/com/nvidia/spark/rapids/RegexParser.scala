@@ -2125,11 +2125,14 @@ object RegexRewrite {
    */
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
     ast.children() match {
-      case (RegexChar('^') | RegexEscaped('A')) :: ast 
-          if isliteralString(stripTailingWildcards(ast)) => {
-        // ^literal.* => startsWith literal
-        RegexOptimizationType.StartsWith(RegexCharsToString(stripTailingWildcards(ast)))
-      }
+      case (RegexChar('^') | RegexEscaped('A')) :: ast =>
+        val noWildCardsAst = stripTailingWildcards(ast)
+        if (isliteralString(noWildCardsAst)) {
+          // ^literal.* => startsWith literal
+          RegexOptimizationType.StartsWith(RegexCharsToString(stripTailingWildcards(ast)))
+        } else {
+          RegexOptimizationType.NoOptimization
+        }
       case astLs => {
         val noStartsWithAst = stripTailingWildcards(stripLeadingWildcards(astLs))
         val prefixRangeInfo = getPrefixRangePattern(noStartsWithAst)
