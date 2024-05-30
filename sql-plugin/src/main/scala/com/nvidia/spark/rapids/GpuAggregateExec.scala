@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.util
 
 import scala.annotation.tailrec
+import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import scala.collection.mutable
 
 import ai.rapids.cudf
@@ -549,7 +550,8 @@ object GpuAggregateIterator extends Logging {
 object GpuAggFirstPassIterator {
   def apply(cbIter: Iterator[ColumnarBatch],
       aggHelper: AggHelper,
-      metrics: GpuHashAggregateMetrics): Iterator[SpillableColumnarBatch] = {
+      metrics: GpuHashAggregateMetrics
+  ): Iterator[SpillableColumnarBatch] = {
     val preprocessProjectIter = cbIter.map { cb =>
       val sb = SpillableColumnarBatch (cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       aggHelper.preStepBound.projectAndCloseWithRetrySingleBatch (sb)
@@ -707,6 +709,9 @@ object GpuAggFinalPassIterator {
  * @param metrics metrics that will be updated during aggregation
  * @param configuredTargetBatchSize user-specified value for the targeted input batch size
  * @param useTieredProject user-specified option to enable tiered projections
+ * @param canSkipThirdPassAgg if allowed to skip third pass Agg
+ * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
+ * @param localInputRowsCount metric to track the number of input rows processed locally
  */
 class GpuMergeAggregateIterator(
     firstPassIter: Iterator[SpillableColumnarBatch],
@@ -718,15 +723,21 @@ class GpuMergeAggregateIterator(
     modeInfo: AggregateModeInfo,
     metrics: GpuHashAggregateMetrics,
     configuredTargetBatchSize: Long,
-    useTieredProject: Boolean)
+    useTieredProject: Boolean,
+    canSkipThirdPassAgg: Boolean,
+    skipAggPassReductionRatio: Double,
+    localInputRowsCount: LocalGpuMetric)
     extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
   private[this] val aggregatedBatches = new util.ArrayDeque[SpillableColumnarBatch]
   private[this] var outOfCoreIter: Option[GpuOutOfCoreSortIterator] = None
 
-  /** Iterator for fetching aggregated batches if a sort-based fallback has occurred */
-  private[this] var sortFallbackIter: Option[Iterator[ColumnarBatch]] = None
+  /** Iterator for fetching aggregated batches either if:
+   * 1. a sort-based fallback has occurred
+   * 2. skip third pass agg has occurred
+   **/
+  private[this] var fallbackIter: Option[Iterator[ColumnarBatch]] = None
 
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
@@ -739,24 +750,60 @@ class GpuMergeAggregateIterator(
   }
 
   override def hasNext: Boolean = {
-    sortFallbackIter.map(_.hasNext).getOrElse {
+    fallbackIter.map(_.hasNext).getOrElse {
       // reductions produce a result even if the input is empty
       hasReductionOnlyBatch || !aggregatedBatches.isEmpty || firstPassIter.hasNext
     }
   }
 
   override def next(): ColumnarBatch = {
-    sortFallbackIter.map(_.next()).getOrElse {
+    fallbackIter.map(_.next()).getOrElse {
+      var shouldSkipThirdPassAgg = false
+
       // aggregate and merge all pending inputs
       if (firstPassIter.hasNext) {
-        aggregateInputBatches()
-        tryMergeAggregatedBatches()
+        // first pass agg
+        val rowsAfterFirstPassAgg = aggregateInputBatches()
+
+        // by now firstPassIter has been traversed, so localInputRowsCount is finished updating
+        if (skipAggPassReductionRatio * localInputRowsCount.value >= rowsAfterFirstPassAgg) {
+          // second pass agg
+          tryMergeAggregatedBatches()
+
+          val rowsAfterSecondPassAgg = aggregatedBatches.asScala.foldLeft(0L) {
+            (totalRows, batch) => totalRows + batch.numRows()
+          }
+          shouldSkipThirdPassAgg =
+            rowsAfterSecondPassAgg > skipAggPassReductionRatio * rowsAfterFirstPassAgg
+        } else {
+          shouldSkipThirdPassAgg = true
+          logInfo(s"Rows after first pass aggregation $rowsAfterFirstPassAgg exceeds " +
+            s"${skipAggPassReductionRatio * 100}% of " +
+            s"localInputRowsCount ${localInputRowsCount.value}, skip the second pass agg")
+        }
       }
 
       if (aggregatedBatches.size() > 1) {
-        // Unable to merge to a single output, so must fall back to a sort-based approach.
-        sortFallbackIter = Some(buildSortFallbackIterator())
-        sortFallbackIter.get.next()
+        // Unable to merge to a single output, so must fall back
+        if (canSkipThirdPassAgg && shouldSkipThirdPassAgg) {
+          // skip third pass agg, return the aggregated batches directly
+          logInfo(s"Rows after second pass aggregation exceeds " +
+            s"${skipAggPassReductionRatio * 100}% of " +
+            s"rows after first pass, skip the third pass agg")
+          fallbackIter = Some(new Iterator[ColumnarBatch] {
+            override def hasNext: Boolean = !aggregatedBatches.isEmpty
+
+            override def next(): ColumnarBatch = {
+              withResource(aggregatedBatches.pop()) { spillableBatch =>
+                spillableBatch.getColumnarBatch()
+              }
+            }
+          })
+        } else {
+          // fallback to sort agg, this is the third pass agg
+          fallbackIter = Some(buildSortFallbackIterator())
+        }
+        fallbackIter.get.next()
       } else if (aggregatedBatches.isEmpty) {
         if (hasReductionOnlyBatch) {
           hasReductionOnlyBatch = false
@@ -779,7 +826,7 @@ class GpuMergeAggregateIterator(
     aggregatedBatches.clear()
     outOfCoreIter.foreach(_.close())
     outOfCoreIter = None
-    sortFallbackIter = None
+    fallbackIter = None
     hasReductionOnlyBatch = false
   }
 
@@ -789,11 +836,15 @@ class GpuMergeAggregateIterator(
   }
 
   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
-  private def aggregateInputBatches(): Unit = {
+  private def aggregateInputBatches(): Long = {
+    var rowsAfter = 0L
     // cache everything in the first pass
     while (firstPassIter.hasNext) {
-      aggregatedBatches.add(firstPassIter.next())
+      val batch = firstPassIter.next()
+      rowsAfter += batch.numRows()
+      aggregatedBatches.add(batch)
     }
+    rowsAfter
   }
 
   /**
@@ -1115,8 +1166,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 
       /*
       * Type inferencing by the Scala compiler will choose the most specific return type
-      * something like Array[Set[Product with Serializable with AggregateMode]] or with 
-      * slight differences depending on Scala version. Here we ensure this is 
+      * something like Array[Set[Product with Serializable with AggregateMode]] or with
+      * slight differences depending on Scala version. Here we ensure this is
       * Array[Set[AggregateMode]] to perform the subsequent Set and Array operations properly.
       */
       val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
@@ -1188,6 +1239,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     lazy val canUsePartialSortAgg = aggModes.forall { mode =>
       mode == Partial || mode == PartialMerge
     } && agg.groupingExpressions.nonEmpty // Don't do this for a reduce...
+
+    val canSkipThirdPassAgg = canUsePartialSortAgg
 
     lazy val groupingCanBeSorted = agg.groupingExpressions.forall { expr =>
       orderable.isSupportedByPlugin(expr.dataType)
@@ -1272,7 +1325,9 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       useTiered,
       estimatedPreProcessGrowth,
       conf.forceSinglePassPartialSortAgg,
-      allowSinglePassAgg)
+      allowSinglePassAgg,
+      canSkipThirdPassAgg,
+      conf.skipAggPassReductionRatio)
   }
 }
 
@@ -1358,7 +1413,9 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         // For now we are just going to go with the original hash aggregation
         1.0,
         false,
-        false)
+        false,
+        false,
+        1)
     } else {
       super.convertToGpu()
     }
@@ -1707,6 +1764,9 @@ object GpuHashAggregateExecBase {
  * @param child incoming plan (where we get input columns from)
  * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
  * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
+ * @param canSkipThirdPassAgg whether we can skip the third pass of aggregation (can omit non fully
+ *                            aggregated data for non-final stage of aggregation)
+ * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -1719,7 +1779,10 @@ case class GpuHashAggregateExec(
     configuredTieredProjectEnabled: Boolean,
     estimatedPreProcessGrowth: Double,
     forceSinglePassAgg: Boolean,
-    allowSinglePassAgg: Boolean) extends ShimUnaryExecNode with GpuExec {
+    allowSinglePassAgg: Boolean,
+    canSkipThirdPassAgg: Boolean,
+    skipAggPassReductionRatio: Double
+) extends ShimUnaryExecNode with GpuExec {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
   def inputAttributes: Seq[Attribute] =
@@ -1804,7 +1867,7 @@ case class GpuHashAggregateExec(
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
         postBoundReferences, targetBatchSize, aggMetrics, useTieredProject,
-        localForcePre, localAllowPre)
+        localForcePre, localAllowPre, canSkipThirdPassAgg, skipAggPassReductionRatio)
     }
   }
 
@@ -1920,7 +1983,10 @@ class DynamicGpuPartialSortAggregateIterator(
     metrics: GpuHashAggregateMetrics,
     useTiered: Boolean,
     forceSinglePassAgg: Boolean,
-    allowSinglePassAgg: Boolean) extends Iterator[ColumnarBatch] {
+    allowSinglePassAgg: Boolean,
+    canSkipThirdPassAgg: Boolean,
+    skipAggPassReductionRatio: Double
+) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
   private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
 
@@ -1998,7 +2064,14 @@ class DynamicGpuPartialSortAggregateIterator(
       inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
       metrics.opTime, metrics.numPreSplits)
 
-    val firstPassIter = GpuAggFirstPassIterator(splitInputIter, preProcessAggHelper, metrics)
+    val localInputRowsMetrics = new LocalGpuMetric
+    val firstPassIter = GpuAggFirstPassIterator(
+      splitInputIter.map(cb => {
+        localInputRowsMetrics += cb.numRows()
+        cb
+      }),
+      preProcessAggHelper,
+      metrics)
 
     val mergeIter = new GpuMergeAggregateIterator(
       firstPassIter,
@@ -2010,7 +2083,10 @@ class DynamicGpuPartialSortAggregateIterator(
       modeInfo,
       metrics,
       configuredTargetBatchSize,
-      useTiered)
+      useTiered,
+      canSkipThirdPassAgg,
+      skipAggPassReductionRatio,
+      localInputRowsMetrics)
 
     GpuAggFinalPassIterator.makeIter(mergeIter, postBoundReferences, metrics)
   }
