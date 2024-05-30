@@ -766,7 +766,8 @@ class GpuMergeAggregateIterator(
         val rowsAfterFirstPassAgg = aggregateInputBatches()
 
         // by now firstPassIter has been traversed, so localInputRowsCount is finished updating
-        if (skipAggPassReductionRatio * localInputRowsCount.value >= rowsAfterFirstPassAgg) {
+        if (isReductionOnly ||
+          skipAggPassReductionRatio * localInputRowsCount.value >= rowsAfterFirstPassAgg) {
           // second pass agg
           tryMergeAggregatedBatches()
 
