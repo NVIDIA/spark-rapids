@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 
-class BatchScanExecMetaBase(p: BatchScanExec,
+abstract class BatchScanExecMetaBase(p: BatchScanExec,
    conf: RapidsConf,
    parent: Option[RapidsMeta[_, _, _]],
    rule: DataFromReplacementRule)
@@ -38,7 +38,7 @@ class BatchScanExecMetaBase(p: BatchScanExec,
   // BatchScanExec is independent from the replacement of the runtime filters. It is
   // possible that the BatchScanExec is on the CPU, while the dynamic runtime filters
   // are on the GPU. And vice versa.
-  private lazy val runtimeFilters = {
+  protected lazy val runtimeFilters = {
     val convertBroadcast = (bc: SubqueryBroadcastExec) => {
       val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
       meta.tagForExplain()
