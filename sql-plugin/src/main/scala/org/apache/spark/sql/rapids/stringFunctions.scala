@@ -1073,7 +1073,7 @@ class GpuRLikeMeta(
             val originalPattern = str.toString
             val regexAst = new RegexParser(originalPattern).parse()
             if (conf.isRlikeRegexRewriteEnabled) {
-              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
+              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst.children())
             }
             val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
                 .getTranspiledAST(regexAst, None, None)
