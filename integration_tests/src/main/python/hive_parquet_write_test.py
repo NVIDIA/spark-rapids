@@ -54,7 +54,7 @@ _hive_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), 
 
 _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive_map_gens]
 
-# ProjectExec falls back on databricks due to a new expression named "MapFromArrays".
+# ProjectExec falls back on databricks due to no GPU version of "MapFromArrays".
 fallback_nodes = ['ProjectExec'] if is_databricks_runtime() else []
 
 
