@@ -709,7 +709,7 @@ object GpuAggFinalPassIterator {
  * @param metrics metrics that will be updated during aggregation
  * @param configuredTargetBatchSize user-specified value for the targeted input batch size
  * @param useTieredProject user-specified option to enable tiered projections
- * @param canSkipThirdPassAgg if allowed to skip third pass Agg
+ * @param allowNonFullyAggregatedOutput if allowed to skip third pass Agg
  * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
  * @param localInputRowsCount metric to track the number of input rows processed locally
  */
@@ -724,7 +724,7 @@ class GpuMergeAggregateIterator(
     metrics: GpuHashAggregateMetrics,
     configuredTargetBatchSize: Long,
     useTieredProject: Boolean,
-    canSkipThirdPassAgg: Boolean,
+    allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
     localInputRowsCount: LocalGpuMetric)
     extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
@@ -785,7 +785,7 @@ class GpuMergeAggregateIterator(
 
       if (aggregatedBatches.size() > 1) {
         // Unable to merge to a single output, so must fall back
-        if (canSkipThirdPassAgg && shouldSkipThirdPassAgg) {
+        if (allowNonFullyAggregatedOutput && shouldSkipThirdPassAgg) {
           // skip third pass agg, return the aggregated batches directly
           logInfo(s"Rows after second pass aggregation exceeds " +
             s"${skipAggPassReductionRatio * 100}% of " +
@@ -1240,7 +1240,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       mode == Partial || mode == PartialMerge
     } && agg.groupingExpressions.nonEmpty // Don't do this for a reduce...
 
-    val canSkipThirdPassAgg = canUsePartialSortAgg
+    val allowNonFullyAggregatedOutput = canUsePartialSortAgg
 
     lazy val groupingCanBeSorted = agg.groupingExpressions.forall { expr =>
       orderable.isSupportedByPlugin(expr.dataType)
@@ -1326,7 +1326,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       estimatedPreProcessGrowth,
       conf.forceSinglePassPartialSortAgg,
       allowSinglePassAgg,
-      canSkipThirdPassAgg,
+      allowNonFullyAggregatedOutput,
       conf.skipAggPassReductionRatio)
   }
 }
@@ -1764,7 +1764,7 @@ object GpuHashAggregateExecBase {
  * @param child incoming plan (where we get input columns from)
  * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
  * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
- * @param canSkipThirdPassAgg whether we can skip the third pass of aggregation (can omit non fully
+ * @param allowNonFullyAggregatedOutput whether we can skip the third pass of aggregation (can omit non fully
  *                            aggregated data for non-final stage of aggregation)
  * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
  */
@@ -1780,7 +1780,7 @@ case class GpuHashAggregateExec(
     estimatedPreProcessGrowth: Double,
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
-    canSkipThirdPassAgg: Boolean,
+    allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double
 ) extends ShimUnaryExecNode with GpuExec {
 
@@ -1867,7 +1867,7 @@ case class GpuHashAggregateExec(
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
         postBoundReferences, targetBatchSize, aggMetrics, useTieredProject,
-        localForcePre, localAllowPre, canSkipThirdPassAgg, skipAggPassReductionRatio)
+        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio)
     }
   }
 
@@ -1984,7 +1984,7 @@ class DynamicGpuPartialSortAggregateIterator(
     useTiered: Boolean,
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
-    canSkipThirdPassAgg: Boolean,
+    allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
@@ -2084,7 +2084,7 @@ class DynamicGpuPartialSortAggregateIterator(
       metrics,
       configuredTargetBatchSize,
       useTiered,
-      canSkipThirdPassAgg,
+      allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
       localInputRowsMetrics)
 
