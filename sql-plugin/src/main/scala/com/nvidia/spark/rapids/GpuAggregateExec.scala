@@ -1765,8 +1765,9 @@ object GpuHashAggregateExecBase {
  * @param child incoming plan (where we get input columns from)
  * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
  * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
- * @param allowNonFullyAggregatedOutput whether we can skip the third pass of aggregation (can omit non fully
- *                            aggregated data for non-final stage of aggregation)
+ * @param allowNonFullyAggregatedOutput whether we can skip the third pass of aggregation
+ *                                      (can omit non fully aggregated data for non-final
+ *                                      stage of aggregation)
  * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
  */
 case class GpuHashAggregateExec(
