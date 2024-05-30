@@ -23,7 +23,7 @@ import org.apache.spark.paths.SparkPath
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.PartitionedFileUtil
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.{FileStatusWithMetadata, PartitionedFile}
 
 object PartitionedFileUtilsShim {
   // Wrapper for case class constructor so Java code can access
