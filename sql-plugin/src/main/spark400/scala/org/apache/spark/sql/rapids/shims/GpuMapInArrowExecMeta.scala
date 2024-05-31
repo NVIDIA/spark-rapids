@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -39,17 +24,20 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, PythonUDF}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python.PythonMapInArrowExec
+import org.apache.spark.sql.execution.python.MapInArrowExec
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.execution.python.GpuMapInBatchExec
+import org.apache.spark.sql.types.{BinaryType, StringType}
 
-class GpuPythonMapInArrowExecMetaBase(
-    mapArrow: PythonMapInArrowExec,
+class GpuMapInArrowExecMeta(
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends SparkPlanMeta[PythonMapInArrowExec](mapArrow, conf, parent, rule) {
-
+  extends SparkPlanMeta[MapInArrowExec](mapArrow, conf, parent, rule) {
   override def replaceMessage: String = "partially run on GPU"
+
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
@@ -60,12 +48,31 @@ class GpuPythonMapInArrowExecMetaBase(
 
   override val childExprs: Seq[BaseExprMeta[_]] = resultAttrs :+ udf
 
+  override def tagPlanForGpu(): Unit = {
+    super.tagPlanForGpu()
+    if (SQLConf.get.getConf(SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES)) {
+
+      val inputTypes = mapArrow.child.schema.fields.map(_.dataType)
+      val outputTypes = mapArrow.output.map(_.dataType)
+
+      val hasStringOrBinaryTypes = (inputTypes ++ outputTypes).exists(dataType =>
+        TrampolineUtil.dataTypeExistsRecursively(dataType,
+          dt => dt == StringType || dt == BinaryType))
+
+      if (hasStringOrBinaryTypes) {
+        willNotWorkOnGpu(s"${SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES.key} is " +
+          s"enabled and the schema contains string or binary types. This is not " +
+          s"supported on the GPU.")
+      }
+    }
+  }
+
   override def convertToGpu(): GpuExec =
-    GpuPythonMapInArrowExec(
+    GpuMapInArrowExec(
       udf.convertToGpu(),
       resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       childPlans.head.convertIfNeeded(),
-      isBarrier = false,
+      isBarrier = mapArrow.isBarrier,
     )
 }
 
@@ -77,7 +84,7 @@ class GpuPythonMapInArrowExecMetaBase(
  * JVM and Python, and scheduling GPU resources for its Python processes.
  *
  */
-case class GpuPythonMapInArrowExec(
+case class GpuMapInArrowExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan,
