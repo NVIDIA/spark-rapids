@@ -273,7 +273,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     }
                 } // end of Unit Test stage
 
-                stage('Databricks') {
+                stage('Databricks IT part1') {
                     when {
                         expression { db_build }
                     }
@@ -284,17 +284,42 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 propagate: false, wait: true,
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
-                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA)
+                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
+                                        string(name: 'IT_PART', value: 'part1')
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
                                 print(DBJob.getRawBuild().getLog())
                                 // Fail the pipeline
-                                error "Databricks build result : " + DBJob.result
+                                error "Databricks part1 result : " + DBJob.result
                             }
                         }
                     }
-                } // end of Databricks
+                } // end of Databricks IT part1
+
+                stage('Databricks IT part2') {
+                    when {
+                        expression { db_build }
+                    }
+                    steps {
+                        script {
+                            githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
+                            def DBJob = build(job: 'rapids-databricks_premerge-github',
+                                propagate: false, wait: true,
+                                parameters: [
+                                        string(name: 'REF', value: params.REF),
+                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
+                                        string(name: 'IT_PART', value: 'part2')
+                                ])
+                            if ( DBJob.result != 'SUCCESS' ) {
+                                // Output Databricks failure logs to uploaded onto the pre-merge PR
+                                print(DBJob.getRawBuild().getLog())
+                                // Fail the pipeline
+                                error "Databricks part2 result : " + DBJob.result
+                            }
+                        }
+                    }
+                } // end of Databricks IT part2
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
