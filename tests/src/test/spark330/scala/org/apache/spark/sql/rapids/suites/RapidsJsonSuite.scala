@@ -24,17 +24,13 @@ import org.apache.spark.sql.execution.datasources.{InMemoryFileIndex, NoopCache}
 import org.apache.spark.sql.execution.datasources.json.JsonSuite
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScanBuilder
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
+import org.apache.spark.sql.rapids.utils.{RapidsJsonConfTrait, RapidsSQLTestsBaseTrait}
 import org.apache.spark.sql.sources
 import org.apache.spark.sql.types.{IntegerType, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
-class RapidsJsonSuite extends JsonSuite with RapidsSQLTestsBaseTrait {
-
-  /** Returns full path to the given file in the resource folder */
-  override protected def testFile(fileName: String): String = {
-    getWorkspaceFilePath("sql", "core", "src", "test", "resources").toString + "/" + fileName
-  }
+class RapidsJsonSuite
+  extends JsonSuite with RapidsSQLTestsBaseTrait with RapidsJsonConfTrait {
 }
 
 class RapidsJsonV1Suite extends RapidsJsonSuite with RapidsSQLTestsBaseTrait {
