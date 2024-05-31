@@ -15,19 +15,17 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "350"}
-{"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.AnalysisException, SparkDateTimeException}
+import org.apache.spark.sql.AnalysisException
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor340Plus {
-  def dynamicPartitionParentError: Throwable = {
-    new AnalysisException("Dynamic partition cannot be the parent of a static partition.")
+  override def dynamicPartitionParentError: Throwable = {
+    /** This exception doesn't have a helper method so the errorClass has to be hardcoded */
+    throw new AnalysisException(
+      errorClass = "_LEGACY_ERROR_TEMP_3079",
+      messageParameters = Map.empty)
   }
 }

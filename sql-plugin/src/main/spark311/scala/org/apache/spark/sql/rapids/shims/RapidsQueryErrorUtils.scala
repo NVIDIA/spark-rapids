@@ -18,36 +18,20 @@
 {"spark": "311"}
 {"spark": "312"}
 {"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "350"}
-{"spark": "351"}
 spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
+
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.types.StructType
 
 trait RapidsQueryErrorUtils {
+
+  def outputPathAlreadyExistsError(qualifiedOutputPath: Path): Throwable = {
+    new AnalysisException(s"path $qualifiedOutputPath already exists.")
+  }
 
   def createTableAsSelectWithNonEmptyDirectoryError(tablePath: String, conf: String): Throwable = {
     new AnalysisException(s"CREATE-TABLE-AS-SELECT cannot create table with location to a " +

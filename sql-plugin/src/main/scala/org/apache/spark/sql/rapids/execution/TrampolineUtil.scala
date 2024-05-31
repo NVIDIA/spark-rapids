@@ -158,7 +158,7 @@ object TrampolineUtil {
   }
 
   /** Throw a Spark analysis exception */
-  def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
+  def throwAnalysisException(msg: String) = throw new RapidsAnalysisException(msg)
 
   /** Set the task context for the current thread */
   def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)
@@ -239,7 +239,7 @@ object TrampolineUtil {
   def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
     sc.listenerBus.post(sparkEvent)
   }
-  
+
   def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
 
   /**

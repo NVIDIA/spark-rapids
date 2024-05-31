@@ -33,8 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{AlterTableAddPartitionCommand, AlterTableDropPartitionCommand, CommandUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormatWriter, FileIndex, PartitioningUtils}
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.rapids.shims.SchemaUtilsShims
+import org.apache.spark.sql.rapids.shims.{RapidsErrorUtils, SchemaUtilsShims}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInsertIntoHadoopFsRelationCommand(
@@ -122,7 +121,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
       val pathExists = fs.exists(qualifiedOutputPath)
       (mode, pathExists) match {
         case (SaveMode.ErrorIfExists, true) =>
-          TrampolineUtil.throwAnalysisException(s"path $qualifiedOutputPath already exists.")
+          throw RapidsErrorUtils.dataPathNotExistError(qualifiedOutputPath.toString)
         case (SaveMode.Overwrite, true) =>
           if (ifPartitionNotExists && matchingPartitions.nonEmpty) {
             false

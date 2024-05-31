@@ -15,16 +15,44 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "350"}
+{"spark": "351"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
+
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.types.StructType
 
 trait RapidsQueryErrorUtils {
+
+  def outputPathAlreadyExistsError(qualifiedOutputPath: Path): Throwable = {
+    QueryCompilationErrors.outputPathAlreadyExistsError(qualifiedOutputPath)
+  }
 
   def createTableAsSelectWithNonEmptyDirectoryError(tablePath: String, conf: String): Throwable = {
     QueryCompilationErrors.createTableAsSelectWithNonEmptyDirectoryError(tablePath)
@@ -78,13 +106,6 @@ trait RapidsQueryErrorUtils {
 
   def dataPathNotExistError(path: String): Throwable = {
     QueryCompilationErrors.dataPathNotExistError(path)
-  }
-
-  def dynamicPartitionParentError: Throwable = {
-  /** This exception doesn't have a helper method so the errorClass has to be hardcoded */
-    throw new AnalysisException(
-      errorClass = "_LEGACY_ERROR_TEMP_3079",
-      messageParameters = Map.empty)
   }
 
   def tableOrViewAlreadyExistsError(tableName: String): Throwable = {
