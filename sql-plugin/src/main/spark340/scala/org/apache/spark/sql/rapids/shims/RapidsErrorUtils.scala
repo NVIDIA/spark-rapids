@@ -26,8 +26,4 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.AnalysisException, SparkDateTimeException}
 
-object RapidsErrorUtils extends RapidsErrorUtilsFor340Plus {
-  def dynamicPartitionParentError: Throwable = {
-    new AnalysisException("Dynamic partition cannot be the parent of a static partition.")
-  }
-}
+object RapidsErrorUtils extends RapidsErrorUtilsFor340Plus

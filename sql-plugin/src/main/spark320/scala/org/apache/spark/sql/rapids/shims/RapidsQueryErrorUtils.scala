@@ -44,7 +44,6 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.types.StructType
 
@@ -118,5 +117,9 @@ trait RapidsQueryErrorUtils {
 
   def illegalParquetTypeError(parquetType: String): Throwable = {
     QueryCompilationErrors.illegalParquetTypeError(parquetType)
+  }
+
+  def dynamicPartitionParentError: Throwable = {
+    new RapidsAnalysisException("Dynamic partition cannot be the parent of a static partition.")
   }
 }
