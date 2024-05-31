@@ -242,9 +242,10 @@ object TrampolineUtil {
 
   def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
 
-  /**
-   *  This class is to only be used when there is no equivalent helper method in
-   *  Spark to throw an AnalysisException.
-   */
-  class RapidsAnalysisException(msg: String) extends AnalysisException(msg)
 }
+
+/**
+ * This class is to only be used when there is no equivalent helper method in
+ * Spark to throw an AnalysisException.
+ */
+class RapidsAnalysisException(msg: String) extends AnalysisException(msg)

@@ -45,6 +45,7 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.errors.QueryCompilationErrors
+import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.types.StructType
 
 trait RapidsQueryErrorUtils {
