@@ -64,7 +64,7 @@ abstract class GpuPythonFunction(
     children: Seq[Expression],
     evalType: Int,
     udfDeterministic: Boolean,
-    resultId: ExprId = NamedExpression.newExprId)
+    val resultId: ExprId = NamedExpression.newExprId)
   extends Expression with GpuUnevaluable with NonSQLExpression
     with UserDefinedExpression with GpuAggregateWindowFunction with Serializable {
 
@@ -94,7 +94,7 @@ case class GpuPythonUDF(
     children: Seq[Expression],
     evalType: Int,
     udfDeterministic: Boolean,
-    resultId: ExprId = NamedExpression.newExprId)
+    override val resultId: ExprId = NamedExpression.newExprId)
   extends GpuPythonFunction(name, func, dataType, children, evalType, udfDeterministic, resultId) {
   override lazy val canonicalized: Expression = {
     val canonicalizedChildren = children.map(_.canonicalized)
@@ -110,7 +110,7 @@ case class GpuPythonUDAF(
     children: Seq[Expression],
     evalType: Int,
     udfDeterministic: Boolean,
-    resultId: ExprId = NamedExpression.newExprId)
+    override val resultId: ExprId = NamedExpression.newExprId)
   extends GpuPythonFunction(name, func, dataType, children, evalType, udfDeterministic, resultId)
     with GpuAggregateFunction {
   override lazy val canonicalized: Expression = {
