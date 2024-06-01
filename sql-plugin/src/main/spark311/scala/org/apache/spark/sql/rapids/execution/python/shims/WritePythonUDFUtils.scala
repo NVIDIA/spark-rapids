@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,46 +26,34 @@
 {"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
+{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
+{"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
+import java.io.DataOutputStream
+
 import org.apache.spark.api.python.ChainedPythonFunctions
-import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.execution.python.PythonUDFRunner
 
-case class GpuGroupedPythonRunnerFactory(
-    conf: org.apache.spark.sql.internal.SQLConf,
-    chainedFunc: Seq[(ChainedPythonFunctions, Long)],
-    argOffsets: Array[Array[Int]],
-    dedupAttrs: StructType,
-    pythonOutputSchema: StructType,
-    evalType: Int) {
-  val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
-
-  def getRunner(): GpuBasePythonRunner[ColumnarBatch] = {
-    new GpuArrowPythonRunner(
-      chainedFunc,
-      evalType,
-      argOffsets,
-      dedupAttrs,
-      sessionLocalTimeZone,
-      pythonRunnerConf,
-      // The whole group data should be written in a single call, so here is unlimited
-      Int.MaxValue,
-      pythonOutputSchema)
+object WritePythonUDFUtils {
+  def writeUDFs(
+      dataOut: DataOutputStream,
+      funcs: Seq[(ChainedPythonFunctions, Long)],
+      argOffsets: Array[Array[Int]],
+      profiler: Option[String] = None): Unit = {
+    PythonUDFRunner.writeUDFs(dataOut, funcs.map(_._1), argOffsets)
   }
 }
