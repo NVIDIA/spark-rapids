@@ -24,6 +24,4 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.AnalysisException, SparkDateTimeException}
-
 object RapidsErrorUtils extends RapidsErrorUtilsFor340Plus
