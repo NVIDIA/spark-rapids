@@ -1073,7 +1073,7 @@ class GpuRLikeMeta(
             val originalPattern = str.toString
             val regexAst = new RegexParser(originalPattern).parse()
             if (conf.isRlikeRegexRewriteEnabled) {
-              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
+              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst.children())
             }
             val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
                 .getTranspiledAST(regexAst, None, None)
@@ -2384,7 +2384,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, dataType)) { col =>
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { col =>
       doColumnar(col, rhs)
     }
   }

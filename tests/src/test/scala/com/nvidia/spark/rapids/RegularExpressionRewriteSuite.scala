@@ -23,7 +23,7 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       Unit = {
     val results = patterns.map { pattern =>
       val ast = new RegexParser(pattern).parse()
-      RegexRewrite.matchSimplePattern(ast)
+      RegexRewrite.matchSimplePattern(ast.children())
     }
     assert(results == excepted)
   }
@@ -53,12 +53,23 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       "(.*)abc[0-9a-z]{1,3}(.*)",
       "(.*)abc[0-9]{2}.*",
       "^abc[0-9]{1,3}",
-      "火花急流[\u4e00-\u9fa5]{1}")
-    val excepted = Seq(PrefixRange("abc", 1, 48, 57),
-      NoOptimization,
-      PrefixRange("abc", 2, 48, 57),
+      "火花急流[\u4e00-\u9fa5]{1}",
+      "^[0-9]{6}",
+      "^[0-9]{3,10}",
+      "^.*[0-9]{6}",
+      "^(.*)[0-9]{3,10}"
+    )
+    val excepted = Seq(
       PrefixRange("abc", 1, 48, 57),
-      PrefixRange("火花急流", 1, 19968, 40869))
+      NoOptimization, // prefix followed by a multi-range not supported
+      PrefixRange("abc", 2, 48, 57),
+      NoOptimization, // starts with PrefixRange not supported
+      PrefixRange("火花急流", 1, 19968, 40869),
+      NoOptimization, // starts with PrefixRange not supported
+      NoOptimization, // starts with PrefixRange not supported
+      PrefixRange("", 6, 48, 57),
+      PrefixRange("", 3, 48, 57)
+    )
     verifyRewritePattern(patterns, excepted)
   }
 }

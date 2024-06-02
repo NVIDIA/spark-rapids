@@ -4354,7 +4354,7 @@ object GpuOverrides extends Logging {
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
-    policy match {
+    policy.toUpperCase match {
       case "LEGACY" => LegacyTimeParserPolicy
       case "EXCEPTION" => ExceptionTimeParserPolicy
       case "CORRECTED" => CorrectedTimeParserPolicy

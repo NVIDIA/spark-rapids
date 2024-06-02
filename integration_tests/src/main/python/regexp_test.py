@@ -790,6 +790,15 @@ def test_rlike_fallback_empty_group():
             'RLike',
         conf=_regexp_conf)
 
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_empty_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike ""'),
+            'RLike',
+        conf=_regexp_conf)
+
 def test_rlike_escape():
     gen = mk_str_gen('[ab]{0,2};?[\\-\\+]{0,2}/?')
     assert_gpu_and_cpu_are_equal_collect(
