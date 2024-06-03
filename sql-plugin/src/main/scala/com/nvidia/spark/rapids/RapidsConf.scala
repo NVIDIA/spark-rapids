@@ -1646,6 +1646,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("all")
 
+  // meaningless PR
   val PARTIAL_MERGE_DISTINCT_ENABLED = conf("spark.rapids.sql.partialMerge.distinct.enabled")
     .doc("Enables aggregates that are in PartialMerge mode to run on the GPU if true")
     .internal()
