@@ -2276,7 +2276,8 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
 
   val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
-      .doc("")
+      .doc("If when branches is greater than 3 and all then values in case when are string " +
+          "scalar, fuse mode improves the performance. By default this is enabled.")
       .internal()
       .booleanConf
       .createWithDefault(true)
