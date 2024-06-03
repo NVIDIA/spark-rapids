@@ -36,7 +36,6 @@ import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, 
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
-import org.apache.spark.sql.rapids.aggregate.GpuPivotFirst
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
@@ -374,46 +373,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   private def disableScanUntilInput(plan: SparkPlan): Boolean = {
     InputFileBlockRule.hasInputFileExpression(plan)
-  }
-
-  // This walks from the output to the input to look for any uses of GpuPivotFirst,
-  // which requires fully aggregated input, and thus we need to disable non fully aggregate
-  // optimization for Aggregate (check spark.rapids.sql.agg.skipAggPassReductionRatio).
-  private def updateAggsForFullyAggregatedRequired(plan: SparkPlan,
-      fullyAggregatedRequired: Boolean = false): SparkPlan = {
-
-    if (plan.isInstanceOf[AdaptiveSparkPlanExec]) {
-      return plan
-    }
-
-    if (plan.isInstanceOf[LeafExecNode]) {
-      return plan
-    }
-
-    var required = fullyAggregatedRequired
-    plan match {
-      case exec: GpuHashAggregateExec =>
-        // pivot don't allow non fully aggregated input
-        if (!required && exec.aggregateExpressions.exists(e =>
-          e.origAggregateFunction.isInstanceOf[GpuPivotFirst])) {
-          required = true
-        }
-      case _ =>
-    }
-
-    val newPlan = plan.withNewChildren(plan.children.map(c => {
-      updateAggsForFullyAggregatedRequired(c, required)
-    }))
-
-    newPlan match {
-      case exec: GpuHashAggregateExec =>
-        if (required && exec.allowNonFullyAggregatedOutput) {
-          println ("xxxxxxxxxxxxxxx")
-          return exec.copy(allowNonFullyAggregatedOutput = false)
-        }
-      case _ =>
-    }
-    newPlan
   }
 
   // This walks from the output to the input to look for any uses of InputFileName,
@@ -822,13 +781,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = insertHashOptimizeSorts(plan)
-        if (updatedPlan.children.size > 1000) {
-          println(s"before a run of updateAggsForFullyAggregatedRequired," +
-            s" output: ${updatedPlan.toString()} ")
-          updatedPlan = updateAggsForFullyAggregatedRequired(updatedPlan)
-          println(s"a run of updateAggsForFullyAggregatedRequired," +
-            s" output: ${updatedPlan.toString()} ")
-        }
         updatedPlan = updateScansForInputAndOrder(updatedPlan)
         if (rapidsConf.isFileScanPrunePartitionEnabled) {
           updatedPlan = prunePartitionForFileSourceScan(updatedPlan)

@@ -26,19 +26,5 @@ class RapidsDataFrameAggregateSuite extends DataFrameAggregateSuite with RapidsS
   // example to show how to replace the logic of an excluded test case in Vanilla Spark
   testRapids("collect functions" ) {  // "collect functions" was excluded at RapidsTestSettings
     // println("...")
-
-  }
-
-  test("233") {
-//    {
-//      val df = spark.sql("select count(y), x from values ('a', 2), ('a', 4), ('b',5) as t(x, y)" +
-//        " group by x")
-//      df.show()
-//    }
-//    val df = spark.sql("select * from values ('a', 2), ('a', 4), ('a' , 4),('b',5) as t(x, y)")
-//    df.show()
-    spark.read.parquet("/tmp/t2").
-      groupBy("x").pivot("y").agg(org.apache.spark.sql.functions.count("*")).show()
-    println
   }
 }

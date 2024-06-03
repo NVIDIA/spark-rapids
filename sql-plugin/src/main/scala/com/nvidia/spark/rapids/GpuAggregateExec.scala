@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1241,10 +1241,11 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       mode == Partial || mode == PartialMerge
     } && agg.groupingExpressions.nonEmpty // Don't do this for a reduce...
 
+    // for a aggregateExpressions.isEmpty case, we cannot distinguish between final and non-final,
+    // so don't allow it.
     lazy val allowNonFullyAggregatedOutput = aggModes.forall { mode =>
       mode == Partial || mode == PartialMerge
     } && agg.aggregateExpressions.nonEmpty
-    // for a reduce case, we can distinguish between final and non-final, so don't allow
 
     lazy val groupingCanBeSorted = agg.groupingExpressions.forall { expr =>
       orderable.isSupportedByPlugin(expr.dataType)

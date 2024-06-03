@@ -29,9 +29,13 @@ from spark_session import is_databricks104_or_later, with_cpu_session, is_before
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
 _float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
-                       'spark.rapids.sql.castStringToFloat.enabled': 'true',
+               'spark.rapids.sql.castStringToFloat.enabled': 'true',
+               }
+
+_float_conf_skipagg = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+               'spark.rapids.sql.castStringToFloat.enabled': 'true',
                'spark.rapids.sql.agg.skipAggPassReductionRatio': '0',
-                      }
+               }
 
 _float_smallbatch_conf = copy_and_update(_float_conf,
         {'spark.rapids.sql.batchSizeBytes' : '250'})
@@ -222,8 +226,8 @@ def get_params(init_list, marked_params=[]):
     return list
 
 
-# Run these tests with in 4 modes, all on the GPU
-_confs = [_float_conf, _float_smallbatch_conf, _float_conf_final, _float_conf_partial]
+# Run these tests with in 5 modes, all on the GPU
+_confs = [_float_conf, _float_conf_skipagg, _float_smallbatch_conf, _float_conf_final, _float_conf_partial]
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
