@@ -1241,7 +1241,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       mode == Partial || mode == PartialMerge
     } && agg.groupingExpressions.nonEmpty // Don't do this for a reduce...
 
-    val allowNonFullyAggregatedOutput = canUsePartialSortAgg
+    lazy val allowNonFullyAggregatedOutput = aggModes.forall { mode =>
+      mode == Partial || mode == PartialMerge
+    } && agg.aggregateExpressions.nonEmpty
+    // for a reduce case, we can distinguish between final and non-final, so don't allow
 
     lazy val groupingCanBeSorted = agg.groupingExpressions.forall { expr =>
       orderable.isSupportedByPlugin(expr.dataType)
