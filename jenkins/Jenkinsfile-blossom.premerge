@@ -285,7 +285,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'IT_PART', value: 'part1')
+                                        string(name: 'TEST_MODE', value: 'CI_PART1')
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
@@ -309,7 +309,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'IT_PART', value: 'part2')
+                                        string(name: 'TEST_MODE', value: 'CI_PART2')
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
