@@ -2026,6 +2026,7 @@ object RegexOptimizationType {
   case class Contains(literal: String) extends RegexOptimizationType
   case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
     extends RegexOptimizationType
+  case class MultipleContains(literals: Seq[String]) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
 
@@ -2091,6 +2092,31 @@ object RegexRewrite {
     }
   }
 
+  private def getMultipleContainsLiterals(ast: RegexAST): (Boolean, Seq[String]) = {
+    println(s"ast: $ast")
+    ast match {
+      case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
+      case RegexChoice(a, b) => {
+        if (a.isInstanceOf[RegexSequence] && isLiteralString(a.children())) {
+          getMultipleContainsLiterals(b) match {
+            case (true, literals) => (true, RegexCharsToString(a.children()) +: literals)
+            case _ => (false, Seq.empty)
+          }
+        } else {
+          (false, Seq.empty)
+        }
+      }
+      case RegexSequence(parts) => {
+        if (isLiteralString(parts)) {
+          (true, Seq(RegexCharsToString(parts)))
+        } else {
+          (false, Seq.empty)
+        }
+      }
+      case _ => (false, Seq.empty)
+    }
+  }
+
   private def isWildcard(ast: RegexAST): Boolean = {
     ast match {
       case RegexRepetition(RegexChar('.'), SimpleQuantifier('*')) => true
@@ -2134,11 +2160,13 @@ object RegexRewrite {
         val noTrailingWildCards = stripTailingWildcards(astTail)
         if (isLiteralString(noTrailingWildCards)) {
           // ^literal.* => startsWith literal
+          println("startsWith")
           RegexOptimizationType.StartsWith(RegexCharsToString(noTrailingWildCards))
         } else {
           val noWildCards = stripLeadingWildcards(noTrailingWildCards)
           if (noWildCards.length == noTrailingWildCards.length) {
-            // TODO startsWith with PrefIxRange
+            // TODO startsWith with PrefixRange
+            println("NoOptimization")
             RegexOptimizationType.NoOptimization
           } else {
             matchSimplePattern(astTail)
@@ -2146,17 +2174,36 @@ object RegexRewrite {
         }
       case astLs => {
         val noStartsWithAst = stripTailingWildcards(stripLeadingWildcards(astLs))
+
+        // Check if the pattern is a contains literal pattern
+        if (isLiteralString(noStartsWithAst)) {
+          // literal.* or (literal).* => contains literal
+          return RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
+        }
+
+        println("before multiple contains check: " + noStartsWithAst)
+        // Check if the pattern is a multiple contains literal pattern (e.g. "abc|def|ghi")
+        if (noStartsWithAst.length == 1) {
+          val containsLiterals = getMultipleContainsLiterals(noStartsWithAst(0))
+          if (containsLiterals._1) {
+            println("MultipleContains")
+            println(containsLiterals._2)
+            return RegexOptimizationType.MultipleContains(containsLiterals._2)
+          }
+        }
+
+        // Check if the pattern is a prefix range pattern (e.g. "abc[a-z]{3}")
         val prefixRangeInfo = getPrefixRangePattern(noStartsWithAst)
         if (prefixRangeInfo.isDefined) {
           val (prefix, length, start, end) = prefixRangeInfo.get
           // (literal[a-b]{x,y}) => prefix range pattern
-          RegexOptimizationType.PrefixRange(prefix, length, start, end)
-        } else if (isLiteralString(noStartsWithAst)) {
-          // literal.* or (literal).* => contains literal
-          RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
-        } else {
-          RegexOptimizationType.NoOptimization
+          println("PrefixRange")
+          return RegexOptimizationType.PrefixRange(prefix, length, start, end)
         }
+        
+        // return NoOptimization if the pattern is not a simple pattern and use cuDF
+        println("NoOptimization")
+        RegexOptimizationType.NoOptimization
       }
     }
   }

@@ -1097,6 +1097,7 @@ class GpuRLikeMeta(
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
         case _ => throw new IllegalStateException("Unexpected optimization type")
@@ -1124,6 +1125,32 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
+}
+
+case class GpuMultipleContains(input: Expression, searchList: Seq[String])
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def child: Expression = input
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val inputLength = input.getRowCount.toInt
+    val accInit = withResource(Scalar.fromBool(false)) { falseScalar => 
+      ColumnVector.fromScalar(falseScalar, inputLength)
+    }
+    searchList.foldLeft(accInit) { (acc, search) =>
+      withResource(acc) { _ =>
+        withResource(Scalar.fromString(search)) { searchScalar =>
+          withResource(input.getBase.stringContains(searchScalar)) { containsSearch =>
+            acc.or(containsSearch)
+          }
+        }
+      }
+    }
+  }
 }
 
 case class GpuLiteralRangePattern(left: Expression, right: Expression, 

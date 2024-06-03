@@ -443,6 +443,15 @@ def test_regexp_like():
                 'regexp_like(a, "a{1,}")',
                 'regexp_like(a, "a[bc]d")'),
         conf=_regexp_conf)
+    
+def test_rlike_rewrite_optimization_multiple_choice():
+    gen = mk_str_gen('[ab\n]{3,6}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a',
+                'rlike(a, "(aaa|bbb|ccc)")'),
+        conf=_regexp_conf)
+
 
 def test_rlike_rewrite_optimization():
     gen = mk_str_gen('[ab\n]{3,6}')
