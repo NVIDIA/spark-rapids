@@ -789,7 +789,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
       status: WriterStatusWithBatches): Unit = {
     assert(status.tableCaches.nonEmpty)
     // Concat tables if needed
-    val scbToWrite = GpuBatchUtils.concatSpillBatchesAndClose(status.tableCaches).get
+    val scbToWrite = GpuBatchUtils.concatSpillBatchesAndClose(status.tableCaches.toSeq).get
     status.tableCaches.clear()
     status.deviceBytes = 0
     writeBatchPerMaxRecordsAndClose(scbToWrite, writerId, status)
@@ -857,7 +857,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
           // The open writers number reaches the limit, and still some partitions are
           // not cached. Append to the queue for the coming fallback to the sorted
           // sequential write.
-          pendingBatches.enqueue(groups.drop(idx): _*)
+          groups.drop(idx).foreach(g => pendingBatches.enqueue(g))
           // Set to null to avoid double close
           (idx until groups.length).foreach(groups(_) = null)
           logInfo(s"Number of concurrent writers ${concurrentWriters.size} reaches " +
