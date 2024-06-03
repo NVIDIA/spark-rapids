@@ -157,15 +157,6 @@ object TrampolineUtil {
     TaskContext.get.taskMemoryManager()
   }
 
-  /**
-   * Throw a Rapids analysis exception
-   * This method is to only be used to throw errors specific to the
-   * RAPIDS Accelerator or errors mirroring Spark where a raw
-   * AnalysisException is thrown directly rather than via an error
-   * utility class (this should be rare).
-   */
-  def throwRapidsAnalysisException(msg: String) = throw new RapidsAnalysisException(msg)
-
   /** Set the task context for the current thread */
   def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)
 

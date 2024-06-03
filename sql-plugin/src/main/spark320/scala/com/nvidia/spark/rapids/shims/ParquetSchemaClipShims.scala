@@ -29,7 +29,7 @@ import org.apache.parquet.schema.LogicalTypeAnnotation._
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
 
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -83,7 +83,7 @@ object ParquetSchemaClipShims {
       val scale = decimalLogicalTypeAnnotation.getScale
 
       if (!(maxPrecision == -1 || 1 <= precision && precision <= maxPrecision)) {
-        TrampolineUtil.throwRapidsAnalysisException(
+        throw new RapidsAnalysisException(
           s"Invalid decimal precision: $typeName " +
               s"cannot store $precision digits (max $maxPrecision)")
       }
@@ -144,14 +144,14 @@ object ParquetSchemaClipShims {
             TimestampType
           case timestamp: TimestampLogicalTypeAnnotation if timestamp.getUnit == TimeUnit.NANOS &&
               ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong =>
-            TrampolineUtil.throwRapidsAnalysisException(
+            throw new RapidsAnalysisException(
               "GPU does not support spark.sql.legacy.parquet.nanosAsLong")
           case _ => illegalType()
         }
 
       case INT96 =>
         if (!SQLConf.get.isParquetINT96AsTimestamp) {
-          TrampolineUtil.throwRapidsAnalysisException(
+          throw new RapidsAnalysisException(
             "INT96 is not supported unless it's interpreted as timestamp. " +
               s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
         }
