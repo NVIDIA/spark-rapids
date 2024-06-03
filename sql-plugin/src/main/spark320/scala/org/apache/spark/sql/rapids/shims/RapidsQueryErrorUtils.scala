@@ -46,7 +46,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.ErrorMsg
 
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.rapids.execution.{RapidsAnalysisException, TrampolineUtil}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.StructType
 
 trait RapidsQueryErrorUtils {
