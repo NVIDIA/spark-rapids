@@ -52,7 +52,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   @transient protected lazy val seed: Long = child match {
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
     case GpuLiteral(s, LongType) => s.asInstanceOf[Long]
-    case _ => TrampolineUtil.throwAnalysisException(
+    case _ => TrampolineUtil.throwRapidsAnalysisException(
       s"Input argument to $prettyName must be an integer, long or null literal.")
   }
 

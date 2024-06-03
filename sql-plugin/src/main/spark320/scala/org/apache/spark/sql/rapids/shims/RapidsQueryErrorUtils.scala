@@ -43,9 +43,10 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.hadoop.fs.Path
+import org.apache.hadoop.hive.ql.ErrorMsg
 
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
+import org.apache.spark.sql.rapids.execution.{RapidsAnalysisException, TrampolineUtil}
 import org.apache.spark.sql.types.StructType
 
 trait RapidsQueryErrorUtils {
@@ -121,6 +122,6 @@ trait RapidsQueryErrorUtils {
   }
 
   def dynamicPartitionParentError: Throwable = {
-    new RapidsAnalysisException("Dynamic partition cannot be the parent of a static partition.")
+    TrampolineUtil.throwRapidsAnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
   }
 }

@@ -121,7 +121,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
       val pathExists = fs.exists(qualifiedOutputPath)
       (mode, pathExists) match {
         case (SaveMode.ErrorIfExists, true) =>
-          throw RapidsErrorUtils.dataPathNotExistError(qualifiedOutputPath.toString)
+          throw RapidsErrorUtils.outputPathAlreadyExistsError(qualifiedOutputPath)
         case (SaveMode.Overwrite, true) =>
           if (ifPartitionNotExists && matchingPartitions.nonEmpty) {
             false
