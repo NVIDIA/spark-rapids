@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,17 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import com.nvidia.spark.rapids.{ExprRule, GpuOverrides}
+import com.nvidia.spark.rapids.{ExprChecks, GpuExpression, TypeSig, UnaryExprMeta}
 
-object RapidsErrorUtils extends RapidsErrorUtilsBase with RapidsQueryErrorUtils {
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
-  }
+import org.apache.spark.sql.catalyst.expressions.{Expression, RaiseError}
+
+object RaiseErrorShim {
+  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 }

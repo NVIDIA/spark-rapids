@@ -37,7 +37,7 @@ import org.apache.hadoop.hive.ql.ErrorMsg
 import org.apache.hadoop.hive.ql.plan.TableDesc
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.{AnalysisException, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -48,6 +48,7 @@ import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
 import org.apache.spark.sql.hive.rapids.{GpuHiveFileFormat, GpuSaveAsHiveFile, RapidsHiveErrors}
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
@@ -182,7 +183,7 @@ case class GpuInsertIntoHiveTable(
       // Report error if any static partition appears after a dynamic partition
       val isDynamic = partitionColumnNames.map(partitionSpec(_).isEmpty)
       if (isDynamic.init.zip(isDynamic.tail).contains((true, false))) {
-        throw new AnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
+        throw RapidsErrorUtils.dynamicPartitionParentError
       }
     }
 
