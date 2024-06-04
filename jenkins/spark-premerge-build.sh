@@ -162,7 +162,7 @@ ci_2() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
+    export TEST_PARALLEL=4
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
