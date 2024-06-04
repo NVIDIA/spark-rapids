@@ -1142,11 +1142,12 @@ case class GpuMultipleContains(input: Expression, searchList: Seq[String])
       ColumnVector.fromScalar(falseScalar, inputLength)
     }
     searchList.foldLeft(accInit) { (acc, search) =>
+      val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
+        input.getBase.stringContains(searchScalar)
+      }
       withResource(acc) { _ =>
-        withResource(Scalar.fromString(search)) { searchScalar =>
-          withResource(input.getBase.stringContains(searchScalar)) { containsSearch =>
-            acc.or(containsSearch)
-          }
+        withResource(containsSearch) { _ =>
+          acc.or(containsSearch)
         }
       }
     }
