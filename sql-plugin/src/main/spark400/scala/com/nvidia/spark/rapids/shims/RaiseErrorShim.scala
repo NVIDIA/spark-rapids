@@ -22,18 +22,7 @@ import com.nvidia.spark.rapids.{ExprRule, GpuOverrides}
 import com.nvidia.spark.rapids.{ExprChecks, GpuExpression, TypeSig, UnaryExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, RaiseError}
-import org.apache.spark.sql.rapids.shims.GpuRaiseError
 
 object RaiseErrorShim {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(GpuOverrides.expr[RaiseError](
-      "Throw an exception",
-      ExprChecks.binaryProject(
-        TypeSig.NULL, TypeSig.NULL,
-        ("lhs", TypeSig.STRING, TypeSig.MAP.nested(TypeSig.STRING)),
-        ("rhs", TypeSig.STRING, TypeSig.MAP.nested(TypeSig.STRING))),
-      (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
-      })).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-  }
+  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 }
