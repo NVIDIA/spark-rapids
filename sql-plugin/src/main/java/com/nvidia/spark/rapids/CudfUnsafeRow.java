@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ import org.apache.spark.unsafe.array.ByteArrayMethods;
 import org.apache.spark.unsafe.hash.Murmur3_x86_32;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
+import org.apache.spark.unsafe.types.VariantVal;
+
 
 import java.util.Arrays;
 
@@ -396,5 +398,10 @@ public final class CudfUnsafeRow extends InternalRow {
   public boolean anyNull() {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET");
 //    return BitSetMethods.anySet(baseObject, address, bitSetWidthInBytes / 8);
+  }
+
+  @Override
+  public VariantVal getVariant(int ordinal) {
+    throw new UnsupportedOperationException("VariantVal is not supported");
   }
 }

@@ -164,6 +164,10 @@ abstract class GpuOrcDataReaderBase(
     throw new IllegalStateException("should not be trying to release buffer")
   }
 
+  override def releaseAllBuffers(): Unit = {
+    throw new IllegalStateException("should not be trying to release buffers")
+  }
+
   def copyFileDataToHostStream(out: HostMemoryOutputStream, ranges: DiskRangeList): Unit = {
     readDiskRanges(ranges, 0, new HostStreamLoader(out))
   }
