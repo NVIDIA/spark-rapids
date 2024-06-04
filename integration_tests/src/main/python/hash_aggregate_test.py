@@ -29,7 +29,7 @@ from spark_session import is_databricks104_or_later, with_cpu_session, is_before
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
 _float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
-               'spark.rapids.sql.castStringToFloat.enabled': 'true',
+               'spark.rapids.sql.castStringToFloat.enabled': 'true'
                }
 
 _float_smallbatch_conf = copy_and_update(_float_conf,
