@@ -57,7 +57,8 @@ pipeline {
     }
 
     parameters {
-        string(name: 'REF', defaultValue: '',
+        // Put a default value for REF to avoid error when running the pipeline manually
+        string(name: 'REF', defaultValue: 'main',
             description: 'Merged commit of specific PR')
         string(name: 'GITHUB_DATA', defaultValue: '',
             description: 'Json-formatted github data from upstream blossom-ci')
