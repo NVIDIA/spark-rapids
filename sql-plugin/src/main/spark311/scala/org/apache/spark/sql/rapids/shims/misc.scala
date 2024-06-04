@@ -13,10 +13,36 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*** spark-rapids-shim-json-lines
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "350"}
+{"spark": "351"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids.shims
 
-package org.apache.spark.sql.rapids
-
-import ai.rapids.cudf.{ColumnVector}
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
 
