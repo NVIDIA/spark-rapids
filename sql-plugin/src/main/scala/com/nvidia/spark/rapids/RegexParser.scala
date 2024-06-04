@@ -2093,7 +2093,6 @@ object RegexRewrite {
   }
 
   private def getMultipleContainsLiterals(ast: RegexAST): (Boolean, Seq[String]) = {
-    println(s"ast: $ast")
     ast match {
       case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
       case RegexChoice(a, b) => {
@@ -2168,13 +2167,10 @@ object RegexRewrite {
       return RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
     }
 
-    println("before multiple contains check: " + noStartsWithAst)
     // Check if the pattern is a multiple contains literal pattern (e.g. "abc|def|ghi")
     if (noStartsWithAst.length == 1) {
       val containsLiterals = getMultipleContainsLiterals(noStartsWithAst(0))
       if (containsLiterals._1) {
-        println("MultipleContains")
-        println(containsLiterals._2)
         return RegexOptimizationType.MultipleContains(containsLiterals._2)
       }
     }
@@ -2184,12 +2180,10 @@ object RegexRewrite {
     if (prefixRangeInfo.isDefined) {
       val (prefix, length, start, end) = prefixRangeInfo.get
       // (literal[a-b]{x,y}) => prefix range pattern
-      println("PrefixRange")
       return RegexOptimizationType.PrefixRange(prefix, length, start, end)
     }
     
     // return NoOptimization if the pattern is not a simple pattern and use cuDF
-    println("NoOptimization")
     RegexOptimizationType.NoOptimization
   }
 }
