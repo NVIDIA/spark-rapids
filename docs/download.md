@@ -92,14 +92,7 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* New functionality and performance improvements for this release include:
-* Performance improvements for S3 reading. 
-Refer to perfio.s3.enabled in [advanced_configs](./additional-functionality/advanced_configs.md) for more details.
-* Performance improvements when doing a joins on unique keys.
-* Enhanced decompression kernels for zstd and snappy.
-* Enhanced Parquet reading performance with modular kernels.
-* Added compatibility with Spark version 3.5.1.
-* Deprecated support for Databricks 10.4 ML LTS.
+* Improve support for Unity Catalog on Databricks.
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
 
 For a detailed list of changes, please refer to the
