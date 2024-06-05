@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import java.util.{Locale, TimeZone}
+import java.util.Locale
 
 import org.apache.hadoop.fs.FileUtil
 import org.scalactic.source.Position
@@ -151,8 +151,6 @@ object RapidsSQLTestsBaseTrait extends Logging {
   }
 
   def nativeSparkConf(origin: SparkConf, warehouse: String): SparkConf = {
-    // Timezone is fixed to UTC to allow timestamps to work by default
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting
     Locale.setDefault(Locale.US)
 
@@ -163,8 +161,6 @@ object RapidsSQLTestsBaseTrait extends Logging {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
-      // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
-      .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")
