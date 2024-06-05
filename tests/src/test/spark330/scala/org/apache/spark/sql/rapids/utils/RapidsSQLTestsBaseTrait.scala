@@ -166,6 +166,8 @@ object RapidsSQLTestsBaseTrait extends Logging {
       // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
       .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
+      .set("spark.ui.enabled","true")
+//      .set("spark.sql.ui.explainMode", "EXTENDED")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")
       // .set("spark.rapids.sql.test.allowedNonGpu",

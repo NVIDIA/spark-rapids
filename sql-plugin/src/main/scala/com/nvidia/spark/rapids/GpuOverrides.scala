@@ -4568,6 +4568,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   def applyWithContext(sparkPlan: SparkPlan, context: Option[String]): SparkPlan =
       GpuOverrideUtil.tryOverride { plan =>
+        println("In GpuOverrides applyWithContext")
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
