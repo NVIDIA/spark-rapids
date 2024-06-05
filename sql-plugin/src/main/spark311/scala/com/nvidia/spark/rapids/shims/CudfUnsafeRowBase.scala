@@ -60,14 +60,13 @@ import org.apache.spark.unsafe.hash.Murmur3_x86_32
 import org.apache.spark.unsafe.types.CalendarInterval
 import org.apache.spark.unsafe.types.UTF8String
 
-class CudfUnsafeRowBase(
-   attributes: Array[Attribute],
-   remapping: Array[Int]) extends InternalRow {
-  private var address: Long = _
+abstract class CudfUnsafeRowBase(
+   protected val attributes: Array[Attribute],
+   protected val remapping: Array[Int]) extends InternalRow {
+  protected var address: Long = _
   private var startOffsets: Array[Int] = _
   private var fixedWidthSizeInBytes: Int = _
-  private var sizeInBytes: Int = _
-  private var remapping: Array[Int] = _
+  protected var sizeInBytes: Int = _
 
   def this() = this(null, null)
 
@@ -85,7 +84,6 @@ class CudfUnsafeRowBase(
       offset += length
     }
     fixedWidthSizeInBytes = offset
-    this.remapping = remapping
     assert(startOffsets.length == remapping.length)
   }
 
@@ -100,7 +98,7 @@ class CudfUnsafeRowBase(
 
   override def update(ordinal: Int, value: Any): Unit = throw new UnsupportedOperationException()
 
-  override def get(ordinal: Int, dataType: DataType): Any = {
+  override def get(ordinal: Int, dataType: DataType): Object = {
     SpecializedGettersReader.read(this, ordinal, dataType, true, true)
   }
 
@@ -199,7 +197,7 @@ class CudfUnsafeRowBase(
     case o: CudfUnsafeRow =>
       sizeInBytes == o.sizeInBytes &&
         ByteArrayMethods.arrayEquals(null, address, null, o.address, sizeInBytes) &&
-        Arrays.equals(remapping, o.remapping)
+        Arrays.equals(this.remapping, o.remapping)
     case _ => false
   }
 
@@ -216,10 +214,6 @@ class CudfUnsafeRowBase(
   }
 
   override def anyNull(): Boolean = throw new IllegalArgumentException("NOT IMPLEMENTED YET")
-
-  override def getVariant(ordinal: Int): VariantVal = {
-    throw new UnsupportedOperationException("VariantVal is not supported")
-  }
 
   private def getFieldAddressFromOrdinal(ordinal: Int): Long = {
     assertIndexIsValid(ordinal)
