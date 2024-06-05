@@ -15,11 +15,12 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileOutputStream}
+import java.io.{ByteArrayOutputStream, File, FileInputStream, FileOutputStream, ObjectInputStream, ObjectOutputStream}
 import java.util.Random
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
@@ -97,6 +98,22 @@ object DumpUtils extends Logging {
     } else {
       Some(dumpToParquetFileImp(table, filePrefix))
     }
+  }
+
+  def deserializeObject[T: ClassTag](readPath: String): T = {
+    val fileIn: FileInputStream = new FileInputStream(readPath)
+    val in: ObjectInputStream = new ObjectInputStream(fileIn)
+    val ret = in.readObject().asInstanceOf[T]
+    in.close()
+    ret
+  }
+
+  def serializeObject(obj: Any): Array[Byte] = {
+    val bos = new ByteArrayOutputStream()
+    val oos = new ObjectOutputStream(bos)
+    oos.writeObject(obj)
+    oos.close()
+    bos.toByteArray
   }
 
   private def dumpToParquetFileImp(table: Table, filePrefix: String): String = {
