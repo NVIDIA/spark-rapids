@@ -15,8 +15,8 @@
 import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
-from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
+from conftest import is_at_least_precommit_run, is_databricks_runtime
+from spark_session import is_before_spark_330, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -464,3 +464,13 @@ def test_map_in_arrow_with_barrier_mode(is_barrier):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.range(0, 10, 1, 1).mapInArrow(func, "id long", is_barrier))
+
+
+def test_pandas_udf_rows_only():
+    def add_one(a):
+        return a + 1
+    my_udf = f.pandas_udf(add_one, returnType=IntegerType())
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, int_gen, num_slices=4, length=52345)
+            .select(my_udf(f.lit(0))),
+        conf=arrow_udf_conf)

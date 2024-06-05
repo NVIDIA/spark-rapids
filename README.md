@@ -59,8 +59,8 @@ access to any of the memory that RMM is holding.
 The Qualification and Profiling tools have been moved to
 [nvidia/spark-rapids-tools](https://github.com/NVIDIA/spark-rapids-tools) repo.
 
-Please refer to [Qualification tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/spark-qualification-tool.html)
-and [Profiling tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/spark-profiling-tool.html)
+Please refer to [Qualification tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/qualification/overview.html)
+and [Profiling tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/profiling/overview.html)
 for more details on how to use the tools.
 
 ## Dependency for External Projects
@@ -73,7 +73,7 @@ as a `provided` dependency.
 <dependency>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark_2.12</artifactId>
-    <version>24.04.1</version>
+    <version>24.06.0-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>
 ```

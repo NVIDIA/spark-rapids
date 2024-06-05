@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.iceberg
 
 import scala.reflect.ClassTag
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
@@ -30,26 +30,30 @@ class IcebergProviderImpl extends IcebergProvider {
     Seq(new ScanRule[Scan](
       (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
         private lazy val convertedScan: Try[GpuSparkBatchQueryScan] = Try {
-          GpuSparkBatchQueryScan.fromCpu(a, conf)
+          GpuSparkBatchQueryScan.fromCpu(a, this.conf)
         }
 
         override def supportsRuntimeFilters: Boolean = true
 
         override def tagSelfForGpu(): Unit = {
-          if (!conf.isIcebergEnabled) {
+          if (!this.conf.isIcebergEnabled) {
             willNotWorkOnGpu("Iceberg input and output has been disabled. To enable set " +
                 s"${RapidsConf.ENABLE_ICEBERG} to true")
           }
 
-          if (!conf.isIcebergReadEnabled) {
+          if (!this.conf.isIcebergReadEnabled) {
             willNotWorkOnGpu("Iceberg input has been disabled. To enable set " +
                 s"${RapidsConf.ENABLE_ICEBERG_READ} to true")
           }
 
           FileFormatChecks.tag(this, a.readSchema(), IcebergFormatType, ReadFileOp)
 
-          if (GpuSparkBatchQueryScan.isMetadataScan(a)) {
-            willNotWorkOnGpu("scan is a metadata scan")
+          Try {
+            GpuSparkBatchQueryScan.isMetadataScan(a)
+          } match {
+            case Success(true) => willNotWorkOnGpu("scan is a metadata scan")
+            case Failure(e) => willNotWorkOnGpu(s"error examining CPU Iceberg scan: $e")
+            case _ =>
           }
 
           convertedScan match {

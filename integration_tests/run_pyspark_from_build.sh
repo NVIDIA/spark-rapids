@@ -205,10 +205,11 @@ else
     fi
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
+    STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
     TEST_COMMON_OPTS=(-v
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
-          --std_input_path="$INPUT_PATH"/src/test/resources
+          --std_input_path="$STD_INPUT_PATH"
           --color=yes
           $TEST_TYPE_PARAM
           "$TEST_ARGS"
@@ -241,7 +242,8 @@ else
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
     deltaCacheSize=$PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
-    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize $COVERAGE_SUBMIT_FLAGS"
+    DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
+    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
@@ -313,7 +315,11 @@ EOF
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
-
+    if [[ "$SPARK_SUBMIT_FLAGS" == *"--master local"* || "$PYSP_TEST_spark_master" == "local"* ]]; then
+        # The only case where we want worker logs is in local mode so we set the value here explicitly
+        # We can't use the PYSP_TEST_spark_master as it's not always set e.g. when using --master
+        export USE_WORKER_LOGS=1
+    fi
     # Set a seed to be used in the tests, for datagen
     export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-${DATAGEN_SEED:-`date +%s`}}
     echo "SPARK_RAPIDS_TEST_DATAGEN_SEED used: $SPARK_RAPIDS_TEST_DATAGEN_SEED"
@@ -370,6 +376,15 @@ EOF
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
+        if [[ "$USE_WORKER_LOGS" == "1" ]]; then
+          # Setting the extraJavaOptions again to set the log4j confs that will be needed for writing logs in the expected location
+          # We have to export it again because we want to be able to let the user override these confs by setting them on the
+          # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
+          # export $PYSP_TEST_spark_driver_extraJavaOptions = "$PYSP_TEST_spark_driver_extraJavaOptions $LOG4J_CONF"
+          LOG4J_CONF="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log"
+          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
+        fi
+
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
         jarOpts=()

@@ -19,12 +19,15 @@ package com.nvidia.spark.rapids
 import scala.util.parsing.combinator.RegexParsers
 
 import ai.rapids.cudf.{ColumnVector, GetJsonObjectOptions, Scalar}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, GetJsonObject}
+import org.apache.spark.sql.rapids.test.CpuGetJsonObject
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.util.SerializableConfiguration
 
 // Copied from Apache Spark org/apache/spark/sql/catalyst/expressions/jsonExpressions.scala
 sealed trait PathInstruction
@@ -84,10 +87,16 @@ object JsonPathParser extends RegexParsers {
     }
   }
 
-  def fallbackCheck(instructions: List[PathInstruction]): Boolean = {
-    // JNI kernel has a limit of 16 nested nodes, fallback to CPU if we exceed that
-    instructions.length > 16
-  }
+  def filterInstructionsForJni(instructions: List[PathInstruction]): List[PathInstruction] =
+    instructions.filter {
+      // The JNI implementation does not need/use these types.
+      case Subscript => false
+      case Key => false
+      case _ => true
+    }
+
+  def fallbackCheck(instructions: List[PathInstruction]): Boolean =
+    instructions.length > JSONUtils.MAX_PATH_DEPTH
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
     instruction match {
@@ -104,11 +113,11 @@ object JsonPathParser extends RegexParsers {
     instructions.map { instruction =>
       val (tpe, name, index) = unzipInstruction(instruction)
       new JSONUtils.PathInstructionJni(tpe match {
-        case "subscript" => JSONUtils.PathInstructionType.SUBSCRIPT
-        case "key" => JSONUtils.PathInstructionType.KEY
         case "wildcard" => JSONUtils.PathInstructionType.WILDCARD
         case "index" => JSONUtils.PathInstructionType.INDEX
         case "named" => JSONUtils.PathInstructionType.NAMED
+        case other =>
+          throw new IllegalArgumentException(s"Internal Error should not see a $other instruction")
       }, name, index)
     }.toArray
   }
@@ -144,11 +153,14 @@ class GpuGetJsonObjectMeta(
 
   override def tagExprForGpu(): Unit = {
     val lit = GpuOverrides.extractLit(expr.right)
-    lit.map { l =>
+    lit.foreach { l =>
       val instructions = JsonPathParser.parse(l.value.asInstanceOf[UTF8String].toString)
-      if (conf.isLegacyGetJsonObjectEnabled == false) {
-        if (instructions.exists(JsonPathParser.fallbackCheck(_))) {
-          willNotWorkOnGpu("get_json_object on GPU does not support more than 16 nested paths")
+      if (!conf.isLegacyGetJsonObjectEnabled) {
+        val updated = instructions.map(JsonPathParser.filterInstructionsForJni)
+        if (updated.exists(JsonPathParser.fallbackCheck)) {
+          willNotWorkOnGpu(s"get_json_object on GPU does not support more " +
+            s"than ${JSONUtils.MAX_PATH_DEPTH} nested paths." +
+            instructions.map(i => s" (Found ${i.length})").getOrElse(""))
         }
       } else {
         if (instructions.exists(JsonPathParser.containsUnsupportedPath)) {
@@ -159,17 +171,30 @@ class GpuGetJsonObjectMeta(
   }
 
   override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-    if (conf.isLegacyGetJsonObjectEnabled == false) {
-      GpuGetJsonObject(lhs, rhs)
+    if (!conf.isLegacyGetJsonObjectEnabled) {
+      GpuGetJsonObject(lhs, rhs,
+        conf.testGetJsonObjectSavePath, conf.testGetJsonObjectSaveRows)
     } else {
-      GpuGetJsonObjectLegacy(lhs, rhs)
+      GpuGetJsonObjectLegacy(lhs, rhs,
+        conf.testGetJsonObjectSavePath, conf.testGetJsonObjectSaveRows)
     }
   }
 }
 
-case class GpuGetJsonObject(json: Expression, path: Expression)
+case class GpuGetJsonObject(
+     json: Expression,
+     path: Expression,
+     savePathForVerify: Option[String],
+     saveRowsForVerify: Int)
     extends GpuBinaryExpressionArgsAnyScalar
         with ExpectsInputTypes {
+  // Get a Hadoop conf for the JSON Object
+  val hconf: Option[SerializableConfiguration] = savePathForVerify.map { _ =>
+    val spark = SparkSession.active
+    new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
+  }
+  val seed = System.nanoTime()
+
   override def left: Expression = json
   override def right: Expression = path
   override def dataType: DataType = StringType
@@ -177,7 +202,7 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   override def nullable: Boolean = true
   override def prettyName: String = "get_json_object"
 
-  private var cachedInstructions: 
+  private var cachedInstructions:
       Option[Option[List[PathInstruction]]] = None
 
   def parseJsonPath(path: GpuScalar): Option[List[PathInstruction]] = {
@@ -189,11 +214,53 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
     }
   }
 
+  /**
+   * get_json_object(any_json, '$.*') always return null.
+   * '$.*' will be parsed to be a single `Wildcard`.
+   * Check whether has separated `Wildcard`
+   *
+   * @param instructions query path instructions
+   * @return true if has separated `Wildcard`, false otherwise.
+   */
+  private def hasSeparateWildcard(instructions: Option[List[PathInstruction]]): Boolean = {
+    import PathInstruction._
+    def hasSeparate(ins: List[PathInstruction], idx: Int): Boolean = {
+      if (idx == 0) {
+        ins(0) match {
+          case Wildcard => true
+          case _ => false
+        }
+      } else {
+        (ins(idx - 1), ins(idx)) match {
+          case (Key, Wildcard) => false
+          case (Subscript, Wildcard) => false
+          case (_, Wildcard) => true
+          case _ => false
+        }
+      }
+    }
+
+    if (instructions.isEmpty) {
+      false
+    } else {
+      val list = instructions.get
+      list.indices.exists { idx => hasSeparate(list, idx) }
+    }
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    cachedInstructions.getOrElse {
+    val fromGpu = cachedInstructions.getOrElse {
       val pathInstructions = parseJsonPath(rhs)
-      cachedInstructions = Some(pathInstructions)
-      pathInstructions
+      val checkedPathInstructions = if (hasSeparateWildcard(pathInstructions)) {
+        // If has separate wildcard path, should return all nulls
+        None
+      } else {
+        // Filter out the unneeded instructions before we cache it
+        pathInstructions.map(JsonPathParser.filterInstructionsForJni)
+      }
+
+      cachedInstructions = Some(checkedPathInstructions)
+      checkedPathInstructions
     } match {
       case Some(instructions) => {
         val jniInstructions = JsonPathParser.convertToJniObject(instructions)
@@ -201,6 +268,21 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
       }
       case None => GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
     }
+
+    // Below is only for testing purpose
+    savePathForVerify.foreach { debugPath =>
+      closeOnExcept(fromGpu) { _ =>
+        val path = rhs.getValue.asInstanceOf[UTF8String]
+        withResource(CpuGetJsonObject.getJsonObjectOnCpu(lhs, path)) { fromCpu =>
+          // verify result, save diffs if have
+          CpuGetJsonObject.verify(isLegacy = false, seed,
+            lhs.getBase, path, fromGpu, fromCpu, debugPath, saveRowsForVerify,
+            hconf.get.value)
+        }
+      }
+    }
+
+    fromGpu
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -210,9 +292,20 @@ case class GpuGetJsonObject(json: Expression, path: Expression)
   }
 }
 
-case class GpuGetJsonObjectLegacy(json: Expression, path: Expression)
+case class GpuGetJsonObjectLegacy(
+     json: Expression,
+     path: Expression,
+     savePathForVerify: Option[String],
+     saveRowsForVerify: Int)
     extends GpuBinaryExpressionArgsAnyScalar
         with ExpectsInputTypes {
+  // Get a Hadoop conf for the JSON Object
+  val hconf: Option[SerializableConfiguration] = savePathForVerify.map { _ =>
+    val spark = SparkSession.active
+    new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
+  }
+  val seed = System.nanoTime()
+
   override def left: Expression = json
   override def right: Expression = path
   override def dataType: DataType = StringType
@@ -232,7 +325,7 @@ case class GpuGetJsonObjectLegacy(json: Expression, path: Expression)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    cachedNormalizedPath.getOrElse {
+    val fromGpu = cachedNormalizedPath.getOrElse {
       val normalizedPath: Option[String] = normalizeJsonPath(rhs)
       cachedNormalizedPath = Some(normalizedPath)
       normalizedPath
@@ -244,6 +337,21 @@ case class GpuGetJsonObjectLegacy(json: Expression, path: Expression)
         }
       case None => GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
     }
+
+    // Below is only for testing purpose
+    savePathForVerify.foreach { debugPath =>
+      closeOnExcept(fromGpu) { _ =>
+        val path = rhs.getValue.asInstanceOf[UTF8String]
+        withResource(CpuGetJsonObject.getJsonObjectOnCpu(lhs, path)) { fromCpu =>
+          // verify result, save diffs if have
+          CpuGetJsonObject.verify(isLegacy = true, seed,
+            lhs.getBase, path, fromGpu, fromCpu, debugPath, saveRowsForVerify,
+            hconf.get.value)
+        }
+      }
+    }
+
+    fromGpu
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {

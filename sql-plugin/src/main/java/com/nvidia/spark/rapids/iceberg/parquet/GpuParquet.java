@@ -69,7 +69,7 @@ public class GpuParquet {
     private long maxBatchSizeBytes = Integer.MAX_VALUE;
     private long targetBatchSizeBytes = Integer.MAX_VALUE;
     private boolean useChunkedReader = false;
-    private boolean useSubPageChunked = false;
+    private long maxChunkedReaderMemoryUsageSizeBytes = 0;
     private scala.Option<String> debugDumpPrefix = null;
     private boolean debugDumpAlways = false;
     private scala.collection.immutable.Map<String, GpuMetric> metrics = null;
@@ -141,9 +141,10 @@ public class GpuParquet {
       return this;
     }
 
-    public ReadBuilder withUseChunkedReader(boolean useChunkedReader, boolean useSubPageChunked) {
+    public ReadBuilder withUseChunkedReader(boolean useChunkedReader,
+        long maxChunkedReaderMemoryUsageSizeBytes) {
       this.useChunkedReader = useChunkedReader;
-      this.useSubPageChunked = useSubPageChunked;
+      this.maxChunkedReaderMemoryUsageSizeBytes = maxChunkedReaderMemoryUsageSizeBytes;
       return this;
     }
 
@@ -164,8 +165,8 @@ public class GpuParquet {
           InternalRow.empty(), file.location(), start, length);
       return new GpuParquetReader(file, projectSchema, options, nameMapping, filter, caseSensitive,
           idToConstant, deleteFilter, partFile, conf, maxBatchSizeRows, maxBatchSizeBytes,
-          targetBatchSizeBytes, useChunkedReader, useSubPageChunked, debugDumpPrefix,
-          debugDumpAlways, metrics);
+          targetBatchSizeBytes, useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+          debugDumpPrefix, debugDumpAlways, metrics);
     }
   }
 

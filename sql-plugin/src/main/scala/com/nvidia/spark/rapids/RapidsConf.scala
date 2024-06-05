@@ -566,6 +566,40 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
+  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
+    .doc("Enable a chunked reader where possible. A chunked reader allows " +
+      "reading highly compressed data that could not be read otherwise, but at the expense " +
+      "of more GPU memory, and in some cases more GPU computation. "+
+      "Currently this only supports ORC and Parquet formats.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val CHUNKED_READER_MEMORY_USAGE_RATIO = conf("spark.rapids.sql.reader.chunked.memoryUsageRatio")
+    .doc("A value to compute soft limit on the internal memory usage of the chunked reader " +
+      "(if being used). Such limit is calculated as the multiplication of this value and " +
+      s"'${GPU_BATCH_SIZE_BYTES.key}'.")
+    .internal()
+    .startupOnly()
+    .doubleConf
+    .checkValue(v => v > 0, "The ratio value must be positive.")
+    .createWithDefault(4)
+
+  val LIMIT_CHUNKED_READER_MEMORY_USAGE = conf("spark.rapids.sql.reader.chunked.limitMemoryUsage")
+    .doc("Enable a soft limit on the internal memory usage of the chunked reader " +
+      "(if being used). Such limit is calculated as the multiplication of " +
+      s"'${GPU_BATCH_SIZE_BYTES.key}' and '${CHUNKED_READER_MEMORY_USAGE_RATIO.key}'." +
+      "For example, if batchSizeBytes is set to 1GB and memoryUsageRatio is 4, " +
+      "the chunked reader will try to keep its memory usage under 4GB.")
+    .booleanConf
+    .createOptional
+
+  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
+    .doc("Enable a chunked reader where possible for reading data that is smaller " +
+      "than the typical row group/page limit. Currently deprecated and replaced by " +
+      s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE}'.")
+    .booleanConf
+    .createOptional
+
   val MAX_GPU_COLUMN_SIZE_BYTES = conf("spark.rapids.sql.columnSizeBytes")
     .doc("Limit the max number of bytes for a GPU column. It is same as the cudf " +
       "row count limit of a column. It is used by the multi-file readers. " +
@@ -583,19 +617,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .commonlyUsed()
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
-
-  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
-      .doc("Enable a chunked reader where possible. A chunked reader allows " +
-          "reading highly compressed data that could not be read otherwise, but at the expense " +
-          "of more GPU memory, and in some cases more GPU computation.")
-      .booleanConf
-      .createWithDefault(true)
-
-  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
-      .doc("Enable a chunked reader where possible for reading data that is smaller " +
-          "than the typical row group/page limit. Currently this only works for parquet.")
-      .booleanConf
-      .createWithDefault(true)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
@@ -686,6 +707,71 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .transform(_.toUpperCase(java.util.Locale.ROOT))
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
       .createWithDefault("MODERATE")
+
+  val PROFILE_PATH = conf("spark.rapids.profile.pathPrefix")
+    .doc("Enables profiling and specifies a URI path to use when writing profile data")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_EXECUTORS = conf("spark.rapids.profile.executors")
+    .doc("Comma-separated list of executors IDs and hyphenated ranges of executor IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createWithDefault("0")
+
+  val PROFILE_TIME_RANGES_SECONDS = conf("spark.rapids.profile.timeRangesInSeconds")
+    .doc("Comma-separated list of start-end ranges of time, in seconds, since executor startup " +
+      "to start and stop profiling. For example, a value of 10-30,100-110 will have the profiler " +
+      "wait for 10 seconds after executor startup then profile for 20 seconds, then wait for " +
+      "70 seconds then profile again for the next 10 seconds")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_JOBS = conf("spark.rapids.profile.jobs")
+    .doc("Comma-separated list of job IDs and hyphenated ranges of job IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_STAGES = conf("spark.rapids.profile.stages")
+    .doc("Comma-separated list of stage IDs and hyphenated ranges of stage IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
+    .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
+      "stage-level profiling is used.")
+    .internal()
+    .integerConf
+    .createWithDefault(1000)
+
+  val PROFILE_COMPRESSION = conf("spark.rapids.profile.compression")
+    .doc("Specifies the compression codec to use when writing profile data, one of " +
+      "zstd or none")
+    .internal()
+    .stringConf
+    .transform(_.toLowerCase(java.util.Locale.ROOT))
+    .checkValues(Set("zstd", "none"))
+    .createWithDefault("zstd")
+
+  val PROFILE_FLUSH_PERIOD_MILLIS = conf("spark.rapids.profile.flushPeriodMillis")
+    .doc("Specifies the time period in milliseconds to flush profile records. " +
+      "A value <= 0 will disable time period flushing.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
+  val PROFILE_WRITE_BUFFER_SIZE = conf("spark.rapids.profile.writeBufferSize")
+    .doc("Buffer size to use when writing profile records.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(1024 * 1024)
 
   // ENABLE/DISABLE PROCESSING
 
@@ -898,6 +984,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
       .doc("Enable tiered projections.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_RLIKE_REGEX_REWRITE = conf("spark.rapids.sql.rLikeRegexRewrite.enabled")
+      .doc("Enable the optimization to rewrite rlike regex to contains in some cases.")
       .internal()
       .booleanConf
       .createWithDefault(true)
@@ -1239,12 +1331,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_READ_JSON_MIXED_TYPES_AS_STRING =
-    conf("spark.rapids.sql.json.read.mixedTypesAsString.enabled")
-    .doc("JSON reading is not 100% compatible when reading mixed types as string.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
     .doc("When set to true enables all avro input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -1463,6 +1549,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .stringConf
     .createWithDefault(false.toString)
+
+  val FOLDABLE_NON_LIT_ALLOWED = conf("spark.rapids.sql.test.isFoldableNonLitAllowed")
+    .doc("Only to be used in tests. If `true` the foldable expressions that are not literals " +
+      "will be allowed")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
@@ -1723,7 +1816,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
     .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-      "Supported codecs: lz4, copy, none")
+      "Supported codecs: zstd, lz4, copy, none")
     .internal()
     .startupOnly()
     .stringConf
@@ -1735,6 +1828,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
+
+  val SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE =
+    conf("spark.rapids.shuffle.compression.zstd.chunkSize")
+      .doc("A configurable chunk size to use when compressing with ZSTD.")
+      .internal()
+      .startupOnly()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024)
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
@@ -2157,6 +2258,22 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val TEST_GET_JSON_OBJECT_SAVE_PATH = conf("spark.rapids.sql.expression.GetJsonObject.debugPath")
+    .doc("Only for tests: specify a directory to save CSV debug output for get_json_object " +
+      "if the output differs from the CPU version. Multiple files may be saved")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val TEST_GET_JSON_OBJECT_SAVE_ROWS =
+    conf("spark.rapids.sql.expression.GetJsonObject.debugSaveRows")
+      .doc("Only for tests: when a debugPath is provided this is the number " +
+        "of rows that is saved per file. There may be multiple files if there " +
+        "are multiple tasks or multiple batches within a task")
+      .internal()
+      .integerConf
+      .createWithDefault(1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2192,7 +2309,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.04.1-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.06.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2345,6 +2462,24 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
+  lazy val profilePath: Option[String] = get(PROFILE_PATH)
+
+  lazy val profileExecutors: String = get(PROFILE_EXECUTORS)
+
+  lazy val profileTimeRangesSeconds: Option[String] = get(PROFILE_TIME_RANGES_SECONDS)
+
+  lazy val profileJobs: Option[String] = get(PROFILE_JOBS)
+
+  lazy val profileStages: Option[String] = get(PROFILE_STAGES)
+
+  lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
+
+  lazy val profileCompression: String = get(PROFILE_COMPRESSION)
+
+  lazy val profileFlushPeriodMillis: Int = get(PROFILE_FLUSH_PERIOD_MILLIS)
+
+  lazy val profileWriteBufferSize: Long = get(PROFILE_WRITE_BUFFER_SIZE)
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
@@ -2382,6 +2517,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
   /**
    * Convert a string value to the injection configuration OomInjection.
@@ -2515,7 +2652,21 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
-  lazy val chunkedSubPageReaderEnabled: Boolean = get(CHUNKED_SUBPAGE_READER)
+  lazy val limitChunkedReaderMemoryUsage: Boolean = {
+    val hasLimit = get(LIMIT_CHUNKED_READER_MEMORY_USAGE)
+    val deprecatedConf = get(CHUNKED_SUBPAGE_READER)
+    if (deprecatedConf.isDefined) {
+      logWarning(s"'${CHUNKED_SUBPAGE_READER.key}' is deprecated and is replaced by " +
+        s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE}'.")
+      if (hasLimit.isDefined && hasLimit.get != deprecatedConf.get) {
+        throw new IllegalStateException(s"Both '${CHUNKED_SUBPAGE_READER.key}' and " +
+          s"'${LIMIT_CHUNKED_READER_MEMORY_USAGE.key}' are set but using different values.")
+      }
+    }
+    hasLimit.getOrElse(deprecatedConf.getOrElse(true))
+  }
+
+  lazy val chunkedReaderMemoryUsageRatio: Double = get(CHUNKED_READER_MEMORY_USAGE_RATIO)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
@@ -2578,6 +2729,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
+  lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
 
   lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
 
@@ -2686,8 +2839,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
 
-  lazy val isJsonMixedTypesAsStringEnabled: Boolean = get(ENABLE_READ_JSON_MIXED_TYPES_AS_STRING)
-
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
   lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
@@ -2770,6 +2921,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
   lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
+
+  lazy val shuffleCompressionZstdChunkSize: Long = get(SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
@@ -2925,6 +3078,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
   lazy val skipGpuArchCheck: Boolean = get(SKIP_GPU_ARCH_CHECK)
+
+  lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
+
+  lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

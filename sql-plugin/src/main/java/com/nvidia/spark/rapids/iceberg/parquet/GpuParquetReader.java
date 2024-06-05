@@ -87,7 +87,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
   private final long maxBatchSizeBytes;
   private final long targetBatchSizeBytes;
   private final boolean useChunkedReader;
-  private final boolean useSubPageChunked;
+  private final long maxChunkedReaderMemoryUsageSizeBytes;
   private final scala.Option<String> debugDumpPrefix;
   private final boolean debugDumpAlways;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
@@ -98,7 +98,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       Map<Integer, ?> idToConstant, GpuDeleteFilter deleteFilter,
       PartitionedFile partFile, Configuration conf, int maxBatchSizeRows,
       long maxBatchSizeBytes, long targetBatchSizeBytes, boolean useChunkedReader,
-      boolean useSubPageChunked,
+      long maxChunkedReaderMemoryUsageSizeBytes,
       scala.Option<String> debugDumpPrefix, boolean debugDumpAlways,
       scala.collection.immutable.Map<String, GpuMetric> metrics) {
     this.input = input;
@@ -115,7 +115,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     this.maxBatchSizeBytes = maxBatchSizeBytes;
     this.targetBatchSizeBytes = targetBatchSizeBytes;
     this.useChunkedReader = useChunkedReader;
-    this.useSubPageChunked = useSubPageChunked;
+    this.maxChunkedReaderMemoryUsageSizeBytes = maxChunkedReaderMemoryUsageSizeBytes;
     this.debugDumpPrefix = debugDumpPrefix;
     this.debugDumpAlways = debugDumpAlways;
     this.metrics = metrics;
@@ -143,7 +143,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader,
-          useSubPageChunked,
+          maxChunkedReaderMemoryUsageSizeBytes,
           metrics,
           DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
           DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode

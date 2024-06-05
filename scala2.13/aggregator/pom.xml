@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
-        <version>24.04.1</version>
+        <version>24.06.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>24.04.1</version>
+    <version>24.06.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>aggregator</rapids.module>
@@ -717,6 +717,23 @@
                 <property>
                     <name>buildver</name>
                     <value>342</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-24x_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release343</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>343</value>
                 </property>
             </activation>
             <dependencies>

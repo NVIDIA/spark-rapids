@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -447,6 +447,33 @@ def test_array_exists(data_gen, threeVL):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
         'spark.sql.legacy.followThreeValuedLogicInArrayExists' : threeVL,
     })
+
+
+@pytest.mark.parametrize('data_gen', [
+    ArrayGen(string_gen), 
+    ArrayGen(int_gen),
+    ArrayGen(ArrayGen(int_gen)),
+    ArrayGen(ArrayGen(StructGen([["A", int_gen], ["B", string_gen]])))], ids=idfn)
+def test_array_filter(data_gen):
+    def do_it(spark):
+        columns = ['a']
+        element_type = data_gen.data_type.elementType
+        if isinstance(element_type, IntegralType):
+            columns.extend([
+                'filter(a, item -> item % 2 = 0) as filter_even',
+                'filter(a, item -> item < 0) as filter_negative',
+                'filter(a, item -> item >= 0) as filter_non_negative'
+            ])
+
+        if isinstance(element_type, StringType):
+            columns.extend(['filter(a, entry -> length(entry) > 5) as filter_longer_than_5'])
+
+        if isinstance(element_type, ArrayType):
+            columns.extend(['filter(a, entry -> size(entry) < 5) as filter_shorter_than_5'])
+
+        return unary_op_df(spark, data_gen).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
 array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5),

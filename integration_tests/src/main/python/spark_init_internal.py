@@ -14,9 +14,9 @@
 
 import logging
 import os
+import pytest
 import re
 import stat
-import sys
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -96,6 +96,7 @@ def create_tmp_hive():
     except Exception as e:
         logging.warn(f"Failed to setup the hive scratch dir {path}. Error {e}")
 
+# Entry point into this file
 def pytest_sessionstart(session):
     # initializations that must happen globally once before tests start
     # if xdist in the coordinator, if not xdist in the pytest process
@@ -131,10 +132,12 @@ def pytest_sessionstart(session):
 
     if ('PYTEST_XDIST_WORKER' in os.environ):
         wid = os.environ['PYTEST_XDIST_WORKER']
-        _handle_derby_dir(_sb, driver_opts, wid)
         _handle_event_log_dir(_sb, wid)
+        driver_opts += _get_driver_opts_for_worker_logs(_sb, wid)
+        _handle_derby_dir(_sb, driver_opts, wid)
         _handle_ivy_cache_dir(_sb, wid)
     else:
+        driver_opts += _get_driver_opts_for_worker_logs(_sb, 'gw0')
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
 
@@ -154,6 +157,45 @@ def _handle_derby_dir(sb, driver_opts, wid):
         os.makedirs(d)
     sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
 
+def _use_worker_logs():
+    return os.environ.get('USE_WORKER_LOGS') == '1'
+
+# Create a named logger to be used for only logging test name in `log_test_name`
+logger = logging.getLogger('__pytest_worker_logger__')
+def _get_driver_opts_for_worker_logs(_sb, wid):
+    if not _use_worker_logs():
+        logging.info("Not setting worker logs. Worker logs on non-local mode are sent to the location pre-configured "
+                     "by the user")
+        return ""
+
+    current_directory = os.path.abspath(os.path.curdir)
+    log_file = '{}/{}_worker_logs.log'.format(current_directory, wid)
+
+    from conftest import get_std_input_path
+    std_input_path = get_std_input_path()
+    # This is not going to take effect when TEST_PARALLEL=1 as it's set as a conf when calling spark-submit
+    driver_opts = ' -Dlog4j.configuration=file://{}/pytest_log4j.properties '.format(std_input_path) + \
+        ' -Dlogfile={}'.format(log_file)
+
+    # Set up Logging to the WORKERID_worker_logs
+    # Note: This logger is only used for logging the test name in method `log_test_name`. 
+    global logger
+    logger.setLevel(logging.INFO)
+    # Create file handler to output logs into corresponding worker log file
+    # This file_handler is modifying the worker_log file that the plugin will also write to 
+    # The reason for doing this is to get all test logs in one place from where we can do other analysis 
+    # that might be needed in future to look at the execs that were used in our integration tests
+    file_handler = logging.FileHandler(log_file)
+    # Set the formatter for the file handler, we match the formatter from the basicConfig for consistency in logs
+    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
+                                  datefmt="%Y-%m-%d %H:%M:%S")
+
+    file_handler.setFormatter(formatter)
+
+    # Add the file handler to the logger
+    logger.addHandler(file_handler)
+
+    return driver_opts
 
 def _handle_event_log_dir(sb, wid):
     if os.environ.get('SPARK_EVENTLOG_ENABLED', str(True)).lower() in [
@@ -208,3 +250,7 @@ def get_spark_i_know_what_i_am_doing():
 
 def spark_version():
     return _spark.version
+
+@pytest.fixture(scope='function', autouse=_use_worker_logs())
+def log_test_name(request):
+    logger.info("Running test '{}'".format(request.node.nodeid))
