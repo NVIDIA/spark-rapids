@@ -1137,11 +1137,11 @@ case class GpuMultipleContains(input: Expression, searchList: Seq[String])
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val inputLength = input.getRowCount.toInt
-    val accInit = withResource(Scalar.fromBool(false)) { falseScalar => 
-      ColumnVector.fromScalar(falseScalar, inputLength)
+    assert(searchList.length > 1)
+    val accInit = withResource(Scalar.fromString(searchList.head)) { searchScalar =>
+      input.getBase.stringContains(searchScalar)
     }
-    searchList.foldLeft(accInit) { (acc, search) =>
+    searchList.tail.foldLeft(accInit) { (acc, search) =>
       val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
         input.getBase.stringContains(searchScalar)
       }

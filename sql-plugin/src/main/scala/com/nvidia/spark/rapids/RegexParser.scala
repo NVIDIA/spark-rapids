@@ -2092,27 +2092,17 @@ object RegexRewrite {
     }
   }
 
-  private def getMultipleContainsLiterals(ast: RegexAST): (Boolean, Seq[String]) = {
+  private def getMultipleContainsLiterals(ast: RegexAST): Seq[String] = {
     ast match {
       case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
-      case RegexChoice(a, b) => {
-        if (a.isInstanceOf[RegexSequence] && isLiteralString(a.children())) {
-          getMultipleContainsLiterals(b) match {
-            case (true, literals) => (true, RegexCharsToString(a.children()) +: literals)
-            case _ => (false, Seq.empty)
-          }
-        } else {
-          (false, Seq.empty)
+      case RegexChoice(RegexSequence(parts), ls) if isLiteralString(parts) => {
+        getMultipleContainsLiterals(ls) match {
+          case ls if ls.isEmpty => Seq.empty
+          case literals => RegexCharsToString(parts) +: literals
         }
       }
-      case RegexSequence(parts) => {
-        if (isLiteralString(parts)) {
-          (true, Seq(RegexCharsToString(parts)))
-        } else {
-          (false, Seq.empty)
-        }
-      }
-      case _ => (false, Seq.empty)
+      case RegexSequence(parts) if (isLiteralString(parts)) => Seq(RegexCharsToString(parts))
+      case _ => Seq.empty
     }
   }
 
@@ -2146,7 +2136,7 @@ object RegexRewrite {
    * Matches the given regex ast to a regex optimization type for regex rewrite
    * optimization.
    *
-   * @param ast unparsed children of the Abstract Syntax Tree parsed from a regex pattern.
+   * @param astLs unparsed children of the Abstract Syntax Tree parsed from a regex pattern.
    * @return The `RegexOptimizationType` for the given pattern.
    */
   def matchSimplePattern(astLs: Seq[RegexAST]): RegexOptimizationType = {
@@ -2169,9 +2159,9 @@ object RegexRewrite {
 
     // Check if the pattern is a multiple contains literal pattern (e.g. "abc|def|ghi")
     if (noStartsWithAst.length == 1) {
-      val containsLiterals = getMultipleContainsLiterals(noStartsWithAst(0))
-      if (containsLiterals._1) {
-        return RegexOptimizationType.MultipleContains(containsLiterals._2)
+      val containsLiterals = getMultipleContainsLiterals(noStartsWithAst.head)
+      if (!containsLiterals.isEmpty) {
+        return RegexOptimizationType.MultipleContains(containsLiterals)
       }
     }
 
