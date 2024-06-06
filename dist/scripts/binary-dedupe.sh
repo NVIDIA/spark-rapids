@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,10 +34,10 @@ case "$OSTYPE" in
 esac
 
 STEP=0
-export SPARK3XX_COMMON_TXT="$PWD/spark3xx-common.txt"
+export SPARK3XX_COMMON_TXT="$PWD/spark34-common.txt"
 export SPARK3XX_COMMON_COPY_LIST="$PWD/spark-common-copy-list.txt"
 export DELETE_DUPLICATES_TXT="$PWD/delete-duplicates.txt"
-export SPARK3XX_COMMON_DIR="$PWD/spark3xx-common"
+export SPARK3XX_COMMON_DIR="$PWD/spark34-common"
 
 # This script de-duplicates .class files at the binary level.
 # We could also diff classes using scalap / javap outputs.
@@ -56,8 +56,8 @@ echo "Retrieving class files hashing to a single value ..."
 
 
 echo "$((++STEP))/ SHA1 of all non-META files > tmp-sha1-files.txt"
-find ./parallel-world/spark3* -name META-INF -prune -o \( -type f -print \) | \
-  xargs $SHASUM > tmp-sha1-files.txt
+find ./parallel-world/spark[34]* -name META-INF -prune -o -name webapps -prune -o \( -type f -print0 \) | \
+  xargs --null $SHASUM > tmp-sha1-files.txt
 
 echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-files.txt"
 < tmp-sha1-files.txt awk -F/ '$1=$1' | \
@@ -93,10 +93,10 @@ function retain_single_copy() {
   package_class="${package_class_with_spaces// //}"
 
   # get the reference copy out of the way
-  echo "$package_class" >> "from-$shim-to-spark3xx-common.txt"
+  echo "$package_class" >> "from-$shim-to-spark34-common.txt"
   # expanding directories separately because full path
   # glob is broken for class file name including the "$" character
-  for pw in ./parallel-world/spark3* ; do
+  for pw in ./parallel-world/spark[34]* ; do
     delete_path="$pw/$package_class"
     [[ -f "$delete_path" ]] && echo "$delete_path" || true
   done >> "$DELETE_DUPLICATES_TXT" || exit 255
@@ -106,17 +106,17 @@ function retain_single_copy() {
 # standalone debugging
 # truncate incremental files
 : > "$DELETE_DUPLICATES_TXT"
-rm -f from-spark3*-to-spark3xx-common.txt
+rm -f from-spark[34]*-to-spark34-common.txt
 rm -rf "$SPARK3XX_COMMON_DIR"
 mkdir -p "$SPARK3XX_COMMON_DIR"
 
-echo "$((++STEP))/ retaining a single copy of spark3xx-common classes"
+echo "$((++STEP))/ retaining a single copy of spark34-common classes"
 while read spark_common_class; do
   retain_single_copy "$spark_common_class"
 done < "$SPARK3XX_COMMON_TXT"
 
 echo "$((++STEP))/ rsyncing common classes to $SPARK3XX_COMMON_DIR"
-for copy_list in from-spark3*-to-spark3xx-common.txt; do
+for copy_list in from-spark[34]*-to-spark34-common.txt; do
   echo Initializing rsync of "$copy_list"
   IFS='-' <<< "$copy_list" read -ra copy_list_parts
   # declare -p copy_list_parts
@@ -139,7 +139,7 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # locations such as parallel-world/spark312.
 # For each unshimmed class file look for all of its copies inside /spark3* and
 # and count the number of distinct checksums. There are two representative cases
-# 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark3xx list. These are classes
+# 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark34 list. These are classes
 #    carrying the shim classifier in their package name such as
 #    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are unique by construction,
 #    and will have zero copies in any non-spark312 shims. Although such classes are currently excluded from
@@ -157,14 +157,14 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # Determine the list of unshimmed class files
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
 echo "$((++STEP))/ creating sorted list of unshimmed classes > $UNSHIMMED_LIST_TXT"
-find ./parallel-world -name '*.class' -not -path './parallel-world/spark3*' | \
+find ./parallel-world -name '*.class' -not -path './parallel-world/spark[34]*' | \
   cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
 
 function verify_same_sha_for_unshimmed() {
   set -e
   class_file="$1"
 
-  # the raw spark3xx-common.txt file list contains all single-sha1 classes
+  # the raw spark34-common.txt file list contains all single-sha1 classes
   # including the ones that are unshimmed. Instead of expensively recomputing
   # sha1 look up if there is an entry with the unshimmed class as a suffix
 
@@ -173,7 +173,7 @@ function verify_same_sha_for_unshimmed() {
   # TODO currently RapidsShuffleManager is "removed" from /spark3* by construction in
   # dist pom.xml via ant. We could delegate this logic to this script
   # and make both simmpler
-  if [[ ! "$class_file_quoted" =~ (com/nvidia/spark/rapids/spark3.*/.*ShuffleManager.class|org/apache/spark/sql/rapids/shims/spark3.*/ProxyRapidsShuffleInternalManager.class) ]]; then
+  if [[ ! "$class_file_quoted" =~ (com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class|org/apache/spark/sql/rapids/shims/spark[34].*/ProxyRapidsShuffleInternalManager.class) ]]; then
 
     if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK3XX_COMMON_TXT"; then
       echo >&2 "$class_file is not bitwise-identical across shims"
@@ -192,7 +192,7 @@ done < "$UNSHIMMED_LIST_TXT"
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
 
 while read unshimmed_class; do
-  for pw in ./parallel-world/spark3* ; do
+  for pw in ./parallel-world/spark[34]* ; do
     unshimmed_path="$pw/$unshimmed_class"
     [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true
   done >> "$DELETE_DUPLICATES_TXT"
