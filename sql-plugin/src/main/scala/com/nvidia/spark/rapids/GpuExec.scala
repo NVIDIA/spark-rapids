@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.filecache.FileCacheConf
+import com.nvidia.spark.rapids.lore.IdGen.lordIdOf
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
@@ -372,6 +373,14 @@ trait GpuExec extends SparkPlan {
         iter
       }
     }.getOrElse(orig)
+  }
+  
+  override def nodeName: String = {
+    lordIdOf(this) match {
+      case Some(loreId) => s"${super.nodeName} [loreId=$loreId]"
+      case None => s"${super.nodeName} [loreId=unknown]"
+    }
+    }
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]
