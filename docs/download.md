@@ -41,7 +41,7 @@ The plugin is tested on the following architectures:
 	Supported Spark versions:
 		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
 		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
-		Apache Spark 3.4.0, 3.4.1, 3.4.2
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
 		Apache Spark 3.5.0, 3.5.1
 	
 	Supported Databricks runtime versions for Azure and AWS:
@@ -57,6 +57,7 @@ The plugin is tested on the following architectures:
 		Spark runtime 1.1 LTS
 		Spark runtime 2.0
 		Spark runtime 2.1
+		Spark runtime 2.2
 
 *Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
 for your hardware's minimum driver version.
@@ -92,8 +93,11 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* Improve support for Unity Catalog on Databricks.
-* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
+* Improve support for Unity Catalog on Databricks
+* Added support for parse_url PATH
+* Added support for array_filter
+* Added support for Spark 3.4.3
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
