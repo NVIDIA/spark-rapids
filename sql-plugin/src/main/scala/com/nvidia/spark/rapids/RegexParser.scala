@@ -2097,7 +2097,7 @@ object RegexRewrite {
       case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
       case RegexChoice(RegexSequence(parts), ls) if isLiteralString(parts) => {
         getMultipleContainsLiterals(ls) match {
-          case ls if ls.isEmpty => Seq.empty
+          case Seq() => Seq.empty
           case literals => RegexCharsToString(parts) +: literals
         }
       }
