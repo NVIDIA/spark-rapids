@@ -9,7 +9,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 
 object IdGen {
-  val LORE_ID_TAG: TreeNodeTag[String] = new TreeNodeTag[GpuExec]("rapids.gpu.lore.id")
+  val LORE_ID_TAG: TreeNodeTag[String] = new TreeNodeTag[String]("rapids.gpu.lore.id")
 
   /**
    * Lore id generator. Key is [[SQLExecution.EXECUTION_ID_KEY]].
@@ -26,7 +26,7 @@ object IdGen {
     sparkPlan.foreachUp {
       case g: GpuExec =>
         val loreId = nextLoreIdOfSparkPlan(g)
-        g.setTagValue(LORE_ID_TAG, loreId)
+        g.setTagValue(LORE_ID_TAG, loreId.toString)
       case _ =>
     }
 
