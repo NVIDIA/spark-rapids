@@ -137,7 +137,7 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 #
 # At this point the duplicate classes have not been removed from version-specific jar
 # locations such as parallel-world/spark312.
-# For each unshimmed class file look for all of its copies inside /spark3* and
+# For each unshimmed class file look for all of its copies inside /spark[34]* and
 # and count the number of distinct checksums. There are two representative cases
 # 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark34 list. These are classes
 #    carrying the shim classifier in their package name such as
@@ -170,7 +170,7 @@ function verify_same_sha_for_unshimmed() {
 
   class_file_quoted=$(printf '%q' "$class_file")
 
-  # TODO currently RapidsShuffleManager is "removed" from /spark3* by construction in
+  # TODO currently RapidsShuffleManager is "removed" from /spark* by construction in
   # dist pom.xml via ant. We could delegate this logic to this script
   # and make both simmpler
   if [[ ! "$class_file_quoted" =~ (com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class|org/apache/spark/sql/rapids/shims/spark[34].*/ProxyRapidsShuffleInternalManager.class) ]]; then
