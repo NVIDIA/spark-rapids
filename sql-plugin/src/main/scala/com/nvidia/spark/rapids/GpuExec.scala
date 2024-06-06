@@ -374,12 +374,11 @@ trait GpuExec extends SparkPlan {
       }
     }.getOrElse(orig)
   }
-  
+
   override def nodeName: String = {
     lordIdOf(this) match {
       case Some(loreId) => s"${super.nodeName} [loreId=$loreId]"
       case None => s"${super.nodeName} [loreId=unknown]"
-    }
     }
   }
 
