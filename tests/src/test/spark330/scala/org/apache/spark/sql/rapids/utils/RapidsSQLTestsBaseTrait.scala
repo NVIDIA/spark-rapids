@@ -167,6 +167,7 @@ object RapidsSQLTestsBaseTrait extends Logging {
       .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
       .set("spark.ui.enabled","true")
+      .set("spark.rapids.lore.operatorToDump","GpuHashAggregateExec")
 //      .set("spark.sql.ui.explainMode", "EXTENDED")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")

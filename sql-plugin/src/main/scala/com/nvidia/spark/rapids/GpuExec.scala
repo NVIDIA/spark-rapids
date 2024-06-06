@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.io.{ByteArrayOutputStream, ObjectOutputStream}
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
@@ -122,7 +122,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
-    case w: WrappedGpuMetric => w.sqlMetric
+    case w :WrappedGpuMetric => w.sqlMetric
     case i => throw new IllegalArgumentException(s"found unsupported GpuMetric ${i.getClass}")
   }
 
@@ -148,19 +148,14 @@ object GpuMetric extends Logging {
   }
 
   object DEBUG_LEVEL extends MetricsLevel(0)
-
   object MODERATE_LEVEL extends MetricsLevel(1)
-
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
 }
 
 sealed abstract class GpuMetric extends Serializable {
   def value: Long
-
   def set(v: Long): Unit
-
   def +=(v: Long): Unit
-
   def add(v: Long): Unit
 
   final def ns[T](f: => T): T = {
@@ -175,41 +170,25 @@ sealed abstract class GpuMetric extends Serializable {
 
 object NoopMetric extends GpuMetric {
   override def +=(v: Long): Unit = ()
-
   override def add(v: Long): Unit = ()
-
   override def set(v: Long): Unit = ()
-
   override def value: Long = 0
 }
 
 final case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
   def +=(v: Long): Unit = sqlMetric.add(v)
-
   def add(v: Long): Unit = sqlMetric.add(v)
-
   override def set(v: Long): Unit = sqlMetric.set(v)
-
   override def value: Long = sqlMetric.value
 }
 
 /** A GPU metric class that just accumulates into a variable without implicit publishing. */
 final class LocalGpuMetric extends GpuMetric {
   private var lval = 0L
-
   override def value: Long = lval
-
-  override def set(v: Long): Unit = {
-    lval = v
-  }
-
-  override def +=(v: Long): Unit = {
-    lval += v
-  }
-
-  override def add(v: Long): Unit = {
-    lval += v
-  }
+  override def set(v: Long): Unit = { lval = v }
+  override def +=(v: Long): Unit = { lval += v }
+  override def add(v: Long): Unit = { lval += v }
 }
 
 class CollectTimeIterator[T](
@@ -238,16 +217,20 @@ object GpuExec {
   val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
-
 trait GpuExec extends SparkPlan {
 
-  var replayingDir: Option[String] = None
-  def isDumpping = replayingDir.isEmpty
+  // For LORE replay
+  var loreReplayInputDir: Option[String] = None
+  var loreIsReplayingOperator: Boolean = false
+  // For LORE dump
+  val loreDumpOperator: Option[String] = RapidsConf.LORE_DUMP_OPERATOR.get(conf)
+  val loreDumpPartitions: String = RapidsConf.LORE_DUMP_PARTITIONS.get(conf)
 
+  // For DumpedExecReplayer, the spark plan is deserialized from the plan.meta file, so
+  // some of the transient fields will be null, and we need to workaround this
   override protected def sparkContext = SparkSession.getActiveSession.get.sparkContext
-
   override protected def waitForSubqueries(): Unit = synchronized {
-    if (replayingDir.isEmpty) {
+    if (!loreIsReplayingOperator && loreReplayInputDir.isEmpty) {
       super.waitForSubqueries()
     }
   }
@@ -287,9 +270,9 @@ trait GpuExec extends SparkPlan {
    */
   def outputBatching: CoalesceGoal = null
 
-  private[this] lazy val metricsConf = MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf))
+  private [this] lazy val metricsConf = MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf))
 
-  private[this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
+  private [this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
     if (level >= metricsConf) {
       WrappedGpuMetric(f)
     } else {
@@ -347,7 +330,7 @@ trait GpuExec extends SparkPlan {
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
-    additionalMetrics
+      additionalMetrics
 
   def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
 
@@ -403,11 +386,9 @@ trait GpuExec extends SparkPlan {
   def getTaskMetrics: Option[GpuTaskMetrics] =
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
-
-
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    if (replayingDir.nonEmpty) {
-      return new ReplayDumpRDD(sparkSession, replayingDir.get)
+    if (loreReplayInputDir.nonEmpty) {
+      return new ReplayDumpRDD(sparkSession, loreReplayInputDir.get)
     }
     var orig: RDD[ColumnarBatch] = null
     orig = internalDoExecuteColumnar()
@@ -427,11 +408,6 @@ trait GpuExec extends SparkPlan {
 
     val planBytes = objectToBytes(this)
 
-    val another: GpuExec = {
-      new ObjectInputStream(new ByteArrayInputStream(planBytes)).readObject().asInstanceOf[GpuExec]
-    }
-    println(another.getClass)
-
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
       LocationPreservingMapPartitionsRDD(orig) { iter =>
@@ -441,9 +417,15 @@ trait GpuExec extends SparkPlan {
         iter.map(cb => {
 
           val tc = TaskContext.get()
-          if (isDumpping && className == "GpuHashAggregateExec" && tc.partitionId() == 0) {
-            println(s"className: ${className}, my stage id: ${tc.stageId()}, " +
-              s"my plan id is : ${planId}, my partition id is : ${tc.partitionId()}")
+          if (loreDumpOperator.exists(o => o.equals(className)) &&
+            loreDumpPartitions.split(',').map(_.toInt).contains(tc.partitionId())) {
+
+            log.warn(s"LORE dump activated, " +
+              s"className: ${className}, " +
+              s"stage id: ${tc.stageId()}, " +
+              s"plan id: ${planId}, " +
+              s"partition id: ${tc.partitionId()}")
+
             val partitionId = TaskContext.get().partitionId()
 
             def getOutputStream(filePath: String): FSDataOutputStream = {
@@ -458,25 +440,28 @@ trait GpuExec extends SparkPlan {
               val cbTypes = GpuColumnVector.extractTypes(cb)
               val bytes = objectToBytes(cbTypes)
               val fos = getOutputStream(
-                s"file:/tmp/lore/planid=${planId}/partitionid=${partitionId}/" +
-                  s"batchId=${batchId}/col_types.meta")
+                s"file:/tmp/lore/plan_id=${planId}/partition_id=${partitionId}/" +
+                  s"batch_id=${batchId}/col_types.meta")
               fos.write(bytes)
               fos.close()
             }
             {
               // dump plan node
               val fos = getOutputStream(
-                s"file:/tmp/lore/planid=${planId}/partitionid=${partitionId}/" +
-                  s"batchId=${batchId}/plan.meta")
+                s"file:/tmp/lore/plan_id=${planId}/partition_id=${partitionId}/" +
+                  s"batch_id=${batchId}/plan.meta")
               fos.write(planBytes)
               fos.close()
             }
 
             // dump data for column batch to /tmp dir
             withResource(GpuColumnVector.from(cb)) { table =>
-              DumpUtils.dumpToParquetFile(table, filePrefix =
-                s"/tmp/lore/planid=${planId}/partitionid=${partitionId}/" +
-                  s"batchId=${batchId}/cb_data_")
+              val path = s"/tmp/lore/plan_id=${planId}/partition_id=${partitionId}/" +
+                s"batch_id=${batchId}/cb_data.parquet"
+              withResource(new ParquetDumper(path, table)) { dumper =>
+                dumper.writeTable(table)
+                path
+              }
             }
           }
           batchId = batchId + 1

@@ -72,12 +72,12 @@ object DumpedExecReplayer extends Logging {
       s"For now, restored exec's child only supports GpuExec: " +
         s"${unaryLike.child.getClass}")
     val child = unaryLike.child.asInstanceOf[GpuExec]
-    child.replayingDir = Some(rootFolder)
-    restoredExec.replayingDir = Some(rootFolder)
+    child.loreReplayInputDir = Some(rootFolder)
+    restoredExec.loreIsReplayingOperator = true
 
     restoredExec.doExecuteColumnar().foreach(
       cb => {
-        println(s"ColumnarBatch with size: ${cb.numRows()}")
+        println(s"return ColumnarBatch with size: ${cb.numRows()}")
         cb.close()
       }
     )

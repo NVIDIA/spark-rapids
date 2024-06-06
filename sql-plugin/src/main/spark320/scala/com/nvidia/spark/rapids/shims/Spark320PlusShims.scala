@@ -89,7 +89,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
   override final def sessionFromPlan(plan: SparkPlan): SparkSession = {
-    //plan.session
+//    plan.session
     SparkSession.getActiveSession.get
   }
 

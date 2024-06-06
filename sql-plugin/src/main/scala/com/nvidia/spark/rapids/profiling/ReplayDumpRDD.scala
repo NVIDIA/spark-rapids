@@ -45,20 +45,11 @@ class ReplayDumpRDD(
       if (!(new File(cbTypesPath).exists() && new File(cbTypesPath).isFile)) {
         throw new IllegalStateException(s"There is no col_types.meta file in $replayDir")
       }
-      val planMetaPath = replayDir + s"/plan.meta"
-      if (!(new File(planMetaPath).exists() && new File(planMetaPath).isFile)) {
-        throw new IllegalStateException(s"There is no plan.meta file in $replayDir")
-      }
 
-      val parquets = new File(replayDir).listFiles(
-        f => f.getName.startsWith(s"cb_data_") &&
-          f.getName.endsWith(".parquet"))
-      if (parquets == null || parquets.isEmpty) {
-        throw new IllegalStateException(s"there is no cb_data_xxx.parquet file in $replayDir")
-      }
-      if (parquets.size > 1) {
+      val parquets = new File(replayDir).listFiles(f => f.getName.equals(s"cb_data.parquet"))
+      if (parquets.size != 1) {
         throw new IllegalStateException(
-          s"there are more than one cb_data_xxx.parquet file in $replayDir")
+          s"missing cb_data.parquet file in $replayDir")
       }
       val cbPath = parquets(0).getAbsolutePath
 
@@ -75,9 +66,5 @@ class ReplayDumpRDD(
   }
 
   override protected def getPartitions: Array[Partition] = Seq(new SimplePartition()).toArray
-
-//  override protected def getPreferredLocations(split: Partition): Seq[String] = {
-//    split.asInstanceOf[SimplePartition].preferredLocations()
-//  }
 }
 

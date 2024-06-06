@@ -776,7 +776,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
-    println("In GpuTransitionOverrides")
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
