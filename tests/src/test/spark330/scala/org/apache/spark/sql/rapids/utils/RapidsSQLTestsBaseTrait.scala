@@ -168,6 +168,7 @@ object RapidsSQLTestsBaseTrait extends Logging {
       .set("spark.rapids.sql.explain", "ALL")
       .set("spark.ui.enabled","true")
       .set("spark.rapids.lore.operatorToDump","GpuHashAggregateExec")
+      .set("spark.rapids.lore.partitionsToDump","0,1")
 //      .set("spark.sql.ui.explainMode", "EXTENDED")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")

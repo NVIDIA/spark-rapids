@@ -33,7 +33,7 @@ class RapidsDataFrameAggregateSuite extends DataFrameAggregateSuite with RapidsS
   test("groupBy22") {
 
     com.nvidia.spark.rapids.profiling.DumpedExecReplayer.main(
-      Array("/tmp/lore/plan_id=291/partition_id=0"))
+      Array("/tmp/lore/plan_id=290/partition_id=0"))
     println("xxx")
     scala.io.StdIn.readLine()
 

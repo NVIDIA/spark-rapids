@@ -39,7 +39,7 @@ object DumpedExecReplayer extends Logging {
     // check arguments and get paths
     if (args.length != 1) {
       throw new IllegalStateException("Specify 1 args: <partition dump path>, " +
-        "e.g. /tmp/lore/planid=194/partitionid=0")
+        "e.g. /tmp/lore/plan_id=240/partition_id=1")
     }
 
     // start a Spark session with Spark-Rapids initialization
@@ -49,16 +49,16 @@ object DumpedExecReplayer extends Logging {
       .appName("Replaying Dumped Exec")
       .getOrCreate()
 
-    val rootFolder = args(0)
-    val subFolders = new File(rootFolder).listFiles().filter(_.isDirectory).map(_.getPath)
+    val rootFolder: File = new File(args(0))
+    val subFolders = rootFolder.listFiles().filter(_.isDirectory)
     if (subFolders.length < 1) {
       throw new IllegalStateException("There is no subfolder in the replay dir")
     }
 
-    val firstReplayDir = subFolders.head
-    val planMetaPath = firstReplayDir + s"/plan.meta"
+
+    val planMetaPath = rootFolder.getParent + s"/plan.meta"
     if (!(new File(planMetaPath).exists() && new File(planMetaPath).isFile)) {
-      throw new IllegalStateException(s"There is no plan.meta file in $firstReplayDir")
+      throw new IllegalStateException(s"There is no plan.meta file in ${rootFolder.getParent}")
     }
 
     // restore SparkPlan
@@ -72,7 +72,7 @@ object DumpedExecReplayer extends Logging {
       s"For now, restored exec's child only supports GpuExec: " +
         s"${unaryLike.child.getClass}")
     val child = unaryLike.child.asInstanceOf[GpuExec]
-    child.loreReplayInputDir = Some(rootFolder)
+    child.loreReplayInputDir = Some(rootFolder.getPath)
     restoredExec.loreIsReplayingOperator = true
 
     restoredExec.doExecuteColumnar().foreach(

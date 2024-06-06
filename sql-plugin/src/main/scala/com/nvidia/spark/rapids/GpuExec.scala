@@ -32,7 +32,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuTaskMetrics
@@ -223,6 +223,7 @@ trait GpuExec extends SparkPlan {
   var loreReplayInputDir: Option[String] = None
   var loreIsReplayingOperator: Boolean = false
   // For LORE dump
+  var shouldDumpOutput: Boolean = false
   val loreDumpOperator: Option[String] = RapidsConf.LORE_DUMP_OPERATOR.get(conf)
   val loreDumpPartitions: String = RapidsConf.LORE_DUMP_PARTITIONS.get(conf)
 
@@ -387,17 +388,13 @@ trait GpuExec extends SparkPlan {
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    if (loreReplayInputDir.nonEmpty) {
-      return new ReplayDumpRDD(sparkSession, loreReplayInputDir.get)
-    }
-    var orig: RDD[ColumnarBatch] = null
-    orig = internalDoExecuteColumnar()
-
     val hadoopConf = new SerializableConfiguration(sparkSession.sparkContext.hadoopConfiguration)
-    val planId = id
-    val metrics = getTaskMetrics
-    val className = this.getClass.getSimpleName
-
+    def getOutputStream(filePath: String): FSDataOutputStream = {
+      val hadoopPath = new Path(filePath)
+      val fs = hadoopPath.getFileSystem(hadoopConf.value)
+      // multiple may call this concurrently, make overwrite as true
+      fs.create(hadoopPath, true)
+    }
     def objectToBytes(obj: Any): Array[Byte] = {
       val bos = new ByteArrayOutputStream()
       val oos = new ObjectOutputStream(bos)
@@ -406,7 +403,27 @@ trait GpuExec extends SparkPlan {
       bos.toByteArray
     }
 
-    val planBytes = objectToBytes(this)
+    if (loreReplayInputDir.nonEmpty) {
+      return new ReplayDumpRDD(sparkSession, loreReplayInputDir.get)
+    }
+    val className = this.getClass.getSimpleName
+    if(loreDumpOperator.exists(o => o.equals(className))){
+      val childAsGpuExec = this.asInstanceOf[UnaryLike[SparkPlan]].child.asInstanceOf[GpuExec]
+      childAsGpuExec.shouldDumpOutput = true
+      val childPlanId = childAsGpuExec.id
+      // dump plan node
+      val planBytes = objectToBytes(this)
+      val fos = getOutputStream(
+        s"file:/tmp/lore/plan_id=${childPlanId}/plan.meta")
+      fos.write(planBytes)
+      fos.close()
+    }
+
+    var orig: RDD[ColumnarBatch] = null
+    orig = internalDoExecuteColumnar()
+
+    val planId = id
+    val metrics = getTaskMetrics
 
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
@@ -417,23 +434,18 @@ trait GpuExec extends SparkPlan {
         iter.map(cb => {
 
           val tc = TaskContext.get()
-          if (loreDumpOperator.exists(o => o.equals(className)) &&
+          if (shouldDumpOutput &&
             loreDumpPartitions.split(',').map(_.toInt).contains(tc.partitionId())) {
 
             log.warn(s"LORE dump activated, " +
               s"className: ${className}, " +
               s"stage id: ${tc.stageId()}, " +
               s"plan id: ${planId}, " +
-              s"partition id: ${tc.partitionId()}")
+              s"partition id: ${tc.partitionId()}, " +
+              s"batch id: ${batchId}, " +
+              s"batch size: ${cb.numRows()} rows.")
 
             val partitionId = TaskContext.get().partitionId()
-
-            def getOutputStream(filePath: String): FSDataOutputStream = {
-              val hadoopPath = new Path(filePath)
-              val fs = hadoopPath.getFileSystem(hadoopConf.value)
-              // multiple may call this concurrently, make overwrite as true
-              fs.create(hadoopPath, true)
-            }
 
             {
               // dump col types for column batch to remote storage
@@ -443,14 +455,6 @@ trait GpuExec extends SparkPlan {
                 s"file:/tmp/lore/plan_id=${planId}/partition_id=${partitionId}/" +
                   s"batch_id=${batchId}/col_types.meta")
               fos.write(bytes)
-              fos.close()
-            }
-            {
-              // dump plan node
-              val fos = getOutputStream(
-                s"file:/tmp/lore/plan_id=${planId}/partition_id=${partitionId}/" +
-                  s"batch_id=${batchId}/plan.meta")
-              fos.write(planBytes)
               fos.close()
             }
 
