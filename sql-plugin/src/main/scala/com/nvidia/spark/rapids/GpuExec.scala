@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{ByteArrayOutputStream, ObjectOutputStream}
-
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.DumpUtils.serializeObject
 import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.profiling.ReplayDumpRDD
 import com.nvidia.spark.rapids.shims.SparkShimImpl
@@ -220,24 +219,24 @@ object GpuExec {
 trait GpuExec extends SparkPlan {
 
   // For LORE replay
-  var loreReplayInputDir: Option[String] = None
-  var loreIsReplayingOperator: Boolean = false
+  @transient var loreReplayInputDir: String = null // null is better than None considering ser/der
+  @transient var loreIsReplayingOperator: Boolean = false
   // For LORE dump
-  var shouldDumpOutput: Boolean = false
-  val loreDumpOperator: Option[String] = RapidsConf.LORE_DUMP_OPERATOR.get(conf)
-  val loreDumpPartitions: String = RapidsConf.LORE_DUMP_PARTITIONS.get(conf)
+  @transient var shouldDumpOutput: Boolean = false
+  @transient lazy val loreDumpOperator: Option[String] = RapidsConf.LORE_DUMP_OPERATOR.get(conf)
+  @transient lazy val loreDumpPartitions: String = RapidsConf.LORE_DUMP_PARTITIONS.get(conf)
 
-  // For DumpedExecReplayer, the spark plan is deserialized from the plan.meta file, so
+  // For LORE DumpedExecReplayer, the spark plan is deserialized from the plan.meta file, so
   // some of the transient fields will be null, and we need to workaround this
   override protected def sparkContext = SparkSession.getActiveSession.get.sparkContext
   override protected def waitForSubqueries(): Unit = synchronized {
-    if (!loreIsReplayingOperator && loreReplayInputDir.isEmpty) {
+    // only do it when it's not doing LORE replaying
+    if (!loreIsReplayingOperator && loreReplayInputDir == null) {
       super.waitForSubqueries()
     }
   }
 
   import GpuMetric._
-
   def sparkSession: SparkSession = {
     SparkShimImpl.sessionFromPlan(this)
   }
@@ -392,19 +391,11 @@ trait GpuExec extends SparkPlan {
     def getOutputStream(filePath: String): FSDataOutputStream = {
       val hadoopPath = new Path(filePath)
       val fs = hadoopPath.getFileSystem(hadoopConf.value)
-      // multiple may call this concurrently, make overwrite as true
       fs.create(hadoopPath, true)
     }
-    def objectToBytes(obj: Any): Array[Byte] = {
-      val bos = new ByteArrayOutputStream()
-      val oos = new ObjectOutputStream(bos)
-      oos.writeObject(obj)
-      oos.close()
-      bos.toByteArray
-    }
 
-    if (loreReplayInputDir.nonEmpty) {
-      return new ReplayDumpRDD(sparkSession, loreReplayInputDir.get)
+    if (loreReplayInputDir != null) {
+      return new ReplayDumpRDD(sparkSession, loreReplayInputDir)
     }
     val className = this.getClass.getSimpleName
     if(loreDumpOperator.exists(o => o.equals(className))){
@@ -412,12 +403,13 @@ trait GpuExec extends SparkPlan {
       childAsGpuExec.shouldDumpOutput = true
       val childPlanId = childAsGpuExec.id
       // dump plan node
-      val planBytes = objectToBytes(this)
+      val planBytes = serializeObject(this)
       val fos = getOutputStream(
         s"file:/tmp/lore/plan_id=${childPlanId}/plan.meta")
       fos.write(planBytes)
       fos.close()
     }
+    val shouldDumpOutputToBroadcast = shouldDumpOutput
 
     var orig: RDD[ColumnarBatch] = null
     orig = internalDoExecuteColumnar()
@@ -434,7 +426,7 @@ trait GpuExec extends SparkPlan {
         iter.map(cb => {
 
           val tc = TaskContext.get()
-          if (shouldDumpOutput &&
+          if (shouldDumpOutputToBroadcast &&
             loreDumpPartitions.split(',').map(_.toInt).contains(tc.partitionId())) {
 
             log.warn(s"LORE dump activated, " +
@@ -450,7 +442,7 @@ trait GpuExec extends SparkPlan {
             {
               // dump col types for column batch to remote storage
               val cbTypes = GpuColumnVector.extractTypes(cb)
-              val bytes = objectToBytes(cbTypes)
+              val bytes = serializeObject(cbTypes)
               val fos = getOutputStream(
                 s"file:/tmp/lore/plan_id=${planId}/partition_id=${partitionId}/" +
                   s"batch_id=${batchId}/col_types.meta")

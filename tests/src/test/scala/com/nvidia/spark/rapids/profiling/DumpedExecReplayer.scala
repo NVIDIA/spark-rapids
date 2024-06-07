@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids.profiling
 
-import java.io.{File, FileInputStream, ObjectInputStream}
+import java.io.File
 
-import scala.reflect.ClassTag
-
+import com.nvidia.spark.rapids.DumpUtils.deserializeObject
 import com.nvidia.spark.rapids.GpuExec
 
 import org.apache.spark.internal.Logging
@@ -27,19 +26,12 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.trees.UnaryLike
 
 object DumpedExecReplayer extends Logging {
-  def deserializeObject[T: ClassTag](readPath: String): T = {
-    val fileIn: FileInputStream = new FileInputStream(readPath)
-    val in: ObjectInputStream = new ObjectInputStream(fileIn)
-    val ret = in.readObject().asInstanceOf[T]
-    in.close()
-    ret
-  }
 
   def main(args: Array[String]): Unit = {
     // check arguments and get paths
     if (args.length != 1) {
       throw new IllegalStateException("Specify 1 args: <partition dump path>, " +
-        "e.g. /tmp/lore/plan_id=240/partition_id=1")
+        "e.g. /tmp/lore/plan_id=180/partition_id=1")
     }
 
     // start a Spark session with Spark-Rapids initialization
@@ -62,7 +54,7 @@ object DumpedExecReplayer extends Logging {
     }
 
     // restore SparkPlan
-    val restoredExec = DumpedExecReplayer.deserializeObject[GpuExec](planMetaPath)
+    val restoredExec = deserializeObject[GpuExec](planMetaPath)
 
     if (!restoredExec.isInstanceOf[UnaryLike[_]]) throw new IllegalStateException(
       s"For now, restored exec only supports UnaryLike: ${restoredExec.getClass}")
@@ -72,7 +64,7 @@ object DumpedExecReplayer extends Logging {
       s"For now, restored exec's child only supports GpuExec: " +
         s"${unaryLike.child.getClass}")
     val child = unaryLike.child.asInstanceOf[GpuExec]
-    child.loreReplayInputDir = Some(rootFolder.getPath)
+    child.loreReplayInputDir = rootFolder.getPath
     restoredExec.loreIsReplayingOperator = true
 
     restoredExec.doExecuteColumnar().foreach(

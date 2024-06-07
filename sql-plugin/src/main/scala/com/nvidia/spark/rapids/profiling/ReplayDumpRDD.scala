@@ -19,6 +19,7 @@ import java.io.File
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.DumpUtils.deserializeObject
 import com.nvidia.spark.rapids.GpuColumnVector
 
 import org.apache.spark.{Partition, TaskContext}
@@ -29,6 +30,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class SimplePartition extends Partition {
   override def index: Int = 0
+}
+
+object ReplayDumpRDD {
+
 }
 
 class ReplayDumpRDD(
@@ -54,11 +59,11 @@ class ReplayDumpRDD(
       val cbPath = parquets(0).getAbsolutePath
 
       // restore column types
-      val restoredCbTypes = DumpedExecReplayer.deserializeObject[Array[DataType]](cbTypesPath)
+      val restoredCbTypes = deserializeObject[Array[DataType]](cbTypesPath)
 
       // construct a column batch
       withResource(Table.readParquet(new File(cbPath))) { restoredTable =>
-        // this `restoredCb` will be closed in the `projectCb`
+        println("a input batch with size " + restoredTable.getRowCount)
         GpuColumnVector.from(restoredTable, restoredCbTypes)
       }
     })
