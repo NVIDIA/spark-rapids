@@ -628,6 +628,28 @@
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>enforce-java-version</id>
+                                <goals><goal>enforce</goal></goals>
+                                <configuration>
+                                    <rules>
+                                        <requireJavaVersion>
+                                            <message>Support for Spark 4.0.0 is only available with Java 17+</message>
+                                            <version>[17,)</version>
+                                        </requireJavaVersion>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>delta-lake/delta-stub</module>
             </modules>
@@ -1535,7 +1557,7 @@ This will force full Scala code rebuild in downstream modules.
                         <requireProperty>
                           <property>buildver</property>
                           <regex>^(?!400).*$</regex>
-                          <message>Spark 4.0.0 is only supported for Scala 2.13</message>
+                          <regexMessage>Spark 4.0.0 is only supported for Scala 2.13</regexMessage>
                         </requireProperty>
                         <!-- #endif scala-2.12 -->
                         <!-- #if scala-2.13 --><!--
