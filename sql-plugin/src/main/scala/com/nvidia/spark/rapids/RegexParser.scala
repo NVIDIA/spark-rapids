@@ -2141,8 +2141,8 @@ object RegexRewrite {
    */
   def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
     val astLs = ast match {
-      case RegexSequence(parts) => Seq(parts: _*)
-      case _ => Seq(ast)
+      case RegexSequence(parts) => collection.Seq(parts: _*)
+      case _ => collection.Seq(ast)
     }
     val noTailingWildcards = stripTailingWildcards(astLs)
     if (noTailingWildcards.headOption.exists(
