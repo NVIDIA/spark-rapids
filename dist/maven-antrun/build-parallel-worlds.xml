@@ -131,7 +131,7 @@
 
         <!-- Remove the explicily unshimmed files from the common directory -->
         <delete>
-            <fileset dir="${project.build.directory}/parallel-world/spark34-common"
+            <fileset dir="${project.build.directory}/parallel-world/spark-shared"
                      includesfile="${spark.rapids.source.basedir}/${rapids.module}/unshimmed-common-from-spark311.txt"/>
         </delete>
     </target>
