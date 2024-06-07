@@ -161,6 +161,17 @@ if [[ "$DIST_PROFILE" == *Scala213 ]]; then
   SCALA213=1
 fi
 
+if [[ $SCALA213 == 0 && ${DIST_PROFILE[@]} =~ "400" ]]; then 
+  echo "Spark 4.0.0 is only supported for Scala 2.13, please change the Scala version or remove 4.0.0 from the dist profile"
+  exit 1 
+fi
+
+# Spark 4.0.0 is only compiled with Java 17 
+JAVA_MAJOR_VER=$(java -version 2>&1 | awk -F[\"_] 'NR==1{print $2}' | awk -F. '{print $1}')
+if [[ ${DIST_PROFILE[@]} =~ "400" && $JAVA_MAJOR_VER -lt "17" ]]; then 
+  echo "Spark 4.0.0 support is only available for JDK 17+"
+  exit 1 
+fi
 
 # include options to mvn command
 export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
