@@ -1531,7 +1531,7 @@ This will force full Scala code rebuild in downstream modules.
                             <message>Only Java 8, 11, and 17 are supported!</message>
                             <version>[1.8,1.9),[11,12),[17,18)</version>
                         </requireJavaVersion>
-                          <!-- #if scala-2.12 --><!--
+                        <!-- #if scala-2.12 --><!--
                         <requireProperty>
                           <property>buildver</property>
                           <regex>^(?!400).*$</regex>

@@ -103,7 +103,7 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    <!-- #if scala-2.13 -->
+    <!-- #if scala-2.13 --><!--
     <profiles>
         <profile>
             <id>release400</id>
@@ -115,7 +115,7 @@
             </activation>
         </profile>
     </profiles>
-    <!-- #endif scala-2.13 -->
+    --><!-- #endif scala-2.13 -->
     <build>
         <resources>
           <resource>
