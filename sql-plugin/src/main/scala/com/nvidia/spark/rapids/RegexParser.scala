@@ -2136,10 +2136,14 @@ object RegexRewrite {
    * Matches the given regex ast to a regex optimization type for regex rewrite
    * optimization.
    *
-   * @param astLs unparsed children of the Abstract Syntax Tree parsed from a regex pattern.
+   * @param ast Abstract Syntax Tree parsed from a regex pattern.
    * @return The `RegexOptimizationType` for the given pattern.
    */
-  def matchSimplePattern(astLs: Seq[RegexAST]): RegexOptimizationType = {
+  def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
+    val astLs = ast match {
+      case RegexSequence(parts) => Seq(parts: _*)
+      case _ => Seq(ast)
+    }
     val noTailingWildcards = stripTailingWildcards(astLs)
     if (noTailingWildcards.headOption.exists(
         ast => ast == RegexChar('^') || ast == RegexEscaped('A'))) {

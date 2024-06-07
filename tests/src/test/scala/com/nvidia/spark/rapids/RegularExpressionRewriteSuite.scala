@@ -23,7 +23,7 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       Unit = {
     val results = patterns.map { pattern =>
       val ast = new RegexParser(pattern).parse()
-      RegexRewrite.matchSimplePattern(ast.children())
+      RegexRewrite.matchSimplePattern(ast)
     }
     assert(results == excepted)
   }
@@ -86,7 +86,7 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       MultipleContains(Seq("abc", "def")),
       MultipleContains(Seq("abc", "def", "ghi")),
       MultipleContains(Seq("abc", "def")),
-      NoOptimization,
+      MultipleContains(Seq("abc", "def")),
       MultipleContains(Seq("火花", "急流"))
     )
     verifyRewritePattern(patterns, excepted)

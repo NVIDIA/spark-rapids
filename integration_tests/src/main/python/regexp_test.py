@@ -471,7 +471,8 @@ def test_rlike_rewrite_optimization():
                 'rlike(a, "(aaa|bbb|ccc)")',
                 'rlike(a, ".*.*(aaa|bbb).*.*")',
                 'rlike(a, "^.*(aaa|bbb|ccc)")',
-                'rlike(a, "aaa|bbb|ccc")'),
+                'rlike(a, "aaa|bbb")',
+                'rlike(a, "aaa|(bbb|ccc)")'),
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():
