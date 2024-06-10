@@ -1763,7 +1763,7 @@ object JsonColumnStats {
             allChoices.append((runningSum/totalSum, dt, tmp._1))
         }
 
-        val ret = new JSONChoiceGen(allChoices, c)
+        val ret = new JSONChoiceGen(allChoices.toSeq, c)
         (ret, c.forNextSubstring)
       }
     }
