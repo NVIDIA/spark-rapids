@@ -362,11 +362,10 @@ object GpuJsonReadCommon {
     }
   }
 
-  def cudfJsonOptions(options: JSONOptions,
-      enableMixedTypes: Boolean): ai.rapids.cudf.JSONOptions = {
+  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
     ai.rapids.cudf.JSONOptions.builder()
     .withRecoverWithNull(true)
-    .withMixedTypesAsStrings(enableMixedTypes)
+    .withMixedTypesAsStrings(true)
     .withNormalizeWhitespace(true)
     .withKeepQuotes(true)
     .withNormalizeSingleQuotes(options.allowSingleQuotes)

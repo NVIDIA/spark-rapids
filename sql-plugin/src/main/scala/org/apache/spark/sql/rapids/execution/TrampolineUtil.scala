@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
+
+import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
 
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
@@ -26,6 +29,7 @@ import org.apache.spark.internal.config
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.security.CryptoStreamUtils
 import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
 import org.apache.spark.sql.{AnalysisException, SparkSession}
@@ -37,12 +41,12 @@ import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
-import org.apache.spark.util.{ShutdownHookManager, Utils}
+import org.apache.spark.util.{ShutdownHookManager, ThreadUtils, Utils}
 
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isSupportedRelation(mode: BroadcastMode): Boolean = 
+  def isSupportedRelation(mode: BroadcastMode): Boolean =
     ShimTrampolineUtil.isSupportedRelation(mode)
 
   def unionLikeMerge(left: DataType, right: DataType): DataType =
@@ -217,4 +221,24 @@ object TrampolineUtil {
         1
     }
   }
+
+  def newDaemonCachedThreadPool(
+      prefix: String,
+      maxThreadNumber: Int,
+      keepAliveSeconds: Int = 60): ThreadPoolExecutor = {
+    // We want to utilize the ThreadUtils class' ThreadPoolExecutor creation
+    // which gives us important Hadoop config variables that are needed for the
+    // Unity Catalog authentication
+    ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber, keepAliveSeconds)
+  }
+
+  def newDaemonSingleThreadScheduledExecutor(threadName: String): ScheduledExecutorService = {
+    ThreadUtils.newDaemonSingleThreadScheduledExecutor(threadName)
+  }
+
+  def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
+    sc.listenerBus.post(sparkEvent)
+  }
+
+  def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
 }
