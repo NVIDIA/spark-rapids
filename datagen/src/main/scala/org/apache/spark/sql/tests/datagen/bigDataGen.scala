@@ -1566,6 +1566,94 @@ case class JsonPathElement(name: String, is_array: Boolean)
 case class JsonLevel(path: Array[JsonPathElement], data_type: String, length: Int, value: String) {}
 
 object JsonColumnStats {
+  private def printHelp(): Unit = {
+    println("JSON Fingerprinting Tool:")
+    println("PARAMS: <inputPath> <outputPath>")
+    println("  <inputPath> is a path to a Spark dataframe to read in")
+    println("  <outputPath> is a path in a Spark file system to write out fingerprint data to.")
+    println()
+    println("OPTIONS:")
+    println("  --json=<COLUMN>       where <COLUMN> is the name of a top level String column")
+    println("  --anon=<SEED>         where <SEED> is a SEED used to anonymize the JSON keys ")
+    println("                        and column names.")
+    println("  --input_format=<TYPE> where <TYPE> is parquet or ORC. Defaults to parquet.")
+    println("  --overwrite           to enable overwriting the fingerprint output.")
+    println("  --debug               to enable some debug information to be printed out")
+    println("  --help                to print out this help message")
+    println()
+  }
+
+  def main(args: Array[String]): Unit = {
+    var inputPath = Option.empty[String]
+    var outputPath = Option.empty[String]
+    val jsonColumns = ArrayBuffer.empty[String]
+    var anonSeed = Option.empty[Long]
+    var debug = false
+    var argsDone = false
+    var format = "parquet"
+    var overwrite = false
+
+    args.foreach {
+      case a if !argsDone && a.startsWith("--json=") =>
+        jsonColumns += a.substring("--json=".length)
+      case a if !argsDone && a.startsWith("--anon=") =>
+        anonSeed = Some(a.substring("--anon=".length).toLong)
+      case a if !argsDone && a.startsWith("--input_format=") =>
+        format = a.substring("--input_format=".length).toLowerCase(java.util.Locale.US)
+      case "--overwrite" if !argsDone =>
+        overwrite = true
+      case "--debug" if !argsDone =>
+        debug = true
+      case "--help" if !argsDone =>
+        printHelp()
+        System.exit(0)
+      case "--" if !argsDone =>
+        argsDone = true
+      case a if !argsDone && a.startsWith("--") && a.length > 2 =>
+        println(s"ERROR $a is not a supported argument")
+        printHelp()
+        System.exit(-1)
+      case a if inputPath.isEmpty =>
+        inputPath = Some(a)
+      case a if outputPath.isEmpty =>
+        outputPath = Some(a)
+      case a =>
+        println(s"ERROR only two arguments are supported. Found $a")
+        printHelp()
+        System.exit(-1)
+    }
+    if (outputPath.isEmpty) {
+      println("ERROR both an inputPath and an outputPath are required")
+      printHelp()
+      System.exit(-1)
+    }
+
+    val spark = SparkSession.builder.getOrCreate()
+    spark.sparkContext.setLogLevel("WARN")
+
+    val df = spark.read.format(format).load(inputPath.get)
+    jsonColumns.foreach { column =>
+      val fp = fingerPrint(df, df(column), anonSeed)
+      val name = anonSeed.map(s => anonymizeString(column, s)).getOrElse(column)
+      val fullOutPath = s"${outputPath.get}/$name"
+      var writer = fp.write
+      if (overwrite) {
+        writer = writer.mode("overwrite")
+      }
+      if (debug) {
+        anonSeed.foreach { s =>
+          println(s"Keys and columns will be anonymized with seed $s")
+        }
+        println(s"Writing $column fingerprint to $fullOutPath")
+        spark.time(writer.parquet(fullOutPath))
+        println(s"Wrote ${spark.read.parquet(fullOutPath).count} rows")
+        spark.read.parquet(fullOutPath).show()
+      } else {
+        writer.parquet(fullOutPath)
+      }
+    }
+  }
+
   case class JsonNodeStats(count: Long, meanLen: Double, stdDevLength: Double, dc: Long)
 
   class JsonNode() {
