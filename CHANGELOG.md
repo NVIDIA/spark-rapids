@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-06-06
+Generated on 2024-06-10
 
 ## Release 24.06
 
@@ -48,6 +48,7 @@ Generated on 2024-06-06
 ### PRs
 |||
 |:---|:---|
+|[#10974](https://github.com/NVIDIA/spark-rapids/pull/10974)|Update rapids JNI and private dependency to 24.06.0|
 |[#10947](https://github.com/NVIDIA/spark-rapids/pull/10947)|Prevent contains-PrefixRange optimization if not preceded by wildcards|
 |[#10934](https://github.com/NVIDIA/spark-rapids/pull/10934)|Revert "Add Support for Multiple Filtering Keys for Subquery Broadcast "|
 |[#10870](https://github.com/NVIDIA/spark-rapids/pull/10870)|Add support for self-contained profiling|
@@ -108,6 +109,7 @@ Generated on 2024-06-06
 |[#10708](https://github.com/NVIDIA/spark-rapids/pull/10708)|Updated dump tool to verify get_json_object|
 |[#10706](https://github.com/NVIDIA/spark-rapids/pull/10706)|Fix auto merge conflict 10704 [skip ci]|
 |[#10675](https://github.com/NVIDIA/spark-rapids/pull/10675)|Fix merge conflict with branch-24.04 [skip ci]|
+|[#10678](https://github.com/NVIDIA/spark-rapids/pull/10678)|Append new authorized user to blossom-ci whitelist [skip ci]|
 |[#10662](https://github.com/NVIDIA/spark-rapids/pull/10662)|Audit script - Check commits from shuffle and storage directories [skip ci]|
 |[#10655](https://github.com/NVIDIA/spark-rapids/pull/10655)|Update rapids jni/private dependency to 24.06|
 |[#10652](https://github.com/NVIDIA/spark-rapids/pull/10652)|Substitute murmurHash32 for spark32BitMurmurHash3|
@@ -198,8 +200,10 @@ Generated on 2024-06-06
 |:---|:---|
 |[#10844](https://github.com/NVIDIA/spark-rapids/pull/10844)|Update rapids private dependency to 24.04.3|
 |[#10788](https://github.com/NVIDIA/spark-rapids/pull/10788)|[DOC] Update archive page for v24.04.1 [skip ci]|
+|[#10784](https://github.com/NVIDIA/spark-rapids/pull/10784)|Update latest changelog [skip ci]|
 |[#10782](https://github.com/NVIDIA/spark-rapids/pull/10782)|Update latest changelog [skip ci]|
 |[#10780](https://github.com/NVIDIA/spark-rapids/pull/10780)|[DOC]Update download page for v24.04.1 [skip ci]|
+|[#10778](https://github.com/NVIDIA/spark-rapids/pull/10778)|Update version to 24.04.1-SNAPSHOT|
 |[#10777](https://github.com/NVIDIA/spark-rapids/pull/10777)|Update rapids JNI dependency: private to 24.04.2|
 |[#10683](https://github.com/NVIDIA/spark-rapids/pull/10683)|Update latest changelog [skip ci]|
 |[#10681](https://github.com/NVIDIA/spark-rapids/pull/10681)|Update rapids JNI dependency to 24.04.0, private to 24.04.1|
