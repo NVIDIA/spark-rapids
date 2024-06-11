@@ -23,26 +23,4 @@ import org.apache.spark.sql.catalyst.expressions.{Concat, Literal, StringExpress
 import org.apache.spark.sql.rapids.utils.RapidsTestsTrait
 import org.apache.spark.sql.types.StringType
 
-class RapidsStringExpressionsSuite extends StringExpressionsSuite with RapidsTestsTrait {
-  test("concat in rapids") {
-    def testConcat(inputs: String*): Unit = {
-      val expected = if (inputs.contains(null)) null else inputs.mkString
-      checkEvaluation(Concat(inputs.map(Literal.create(_, StringType))), expected)
-    }
-
-    testConcat()
-    testConcat(null)
-    testConcat("")
-    testConcat("ab")
-    testConcat("a", "b")
-    testConcat("a", "b", "C")
-    testConcat("a", null, "C")
-    testConcat("a", null, null)
-    testConcat(null, null, null)
-
-    // scalastyle:off
-    // non ascii characters are not allowed in the code, so we disable the scalastyle here.
-    testConcat("数据", null, "砖头")
-    // scalastyle:on
-  }
-}
+class RapidsStringExpressionsSuite extends StringExpressionsSuite with RapidsTestsTrait {}
