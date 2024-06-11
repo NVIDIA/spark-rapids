@@ -50,7 +50,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val res = dataType match {
       // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
-      case dt if children.isEmpty => GpuScalar.from(null, dt)
+      case dt if children.isEmpty => GpuScalar(null, dt)
       // For single column concat, we pass the result of child node to avoid extra cuDF call.
       case _ if children.length == 1 => children.head.columnarEval(batch)
       case StringType => stringConcat(batch)
