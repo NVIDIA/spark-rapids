@@ -75,10 +75,13 @@ mvn_verify() {
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
 
+    # Calculate parallelism based on GPU memory. When parallelism > 8, as it increases, the test speed will become slower and slower. So we set the maximum parallelism to 8.
+    GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
+    export TEST_PARALLEL=$(( $GPU_MEM_PARALLEL < 8 ? $GPU_MEM_PARALLEL : 8 ))
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=$TEST_PARALLEL -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
@@ -162,7 +165,9 @@ ci_2() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
+    # Calculate parallelism based on GPU memory. When parallelism > 8, as it increases, the test speed will become slower and slower. So we set the maximum parallelism to 8.
+    GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
+    export TEST_PARALLEL=$(( $GPU_MEM_PARALLEL < 8 ? $GPU_MEM_PARALLEL : 8 ))
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
@@ -206,7 +211,9 @@ ci_scala213() {
     cd .. # Run integration tests in the project root dir to leverage test cases and resource files
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
+    # Calculate parallelism based on GPU memory. When parallelism > 8, as it increases, the test speed will become slower and slower. So we set the maximum parallelism to 8.
+    GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
+    export TEST_PARALLEL=$(( $GPU_MEM_PARALLEL < 8 ? $GPU_MEM_PARALLEL : 8 ))
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         ./integration_tests/run_pyspark_from_build.sh
