@@ -72,7 +72,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsMathFunctionsSuite]
   enableSuite[RapidsRegexpExpressionsSuite]
   enableSuite[RapidsStringExpressionsSuite]
-    //.exclude("concat", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("string substring_index function", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22498: Concat should not generate codes beyond 64KB", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22549: ConcatWs should not generate codes beyond 64KB", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
