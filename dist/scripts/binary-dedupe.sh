@@ -34,7 +34,7 @@ case "$OSTYPE" in
 esac
 
 STEP=0
-export SPARK_COMMON_TXT="$PWD/spark-shared.txt"
+export SPARK_SHARED_TXT="$PWD/spark-shared.txt"
 export SPARK_SHARED_COPY_LIST="$PWD/spark-shared-copy-list.txt"
 export DELETE_DUPLICATES_TXT="$PWD/delete-duplicates.txt"
 export SPARK_SHARED_DIR="$PWD/spark-shared"
@@ -68,10 +68,10 @@ echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-
 sort -k3 -k2,2 -u tmp-shim-sha-package-files.txt | \
   uniq -f 2 -c > tmp-count-shim-sha-package-files.txt
 
-echo "$((++STEP))/ files with unique sha1 > $SPARK_COMMON_TXT"
+echo "$((++STEP))/ files with unique sha1 > $SPARK_SHARED_TXT"
 grep '^\s\+1 .*' tmp-count-shim-sha-package-files.txt | \
   awk '{$1=""; $3=""; print $0 }' | \
-  tr -s ' ' | sed 's/\ /\//g' > "$SPARK_COMMON_TXT"
+  tr -s ' ' | sed 's/\ /\//g' > "$SPARK_SHARED_TXT"
 
 function retain_single_copy() {
   set -e
@@ -113,7 +113,7 @@ mkdir -p "$SPARK_SHARED_DIR"
 echo "$((++STEP))/ retaining a single copy of spark-shared classes"
 while read spark_common_class; do
   retain_single_copy "$spark_common_class"
-done < "$SPARK_COMMON_TXT"
+done < "$SPARK_SHARED_TXT"
 
 echo "$((++STEP))/ rsyncing common classes to $SPARK_SHARED_DIR"
 for copy_list in from-spark[34]*-to-spark-shared.txt; do
@@ -175,7 +175,7 @@ function verify_same_sha_for_unshimmed() {
   # and make both simmpler
   if [[ ! "$class_file_quoted" =~ (com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class|org/apache/spark/sql/rapids/shims/spark[34].*/ProxyRapidsShuffleInternalManager.class) ]]; then
 
-    if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK_COMMON_TXT"; then
+    if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK_SHARED_TXT"; then
       echo >&2 "$class_file is not bitwise-identical across shims"
       exit 255
     fi
