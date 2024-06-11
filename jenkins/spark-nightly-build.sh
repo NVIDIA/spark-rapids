@@ -33,8 +33,9 @@ export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
 
 DIST_PL="dist"
+## Get the default SPARK_VER from jenkins/version-def.sh
 function mvnEval {
-    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
+    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease${SPARK_VER//./} -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
 }
 
 ART_ID=$(mvnEval project.artifactId)
@@ -176,7 +177,7 @@ distWithReducedPom "install"
 if [[ $SKIP_DEPLOY != 'true' ]]; then
     distWithReducedPom "deploy"
 
-    # this deploys selected submodules that is unconditionally built with Spark 3.1.1
+    # this deploys selected submodules that is unconditionally built with $SPARK_VER
     $MVN -B deploy -pl $DEPLOY_SUBMODULES \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests \
