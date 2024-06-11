@@ -69,15 +69,11 @@ case class GpuDeltaParquetFileFormat(
       alluxioPathReplacementMap: Option[Map[String, String]])
   : PartitionedFile => Iterator[InternalRow] = {
 
-    val preparedDataSchema = prepareSchema(dataSchema)
-    val preparedRequiredSchema = prepareSchema(requiredSchema)
-    val preparedPartitionSchema = prepareSchema(partitionSchema)
-
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
-      preparedDataSchema,
-      preparedPartitionSchema,
-      preparedRequiredSchema,
+      dataSchema,
+      partitionSchema,
+      requiredSchema,
       filters,
       options,
       hadoopConf,
@@ -93,7 +89,7 @@ case class GpuDeltaParquetFileFormat(
       val input = dataReader(file)
       val dv = delVecs.flatMap(_.value.get(new URI(file.filePath.toString())))
         .map(dv => RoaringBitmapWrapper.deserializeFromBytes(dv.descriptor.inlineData).inner)
-      addMetadataColumnToIterator(preparedRequiredSchema,
+      addMetadataColumnToIterator(prepareSchema(requiredSchema),
         dv,
         input.asInstanceOf[Iterator[ColumnarBatch]],
         maxDelVecScatterBatchSize
