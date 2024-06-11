@@ -81,6 +81,9 @@ def is_emr_runtime():
 def is_dataproc_runtime():
     return runtime_env() == "dataproc"
 
+def is_dataproc_serverless_runtime():
+    return runtime_env() == "dataproc_serverless"
+
 def get_test_tz():
     return os.environ.get('TZ', 'UTC')
 
