@@ -2305,6 +2305,23 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(true)
 
+  val LORE_DUMP_IDS = conf("spark.rapids.sql.lore.idsToDump")
+    .doc("""Specify the lore ids of operators to dump. The format is a comma separated list of
+           |lore ids. For example: "1,2,3" will dump the gpu exec nodes with lore ids 1, 2, and 3.
+           |By default, all partitions of operators' input will be dumped. If you want to dump only
+           |some partitions, you can specify the partition index after the lore id, e.g. 1[0-2 4-5
+           |7], 2[0 4 5-8] , will dump partitions 0, 1, 2, 4, 5 and 7 of the operator with lore id
+           | 1, and partitions 0, 4, 5, 6, 7, 8 of the operator with lore id 2.
+           |If this is not set, no lore nodes will be dumped.""".stripMargin)
+    .stringConf
+    .createWithDefault("")
+
+  val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
+    .doc(
+      s"""The path to dump the lore nodes' input data. This must be set if ${LORE_DUMP_IDS.key} has
+         |been set.""".stripMargin)
+    .stringConf
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
