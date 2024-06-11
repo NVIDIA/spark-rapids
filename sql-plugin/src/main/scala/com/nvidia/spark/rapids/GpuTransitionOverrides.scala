@@ -23,8 +23,8 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.lore.IdGen
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
-import org.apache.spark.SparkContext
 
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
