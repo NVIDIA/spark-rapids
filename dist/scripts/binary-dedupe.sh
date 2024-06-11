@@ -35,9 +35,9 @@ esac
 
 STEP=0
 export SPARK_COMMON_TXT="$PWD/spark-shared.txt"
-export SPARK_COMMON_COPY_LIST="$PWD/spark-common-copy-list.txt"
+export SPARK_SHARED_COPY_LIST="$PWD/spark-shared-copy-list.txt"
 export DELETE_DUPLICATES_TXT="$PWD/delete-duplicates.txt"
-export SPARK_COMMON_DIR="$PWD/spark-shared"
+export SPARK_SHARED_DIR="$PWD/spark-shared"
 
 # This script de-duplicates .class files at the binary level.
 # We could also diff classes using scalap / javap outputs.
@@ -107,25 +107,25 @@ function retain_single_copy() {
 # truncate incremental files
 : > "$DELETE_DUPLICATES_TXT"
 rm -f from-spark[34]*-to-spark-shared.txt
-rm -rf "$SPARK_COMMON_DIR"
-mkdir -p "$SPARK_COMMON_DIR"
+rm -rf "$SPARK_SHARED_DIR"
+mkdir -p "$SPARK_SHARED_DIR"
 
 echo "$((++STEP))/ retaining a single copy of spark-shared classes"
 while read spark_common_class; do
   retain_single_copy "$spark_common_class"
 done < "$SPARK_COMMON_TXT"
 
-echo "$((++STEP))/ rsyncing common classes to $SPARK_COMMON_DIR"
+echo "$((++STEP))/ rsyncing common classes to $SPARK_SHARED_DIR"
 for copy_list in from-spark[34]*-to-spark-shared.txt; do
   echo Initializing rsync of "$copy_list"
   IFS='-' <<< "$copy_list" read -ra copy_list_parts
   # declare -p copy_list_parts
   shim="${copy_list_parts[1]}"
   # use rsync to reduce process forking
-  rsync --files-from="$copy_list" ./parallel-world/"$shim" "$SPARK_COMMON_DIR"
+  rsync --files-from="$copy_list" ./parallel-world/"$shim" "$SPARK_SHARED_DIR"
 done
 
-mv "$SPARK_COMMON_DIR" parallel-world/
+mv "$SPARK_SHARED_DIR" parallel-world/
 
 # TODO further dedupe by FEATURE version lines:
 #  spark30x-common
