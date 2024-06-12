@@ -185,7 +185,7 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
     }
 
     GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec,
-      cmd.query.schema, false)
+      cmd.outputColumns, false)
 
     val serde = tableDesc.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)
     if (serde.contains("parquet")) {

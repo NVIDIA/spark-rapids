@@ -323,10 +323,9 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
   override def tagSelfForGpuInternal(): Unit = {
     if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
-      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec,
-        cmd.query.schema, false)
+      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
     } else {
-      BucketIdMetaUtils.tagForBucketing(this, cmd.bucketSpec, cmd.query.schema)
+      BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
     val spark = SparkSession.active
     val formatCls = cmd.fileFormat.getClass
@@ -3163,9 +3162,6 @@ object GpuOverrides extends Logging {
       }),
     expr[Murmur3Hash] (
       "Murmur3 hash operator",
-      // Once the types for input changes, need to update the function
-      // "isGpuMurmur3HashSupported" in object BucketIdUtils accordingly. They
-      // should keep the same supported type list for input.
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +

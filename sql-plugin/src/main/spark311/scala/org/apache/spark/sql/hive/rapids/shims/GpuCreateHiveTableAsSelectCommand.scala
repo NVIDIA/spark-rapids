@@ -62,7 +62,7 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
       }
 
       GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec,
-        cmd.query.schema, false)
+        cmd.outputColumns, false)
 
       val catalog = spark.sessionState.catalog
       val tableExists = catalog.tableExists(tableDesc.identifier)

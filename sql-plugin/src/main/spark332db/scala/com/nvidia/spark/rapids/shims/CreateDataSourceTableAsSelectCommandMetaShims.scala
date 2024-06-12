@@ -30,7 +30,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.rapids.{BucketIdMetaUtils, GpuDataSourceBase, GpuOrcFileFormat}
@@ -46,7 +46,9 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   private var origProvider: Class[_] = _
 
   override def tagSelfForGpu(): Unit = {
-    BucketIdMetaUtils.tagForBucketing(this, cmd.table.bucketSpec, cmd.query.schema)
+    val outputColumns =
+      DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
+    BucketIdMetaUtils.tagForBucketingWrite(this, cmd.table.bucketSpec, outputColumns)
     if (cmd.table.provider.isEmpty) {
       willNotWorkOnGpu("provider must be defined")
     }

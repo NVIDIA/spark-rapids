@@ -35,12 +35,11 @@ import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, ExternalCatalogUtils}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, NullsFirst, ScalaUDF, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, Murmur3Hash, NullsFirst, ScalaUDF, UnsafeProjection}
 import org.apache.spark.sql.connector.write.DataWriter
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, PartitioningUtils, WriteTaskResult}
 import org.apache.spark.sql.rapids.GpuFileFormatDataWriter._
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -933,36 +932,20 @@ class GpuWriteJobDescription(
 }
 
 object BucketIdMetaUtils {
-  def tagForBucketing(meta: RapidsMeta[_, _, _], bucketSpec: Option[BucketSpec],
-      schema: StructType): Unit = {
+  // Tag for the bucketing write using Spark Murmur3Hash
+  def tagForBucketingWrite(meta: RapidsMeta[_, _, _], bucketSpec: Option[BucketSpec],
+      outputColumns: Seq[Attribute]): Unit = {
     bucketSpec.foreach { bSpec =>
-      val bucketTypes = bSpec.bucketColumnNames.map(n => schema.find(_.name == n).get.dataType)
-      var typeNotSupported: Option[DataType] = None
-      val hasNotSupported = bucketTypes.exists { bType =>
-        TrampolineUtil.dataTypeExistsRecursively(bType, t => {
-          val notSupported = !isGpuMurmur3HashSupported(t)
-          if (notSupported) {
-            typeNotSupported = Some(t)
-          }
-          notSupported
-        })
-      }
-      if (hasNotSupported) {
-        meta.willNotWorkOnGpu(s"Hashing for generating bucket IDs does not" +
-          s" support type: ${typeNotSupported.get}")
+      // Create a Murmur3Hash expression to leverage the overriding types check.
+      val expr = Murmur3Hash(
+        bSpec.bucketColumnNames.map(n => outputColumns.find(_.name == n).get),
+        GpuHashPartitioningBase.DEFAULT_HASH_SEED)
+      val hashMeta = GpuOverrides.wrapExpr(expr, meta.conf, None)
+      hashMeta.tagForGpu()
+      if(!hashMeta.canThisBeReplaced) {
+        meta.willNotWorkOnGpu(s"Hashing for generating bucket IDs can not run" +
+          s" on GPU. Details: ${hashMeta.explain(all=false)}")
       }
     }
-  }
-
-  /**
-   * The supported types should match the types listed for input in the meta
-   * of GpuMurmur3Hash in GpuOverrides.
-   */
-  private def isGpuMurmur3HashSupported(dt: DataType): Boolean = dt match {
-    case BooleanType | FloatType | DoubleType | NullType | StringType => true
-    case DateType | TimestampType => true
-    case _: IntegralType | _:DecimalType => true // Byte, Short, Int, Long and decimal
-    case _: ArrayType | _: StructType => true
-    case _ => false
   }
 }

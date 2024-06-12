@@ -56,7 +56,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   private var gpuProvider: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    BucketIdMetaUtils.tagForBucketing(this, cmd.table.bucketSpec, cmd.query.schema)
+    BucketIdMetaUtils.tagForBucketingWrite(this, cmd.table.bucketSpec, cmd.outputColumns)
     if (cmd.table.provider.isEmpty) {
       willNotWorkOnGpu("provider must be defined")
     }

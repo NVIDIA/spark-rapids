@@ -31,7 +31,6 @@ import com.nvidia.spark.rapids.RapidsMeta
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.rapids.{BucketIdMetaUtils, GpuWriterBucketSpec}
-import org.apache.spark.sql.types.StructType
 
 object GpuBucketingUtils {
 
@@ -43,6 +42,7 @@ object GpuBucketingUtils {
     bucketSpec.map { spec =>
       val bucketColumns = spec.bucketColumnNames.map(c => dataColumns.find(_.name == c).get)
       if (forceHiveHash) {
+        // Forcely use HiveHash for Hive write commands for some customized Spark binaries.
         // TODO: Cannot support this until we support Hive hash partitioning on the GPU
         throw new UnsupportedOperationException("Hive hash partitioning is not supported" +
           " on GPU")
@@ -64,14 +64,14 @@ object GpuBucketingUtils {
     Map.empty
   }
 
-  def tagForHiveBucketingWrite(meta: RapidsMeta[_, _, _],
-      bucketSpec: Option[BucketSpec], schema: StructType, forceHiveHash: Boolean): Unit = {
+  def tagForHiveBucketingWrite(meta: RapidsMeta[_, _, _], bucketSpec: Option[BucketSpec],
+      outColumns: Seq[Attribute], forceHiveHash: Boolean): Unit = {
     if (forceHiveHash) {
       bucketSpec.foreach(_ =>
         meta.willNotWorkOnGpu("Hive Hashing for generating bucket IDs is not supported yet")
       )
     } else {
-      BucketIdMetaUtils.tagForBucketing(meta, bucketSpec, schema)
+      BucketIdMetaUtils.tagForBucketingWrite(meta, bucketSpec, outColumns)
     }
   }
 }

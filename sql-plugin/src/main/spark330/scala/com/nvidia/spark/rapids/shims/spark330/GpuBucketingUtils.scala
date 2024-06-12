@@ -39,7 +39,6 @@ import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.datasources.BucketingUtils
 import org.apache.spark.sql.rapids.GpuWriterBucketSpec
-import org.apache.spark.sql.types.StructType
 
 object GpuBucketingUtils {
 
@@ -78,8 +77,8 @@ object GpuBucketingUtils {
       .getOrElse(Map.empty)
   }
 
-  def tagForHiveBucketingWrite(meta: RapidsMeta[_, _, _],
-      bucketSpec: Option[BucketSpec], schema: StructType, forceHiveHash: Boolean): Unit = {
+  def tagForHiveBucketingWrite(meta: RapidsMeta[_, _, _], bucketSpec: Option[BucketSpec],
+      outColumns: Seq[Attribute], forceHiveHash: Boolean): Unit = {
     bucketSpec.foreach(_ =>
       // From Spark330, Hive write always uses HiveHash to generate bucket IDs.
       meta.willNotWorkOnGpu("Hive Hashing for generating bucket IDs is not supported yet")

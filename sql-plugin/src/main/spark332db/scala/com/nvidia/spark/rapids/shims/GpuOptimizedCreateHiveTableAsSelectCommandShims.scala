@@ -197,8 +197,9 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
       willNotWorkOnGpu("partitioned writes are not supported")
     }
 
-    GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec,
-      cmd.query.schema, false)
+    val outputColumns =
+      DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
+    GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns, false)
 
     val serde = tableDesc.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)
     if (serde.contains("parquet")) {

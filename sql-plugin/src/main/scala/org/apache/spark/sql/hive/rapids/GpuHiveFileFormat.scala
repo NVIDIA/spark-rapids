@@ -44,8 +44,8 @@ object GpuHiveFileFormat extends Logging {
   def tagGpuSupport(meta: GpuInsertIntoHiveTableMeta): Option[ColumnarFileFormat] = {
     val insertCmd = meta.wrapped
     // Bucketing write
-    GpuBucketingUtils.tagForHiveBucketingWrite(meta,
-      insertCmd.table.bucketSpec, insertCmd.table.schema, false)
+    GpuBucketingUtils.tagForHiveBucketingWrite(meta, insertCmd.table.bucketSpec,
+      insertCmd.outputColumns, false)
 
     // Infer the file format from the serde string, similar as what Spark does in
     // RelationConversions for Hive.
