@@ -933,7 +933,7 @@ def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, a
                           "   or exists (select * from {} as r where l.b < r.b)"
                           ).format(left_table_name, right_table_name))
 
-    capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
+    capture_regexp = r"GpuBroadcastNestedLoopJoin \[LOREID=[0-9]+\] ExistenceJoin\(exists#[0-9]+\),"
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
 
@@ -957,7 +957,7 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
                           "   or exists (select * from {} as r where l.b < l.a)"
                           ).format(left_table_name, right_table_name))
 
-    capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
+    capture_regexp = r"GpuBroadcastNestedLoopJoin \[LOREID=[0-9]+\] ExistenceJoin\(exists#[0-9]+\),"
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
 
