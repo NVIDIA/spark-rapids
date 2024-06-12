@@ -110,35 +110,6 @@ object GpuFileFormatDataWriter {
       }
     }
   }
-
-  // All data is sorted ascending with default null ordering
-  private val nullsSmallest = Ascending.defaultNullOrdering == NullsFirst
-
-  // distinct value sorted the same way the input data is sorted.
-  private[rapids] def distinctAndSort(t: Table): Table = {
-    val columnIds = 0 until t.getNumberOfColumns
-    withResource(t.groupBy(columnIds: _*).aggregate()) { distinct =>
-      distinct.orderBy(columnIds.map(OrderByArg.asc(_, nullsSmallest)): _*)
-    }
-  }
-
-  // Get the split indexes for t given the keys we want to split on
-  private[rapids] def splitIndexes(t: Table, keys: Table): Array[Int] = {
-    val nullsSmallestArray = Array.fill[Boolean](t.getNumberOfColumns)(nullsSmallest)
-    val desc = Array.fill[Boolean](t.getNumberOfColumns)(false)
-    withResource(t.upperBound(nullsSmallestArray, keys, desc)) { cv =>
-      GpuColumnVector.toIntArray(cv)
-    }
-  }
-
-  // Convert a table to a ColumnarBatch on the host, so we can iterate through it.
-  private[rapids] def copyToHostAsBatch(input: Table,
-      colTypes: Array[DataType]): ColumnarBatch = {
-    withResource(GpuColumnVector.from(input, colTypes)) { tmp =>
-      new ColumnarBatch(
-        GpuColumnVector.extractColumns(tmp).safeMap(_.copyToHost()), tmp.numRows())
-    }
-  }
 }
 
 /**
@@ -150,7 +121,7 @@ abstract class GpuFileFormatDataWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol) extends DataWriter[ColumnarBatch] {
 
-  protected class WriterStatus {
+  protected class WriterAndStatus {
     var writer: ColumnarOutputWriter = _
 
     /** Number of records in current file. */
@@ -161,6 +132,17 @@ abstract class GpuFileFormatDataWriter(
      * we may have more than one file, due to number of records limit per file.
      */
     var fileCounter: Int = 0
+
+    final def release(): Unit = {
+      if (writer != null) {
+        try {
+          writer.close()
+          statsTrackers.foreach(_.closeFile(writer.path()))
+        } finally {
+          writer = null
+        }
+      }
+    }
   }
 
   /**
@@ -170,27 +152,19 @@ abstract class GpuFileFormatDataWriter(
    */
   protected val MAX_FILE_COUNTER: Int = 1000 * 1000
   protected val updatedPartitions: mutable.Set[String] = mutable.Set[String]()
-  protected var currentWriterStatus: WriterStatus = new WriterStatus()
+  protected var currentWriterStatus: WriterAndStatus = new WriterAndStatus()
 
   /** Trackers for computing various statistics on the data as it's being written out. */
   protected val statsTrackers: Seq[ColumnarWriteTaskStatsTracker] =
     description.statsTrackers.map(_.newTaskInstance())
 
   /** Release resources of a WriterStatus. */
-  protected final def releaseOutWriter(status: WriterStatus): Unit = {
-    val currentWriter = status.writer
-    if (currentWriter != null) {
-      try {
-        currentWriter.close()
-        statsTrackers.foreach(_.closeFile(currentWriter.path()))
-      } finally {
-        status.writer = null
-      }
-    }
+  protected final def releaseOutWriter(status: WriterAndStatus): Unit = {
+    status.release()
   }
 
   protected final def writeUpdateMetricsAndClose(scb: SpillableColumnarBatch,
-      writerStatus: WriterStatus): Unit = {
+      writerStatus: WriterAndStatus): Unit = {
     writerStatus.recordsInFile += writerStatus.writer.writeSpillableAndClose(scb, statsTrackers)
   }
 
@@ -340,6 +314,11 @@ class GpuDynamicPartitionDataSingleWriter(
     }
   }
 
+  /**
+   * A case class to hold the batch, the optional partition path and the optional bucket
+   * ID for a split group. All the rows in the batch belong to the group defined by the
+   * partition path and the bucket ID.
+   */
   private case class SplitPack(var split: SpillableColumnarBatch, path: Option[String],
       bucketId: Option[Int]) extends AutoCloseable {
     override def close(): Unit = if (split != null) {
@@ -455,40 +434,70 @@ class GpuDynamicPartitionDataSingleWriter(
     }
   }
 
+  // All data is sorted ascending with default null ordering
+  private val nullsSmallest = Ascending.defaultNullOrdering == NullsFirst
+
+  // distinct value sorted the same way the input data is sorted.
+  private[rapids] def distinctAndSort(t: Table): Table = {
+    val columnIds = 0 until t.getNumberOfColumns
+    withResource(t.groupBy(columnIds: _*).aggregate()) { distinct =>
+      distinct.orderBy(columnIds.map(OrderByArg.asc(_, nullsSmallest)): _*)
+    }
+  }
+
+  // Get the split indexes for t given the keys we want to split on
+  private def splitIndexes(t: Table, keys: Table): Array[Int] = {
+    val nullsSmallestArray = Array.fill[Boolean](t.getNumberOfColumns)(nullsSmallest)
+    val desc = Array.fill[Boolean](t.getNumberOfColumns)(false)
+    withResource(t.upperBound(nullsSmallestArray, keys, desc)) { cv =>
+      GpuColumnVector.toIntArray(cv)
+    }
+  }
+
+  // Convert a table to a ColumnarBatch on the host, so we can iterate through it.
+  protected def copyToHostAsBatch(input: Table,
+      colTypes: Array[DataType]): ColumnarBatch = {
+    withResource(GpuColumnVector.from(input, colTypes)) { tmp =>
+      new ColumnarBatch(
+        GpuColumnVector.extractColumns(tmp).safeMap(_.copyToHost()), tmp.numRows())
+    }
+  }
+
   /**
    * Split a batch according to the sorted keys (partitions + bucket ids).
    * Returns a tuple with an array of the splits as `ContiguousTable`'s, an array of
    * paths and bucket ids to use to write each partition and(or) bucket file.
    */
   private def splitBatchByKeyAndClose(batch: ColumnarBatch): Array[SplitPack] = {
-    val cbs@Array(keysCb, dataCb) = withResource(batch) { _ =>
-      Array(getKeysBatch(batch), getDataColumnsAsBatch(batch))
+    val (keysCb, dataCb) = withResource(batch) { _ =>
+      closeOnExcept(getDataColumnsAsBatch(batch)) { data =>
+        (getKeysBatch(batch), data)
+      }
     }
-    val (keyHostCb, splits) = withResource(cbs) { _ =>
-      val keysCbTypes = GpuColumnVector.extractTypes(keysCb)
-      val (distinctKeysTbl, splitIds) = withResource(keysCb) { _ =>
+    val (keyHostCb, splitIds) = closeOnExcept(dataCb) { _ =>
+      val (splitIds, distinctKeysTbl, keysCbTypes) = withResource(keysCb) { _ =>
+        val keysCbTypes = GpuColumnVector.extractTypes(keysCb)
         withResource(GpuColumnVector.from(keysCb)) { keysTable =>
-          val distinctKeysTbl = distinctAndSort(keysTable)
-          (distinctKeysTbl, splitIndexes(keysTable, distinctKeysTbl))
+          closeOnExcept(distinctAndSort(keysTable)) { distinctKeysTbl =>
+            (splitIndexes(keysTable, distinctKeysTbl), distinctKeysTbl, keysCbTypes)
+          }
         }
       }
-      cbs(0) = null // avoid double close
-      val keyHostCb = withResource(distinctKeysTbl) { _ =>
-        copyToHostAsBatch(distinctKeysTbl, keysCbTypes)
+      withResource(distinctKeysTbl) { _ =>
+        (copyToHostAsBatch(distinctKeysTbl, keysCbTypes), splitIds)
       }
-      closeOnExcept(keyHostCb) { _ =>
-        val scbOutput = SpillableColumnarBatch(dataCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        val splits = withRetryNoSplit(scbOutput) { scb =>
-          withResource(scb.getColumnarBatch()) { outCb =>
-            withResource(GpuColumnVector.from(outCb)) { outputColumnsTbl =>
-              withResource(outputColumnsTbl) { _ =>
-                outputColumnsTbl.contiguousSplit(splitIds: _*)
-              }
+    }
+    val splits = closeOnExcept(keyHostCb) { _ =>
+      val scbOutput = closeOnExcept(dataCb)( _ =>
+        SpillableColumnarBatch(dataCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      withRetryNoSplit(scbOutput) { scb =>
+        withResource(scb.getColumnarBatch()) { outCb =>
+          withResource(GpuColumnVector.from(outCb)) { outputColumnsTbl =>
+            withResource(outputColumnsTbl) { _ =>
+              outputColumnsTbl.contiguousSplit(splitIds: _*)
             }
           }
         }
-        cbs(1) = null
-        (keyHostCb, splits)
       }
     }
     // Build the split result
@@ -515,7 +524,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * Create a new writer according to the given writer id, and update the given
    * writer status. It also closes the old writer in the writer status by default.
    */
-  protected final def renewOutWriter(newWriterId: WriterIndex, curWriterStatus: WriterStatus,
+  protected final def renewOutWriter(newWriterId: WriterIndex, curWriterStatus: WriterAndStatus,
       closeOldWriter: Boolean = true): Unit = {
     if (closeOldWriter) {
       releaseOutWriter(curWriterStatus)
@@ -530,7 +539,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * It will create a new one if needed. This is used when seeing a new partition
    * and(or) a new bucket id.
    */
-  protected def setupCurrentWriter(newWriterId: WriterIndex, curWriterStatus: WriterStatus,
+  protected def setupCurrentWriter(newWriterId: WriterIndex, curWriterStatus: WriterAndStatus,
       closeOldWriter: Boolean = true): Unit = {
     renewOutWriter(newWriterId, curWriterStatus, closeOldWriter)
   }
@@ -578,7 +587,7 @@ class GpuDynamicPartitionDataSingleWriter(
   }
 
   protected final def writeBatchPerMaxRecordsAndClose(scb: SpillableColumnarBatch,
-      writerId: WriterIndex, writerStatus: WriterStatus): Unit = {
+      writerId: WriterIndex, writerStatus: WriterAndStatus): Unit = {
     val maxRecordsPerFile = description.maxRecordsPerFile
     val recordsInFile = writerStatus.recordsInFile
 
@@ -665,7 +674,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
   with Logging {
 
   /** Wrapper class for status and caches of a unique concurrent output writer. */
-  private class WriterStatusWithBatches extends WriterStatus with AutoCloseable {
+  private class WriterStatusWithBatches extends WriterAndStatus with AutoCloseable {
     // caches for this partition or writer
     val tableCaches: ListBuffer[SpillableColumnarBatch] = ListBuffer()
 
@@ -735,7 +744,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
   }
 
   /** This is for the fallback case, try to find the writer from cache first. */
-  override def setupCurrentWriter(newWriterId: WriterIndex, writerStatus: WriterStatus,
+  override def setupCurrentWriter(newWriterId: WriterIndex, writerStatus: WriterAndStatus,
       closeOldWriter: Boolean): Unit = {
     if (closeOldWriter) {
       releaseOutWriter(writerStatus)
