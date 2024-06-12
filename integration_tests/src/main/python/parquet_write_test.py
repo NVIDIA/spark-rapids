@@ -405,7 +405,7 @@ def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_fact
             'DataWritingCommandExec',
             conf=all_confs)
 
-@ignore_order
+@ignore_order(local=True)
 def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [["id", int_gen], ["data", long_gen]]
@@ -417,7 +417,21 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
         data_path,
         conf=writer_confs)
 
-@ignore_order
+
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+def test_buckets_write_fallback_for_map(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [["b_id", simple_string_to_string_map_gen], ["data", long_gen]]
+    assert_gpu_fallback_write(
+        lambda spark, path: gen_df(spark, gen_list).write
+            .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        'DataWritingCommandExec',
+        conf=writer_confs)
+
+@ignore_order(local=True)
 def test_partitions_and_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [["id", int_gen], ["data", long_gen]]
