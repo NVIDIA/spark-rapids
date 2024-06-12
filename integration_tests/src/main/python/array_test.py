@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import incompat, allow_non_gpu
-from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
+from spark_session import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit, array
@@ -146,7 +146,8 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
+    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later() and is_before_spark_400()) else \
+        "ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:
@@ -253,7 +254,7 @@ def test_array_element_at(data_gen):
 # No need tests for multiple data types for list data. Only one is enough.
 @pytest.mark.parametrize('index', [100, array_out_index_gen], ids=idfn)
 def test_array_element_at_ansi_fail_invalid_index(index):
-    message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() else "SparkArrayIndexOutOfBoundsException"
+    message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() or not is_before_spark_400() else "SparkArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(
             element_at(col('a'), index)).collect()
@@ -284,7 +285,7 @@ def test_array_element_at_ansi_not_fail_all_null_data():
 @pytest.mark.parametrize('ansi_enabled', [False, True], ids=idfn)
 def test_array_element_at_zero_index_fail(index, ansi_enabled):
     if is_spark_340_or_later():
-        message = "org.apache.spark.SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
+        message = "SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
     elif is_databricks113_or_later():
         message = "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
     else:
