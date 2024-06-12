@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,15 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.concurrent.atomic.AtomicInteger
 
 import com.nvidia.spark.rapids.GpuExec
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 
 object IdGen {
   val LORE_ID_TAG: TreeNodeTag[String] = new TreeNodeTag[String]("rapids.gpu.lore.id")
+  val LORE_OUTPUT_PATH_TAG: TreeNodeTag[LoreOutputInfo] = new TreeNodeTag[LoreOutputInfo](
+    "rapids.gpu.lore.output.path")
 
   /**
    * Lore id generator. Key is [[SQLExecution.EXECUTION_ID_KEY]].
@@ -33,16 +36,28 @@ object IdGen {
   private val idGen: ConcurrentMap[String, AtomicInteger] =
     new ConcurrentHashMap[String, AtomicInteger]()
 
-  private def nextLoreIdOfSparkPlan(plan: SparkPlan): Int = {
-    val executionId = plan.session.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
-    idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
+  private def nextLoreIdOfSparkPlan(plan: SparkPlan): Option[Int] = {
+    // When the execution id is not set, it means there is no actual execution happening, in this
+    // case we don't need to generate lore id.
+    Option(plan.session.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
+      .map { executionId =>
+      idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
+    }
   }
 
-  def tagLoreId(sparkPlan: SparkPlan): SparkPlan = {
+  def tagLoreId(sparkPlan: SparkPlan, outputLoreIds: OutputLoreIds, loreOutputRootPath: Path)
+  : SparkPlan = {
     sparkPlan.foreachUp {
       case g: GpuExec =>
-        val loreId = nextLoreIdOfSparkPlan(g)
-        g.setTagValue(LORE_ID_TAG, loreId.toString)
+        nextLoreIdOfSparkPlan(g).foreach { id =>
+          g.setTagValue(LORE_ID_TAG, id.toString)
+          val currentExecRootPath = new Path(loreOutputRootPath, s"loreId=$id")
+          g.children.zipWithIndex.foreach {
+            case (child, idx) =>
+              val childOutputPath = new Path(currentExecRootPath, s"child=$idx")
+              child.setTagValue(LORE_OUTPUT_PATH_TAG, LoreOutputInfo(childOutputPath, outputLoreIds))
+          }
+        }
       case _ =>
     }
 

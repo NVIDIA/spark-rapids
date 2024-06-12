@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileOutputStream, OutputStream}
 import java.util.Random
 
 import scala.collection.mutable
@@ -82,6 +82,10 @@ object DumpUtils extends Logging {
     }
   }
 
+  def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream) = {
+
+  }
+
   /**
    * Debug utility to dump table to parquet file. <br>
    * It's running on GPU. Parquet column names are generated from table column type info. <br>
@@ -129,11 +133,14 @@ object DumpUtils extends Logging {
 }
 
 // parquet dumper
-class ParquetDumper(path: String, table: Table) extends HostBufferConsumer
+class ParquetDumper(private val outputStream: OutputStream, table: Table) extends HostBufferConsumer
   with AutoCloseable {
-  private[this] val outputStream = new FileOutputStream(path)
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
+
+  def this(path: String, table: Table) = {
+    this(new FileOutputStream(path), table)
+  }
 
   val tableWriter: TableWriter = {
     // avoid anything conversion, just dump as it is
