@@ -67,7 +67,7 @@ TEST_MODE=${TEST_MODE:-'DEFAULT'}
 # https://github.com/NVIDIA/spark-rapids/pull/5646
 
 # Increase driver memory as Delta Lake tests can slowdown with default 1G (possibly due to caching?)
-DELTA_LAKE_CONFS="--driver-memory 2g"
+DELTA_LAKE_CONFS="--driver-memory 4g"
 
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
@@ -105,7 +105,7 @@ if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
+        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=4 \
             bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
     fi
 
