@@ -345,6 +345,9 @@ class GpuDynamicPartitionDataSingleWriter(
        |GpuWriteJobDescription: $description
      """.stripMargin)
 
+  // All data is sorted ascending with default null ordering
+  private val nullsSmallest = Ascending.defaultNullOrdering == NullsFirst
+
   /** Extracts the partition values out of an input batch. */
   private lazy val getPartitionColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
     val expressions = GpuBindReferences.bindGpuReferences(
@@ -368,7 +371,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * Expression that given partition columns builds a path string like: col1=val/col2=val/...
    * This is used after we pull the unique partition values back to the host.
    */
-  private lazy val partitionPathExpr: Expression = Concat(
+  private lazy val partitionPathExpression: Expression = Concat(
     description.partitionColumns.zipWithIndex.flatMap { case (c, i) =>
       val partitionName = ScalaUDF(
         ExternalCatalogUtils.getPartitionPathString _,
@@ -381,7 +384,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * the partition string.
    */
   private lazy val getPartitionPath: InternalRow => String = {
-    val proj = UnsafeProjection.create(Seq(partitionPathExpr), description.partitionColumns)
+    val proj = UnsafeProjection.create(Seq(partitionPathExpression), description.partitionColumns)
     row => proj(row).getString(0)
   }
 
@@ -434,11 +437,8 @@ class GpuDynamicPartitionDataSingleWriter(
     }
   }
 
-  // All data is sorted ascending with default null ordering
-  private val nullsSmallest = Ascending.defaultNullOrdering == NullsFirst
-
   // distinct value sorted the same way the input data is sorted.
-  private[rapids] def distinctAndSort(t: Table): Table = {
+  private def distinctAndSort(t: Table): Table = {
     val columnIds = 0 until t.getNumberOfColumns
     withResource(t.groupBy(columnIds: _*).aggregate()) { distinct =>
       distinct.orderBy(columnIds.map(OrderByArg.asc(_, nullsSmallest)): _*)
@@ -455,11 +455,9 @@ class GpuDynamicPartitionDataSingleWriter(
   }
 
   // Convert a table to a ColumnarBatch on the host, so we can iterate through it.
-  protected def copyToHostAsBatch(input: Table,
-      colTypes: Array[DataType]): ColumnarBatch = {
+  protected def copyToHostAsBatch(input: Table, colTypes: Array[DataType]): ColumnarBatch = {
     withResource(GpuColumnVector.from(input, colTypes)) { tmp =>
-      new ColumnarBatch(
-        GpuColumnVector.extractColumns(tmp).safeMap(_.copyToHost()), tmp.numRows())
+      new ColumnarBatch(GpuColumnVector.extractColumns(tmp).safeMap(_.copyToHost()), tmp.numRows())
     }
   }
 
