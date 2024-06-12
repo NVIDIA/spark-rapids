@@ -1609,7 +1609,7 @@ object JsonColumnStats {
         System.exit(0)
       case "--" if !argsDone =>
         argsDone = true
-      case a if !argsDone && a.startsWith("--") && a.length > 2 =>
+      case a if !argsDone && a.startsWith("--") => // "--" was covered above already
         println(s"ERROR $a is not a supported argument")
         printHelp()
         System.exit(-1)
@@ -2078,13 +2078,12 @@ case class JSONLongGenFunc(lengthGen: LengthGeneratorFunction = null,
     val r = DataGen.getRandomFor(rowLoc, mapping)
     val buffer = new Array[Byte](len)
     var at = 0
-    // 48 - 0, 57 - 9
     while (at < len) {
       if (at == 0) {
         // No leading 0's
-        buffer(at) = (r.nextInt(57 - 49) + 49).toByte
+        buffer(at) = (r.nextInt(9) + '1').toByte
       } else {
-        buffer(at) = (r.nextInt(57 - 48) + 48).toByte
+        buffer(at) = (r.nextInt(10) + '0').toByte
       }
       at += 1
     }
@@ -2119,15 +2118,14 @@ case class JSONDoubleGenFunc(lengthGen: LengthGeneratorFunction = null,
     val beforeLen = if (len == 3) { 1 } else { r.nextInt(len - 3) + 1 }
     val buffer = new Array[Byte](len)
     var at = 0
-    // 48 - 0, 57 - 9
     while (at < len) {
       if (at == 0) {
         // No leading 0's
-        buffer(at) = (r.nextInt(57 - 49) + 49).toByte
+        buffer(at) = (r.nextInt(9) + '1').toByte
       } else if (at == beforeLen) {
         buffer(at) = '.'
       } else {
-        buffer(at) = (r.nextInt(57 - 48) + 48).toByte
+        buffer(at) = (r.nextInt(10) + '0').toByte
       }
       at += 1
     }
