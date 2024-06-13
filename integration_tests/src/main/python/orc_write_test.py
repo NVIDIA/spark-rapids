@@ -224,8 +224,8 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
     gen_list = [["id", int_gen], ["data", long_gen]]
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).selectExpr("id % 100 as b_id", "data").write
-        .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
-        .saveAsTable(spark_tmp_table_factory.get()),
+            .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf={'spark.rapids.sql.format.orc.write.enabled': True})
@@ -236,8 +236,8 @@ def test_buckets_write_fallback_for_map(spark_tmp_path, spark_tmp_table_factory)
     gen_list = [["id", simple_string_to_string_map_gen], ["data", long_gen]]
     assert_gpu_fallback_write(
         lambda spark, path: gen_df(spark, gen_list).selectExpr("id as b_id", "data").write
-        .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
-        .saveAsTable(spark_tmp_table_factory.get()),
+            .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
         lambda spark, path: spark.read.orc(path),
         data_path,
         'DataWritingCommandExec',
@@ -249,9 +249,9 @@ def test_partitions_and_buckets_write_round_trip(spark_tmp_path, spark_tmp_table
     gen_list = [["id", int_gen], ["data", long_gen]]
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list)
-        .selectExpr("id % 5 as b_id", "id % 10 as p_id", "data").write
-        .partitionBy("p_id")
-        .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
+            .selectExpr("id % 5 as b_id", "id % 10 as p_id", "data").write
+            .partitionBy("p_id")
+            .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
         .saveAsTable(spark_tmp_table_factory.get()),
         lambda spark, path: spark.read.orc(path),
         data_path,
