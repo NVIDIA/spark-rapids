@@ -776,10 +776,11 @@ class DayTimeIntervalGen(DataGen):
         fields = ["day", "hour", "minute", "second"]
         self._start_index = fields.index(start_field)
         self._end_index = fields.index(end_field)
-        if  self._start_index > self._end_index:
+        if self._start_index > self._end_index:
             raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field index should <= end '
                                'field index'.format(start_field, end_field, fields))
-        super().__init__(DayTimeIntervalType( self._start_index, self._end_index), nullable=nullable, special_cases=special_cases)
+        super().__init__(DayTimeIntervalType(self._start_index, self._end_index), nullable=nullable,
+                         special_cases=special_cases)
 
     def _gen_random(self, rand):
         micros = rand.randint(self._min_micros, self._max_micros)
