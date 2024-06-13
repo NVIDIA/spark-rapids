@@ -418,12 +418,12 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
         conf=writer_confs)
 
 
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
 def test_buckets_write_fallback_for_map(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen_list = [["b_id", simple_string_to_string_map_gen], ["data", long_gen]]
+    gen_list = [["id", simple_string_to_string_map_gen], ["data", long_gen]]
     assert_gpu_fallback_write(
-        lambda spark, path: gen_df(spark, gen_list).write
+        lambda spark, path: gen_df(spark, gen_list).selectExpr("id as b_id", "data").write
             .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
             .saveAsTable(spark_tmp_table_factory.get()),
         lambda spark, path: spark.read.parquet(path),

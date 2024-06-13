@@ -296,21 +296,24 @@ class GpuDynamicPartitionDataSingleWriter(
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
   /** Wrapper class to index a unique concurrent output writer. */
-  protected case class WriterIndex(
+  protected class WriterIndex(
       var partitionPath: Option[String],
-      var bucketId: Option[Int]) {
+      var bucketId: Option[Int]) extends Product2[Option[String], Option[Int]] {
 
     override def hashCode(): Int = ScalaMurmur3Hash.productHash(this)
 
     override def equals(obj: Any): Boolean = {
-      if (this.eq(obj.asInstanceOf[AnyRef])) {
-        true
-      } else if (obj.isInstanceOf[WriterIndex]) {
-        obj.hashCode() == this.hashCode()
+      if (obj.isInstanceOf[WriterIndex]) {
+        val otherWI = obj.asInstanceOf[WriterIndex]
+        partitionPath == otherWI.partitionPath && bucketId == otherWI.bucketId
       } else {
         false
       }
     }
+
+    override def _1: Option[String] = partitionPath
+    override def _2: Option[Int] = bucketId
+    override def canEqual(that: Any): Boolean = that.isInstanceOf[WriterIndex]
   }
 
   /**
@@ -318,11 +321,10 @@ class GpuDynamicPartitionDataSingleWriter(
    * ID for a split group. All the rows in the batch belong to the group defined by the
    * partition path and the bucket ID.
    */
-  private case class SplitPack(var split: SpillableColumnarBatch, path: Option[String],
+  private case class SplitPack(split: SpillableColumnarBatch, path: Option[String],
       bucketId: Option[Int]) extends AutoCloseable {
-    override def close(): Unit = if (split != null) {
+    override def close(): Unit = {
       split.safeClose()
-      split = null
     }
   }
   /**
@@ -330,7 +332,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * Avoid JVM GC issue when many short-living `WriterIndex` objects are created
    * if switching between concurrent writers frequently.
    */
-  private val currentWriterId: WriterIndex = WriterIndex(None, None)
+  private val currentWriterId: WriterIndex = new WriterIndex(None, None)
 
   /** Flag saying whether or not the data to be written out is partitioned. */
   protected val isPartitioned: Boolean = description.partitionColumns.nonEmpty
@@ -841,7 +843,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
         val getNextPartPath = genGetPartitionPathFunc(keyHostCb)
         var idx = 0
         while (idx < groups.length && concurrentWriters.size < spec.maxWriters) {
-          val writerId = WriterIndex(getNextPartPath(idx), getBucketId(idx))
+          val writerId = new WriterIndex(getNextPartPath(idx), getBucketId(idx))
           val writerStatus =
             concurrentWriters.getOrElseUpdate(writerId, new WriterStatusWithBatches)
           if (writerStatus.writer == null) {
