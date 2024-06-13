@@ -173,13 +173,13 @@ else
 
     # We found that when parallelism > 8, as it increases, the test speed will become slower and slower. So we set the default maximum parallelism to 8.
     # Note that MAX_PARALLEL varies with the hardware, OS, and test case. Please overwrite it with an appropriate value if needed.
-    MAX_PALALLEL=${MAX_PALALLEL:-8}
+    MAX_PARALLEL=${MAX_PARALLEL:-8}
     if [[ ${TEST_PARALLEL} -lt 2 ]];
     then
         # With xdist 0 and 1 are the same parallelism but
         # 0 is more efficient
         TEST_PARALLEL_OPTS=()
-    elif [[ ${TEST_PARALLEL} -gt ${MAX_PALALLEL} ]]; then
+    elif [[ ${TEST_PARALLEL} -gt ${MAX_PARALLEL} ]]; then
         TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL")
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
