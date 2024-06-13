@@ -85,7 +85,6 @@ abstract class BackendTestSettings {
   case class KNOWN_ISSUE(reason: String) extends ExcludeReason
   case class ADJUST_UT(reason: String) extends ExcludeReason
   case class WONT_FIX_ISSUE(reason: String) extends ExcludeReason
-  case class ADJUST_UT(reason: String) extends ExcludeReason
 
 
   final protected class SuiteSettings {
