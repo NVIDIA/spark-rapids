@@ -418,6 +418,43 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
         conf=writer_confs)
 
 
+@ignore_order(local=True)
+def test_buckets_write_correctness(spark_tmp_path, spark_tmp_table_factory):
+    cpu_path = spark_tmp_path + '/PARQUET_DATA/CPU'
+    gpu_path = spark_tmp_path + '/PARQUET_DATA/GPU'
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    num_buckets = 4
+
+    def do_bucketing_write(spark, path):
+        df = gen_df(spark, gen_list).selectExpr("id % 100 as b_id", "data")
+        df.write.bucketBy(num_buckets, "b_id").format('parquet').mode('overwrite') \
+            .option("path", path).saveAsTable(spark_tmp_table_factory.get())
+
+    def read_single_bucket(path, bucket_id):
+        # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
+        # fileCounter is always 0 in this test. For example '_00002.c000' is for
+        # bucket id being 2.
+        # We leverage this bucket segment in the file path to filter rows belong
+        # to a bucket.
+        bucket_segment = '_' + "{}".format(bucket_id).rjust(5, '0') + '.c000'
+        return with_cpu_session(
+            lambda spark: spark.read.parquet(path)
+                .withColumn('file_name', f.input_file_name())
+                .filter(f.col('file_name').contains(bucket_segment))
+                .selectExpr('b_id', 'data')  # need to drop the file_name column for comparison.
+                .collect())
+
+    with_cpu_session(lambda spark: do_bucketing_write(spark, cpu_path), writer_confs)
+    with_gpu_session(lambda spark: do_bucketing_write(spark, gpu_path), writer_confs)
+    cur_bucket_id = 0
+    while cur_bucket_id < num_buckets:
+        # Verify the result bucket by bucket
+        ret_cpu = read_single_bucket(cpu_path, cur_bucket_id)
+        ret_gpu = read_single_bucket(gpu_path, cur_bucket_id)
+        assert_equal_with_sort(ret_cpu, ret_gpu)
+        cur_bucket_id += 1
+
+
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
 def test_buckets_write_fallback_for_map(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
