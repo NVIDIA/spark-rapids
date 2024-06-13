@@ -118,7 +118,7 @@ def define_deps(spark_version, scala_version):
         Artifact('com.fasterxml.jackson.core', 'jackson-databind',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__*.jar'),
         Artifact('com.fasterxml.jackson.core', 'jackson-core',
-                 f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-core__*.jar'),
+                 f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-core--com.fasterxml.jackson.core__jackson-core__*.jar'),
         Artifact('com.fasterxml.jackson.core', 'jackson-annotations',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__*.jar'),
         Artifact('org.apache.spark', f'spark-avro_{scala_version}',
