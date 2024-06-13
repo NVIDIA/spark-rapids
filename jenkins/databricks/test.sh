@@ -102,7 +102,7 @@ if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
-        DRIVER_MEMORY="4g" TEST_PARALLEL=8 \
+        DRIVER_MEMORY="4g" \
             bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
     fi
 
