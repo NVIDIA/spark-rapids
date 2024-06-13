@@ -45,10 +45,6 @@
             <classifier>${spark.version.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>org.roaringbitmap</groupId>
-            <artifactId>RoaringBitmap</artifactId>
-        </dependency>
 
         <!--
              Note that we are using the Spark version for all of the Databricks dependencies as well.
@@ -261,6 +257,12 @@
             <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql-api_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
             <version>${spark.version}</version>
             <scope>provided</scope>
         </dependency>

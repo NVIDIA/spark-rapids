@@ -73,8 +73,10 @@ Name | Description | Default Value | Applicable at
 <a name="sql.csv.read.double.enabled"></a>spark.rapids.sql.csv.read.double.enabled|CSV reading is not 100% compatible when reading doubles.|true|Runtime
 <a name="sql.csv.read.float.enabled"></a>spark.rapids.sql.csv.read.float.enabled|CSV reading is not 100% compatible when reading floats.|true|Runtime
 <a name="sql.decimalOverflowGuarantees"></a>spark.rapids.sql.decimalOverflowGuarantees|FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of the compatibility documents for more information on this config.|true|Runtime
-<a name="sql.delta.lowShuffleMerge.deletion.scatter.max.size"></a>spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size|Option to set max batch size when scattering deletion vector|4096|Runtime
-<a name="sql.delta.lowShuffleMerge.deletionVector.broadcast.max.count"></a>spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.max.count|Option to set max broadcast count of low shuffle merge deletion vector. If the detected deletion vector row count is larger than this value, low shuffle merge will be disabled.|600000000|Runtime
+<a name="sql.delta.lowShuffleMerge.deletion.scatter.max.size"></a>spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size|Option to set max batch size when scattering deletion vector|32768|Runtime
+<a name="sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold"></a>spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold|Currently we need to broadcast deletion vector to all executors to perform low
+shuffle merge. When we detect the deletion vector broadcast size is larger than this
+value, we will fallback to normal shuffle merge.|20971520|Runtime
 <a name="sql.delta.lowShuffleMerge.enabled"></a>spark.rapids.sql.delta.lowShuffleMerge.enabled|Option to turn on the low shuffle merge for Delta Lake.|false|Runtime
 <a name="sql.detectDeltaCheckpointQueries"></a>spark.rapids.sql.detectDeltaCheckpointQueries|Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
 <a name="sql.detectDeltaLogQueries"></a>spark.rapids.sql.detectDeltaLogQueries|Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime

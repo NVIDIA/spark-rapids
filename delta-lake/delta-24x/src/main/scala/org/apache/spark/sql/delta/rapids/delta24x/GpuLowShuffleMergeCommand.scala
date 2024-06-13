@@ -27,13 +27,13 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.{GpuOverrides, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.RapidsConf.DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils._
 import com.nvidia.spark.rapids.shims.FileSourceScanExecMeta
-import com.nvidia.spark.rapids.RapidsConf.DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD
 import org.roaringbitmap.longlong.Roaring64Bitmap
-import org.apache.spark.SparkContext
 
+import org.apache.spark.SparkContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
@@ -646,7 +646,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
 
     false
   }
-
+``
   private def verifyGpuPlan(input: DataFrame)(checkPlanMeta: SparkPlanMeta[SparkPlan] => Boolean)
   : Boolean = {
     val overridePlan = GpuOverrides.wrapAndTagPlan(input.queryExecution.sparkPlan,
