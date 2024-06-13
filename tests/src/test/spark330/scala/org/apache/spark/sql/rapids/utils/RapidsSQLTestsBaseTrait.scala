@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import java.util.Locale
+import java.util.{Locale, TimeZone}
 
 import org.apache.hadoop.fs.FileUtil
 import org.scalactic.source.Position
@@ -153,6 +153,8 @@ object RapidsSQLTestsBaseTrait extends Logging {
   def nativeSparkConf(origin: SparkConf, warehouse: String): SparkConf = {
     // Add Locale setting
     Locale.setDefault(Locale.US)
+    // Spark use "America/Los_Angeles" as default timezone in tests
+    TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
 
     val conf = origin
       .set("spark.rapids.sql.enabled", "true")
@@ -161,6 +163,7 @@ object RapidsSQLTestsBaseTrait extends Logging {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
+      .set("spark.sql.session.timeZone", "America/Los_Angeles")
       .set("spark.rapids.sql.explain", "ALL")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")
