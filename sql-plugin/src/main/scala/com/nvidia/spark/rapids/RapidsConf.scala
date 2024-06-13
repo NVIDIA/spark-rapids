@@ -708,6 +708,33 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
       .createWithDefault("MODERATE")
 
+  val TAG_LORE_ID_ENABLED = conf("spark.rapids.LORE.tagging")
+    .doc("Enable tagging a LORE id to each gpu plan node")
+    .booleanConf
+    .createWithDefault(true)
+
+  val LORE_DUMP_OPERATOR = conf("spark.rapids.LORE.operatorToDump")
+    .doc("The name of SparkPlan to dump, e.g. GpuHashAggregateExec")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val LORE_DUMP_LORE_IDS = conf("spark.rapids.LORE.idsToDump")
+    .doc("Specify which operator(s) to dump by LORE ID. " +
+      "Specify multiple partitions by using comma, e.g. \"12,31\"")
+    .internal()
+    .stringConf
+    .createWithDefault("")
+
+  val LORE_DUMP_PARTITIONS = conf("spark.rapids.LORE.partitionsToDump")
+    .doc("Which partition of the operator(the operator relates to a fixed stage, " +
+      "each stage is divided into many tasks by partition id) to dump. User can " +
+      "specify multiple partitions by using comma, e.g. \"0,3,5\"." +
+      "By default it will dump the first partitions.")
+    .internal()
+    .stringConf
+    .createWithDefault("0")
+
   val PROFILE_PATH = conf("spark.rapids.profile.pathPrefix")
     .doc("Enables profiling and specifies a URI path to use when writing profile data")
     .internal()
@@ -2461,6 +2488,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     _.startsWith("spark.rapids.")).toMap.asJava
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
+
+  lazy val loreDumpOperator: Option[String] = get(LORE_DUMP_OPERATOR)
+
+  lazy val loreDumpPartitions: String = get(LORE_DUMP_PARTITIONS)
 
   lazy val profilePath: Option[String] = get(PROFILE_PATH)
 

@@ -18,20 +18,26 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.DumpUtils.serializeObject
 import com.nvidia.spark.rapids.filecache.FileCacheConf
+import com.nvidia.spark.rapids.lore.IdGen.loreIdOf
+import com.nvidia.spark.rapids.profiling.ReplayDumpRDD
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
   def >=(other: MetricsLevel): Boolean =
@@ -212,6 +218,27 @@ object GpuExec {
 }
 
 trait GpuExec extends SparkPlan {
+
+  // For LORE replay
+  @transient var loreReplayInputDir: String = null // null is better than None considering ser/der
+  @transient var loreIsReplayingOperator: Boolean = false
+  // For LORE dump
+  @transient var shouldDumpOutput: Boolean = false
+  @transient var dumpForLOREId: String = ""
+  @transient lazy val loreDumpOperator: Option[String] = RapidsConf.LORE_DUMP_OPERATOR.get(conf)
+  @transient lazy val loreDumpLOREIds: String = RapidsConf.LORE_DUMP_LORE_IDS.get(conf)
+  @transient lazy val loreDumpPartitions: String = RapidsConf.LORE_DUMP_PARTITIONS.get(conf)
+
+  // For LORE DumpedExecReplayer, the spark plan is deserialized from the plan.meta file, so
+  // some of the transient fields will be null, and we need to workaround this
+  override protected def sparkContext = SparkSession.getActiveSession.get.sparkContext
+  override protected def waitForSubqueries(): Unit = synchronized {
+    // only do it when it's not doing LORE replaying
+    if (!loreIsReplayingOperator && loreReplayInputDir == null) {
+      super.waitForSubqueries()
+    }
+  }
+
   import GpuMetric._
   def sparkSession: SparkSession = {
     SparkShimImpl.sessionFromPlan(this)
@@ -363,15 +390,100 @@ trait GpuExec extends SparkPlan {
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val orig = internalDoExecuteColumnar()
+    val hadoopConf = new SerializableConfiguration(sparkSession.sparkContext.hadoopConfiguration)
+    def getOutputStream(filePath: String): FSDataOutputStream = {
+      val hadoopPath = new Path(filePath)
+      val fs = hadoopPath.getFileSystem(hadoopConf.value)
+      fs.create(hadoopPath, true)
+    }
+
+    if (loreReplayInputDir != null) {
+      return new ReplayDumpRDD(sparkSession, loreReplayInputDir)
+    }
+    val className = this.getClass.getSimpleName
+    val myLoreId = loreIdOf(this).getOrElse("unknown")
+    if (loreDumpOperator.exists(o => o.equals(className)) ||
+      loreDumpLOREIds.split(',').contains(myLoreId)
+    ) {
+      val childAsGpuExec = this.asInstanceOf[UnaryLike[SparkPlan]].child.asInstanceOf[GpuExec]
+      childAsGpuExec.shouldDumpOutput = true
+      childAsGpuExec.dumpForLOREId = myLoreId
+      val childPlanId = childAsGpuExec.id
+      // dump plan node
+      val planBytes = serializeObject(this)
+      val fos = getOutputStream(
+        s"file:/tmp/lore/lore_id=${myLoreId}_plan_id=${childPlanId}/plan.meta")
+      fos.write(planBytes)
+      fos.close()
+    }
+    val shouldDumpOutputToBroadcast = shouldDumpOutput
+    val dumpForLOREIdToBroadcast = dumpForLOREId
+    val loreDumpPartitionsToBroadcast = loreDumpPartitions
+
+    var orig: RDD[ColumnarBatch] = null
+    orig = internalDoExecuteColumnar()
+
+    val planId = id
     val metrics = getTaskMetrics
+
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
       LocationPreservingMapPartitionsRDD(orig) { iter =>
         gpuMetrics.makeSureRegistered()
-        iter
+
+        var batchId = 0
+        iter.map(cb => {
+
+          val tc = TaskContext.get()
+          if (shouldDumpOutputToBroadcast &&
+            loreDumpPartitionsToBroadcast.split(',').map(_.toInt).contains(tc.partitionId())) {
+
+            println(s"LORE dump activated, for the operator to dump output: " +
+              s"className: ${className}, " +
+              s"stage id: ${tc.stageId()}, " +
+              s"for LORE id: ${dumpForLOREIdToBroadcast}, " +
+              s"plan id: ${planId}, " +
+              s"partition id: ${tc.partitionId()}, " +
+              s"batch id: ${batchId}, " +
+              s"batch size: ${cb.numRows()} rows.")
+
+            val partitionId = TaskContext.get().partitionId()
+
+            {
+              // dump col types for column batch to remote storage
+              val cbTypes = GpuColumnVector.extractTypes(cb)
+              val bytes = serializeObject(cbTypes)
+              val fos = getOutputStream(
+                s"file:/tmp/lore/lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
+                  s"partition_id=${partitionId}/" +
+                  s"batch_id=${batchId}/col_types.meta")
+              fos.write(bytes)
+              fos.close()
+            }
+
+            // dump data for column batch to /tmp dir
+            withResource(GpuColumnVector.from(cb)) { table =>
+              val path = s"/tmp/lore/lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
+                s"partition_id=${partitionId}/" +
+                s"batch_id=${batchId}/cb_data.parquet"
+              withResource(new ParquetDumper(path, table)) { dumper =>
+                dumper.writeTable(table)
+                path
+              }
+            }
+          }
+          batchId = batchId + 1
+          cb
+        })
       }
     }.getOrElse(orig)
+  }
+
+  override def nodeName: String = {
+    loreIdOf(this) match {
+      case Some(loreId) => s"${super.nodeName} [LOREID=$loreId]"
+      case None => s"${super.nodeName} [LOREID=unknown]"
+    }
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]
