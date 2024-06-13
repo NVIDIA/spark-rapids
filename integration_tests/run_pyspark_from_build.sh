@@ -245,6 +245,14 @@ else
     DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
     export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
+
+    # Set driver memory to speed up tests such as deltalake
+    if [[ -n "${DRIVER_MEMORY}" ]]; then
+        export PYSP_TEST_spark_driver_memory="${DRIVER_MEMORY}"
+    fi
+
+    export PYSP_TEST_spark_driver_memory=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
+    :-'2g'}
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
     export PYSP_TEST_spark_sql_shuffle_partitions='4'
