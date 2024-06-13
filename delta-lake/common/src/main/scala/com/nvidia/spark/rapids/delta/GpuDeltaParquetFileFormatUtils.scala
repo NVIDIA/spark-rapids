@@ -95,42 +95,43 @@ object GpuDeltaParquetFileFormatUtils {
       }
     }
 
-    val delVecCol = delVec.map { delVec =>
-      withResource(Scalar.fromBool(false)) { s =>
-        withResource(CudfColumnVector.fromScalar(s, batch.numRows())) { c =>
-          var table = new Table(c)
-          val posIter = new RoaringBitmapIterator(
-            delVec.getLongIteratorFrom(rowIdxStart),
-            rowIdxStart,
-            rowIdxStart + batch.numRows(),
-          ).grouped(Math.min(maxBatchSize, batch.numRows()))
+    closeOnExcept(rowIdxCol) { rowIdxCol =>
 
-          for (posChunk <- posIter) {
-            withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
-              withResource(Scalar.fromBool(true)) { s =>
-                withResource(table) { _ =>
-                  val newTable = Table.scatter(Array(s), poses, table)
-                  table = newTable
+      val delVecCol = delVec.map { delVec =>
+        withResource(Scalar.fromBool(false)) { s =>
+          withResource(CudfColumnVector.fromScalar(s, batch.numRows())) { c =>
+            var table = new Table(c)
+            val posIter = new RoaringBitmapIterator(
+              delVec.getLongIteratorFrom(rowIdxStart),
+              rowIdxStart,
+              rowIdxStart + batch.numRows(),
+            ).grouped(Math.min(maxBatchSize, batch.numRows()))
+
+            for (posChunk <- posIter) {
+              withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
+                withResource(Scalar.fromBool(true)) { s =>
+                  table = withResource(table) { _ =>
+                    Table.scatter(Array(s), poses, table)
+                  }
                 }
               }
             }
-          }
 
-          withResource(table) { _ =>
-            GpuColumnVector.from(table.getColumn(0).incRefCount(), METADATA_ROW_DEL_FIELD.dataType)
+            withResource(table) { _ =>
+              GpuColumnVector.from(table.getColumn(0).incRefCount(),
+                METADATA_ROW_DEL_FIELD.dataType)
+            }
           }
         }
       }
-    }
 
-    closeOnExcept(rowIdxCol) { rowIdxCol =>
       closeOnExcept(delVecCol) { delVecCol =>
         // Replace row_idx column
         val columns = new Array[ColumnVector](batch.numCols())
         for (i <- 0 until batch.numCols()) {
-          if (rowIdxPos.isDefined && i == rowIdxPos.get) {
+          if (rowIdxPos.contains(i)) {
             columns(i) = rowIdxCol.get
-          } else if (delRowIdx.isDefined && i == delRowIdx.get) {
+          } else if (delRowIdx.contains(i)) {
             columns(i) = delVecCol.get
           } else {
             columns(i) = batch.column(i) match {

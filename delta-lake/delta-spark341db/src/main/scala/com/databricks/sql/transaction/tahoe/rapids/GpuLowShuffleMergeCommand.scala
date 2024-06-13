@@ -37,7 +37,7 @@ import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.databricks.sql.transaction.tahoe.util.{AnalysisHelper, DeltaFileOperations}
 import com.nvidia.spark.rapids.{GpuOverrides, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.RapidsConf.DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_MAX_COUNT
+import com.nvidia.spark.rapids.RapidsConf.DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.{METADATA_ROW_DEL_COL, METADATA_ROW_DEL_FIELD, METADATA_ROW_IDX_COL, METADATA_ROW_IDX_FIELD}
 import com.nvidia.spark.rapids.shims.FileSourceScanExecMeta
@@ -633,13 +633,13 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
       return true
     }
 
-    val deletionVectorCount = touchedFiles.values.map(_._1.getLongCardinality).sum
-    val maxDelVectorCount = context.rapidsConf
-      .get(DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_MAX_COUNT)
-    if (deletionVectorCount > maxDelVectorCount) {
+    val deletionVectorSize = touchedFiles.values.map(_._1.serializedSizeInBytes()).sum
+    val maxDelVectorSize = context.rapidsConf
+      .get(DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD)
+    if (deletionVectorSize > maxDelVectorSize) {
       logWarning(
         s"""Low shuffle merge can't be executed because broadcast deletion vector count
-           |$deletionVectorCount is large than max value $maxDelVectorCount """.stripMargin)
+           |$deletionVectorSize is large than max value $maxDelVectorSize """.stripMargin)
       return true
     }
 

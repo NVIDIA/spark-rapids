@@ -2284,15 +2284,15 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     conf("spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size")
     .doc("Option to set max batch size when scattering deletion vector")
     .integerConf
-    .createWithDefault(4096)
+    .createWithDefault(32 * 1024)
 
-  val DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_MAX_COUNT =
-    conf("spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.max.count")
-    .doc("Option to set max broadcast count of low shuffle merge deletion vector. If the " +
-        "detected deletion vector row count is larger than this value, low shuffle merge will be " +
-        "disabled.")
-    .longConf
-    .createWithDefault(600000000)
+  val DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold")
+    .doc("""Currently we need to broadcast deletion vector to all executors to perform low
+           |shuffle merge. When we detect the deletion vector broadcast size is larger than this
+           |value, we will fallback to normal shuffle merge.""".stripMargin)
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(20 * 1024 * 1024)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

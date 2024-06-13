@@ -105,7 +105,7 @@ if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=4 \
+        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" \
             bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
     fi
 

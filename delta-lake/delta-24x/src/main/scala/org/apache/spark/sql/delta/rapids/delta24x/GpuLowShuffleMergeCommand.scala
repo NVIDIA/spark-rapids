@@ -27,13 +27,13 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.{GpuOverrides, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.RapidsConf.DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_MAX_COUNT
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils._
 import com.nvidia.spark.rapids.shims.FileSourceScanExecMeta
+import com.nvidia.spark.rapids.RapidsConf.DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD
 import org.roaringbitmap.longlong.Roaring64Bitmap
-
 import org.apache.spark.SparkContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
@@ -634,13 +634,13 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
       return true
     }
 
-    val deletionVectorCount = touchedFiles.values.map(_._1.getLongCardinality).sum
-    val maxDelVectorCount = context.rapidsConf
-      .get(DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_MAX_COUNT)
-    if (deletionVectorCount > maxDelVectorCount) {
+    val deletionVectorSize = touchedFiles.values.map(_._1.serializedSizeInBytes()).sum
+    val maxDelVectorSize = context.rapidsConf
+      .get(DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD)
+    if (deletionVectorSize > maxDelVectorSize) {
       logWarning(
         s"""Low shuffle merge can't be executed because broadcast deletion vector count
-           |$deletionVectorCount is large than max value $maxDelVectorCount """.stripMargin)
+           |$deletionVectorSize is large than max value $maxDelVectorSize """.stripMargin)
       return true
     }
 

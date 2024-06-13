@@ -285,5 +285,11 @@
             <version>${spark.version}</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
+            <version>${spark.version}</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 </project>
