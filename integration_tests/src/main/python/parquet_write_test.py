@@ -228,7 +228,7 @@ def test_all_null_int96(spark_tmp_path):
         def _cache_repr(self):
             return super()._cache_repr() + '(all_nulls)'
 
-data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path : unary_op_df(spark, AllNullTimestampGen()).coalesce(1).write.parquet(path),
