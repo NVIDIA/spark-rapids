@@ -32,31 +32,33 @@ object NvtxWithMetrics {
 object ThreadLocalMetrics {
   val addressOrdering: Ordering[GpuMetric] = Ordering.by(System.identityHashCode(_))
 
-  val currentThreadMetrics = new ThreadLocal[mutable.TreeMap[GpuMetric, String]] {
-    override def initialValue(): mutable.TreeMap[GpuMetric, String] =
-      mutable.TreeMap[GpuMetric, String]()(addressOrdering)
+  val currentThreadMetrics = new ThreadLocal[mutable.TreeSet[GpuMetric]] {
+    override def initialValue(): mutable.TreeSet[GpuMetric] =
+      mutable.TreeSet[GpuMetric]()(addressOrdering)
   }
 
-  def getStackTraceString(stackTrace: Array[StackTraceElement]): String = {
-    stackTrace.map(_.toString).mkString("\n")
-  }
-
-  def onMetricsEnter(gpuMetric: GpuMetric): Unit = {
+  /**
+   * Check if current metric needs tracking.
+   *
+   * @param gpuMetric the metric to check
+   * @return true if the metric needs tracking,
+   */
+  def onMetricsEnter(gpuMetric: GpuMetric): Boolean = {
     if (gpuMetric != NoopMetric) {
       if (ThreadLocalMetrics.currentThreadMetrics.get().contains(gpuMetric)) {
-        throw new IllegalArgumentException("Cannot add the same metric to the same thread twice: "
-          + gpuMetric + ". Last site: \n"
-          + ThreadLocalMetrics.currentThreadMetrics.get().get(gpuMetric))
+        return false
       }
-      ThreadLocalMetrics.currentThreadMetrics.get().put(gpuMetric,
-        getStackTraceString(new Throwable().getStackTrace))
+      ThreadLocalMetrics.currentThreadMetrics.get().add(gpuMetric)
+      true
+    } else {
+      false
     }
   }
 
   def onMetricsExit(gpuMetric: GpuMetric): Unit = {
     if (gpuMetric != NoopMetric) {
       if (!ThreadLocalMetrics.currentThreadMetrics.get().contains(gpuMetric)) {
-        throw new IllegalArgumentException("Metric was removed from thread local storage: "
+        throw new IllegalArgumentException("Metric missing from thread local storage: "
           + gpuMetric)
       }
       ThreadLocalMetrics.currentThreadMetrics.get().remove(gpuMetric)
@@ -70,36 +72,32 @@ object ThreadLocalMetrics {
 class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
     extends NvtxRange(name, color) {
 
-  for (metrics <- metrics) {
-    ThreadLocalMetrics.onMetricsEnter(metrics)
-  }
+  val needTracks = metrics.map(ThreadLocalMetrics.onMetricsEnter)
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
-    metrics.foreach { metric =>
-      metric += time
-    }
-    for (metrics <- metrics) {
-      ThreadLocalMetrics.onMetricsExit(metrics)
+    metrics.toSeq.zip(needTracks).foreach { pair =>
+      if (pair._2) {
+        pair._1 += time
+        ThreadLocalMetrics.onMetricsExit(pair._1)
+      }
     }
     super.close()
   }
 }
 
 class MetricRange(val metrics: GpuMetric*) extends AutoCloseable {
-  for (metrics <- metrics) {
-    ThreadLocalMetrics.onMetricsEnter(metrics)
-  }
+  val needTracks = metrics.map(ThreadLocalMetrics.onMetricsEnter)
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
-    metrics.foreach { metric =>
-      metric += time
-    }
-    for (metrics <- metrics) {
-      ThreadLocalMetrics.onMetricsExit(metrics)
+    metrics.toSeq.zip(needTracks).foreach { pair =>
+      if (pair._2) {
+        pair._1 += time
+        ThreadLocalMetrics.onMetricsExit(pair._1)
+      }
     }
   }
 }
