@@ -33,11 +33,11 @@ SOURCE_WITH_ARGS="--sourcefiles "$(echo $SOURCE_DIRS | sed -e 's/:/ --sourcefile
 rm -rf "$TMP_CLASS"
 mkdir -p "$TMP_CLASS"
 pushd "$TMP_CLASS"
-jar xf "$DIST_JAR" com org rapids spark3xx-common "spark${SPK_VER}/"
+jar xf "$DIST_JAR" com org rapids spark-shared "spark${SPK_VER}/"
 # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
 # because the class files in udf jar will be modified in aggregator's shade phase
 jar xf "$UDF_JAR" com/nvidia/spark/udf
-rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+rm -rf com/nvidia/shaded/ org/openucx/ spark-shared/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
 popd
 
 if [ ! -f "$JDEST" ]; then
