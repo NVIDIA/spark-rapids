@@ -16,7 +16,7 @@ import pytest
 
 allow_non_gpu_databricks = pytest.mark.allow_non_gpu_databricks
 allow_non_gpu = pytest.mark.allow_non_gpu
-ansi_mode_disabled = pytest.mark.ansi_mode_disabled
+disable_ansi_mode = pytest.mark.disable_ansi_mode
 validate_execs_in_gpu_plan = pytest.mark.validate_execs_in_gpu_plan
 approximate_float = pytest.mark.approximate_float
 ignore_order = pytest.mark.ignore_order

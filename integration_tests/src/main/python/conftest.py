@@ -62,7 +62,7 @@ def is_allowing_any_non_gpu():
 def get_non_gpu_allowed():
     return _non_gpu_allowed
 
-def get_per_test_ansi_mode():
+def is_per_test_ansi_mode_disabled():
     return _per_test_ansi_mode
 
 def get_validate_execs_in_gpu_plan():
@@ -219,7 +219,7 @@ def pytest_runtest_setup(item):
     _allow_any_non_gpu_databricks = False
     non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
-    per_test_ansi_mode = item.get_closest_marker('ansi_mode_disabled')
+    per_test_ansi_mode = item.get_closest_marker('disable_ansi_mode')
     if per_test_ansi_mode:
         _per_test_ansi_mode = "false"
 
