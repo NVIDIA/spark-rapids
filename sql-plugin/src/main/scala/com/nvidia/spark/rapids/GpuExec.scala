@@ -159,11 +159,13 @@ sealed abstract class GpuMetric extends Serializable {
   def add(v: Long): Unit
 
   final def ns[T](f: => T): T = {
+    ThreadLocalMetrics.onMetricsEnter(this)
     val start = System.nanoTime()
     try {
       f
     } finally {
       add(System.nanoTime() - start)
+      ThreadLocalMetrics.onMetricsExit(this)
     }
   }
 }
