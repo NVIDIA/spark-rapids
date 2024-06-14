@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
 object NvtxWithMetrics {
@@ -27,6 +29,40 @@ object NvtxWithMetrics {
   }
 }
 
+object ThreadLocalMetrics {
+  val addressOrdering: Ordering[GpuMetric] = Ordering.by(System.identityHashCode(_))
+
+  val currentThreadMetrics = new ThreadLocal[mutable.TreeMap[GpuMetric, String]] {
+    override def initialValue(): mutable.TreeMap[GpuMetric, String] =
+      mutable.TreeMap[GpuMetric, String]()(addressOrdering)
+  }
+
+  def getStackTraceString(stackTrace: Array[StackTraceElement]): String = {
+    stackTrace.map(_.toString).mkString("\n")
+  }
+
+  def onMetricsEnter(gpuMetric: GpuMetric): Unit = {
+    if (gpuMetric != NoopMetric) {
+      if (ThreadLocalMetrics.currentThreadMetrics.get().contains(gpuMetric)) {
+        throw new IllegalArgumentException("Cannot add the same metric to the same thread twice: "
+          + gpuMetric + ". Last site: \n"
+          + ThreadLocalMetrics.currentThreadMetrics.get().get(gpuMetric))
+      }
+      ThreadLocalMetrics.currentThreadMetrics.get().put(gpuMetric,
+        getStackTraceString(new Throwable().getStackTrace))
+    }
+  }
+
+  def onMetricsExit(gpuMetric: GpuMetric): Unit = {
+    if (gpuMetric != NoopMetric) {
+      if (!ThreadLocalMetrics.currentThreadMetrics.get().contains(gpuMetric)) {
+        throw new IllegalArgumentException("Metric was removed from thread local storage: "
+          + gpuMetric)
+      }
+      ThreadLocalMetrics.currentThreadMetrics.get().remove(gpuMetric)
+    }
+  }
+}
 /**
  *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
  *  by the amount of time spent in the range
@@ -34,6 +70,9 @@ object NvtxWithMetrics {
 class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
     extends NvtxRange(name, color) {
 
+  for (metrics <- metrics) {
+    ThreadLocalMetrics.onMetricsEnter(metrics)
+  }
   private val start = System.nanoTime()
 
   override def close(): Unit = {
@@ -41,17 +80,26 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
     metrics.foreach { metric =>
       metric += time
     }
+    for (metrics <- metrics) {
+      ThreadLocalMetrics.onMetricsExit(metrics)
+    }
     super.close()
   }
 }
 
 class MetricRange(val metrics: GpuMetric*) extends AutoCloseable {
+  for (metrics <- metrics) {
+    ThreadLocalMetrics.onMetricsEnter(metrics)
+  }
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
     metrics.foreach { metric =>
       metric += time
+    }
+    for (metrics <- metrics) {
+      ThreadLocalMetrics.onMetricsExit(metrics)
     }
   }
 }
