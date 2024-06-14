@@ -159,7 +159,8 @@ class ConvertGen(DataGen):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+        return (super()._cache_repr() + '(' + self._child_gen._cache_repr() +
+                ',' + str(self._func.__code__) + ')' )
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -667,7 +668,10 @@ class ArrayGen(DataGen):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+        return (super()._cache_repr() + '(' + self._child_gen._cache_repr() +
+                ',' + str(self._min_length) + ',' + str(self._max_length) + ',' +
+                str(self.all_null) + ',' + str(self.convert_to_tuple) + ')')
+
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -701,7 +705,8 @@ class MapGen(DataGen):
         return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
+        return (super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() +
+                ',' + str(self._min_length) + ',' + str(self._max_length) + ')')
 
     def start(self, rand):
         self._key_gen.start(rand)
@@ -769,12 +774,13 @@ class DayTimeIntervalGen(DataGen):
         self._min_micros = (math.floor(min_value.total_seconds()) * 1000000) + min_value.microseconds
         self._max_micros = (math.floor(max_value.total_seconds()) * 1000000) + max_value.microseconds
         fields = ["day", "hour", "minute", "second"]
-        start_index = fields.index(start_field)
-        end_index = fields.index(end_field)
-        if start_index > end_index:
+        self._start_index = fields.index(start_field)
+        self._end_index = fields.index(end_field)
+        if self._start_index > self._end_index:
             raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field index should <= end '
                                'field index'.format(start_field, end_field, fields))
-        super().__init__(DayTimeIntervalType(start_index, end_index), nullable=nullable, special_cases=special_cases)
+        super().__init__(DayTimeIntervalType(self._start_index, self._end_index), nullable=nullable,
+                         special_cases=special_cases)
 
     def _gen_random(self, rand):
         micros = rand.randint(self._min_micros, self._max_micros)
@@ -784,7 +790,8 @@ class DayTimeIntervalGen(DataGen):
         return timedelta(microseconds=micros)
     
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + ')'
+        return (super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) +
+                ',' + str(self._start_index) + ',' + str(self._end_index) + ')')
 
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
