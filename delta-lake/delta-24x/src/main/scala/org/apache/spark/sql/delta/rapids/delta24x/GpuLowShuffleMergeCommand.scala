@@ -646,7 +646,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
 
     false
   }
-``
+
   private def verifyGpuPlan(input: DataFrame)(checkPlanMeta: SparkPlanMeta[SparkPlan] => Boolean)
   : Boolean = {
     val overridePlan = GpuOverrides.wrapAndTagPlan(input.queryExecution.sparkPlan,

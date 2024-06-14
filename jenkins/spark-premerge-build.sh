@@ -206,8 +206,7 @@ ci_scala213() {
     cd .. # Run integration tests in the project root dir to leverage test cases and resource files
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    # TODO: We should rollback to 5 after https://github.com/NVIDIA/spark-rapids/issues/8652 fixed.
-    export TEST_PARALLEL=4
+    export TEST_PARALLEL=5
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         ./integration_tests/run_pyspark_from_build.sh

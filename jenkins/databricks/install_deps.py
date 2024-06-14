@@ -177,13 +177,6 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.spark', f'spark-sql-api_{scala_version}', f'{spark_prefix}--sql--api--sql-api-hive-2.3__hadoop-3.2_2.12_deploy.jar')
         ]
 
-    # Roaringbitmap
-    deps += [
-        Artifact('org.roaringbitmap', 'RoaringBitmap',
-                 f'{prefix_ws_sp_mvn_hadoop}--org.roaringbitmap--RoaringBitmap--org.roaringbitmap__RoaringBitmap*.jar'),
-       Artifact('org.roaringbitmap', 'shims', f'{prefix_ws_sp_mvn_hadoop}--org.roaringbitmap--shims--org.roaringbitmap__shims__*.jar')
-    ]
-
     return deps
 
 def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir, file):
