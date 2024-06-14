@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 
@@ -82,8 +82,21 @@ object DumpUtils extends Logging {
     }
   }
 
+  /**
+   * Dump columnar batch to output stream in parquet format. <br>
+   *
+   * @param columnarBatch The columnar batch to be dumped, should be GPU columnar batch. It
+   *                      should be closed by caller.
+   * @param outputStream Will be closed after writing.
+   */
   def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream) = {
-
+    closeOnExcept(outputStream) { _ =>
+      withResource(GpuColumnVector.from(columnarBatch)) { table =>
+        withResource(new ParquetDumper(outputStream, table)) { dumper =>
+          dumper.writeTable(table)
+        }
+      }
+    }
   }
 
   /**
