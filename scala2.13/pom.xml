@@ -880,9 +880,6 @@
             351
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-        <!-- #if scala-2.13 -->
-            400
-        <!-- #endif scala-2.13 -->
         </snapshot.buildvers>
         <databricks.buildvers>
             330db,
@@ -922,8 +919,6 @@
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
             ${databricks.buildvers},
-            <!-- 400 is not buildable yet. We are only declaring it as a known shim here -->
-            400
         </all.buildvers>
         <noSnapshotScala213.buildvers>
             330,
@@ -941,7 +936,7 @@
             400
         </snapshotScala213.buildvers>
         <allScala213.buildvers>
-            ${noSnapshotScala213.buildvers}
+            ${noSnapshotScala213.buildvers},
             ${snapshotScala213.buildvers}
         </allScala213.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
