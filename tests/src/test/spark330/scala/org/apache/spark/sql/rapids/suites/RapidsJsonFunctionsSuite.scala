@@ -19,8 +19,16 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import java.util.TimeZone
+
 import org.apache.spark.sql.JsonFunctionsSuite
 import org.apache.spark.sql.rapids.utils.{RapidsJsonConfTrait, RapidsSQLTestsTrait}
 
 class RapidsJsonFunctionsSuite
-  extends JsonFunctionsSuite with RapidsSQLTestsTrait with RapidsJsonConfTrait {}
+    extends JsonFunctionsSuite with RapidsSQLTestsTrait with RapidsJsonConfTrait {
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    // Set timezone to UTC to avoid fallback, so that tests run on GPU to detect bugs
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+  } 
+}
