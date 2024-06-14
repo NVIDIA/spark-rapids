@@ -16,7 +16,7 @@ import os
 import calendar, time
 from datetime import date, datetime
 from contextlib import contextmanager, ExitStack
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf, is_per_test_ansi_mode_disabled
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf, is_per_test_ansi_mode_enabled
 from pyspark.sql import DataFrame
 from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
@@ -127,8 +127,8 @@ def with_spark_session(func, conf={}):
     reset_spark_session_conf()
     _add_job_description(conf)
     # Only set the ansi conf if not set by the test explicitly by setting the value in the dict
-    if "spark.sql.ansi.enabled" not in conf and is_per_test_ansi_mode_disabled() is not None:
-        conf["spark.sql.ansi.enabled"] = is_per_test_ansi_mode_disabled()
+    if "spark.sql.ansi.enabled" not in conf and is_per_test_ansi_mode_enabled() is not None:
+        conf["spark.sql.ansi.enabled"] = is_per_test_ansi_mode_enabled()
     _set_all_confs(conf)
     ret = func(_spark)
     _check_for_proper_return_values(ret)
