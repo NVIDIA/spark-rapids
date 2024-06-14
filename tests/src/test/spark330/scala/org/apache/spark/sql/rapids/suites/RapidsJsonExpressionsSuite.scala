@@ -25,10 +25,10 @@ import org.apache.spark.sql.catalyst.expressions.JsonExpressionsSuite
 import org.apache.spark.sql.rapids.utils.{RapidsJsonConfTrait, RapidsTestsTrait}
 
 class RapidsJsonExpressionsSuite
-  extends JsonExpressionsSuite with RapidsTestsTrait with RapidsJsonConfTrait {
-    override def beforeAll(): Unit = {
-        super.beforeAll()
-        // Set timezone to UTC to avoid fallback, so that the tests run on gpu to reveal bugs
-        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-    }
+    extends JsonExpressionsSuite with RapidsTestsTrait with RapidsJsonConfTrait {
+  override def beforeAll(): Unit = {
+      super.beforeAll()
+      // Set timezone to UTC to avoid fallback, so that tests run on GPU to detect bugs
+      TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+  }
 }
