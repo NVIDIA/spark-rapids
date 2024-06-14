@@ -127,7 +127,7 @@ def with_spark_session(func, conf={}):
     reset_spark_session_conf()
     _add_job_description(conf)
     # Only set the ansi conf if not set by the test explicitly by setting the value in the dict
-    if "spark.sql.ansi.enabled" not in conf:
+    if "spark.sql.ansi.enabled" not in conf and get_per_test_ansi_mode() is not None:
         conf["spark.sql.ansi.enabled"] = get_per_test_ansi_mode()
     _set_all_confs(conf)
     ret = func(_spark)
