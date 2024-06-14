@@ -103,7 +103,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", warehouse)
-        // .config("spark.sql.session.timeZone","America/Los_Angeles")
         .config("spark.rapids.sql.explain", "ALL")
         .config("spark.rapids.sql.test.isFoldableNonLitAllowed", "true")
         // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
