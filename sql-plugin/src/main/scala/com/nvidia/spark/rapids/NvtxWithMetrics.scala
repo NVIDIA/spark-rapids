@@ -58,7 +58,7 @@ object ThreadLocalMetrics {
   def onMetricsExit(gpuMetric: GpuMetric): Unit = {
     if (gpuMetric != NoopMetric) {
       if (!ThreadLocalMetrics.currentThreadMetrics.get().contains(gpuMetric)) {
-        throw new IllegalStateException()("Metric missing from thread local storage: "
+        throw new IllegalStateException("Metric missing from thread local storage: "
           + gpuMetric)
       }
       ThreadLocalMetrics.currentThreadMetrics.get().remove(gpuMetric)
