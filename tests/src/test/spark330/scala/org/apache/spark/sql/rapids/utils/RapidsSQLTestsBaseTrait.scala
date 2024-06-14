@@ -163,7 +163,6 @@ object RapidsSQLTestsBaseTrait extends Logging {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
-      .set("spark.sql.session.timeZone", "America/Los_Angeles")
       .set("spark.rapids.sql.explain", "ALL")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")
