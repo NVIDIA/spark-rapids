@@ -820,6 +820,22 @@ def test_conv_dec_to_from_hex(from_base, to_base, pattern):
         conf={'spark.rapids.sql.expression.Conv': True}
     )
 
+@pytest.mark.parametrize('from_base,to_base',
+                         [
+                             pytest.param(10, 15, id='to_base_unsupported'),
+                             pytest.param(11, 16, id='from_base_unsupported'),
+                             pytest.param(9, 17, id='both_base_unsupported')
+                         ])
+def test_conv_unsupported_base(from_base, to_base):
+    def do_conv(spark):
+        gen = StringGen()
+        df = unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))
+        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+        unsupported_base_str = f'either {from_base} or {to_base} is not supported; only literal 10 or 16 for from_base and to_base are supported'
+        assert unsupported_base_str in explain_str
+
+    with_cpu_session(do_conv)
+
 format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0),
                                       DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5),
                                       DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10),
