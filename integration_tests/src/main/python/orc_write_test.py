@@ -233,7 +233,7 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
 def test_buckets_write_fallback_for_map(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
-    gen_list = [["id", simple_string_to_string_map_gen], ["data", long_gen]]
+    gen_list = [["id", binary_gen], ["data", long_gen]]
     assert_gpu_fallback_write(
         lambda spark, path: gen_df(spark, gen_list).selectExpr("id as b_id", "data").write
             .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
