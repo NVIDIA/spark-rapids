@@ -152,6 +152,10 @@ object GpuShuffleEnv extends Logging {
       isRapidsShuffleAvailable(conf)
   }
 
+  def isSerdeOnGpu(conf: RapidsConf): Boolean = {
+    conf.isGpuSerdeEnabled && (!useGPUShuffle(conf))
+  }
+
   def getCatalog: ShuffleBufferCatalog = if (env == null) {
     null
   } else {

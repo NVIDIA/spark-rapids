@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ColumnVector, Cuda, DType, Table}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{ColumnVector, Cuda, DeviceMemoryBuffer, DType, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
@@ -45,6 +45,26 @@ class GpuPartitioningSuite extends AnyFunSuite {
     }
   }
 
+  private def decompressTable(batch: ColumnarBatch): Array[ColumnVector] = {
+    val dataCol = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
+    val descr = dataCol.getTableMeta.bufferMeta.codecBufferDescrs(0)
+    val codec = TableCompressionCodec.getCodec(
+      descr.codec, TableCompressionCodec.makeCodecConfig(rapidsConf))
+    withResource(codec.createBatchDecompressor(100 * 1024 * 1024L,
+      Cuda.DEFAULT_STREAM)) { decompressor =>
+      dataCol.getTableBuffer.incRefCount()
+      decompressor.addBufferToDecompress(dataCol.getTableBuffer,
+        dataCol.getTableMeta.bufferMeta)
+      withResource(decompressor.finishAsync()) { outputBuffers =>
+        val outputBuffer = outputBuffers.head
+        // There should be only one
+        withResource(MetaUtils.getTableFromMeta(outputBuffer, dataCol.getTableMeta)) { table =>
+          (0 until table.getNumberOfColumns).map(i => table.getColumn(i).incRefCount()).toArray
+        }
+      }
+    }
+  }
+
   /**
    * Retrieves the underlying column vectors for a batch. It increments the reference counts for
    * them if needed so the results need to be closed.
@@ -56,22 +76,22 @@ class GpuPartitioningSuite extends AnyFunSuite {
       // The contiguous table is still responsible for closing these columns.
       (0 until table.getNumberOfColumns).map(i => table.getColumn(i).incRefCount()).toArray
     } else if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
-      val compressedColumn = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
-      val descr = compressedColumn.getTableMeta.bufferMeta.codecBufferDescrs(0)
-      val codec = TableCompressionCodec.getCodec(
-        descr.codec, TableCompressionCodec.makeCodecConfig(rapidsConf))
-      withResource(codec.createBatchDecompressor(100 * 1024 * 1024L,
-        Cuda.DEFAULT_STREAM)) { decompressor =>
-        compressedColumn.getTableBuffer.incRefCount()
-        decompressor.addBufferToDecompress(compressedColumn.getTableBuffer,
-          compressedColumn.getTableMeta.bufferMeta)
-        withResource(decompressor.finishAsync()) { outputBuffers =>
-          val outputBuffer = outputBuffers.head
-          // There should be only one
-          withResource(
-            MetaUtils.getTableFromMeta(outputBuffer, compressedColumn.getTableMeta)) { table =>
-            (0 until table.getNumberOfColumns).map(i => table.getColumn(i).incRefCount()).toArray
-          }
+      decompressTable(batch)
+    } else if (PackedTableHostColumnVector.isBatchPackedOnHost(batch)) {
+      val hostCol = batch.column(0).asInstanceOf[PackedTableHostColumnVector]
+      val tableMeta = hostCol.getTableMeta
+      val hostBuf = hostCol.getTableBuffer
+      val data = closeOnExcept(DeviceMemoryBuffer.allocate(hostBuf.getLength)) { devBuf =>
+        devBuf.copyFromHostBuffer(hostBuf)
+        devBuf
+      }
+      withResource(data) { _ =>
+        val bufferMeta = tableMeta.bufferMeta()
+        if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
+          val table = MetaUtils.getTableFromMeta(data, tableMeta)
+          (0 until table.getNumberOfColumns).map(i => table.getColumn(i)).toArray
+        } else {
+          decompressTable(GpuCompressedColumnVector.from(data, hostCol.getTableMeta))
         }
       }
     } else {
@@ -109,11 +129,14 @@ class GpuPartitioningSuite extends AnyFunSuite {
     }
   }
 
-  test("GPU partition") {
+  private def testGpuPartition(serdeType: String): Unit = {
     TrampolineUtil.cleanupAnyExistingSession()
-    val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
+    val conf = new SparkConf()
+      .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
+      .set(RapidsConf.SHUFFLE_SERDE_TYPE.key, serdeType)
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
+      val rapidsConf = new RapidsConf(conf)
+      GpuShuffleEnv.init(rapidsConf, new RapidsDiskBlockManager(conf))
       val partitionIndices = Array(0, 2, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length
@@ -135,7 +158,11 @@ class GpuPartitioningSuite extends AnyFunSuite {
             }
             val expectedRows = endRow - startRow
             assertResult(expectedRows)(partBatch.numRows)
-            assert(GpuPackedTableColumn.isBatchPacked(partBatch))
+            if (rapidsConf.isGpuSerdeEnabled) {
+              assert(PackedTableHostColumnVector.isBatchPackedOnHost(partBatch))
+            } else {
+              assert(GpuPackedTableColumn.isBatchPacked(partBatch))
+            }
             withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
               compareBatches(expectedBatch, partBatch)
             }
@@ -145,17 +172,10 @@ class GpuPartitioningSuite extends AnyFunSuite {
     }
   }
 
-  test("GPU partition with lz4 compression") {
-    testGpuPartitionWithCompression("lz4")
-  }
-
-  test("GPU partition with zstd compression") {
-    testGpuPartitionWithCompression("zstd")
-  }
-
-  private def testGpuPartitionWithCompression(codecName: String): Unit = {
+  private def testGpuPartitionWithCompression(serdeType: String, codecName: String): Unit = {
     val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, codecName)
+      .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, codecName)
+      .set(RapidsConf.SHUFFLE_SERDE_TYPE.key, serdeType)
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val spillPriority = 7L
@@ -197,6 +217,8 @@ class GpuPartitioningSuite extends AnyFunSuite {
                     val rows = c.getContiguousTable.getRowCount
                     assert(rows == 0)
                     rows
+                  case c: PackedTableHostColumnVector =>
+                    c.getTableMeta.rowCount
                   case _ =>
                     throw new IllegalStateException("column should either be compressed or packed")
                 }
@@ -213,12 +235,43 @@ class GpuPartitioningSuite extends AnyFunSuite {
                     }
                   }
                 }
+              } else if (PackedTableHostColumnVector.isBatchPackedOnHost(batch)) {
+                val pthc = columns.head.asInstanceOf[PackedTableHostColumnVector]
+                val hostBuffer = pthc.getTableBuffer
+                val handle = catalog.addBuffer(hostBuffer, pthc.getTableMeta, spillPriority)
+                withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
+                  withResource(catalog.acquireBuffer(handle)) { buffer =>
+                    withResource(buffer.getColumnarBatch(sparkTypes)) { batch =>
+                      compareBatches(expectedBatch, batch)
+                    }
+                  }
+                }
               }
             }
           }
         }
       }
     }
+  }
+
+  test("GPU partition") {
+    testGpuPartition("GPU")
+  }
+
+  test("GPU partition with CPU Serde") {
+    testGpuPartition("CPU")
+  }
+
+  test("GPU partition with lz4 compression") {
+    testGpuPartitionWithCompression("GPU", "lz4")
+  }
+
+  test("GPU partition with zstd compression") {
+    testGpuPartitionWithCompression("GPU", "zstd")
+  }
+
+  test("GPU partition with lz4 compression and CPU Serde") {
+    testGpuPartitionWithCompression("CPU", "lz4")
   }
 }
 
