@@ -19,12 +19,14 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, NullPolicy, Scalar, ScanAggregation, ScanType, Table, UnaryOp}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CaseWhen
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
-import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes}
+import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 object GpuExpressionWithSideEffectUtils {
 
@@ -47,7 +49,7 @@ object GpuExpressionWithSideEffectUtils {
 
   /**
    * Used to shortcircuit predicates and filter conditions.
-   * 
+   *
    * @param nullsAsFalse when true, null values are considered false.
    * @param col the input being evaluated.
    * @return boolean. When nullsAsFalse is set, it returns True if none of the rows is true;
@@ -182,9 +184,9 @@ case class GpuIf(
     predicateExpr: Expression,
     trueExpr: Expression,
     falseExpr: Expression) extends GpuConditionalExpression {
-  
+
   import GpuExpressionWithSideEffectUtils._
-  
+
   @transient
   override lazy val inputTypesForMerging: Seq[DataType] = {
     Seq(trueExpr.dataType, falseExpr.dataType)
@@ -314,7 +316,9 @@ case class GpuIf(
 
 case class GpuCaseWhen(
     branches: Seq[(Expression, Expression)],
-    elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
+    elseValue: Option[Expression] = None,
+    caseWhenFuseEnabled: Boolean = true)
+    extends GpuConditionalExpression with Serializable {
 
   import GpuExpressionWithSideEffectUtils._
 
@@ -359,15 +363,48 @@ case class GpuCaseWhen(
     if (branchesWithSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
-      // `elseRet` will be closed in `computeIfElse`.
-      val elseRet = elseValue
-        .map(_.columnarEvalAny(batch))
-        .getOrElse(GpuScalar(null, branches.last._2.dataType))
-      val any = branches.foldRight[Any](elseRet) {
-        case ((predicateExpr, trueExpr), falseRet) =>
-          computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+      if (caseWhenFuseEnabled && branches.size > 2 &&
+          inputTypesForMerging.head == StringType &&
+        (branches.map(_._2) ++ elseValue).forall(_.isInstanceOf[GpuLiteral])
+      ) {
+        // when branches size > 2;
+        // return type is string type;
+        // all the then and else exprs are Scalars.
+        // Avoid to use multiple `computeIfElse`s which will create multiple temp columns
+
+        // 1. select first true index from bool columns
+        val whenBoolCols = branches.safeMap(_._1.columnarEval(batch).getBase).toArray
+        val firstTrueIndex: ColumnVector = withResource(whenBoolCols) { _ =>
+          CaseWhen.selectFirstTrueIndex(whenBoolCols)
+        }
+
+        withResource(firstTrueIndex) { _ =>
+          val thenElseScalars = (branches.map(_._2) ++ elseValue).map(_.columnarEvalAny(batch)
+              .asInstanceOf[GpuScalar])
+          withResource(thenElseScalars) { _ =>
+            // 2. generate a column to store all scalars
+            val scalarsBytes = thenElseScalars.map(ret => ret.getValue
+                .asInstanceOf[UTF8String].getBytes)
+            val scalarCol = ColumnVector.fromUTF8Strings(scalarsBytes: _*)
+            withResource(scalarCol) { _ =>
+              // 3. execute final select
+              val finalRet = CaseWhen.selectFromIndex(scalarCol, firstTrueIndex)
+              // return final column vector
+              GpuColumnVector.from(finalRet, dataType)
+            }
+          }
+        }
+      } else {
+        // `elseRet` will be closed in `computeIfElse`.
+        val elseRet = elseValue
+          .map(_.columnarEvalAny(batch))
+          .getOrElse(GpuScalar(null, branches.last._2.dataType))
+        val any = branches.foldRight[Any](elseRet) {
+          case ((predicateExpr, trueExpr), falseRet) =>
+            computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+        }
+        GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
       }
-      GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
     }
   }
 
