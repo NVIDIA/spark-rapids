@@ -41,13 +41,11 @@ object OutputLoreId {
   def apply(loreId: Int): OutputLoreId = OutputLoreId(loreId, Set.empty)
 
   def apply(inputStr: String): OutputLoreId = {
-    println("inputStr for output lore id: " + inputStr)
     OUTPUT_LORE_ID_REGEX.findFirstMatchIn(inputStr).map { m =>
       val loreId = m.group("loreId").toInt
       val partitionIds: Set[Int] = m.group("partitionIds") match {
         case null => Set.empty
         case partitionIdsStr =>
-          println("partitionIdsStr: " + partitionIdsStr)
           PARTITION_ID_SEP_REGEX.split(partitionIdsStr).flatMap {
             case PARTITION_ID_REGEX(partitionId) =>
               Seq(partitionId.toInt)

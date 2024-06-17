@@ -1886,9 +1886,9 @@ case class GpuHashAggregateExec(
       truncatedString(allAggregateExpressions, "[", ", ", "]", maxFields)
     val outputString = truncatedString(output, "[", ", ", "]", maxFields)
     if (verbose) {
-      s"GpuHashAggregate(keys=$keyString, functions=$functionString, output=$outputString)"
+      s"$nodeName (keys=$keyString, functions=$functionString, output=$outputString)"
     } else {
-      s"GpuHashAggregate(keys=$keyString, functions=$functionString)," +
+      s"$nodeName (keys=$keyString, functions=$functionString)," +
           s" filters=${aggregateExpressions.map(_.filter)})"
     }
   }

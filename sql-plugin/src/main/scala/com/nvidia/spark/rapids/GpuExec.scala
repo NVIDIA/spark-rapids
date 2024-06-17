@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.filecache.FileCacheConf
-import com.nvidia.spark.rapids.lore.GpuLore
-import com.nvidia.spark.rapids.lore.IdGen.{lordIdOf, LORE_DUMP_PATH_TAG}
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.{lordIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 
@@ -367,7 +367,7 @@ trait GpuExec extends SparkPlan {
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     this.dumpLoreMetaInfo()
-    val orig = internalDoExecuteColumnar()
+    val orig = this.dumpLoreRDD(internalDoExecuteColumnar())
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
@@ -379,16 +379,24 @@ trait GpuExec extends SparkPlan {
   }
 
   override def nodeName: String = {
-    lordIdOf(this) match {
-      case Some(loreId) => s"${super.nodeName} [loreId=$loreId]"
-      case None => s"${super.nodeName}"
-    }
+    val loreId = lordIdOf(this)
+    val lorePath = getTagValue(LORE_DUMP_PATH_TAG)
+    val loreRDDInfo = getTagValue(LORE_DUMP_RDD_TAG)
+    s"${super.nodeName} [loreId=$loreId] [lorePath=$lorePath] [loreRDDInfo=$loreRDDInfo]"
   }
 
   private def dumpLoreMetaInfo(): Unit = {
     getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
       GpuLore.dumpPlan(this, new Path(rootPath))
     }
+  }
+
+  private def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
+    getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd
+    }.getOrElse(inner)
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]

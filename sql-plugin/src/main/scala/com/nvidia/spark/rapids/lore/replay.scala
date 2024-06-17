@@ -32,21 +32,24 @@ import org.apache.spark.util.SerializableConfiguration
 
 case class GpuLoreReplayExec(idxInParent: Int, parentRootPath: Path) extends LeafExecNode
   with GpuExec {
-  override def output: Seq[Attribute] = Nil
+  private lazy val rdd = new GpuLoreReplayRDD(session.sparkContext,
+    GpuLore.pathOfChild(parentRootPath, idxInParent))
+  override def output: Seq[Attribute] = rdd.loreRDDMeta.attrs
 
   override def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException("LoreReplayExec does not support row mode")
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    new GpuLoreReplayRDD(session.sparkContext, GpuLore.pathOfChild(parentRootPath, idxInParent))
+    rdd
   }
 }
 
 class GpuLoreReplayRDD(sc: SparkContext, override val rootPath: Path)
   extends RDD[ColumnarBatch](sc, Nil) with GpuLoreRDD {
   private val hadoopConf = new SerializableConfiguration(sc.hadoopConfiguration)
-  private val loreRDDMeta: LoreRDDMeta = GpuLore.loadObject(pathOfMeta, sc.hadoopConfiguration)
+  private[lore] val loreRDDMeta: LoreRDDMeta = GpuLore.loadObject(pathOfMeta, sc
+    .hadoopConfiguration)
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
     val partitionPath = pathOfPartition(split.index)
@@ -54,8 +57,8 @@ class GpuLoreReplayRDD(sc: SparkContext, override val rootPath: Path)
       if (!fs.exists(partitionPath)) {
         Iterator.empty
       } else {
-        val partitionMeta = GpuLore.loadObject[LoreRDDPartitionMeta](partitionPath,
-          hadoopConf.value)
+        val partitionMeta = GpuLore.loadObject[LoreRDDPartitionMeta](
+          pathOfPartitionMeta(split.index), hadoopConf.value)
         new Iterator[ColumnarBatch] {
           private var batchIdx: Int = 0
 

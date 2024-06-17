@@ -16,59 +16,41 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, GpuExec}
+import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector}
+import com.nvidia.spark.rapids.lore.GpuLore.pathOfChild
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.{Partition, TaskContext}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 
-case class GpuLoreDumpExec(idxInParent: Int, child: SparkPlan, loreOutputInfo: LoreOutputInfo)
-  extends UnaryExecNode with GpuExec {
-  override def output: Seq[Attribute] = child.output
+case class LoreDumpRDDInfo(idxInParent: Int, loreOutputInfo: LoreOutputInfo, attrs: Seq[Attribute])
 
-  override def doExecute(): RDD[InternalRow] = {
-    throw new UnsupportedOperationException("GpuLoreDumpExec does not support row mode")
-  }
-
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val input = child.executeColumnar()
-    val rdd = new GpuLoreDumpRDD(idxInParent, input, loreOutputInfo)
-    rdd.saveMeta()
-    rdd
-  }
-
-  override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =
-    GpuLoreDumpExec(idxInParent, newChild, loreOutputInfo)
-}
-
-
-class GpuLoreDumpRDD(idxInParent: Int, input: RDD[ColumnarBatch], loreOutputInfo: LoreOutputInfo)
+class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   extends RDD[ColumnarBatch](input) with GpuLoreRDD {
-  override val rootPath: Path = new Path(loreOutputInfo.path, s"input-$idxInParent")
+  override val rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
 
   private val hadoopConf = new SerializableConfiguration(this.context.hadoopConfiguration)
 
   def saveMeta(): Unit = {
-    val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index))
+    val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index), info.attrs)
     GpuLore.dumpObject(meta, pathOfMeta, this.context.hadoopConfiguration)
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    if (loreOutputInfo.outputLoreId.shouldOutputPartition(split.index)) {
+    if (info.loreOutputInfo.outputLoreId.shouldOutputPartition(split.index)) {
       val originalIter = input.compute(split, context)
       new Iterator[ColumnarBatch] {
         var batchIdx: Int = -1
         var nextBatch: Option[ColumnarBatch] = None
 
-        loadNextBatch()
-
         override def hasNext: Boolean = {
+          if (batchIdx == -1) {
+            loadNextBatch()
+          }
           nextBatch.isDefined
         }
 
@@ -77,7 +59,7 @@ class GpuLoreDumpRDD(idxInParent: Int, input: RDD[ColumnarBatch], loreOutputInfo
           loadNextBatch()
           if (!hasNext) {
             // This is the last batch, save the partition meta
-            val partitionMeta = LoreRDDPartitionMeta(batchIdx+1, GpuColumnVector.extractTypes(ret))
+            val partitionMeta = LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
             GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index), hadoopConf.value)
           }
           ret
@@ -93,8 +75,10 @@ class GpuLoreDumpRDD(idxInParent: Int, input: RDD[ColumnarBatch], loreOutputInfo
         private def loadNextBatch(): Unit = {
           if (originalIter.hasNext) {
             nextBatch = Some(originalIter.next())
-            batchIdx += 1
+          } else {
+            nextBatch = None
           }
+          batchIdx += 1
         }
       }
     } else {
