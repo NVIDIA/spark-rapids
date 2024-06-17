@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@
 
 ARG RDMA_CORE_VERSION=32.1
 ARG CUDA_VER=11.8.0
-ARG UCX_VER=1.15.0
+ARG UCX_VER=1.16.0
 ARG UCX_CUDA_VER=11
 ARG UCX_ARCH=x86_64
 ARG UBUNTU_VER=20.04
