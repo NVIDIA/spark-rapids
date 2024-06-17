@@ -1,16 +1,3 @@
-package com.nvidia.spark.rapids.lore
-
-import com.nvidia.spark.rapids.{DumpUtils, GpuExec}
-import org.apache.hadoop.fs.Path
-
-import org.apache.spark.{OneToOneDependency, Partition, TaskContext}
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration
-
 /*
  * Copyright (c) 2024, NVIDIA CORPORATION.
  *
@@ -27,9 +14,22 @@ import org.apache.spark.util.SerializableConfiguration
  * limitations under the License.
  */
 
-case class GpuLoreDumpExec(child: SparkPlan, loreOutputInfo: LoreOutputInfo,
-    hadoopConf: SerializableConfiguration) extends UnaryExecNode
-  with GpuExec {
+package com.nvidia.spark.rapids.lore
+
+import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, GpuExec}
+import org.apache.hadoop.fs.Path
+
+import org.apache.spark.{Partition, TaskContext}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
+
+
+case class GpuLoreDumpExec(idxInParent: Int, child: SparkPlan, loreOutputInfo: LoreOutputInfo)
+  extends UnaryExecNode with GpuExec {
   override def output: Seq[Attribute] = child.output
 
   override def doExecute(): RDD[InternalRow] = {
@@ -38,27 +38,72 @@ case class GpuLoreDumpExec(child: SparkPlan, loreOutputInfo: LoreOutputInfo,
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val input = child.executeColumnar()
-    new GpuLoreDumpRDD(input, hadoopConf, loreOutputInfo)
+    val rdd = new GpuLoreDumpRDD(idxInParent, input, loreOutputInfo)
+    rdd.saveMeta()
+    rdd
   }
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =
-    GpuLoreDumpExec(newChild, loreOutputInfo, hadoopConf)
+    GpuLoreDumpExec(idxInParent, newChild, loreOutputInfo)
 }
 
-class GpuLoreDumpRDD(input: RDD[ColumnarBatch], hadoopConf: SerializableConfiguration,
-    loreOutputInfo: LoreOutputInfo) extends RDD[ColumnarBatch](input.context,
-  Seq(new OneToOneDependency(input))) {
-  override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = input
-    .compute(split, context).zipWithIndex.map { f =>
-      val (batch, index) = f
-      val outputPath = columnarBatchPath(split, index)
-      val outputStream = outputPath.getFileSystem(hadoopConf.value).create(outputPath, false)
-      DumpUtils.dumpToParquet(batch, outputStream)
-      batch
+
+class GpuLoreDumpRDD(idxInParent: Int, input: RDD[ColumnarBatch], loreOutputInfo: LoreOutputInfo)
+  extends RDD[ColumnarBatch](input) with GpuLoreRDD {
+  override val rootPath: Path = new Path(loreOutputInfo.path, s"input-$idxInParent")
+
+  private val hadoopConf = new SerializableConfiguration(this.context.hadoopConfiguration)
+
+  def saveMeta(): Unit = {
+    val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index))
+    GpuLore.dumpObject(meta, pathOfMeta, this.context.hadoopConfiguration)
+  }
+
+  override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
+    if (loreOutputInfo.outputLoreId.shouldOutputPartition(split.index)) {
+      val originalIter = input.compute(split, context)
+      new Iterator[ColumnarBatch] {
+        var batchIdx: Int = -1
+        var nextBatch: Option[ColumnarBatch] = None
+
+        loadNextBatch()
+
+        override def hasNext: Boolean = {
+          nextBatch.isDefined
+        }
+
+        override def next(): ColumnarBatch = {
+          val ret = dumpCurrentBatch()
+          loadNextBatch()
+          if (!hasNext) {
+            // This is the last batch, save the partition meta
+            val partitionMeta = LoreRDDPartitionMeta(batchIdx+1, GpuColumnVector.extractTypes(ret))
+            GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index), hadoopConf.value)
+          }
+          ret
+        }
+
+        private def dumpCurrentBatch(): ColumnarBatch = {
+          val outputPath = pathOfBatch(split.index, batchIdx)
+          val outputStream = outputPath.getFileSystem(hadoopConf.value).create(outputPath, false)
+          DumpUtils.dumpToParquet(nextBatch.get, outputStream)
+          nextBatch.get
+        }
+
+        private def loadNextBatch(): Unit = {
+          if (originalIter.hasNext) {
+            nextBatch = Some(originalIter.next())
+            batchIdx += 1
+          }
+        }
+      }
+    } else {
+      input.compute(split, context)
     }
+  }
 
-  override protected def getPartitions: Array[Partition] = input.getPartitions
-
-  private def columnarBatchPath(partition: Partition, batchIndex: Int): Path = new Path(
-    loreOutputInfo.path, s"part-${partition.index}/batch-$batchIndex.parquet")
+  override protected def getPartitions: Array[Partition] = {
+    input.partitions
+  }
 }
+

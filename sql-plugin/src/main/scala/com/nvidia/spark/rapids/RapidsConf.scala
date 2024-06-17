@@ -2314,13 +2314,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
            | 1, and partitions 0, 4, 5, 6, 7, 8 of the operator with lore id 2.
            |If this is not set, no lore nodes will be dumped.""".stripMargin)
     .stringConf
-    .createWithDefault("")
+    .createOptional
 
   val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
     .doc(
       s"""The path to dump the lore nodes' input data. This must be set if ${LORE_DUMP_IDS.key} has
          |been set.""".stripMargin)
     .stringConf
+    .createOptional
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

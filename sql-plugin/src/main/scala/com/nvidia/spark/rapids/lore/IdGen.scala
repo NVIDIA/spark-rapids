@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.lore
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.concurrent.atomic.AtomicInteger
 
-import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.{GpuExec, RapidsConf}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -27,8 +27,7 @@ import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 
 object IdGen {
   val LORE_ID_TAG: TreeNodeTag[String] = new TreeNodeTag[String]("rapids.gpu.lore.id")
-  val LORE_OUTPUT_PATH_TAG: TreeNodeTag[LoreOutputInfo] = new TreeNodeTag[LoreOutputInfo](
-    "rapids.gpu.lore.output.path")
+  val LORE_DUMP_PATH_TAG: TreeNodeTag[String] = new TreeNodeTag[String]("rapids.gpu.lore.dump.path")
 
   /**
    * Lore id generator. Key is [[SQLExecution.EXECUTION_ID_KEY]].
@@ -45,23 +44,47 @@ object IdGen {
     }
   }
 
-  def tagLoreId(sparkPlan: SparkPlan, outputLoreIds: OutputLoreIds, loreOutputRootPath: Path)
+  def tagForLore(sparkPlan: SparkPlan, rapidsConf: RapidsConf)
   : SparkPlan = {
-    sparkPlan.foreachUp {
-      case g: GpuExec =>
-        nextLoreIdOfSparkPlan(g).foreach { id =>
-          g.setTagValue(LORE_ID_TAG, id.toString)
-          val currentExecRootPath = new Path(loreOutputRootPath, s"loreId=$id")
-          g.children.zipWithIndex.foreach {
-            case (child, idx) =>
-              val childOutputPath = new Path(currentExecRootPath, s"child=$idx")
-              child.setTagValue(LORE_OUTPUT_PATH_TAG, LoreOutputInfo(childOutputPath, outputLoreIds))
-          }
-        }
-      case _ =>
-    }
+    val loreDumpIds = rapidsConf.get(RapidsConf.LORE_DUMP_IDS).map(OutputLoreId.parse)
 
-    sparkPlan
+    loreDumpIds match {
+      case Some(dumpIds) =>
+        // We need to dump the output of the output of nodes with the lore id in the dump ids
+        val loreOutputRootPath = rapidsConf.get(RapidsConf.LORE_DUMP_PATH).getOrElse(throw
+          new IllegalArgumentException(s"${RapidsConf.LORE_DUMP_PATH.key} must be set " +
+          s"when ${RapidsConf.LORE_DUMP_IDS.key} is set."))
+
+        sparkPlan.transformUp {
+          case g: GpuExec =>
+            nextLoreIdOfSparkPlan(g).map { loreId =>
+              g.setTagValue(LORE_ID_TAG, loreId.toString)
+
+              dumpIds.get(loreId).map { outputLoreIds =>
+                val currentExecRootPath = new Path(loreOutputRootPath, s"loreId=$loreId")
+                g.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
+                val newChildren = g.children.zipWithIndex.map {
+                  case (child, idx) =>
+                    GpuLoreDumpExec(idx, child, LoreOutputInfo(outputLoreIds, currentExecRootPath))
+                }
+
+                g.withNewChildren(newChildren)
+              }.getOrElse(g)
+            }.getOrElse(g)
+          case p => p
+        }
+      case None =>
+        // We don't need to dump the output of the nodes, just tag the lore id
+        sparkPlan.foreachUp {
+          case g: GpuExec =>
+            nextLoreIdOfSparkPlan(g).foreach { loreId =>
+              g.setTagValue(LORE_ID_TAG, loreId.toString)
+            }
+          case _ =>
+        }
+
+        sparkPlan
+    }
   }
 
   def lordIdOf(node: SparkPlan): Option[String] = {

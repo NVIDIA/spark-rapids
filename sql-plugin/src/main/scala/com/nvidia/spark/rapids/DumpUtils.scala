@@ -89,7 +89,7 @@ object DumpUtils extends Logging {
    *                      should be closed by caller.
    * @param outputStream Will be closed after writing.
    */
-  def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream) = {
+  def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream): Unit = {
     closeOnExcept(outputStream) { _ =>
       withResource(GpuColumnVector.from(columnarBatch)) { table =>
         withResource(new ParquetDumper(outputStream, table)) { dumper =>

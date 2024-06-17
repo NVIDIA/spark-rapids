@@ -825,7 +825,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
 
         if (rapidsConf.get(RapidsConf.TAG_LORE_ID_ENABLED)) {
-          updatedPlan = IdGen.tagLoreId(updatedPlan)
+          updatedPlan = IdGen.tagForLore(updatedPlan, rapidsConf)
         }
 
         if (rapidsConf.logQueryTransformations) {

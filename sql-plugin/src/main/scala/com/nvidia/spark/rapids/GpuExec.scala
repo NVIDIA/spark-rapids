@@ -19,8 +19,10 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.filecache.FileCacheConf
-import com.nvidia.spark.rapids.lore.IdGen.lordIdOf
+import com.nvidia.spark.rapids.lore.GpuLore
+import com.nvidia.spark.rapids.lore.IdGen.{lordIdOf, LORE_DUMP_PATH_TAG}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
@@ -364,6 +366,7 @@ trait GpuExec extends SparkPlan {
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    this.dumpLoreMetaInfo()
     val orig = internalDoExecuteColumnar()
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
@@ -378,7 +381,13 @@ trait GpuExec extends SparkPlan {
   override def nodeName: String = {
     lordIdOf(this) match {
       case Some(loreId) => s"${super.nodeName} [loreId=$loreId]"
-      case None => s"${super.nodeName} [loreId=unknown]"
+      case None => s"${super.nodeName}"
+    }
+  }
+
+  private def dumpLoreMetaInfo(): Unit = {
+    getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
+      GpuLore.dumpPlan(this, new Path(rootPath))
     }
   }
 
