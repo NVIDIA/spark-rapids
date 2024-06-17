@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference,
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
+import org.apache.spark.sql.rapids.debug.ReplayDumper
 
 /**
  * Base class for GPU Execs that implement window functions. This abstracts the method
@@ -140,9 +141,10 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
+    val dumpForReplay = ReplayDumper.enabledReplayForProject(conf)
 
     val input = if (isPreNeeded) {
-      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())()
+      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded(), dumpForReplay)()
     } else {
       childPlans.head.convertIfNeeded()
     }
@@ -163,11 +165,10 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
         input)(getPartitionSpecs, getOrderSpecs)
     }
-
     if (isPostNeeded) {
-      GpuProjectExec(post.toList, windowExpr)()
+      GpuProjectExec(post.toList, windowExpr, dumpForReplay)()
     } else if (windowExpr.output != windowExec.output) {
-      GpuProjectExec(windowExec.output.toList, windowExpr)()
+      GpuProjectExec(windowExec.output.toList, windowExpr, dumpForReplay)()
     } else {
       windowExpr
     }

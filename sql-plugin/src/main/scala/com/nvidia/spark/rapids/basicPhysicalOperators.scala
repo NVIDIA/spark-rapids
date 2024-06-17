@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.UUID
+
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
@@ -32,14 +34,17 @@ import com.nvidia.spark.rapids.shims._
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
+import org.apache.spark.sql.rapids.debug.ReplayDumper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.util.SerializableConfiguration
 import org.apache.spark.util.random.BernoulliCellSampler
 
 class GpuProjectExecMeta(
@@ -65,7 +70,8 @@ class GpuProjectExecMeta(
         }
       }
     }
-    GpuProjectExec(gpuExprs, gpuChild)(useTieredProject = conf.isTieredProjectEnabled)
+    val testReplay = ReplayDumper.enabledReplayForProject(conf)
+    GpuProjectExec(gpuExprs, gpuChild, testReplay)(useTieredProject = conf.isTieredProjectEnabled)
   }
 }
 
@@ -184,6 +190,18 @@ object GpuProjectExec {
           }
         }
       }
+    }
+  }
+
+  def projectCb(
+      boundProjectList: GpuTieredProject,
+      cb: ColumnarBatch,
+      opTime: GpuMetric): ColumnarBatch = {
+    withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+      val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      //Note if this ever changes to include splitting the output we need to have an option to not
+      // do this for window to work properly.
+      boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
     }
   }
 }
@@ -357,9 +375,27 @@ case class GpuProjectExec(
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
    projectList: List[NamedExpression],
-   child: SparkPlan)(
+   child: SparkPlan,
+   dumpForReplay: Boolean // for testing purpose
+ )(
    useTieredProject : Boolean = false
  ) extends GpuProjectExecLike {
+
+  // for testing purpose; used by dumping for replay feature
+  private lazy val replayDumperOpt: Option[ReplayDumper] = if (dumpForReplay) {
+    val spark = SparkSession.active
+    val hadoopConf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
+    val dumpDir = conf.getConfString(RapidsConf.DEBUG_REPLAY_EXEC_DUMP_DIR.key,
+      defaultValue = "file:/tmp")
+    val thresholdMS = conf.getConfString(RapidsConf.DEBUG_REPLAY_EXEC_THRESHOLD_MS.key,
+      defaultValue = "1000").toInt
+    val batchLimit = conf.getConfString(RapidsConf.DEBUG_REPLAY_EXEC_BATCH_LIMIT.key,
+      defaultValue = "1").toInt
+    val projectUUID = UUID.randomUUID().toString
+    Some(ReplayDumper(hadoopConf, dumpDir, thresholdMS, batchLimit, projectUUID))
+  } else {
+    None
+  }
 
   override def otherCopyArgs: Seq[AnyRef] =
     Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean])
@@ -368,7 +404,7 @@ case class GpuProjectExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
-  override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
@@ -376,15 +412,33 @@ case class GpuProjectExec(
       useTieredProject)
 
     val rdd = child.executeColumnar()
+
+    // This is for test purpose; dump project list
+    replayDumperOpt.foreach(d => d.dumpMeta[GpuTieredProject]("GpuTieredProject", boundProjectList))
+
     rdd.map { cb =>
-      val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
-        val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        //Note if this ever changes to include splitting the output we need to have an option to not
-        // do this for window to work properly.
-        boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
+      // This is for test purpose
+      replayDumperOpt.foreach { _ =>
+        // increase refCount because `projectAndCloseWithRetrySingleBatch` will close cb
+        for (i <- 0 until cb.numCols()) {
+          cb.column(i).asInstanceOf[GpuColumnVector].incRefCount()
+        }
       }
+
+      val previousOpTime = opTime.value
+      // execute project
+      val ret = GpuProjectExec.projectCb(boundProjectList, cb, opTime)
       numOutputBatches += 1
       numOutputRows += ret.numRows()
+
+      // This is for test purpose; dump if feature is enabled
+      replayDumperOpt.foreach { d =>
+        withResource(cb) { _ =>
+          val elapsedTimeNS = opTime.value - previousOpTime
+          d.dumpColumnBatch(elapsedTimeNS, cb)
+        }
+      }
+
       ret
     }
   }
