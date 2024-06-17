@@ -1246,6 +1246,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_COALESCE_AFTER_EXPAND = conf("spark.rapids.sql.coalesceAfterExpand.enabled")
+    .doc("When set to false disables the coalesce after GPU Expand. ")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val EXPAND_CACHING_NULL_VEC_MAX_NULL_COUNT =
+    conf("spark.rapids.sql.expandCachingNullVec.maxNulls")
+    .doc("Max number of null scalar in null vectors to cache for GPU Expand. " +
+      "If the number of null scala exceeds this value, the null vectors will not be cached." +
+      "The value has to be positive for caching to be enabled.")
+    .internal().integerConf
+    .createWithDefault(0)
+
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
     .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
@@ -2766,6 +2780,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
 
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
+
+  lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
+
+  lazy val expandCachingNullVecMaxCount: Int = get(EXPAND_CACHING_NULL_VEC_MAX_NULL_COUNT)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.

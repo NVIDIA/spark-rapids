@@ -21,11 +21,12 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
+import java.util
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -52,6 +53,40 @@ object GpuExpressionsUtils {
         "implemented and should have been disabled")
   }
 
+  // This is only for ExpandExec which will generate a lot of null vectors
+  case class NullVecKey(d: DataType, n: Int)
+
+  class NullVecCache(private val maxNulls: Int)
+    extends util.LinkedHashMap[NullVecKey, GpuColumnVector](100, 0.75f, true) {
+    private var totalNulls: Long = 0L
+
+    override def clear(): Unit = {
+      super.clear()
+      totalNulls = 0
+    }
+
+    override def put(key: NullVecKey, v: GpuColumnVector): GpuColumnVector = {
+      if (v.getRowCount > maxNulls) {
+        throw new IllegalStateException(s"spark.rapids.sql.expandCachingNullVec.maxNulls" +
+          s"($maxNulls) is set too small to hold single vector with ${v.getRowCount} rows.")
+      }
+      val iter = entrySet().iterator()
+      while (iter.hasNext && totalNulls > maxNulls - v.getRowCount) {
+        val entry = iter.next()
+        iter.remove()
+        totalNulls -= entry.getValue.getRowCount
+      }
+
+      val ret = super.put(key, v)
+      totalNulls += v.getRowCount
+      ret
+    }
+
+    override def remove(key: Any): GpuColumnVector = throw new UnsupportedOperationException()
+  }
+
+  val cachedNullVectors = new ThreadLocal[NullVecCache]()
+
   /**
    * Tries to resolve a `GpuColumnVector` from a Scala `Any`.
    *
@@ -73,7 +108,18 @@ object GpuExpressionsUtils {
   def resolveColumnVector(any: Any, numRows: Int): GpuColumnVector = {
     withResourceIfAllowed(any) {
       case c: GpuColumnVector => c.incRefCount()
-      case s: GpuScalar => GpuColumnVector.from(s, numRows, s.dataType)
+      case s: GpuScalar =>
+        if (!s.isValid && cachedNullVectors.get() != null) {
+          if (!cachedNullVectors.get.containsKey(NullVecKey.apply(s.dataType, numRows))) {
+            cachedNullVectors.get.put(NullVecKey.apply(s.dataType, numRows),
+              GpuColumnVector.from(s, numRows, s.dataType))
+          }
+
+          val ret = cachedNullVectors.get().get(NullVecKey.apply(s.dataType, numRows))
+          ret.incRefCount()
+        } else {
+          GpuColumnVector.from(s, numRows, s.dataType)
+        }
       case other =>
         throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
           s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
