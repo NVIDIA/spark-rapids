@@ -16,12 +16,25 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
 class MetricsSuite extends AnyFunSuite {
 
-  test("duplicate timing on the same metrics") {
+  test("GpuMetric.ns: duplicate timing on the same metrics") {
+    val m1 = new LocalGpuMetric()
+    m1.ns(
+      m1.ns(
+        Thread.sleep(100)
+      )
+    )
+    // if the timing is duplicated, the value should be around 200,000,000
+    assert(m1.value < 100000000 * 1.5)
+    assert(m1.value > 100000000 * 0.5)
+  }
+
+  test("MetricRange: duplicate timing on the same metrics") {
     val m1 = new LocalGpuMetric()
     val m2 = new LocalGpuMetric()
     withResource(new MetricRange(m1, m2)) { _ =>
@@ -32,6 +45,24 @@ class MetricsSuite extends AnyFunSuite {
 
     // if the timing is duplicated, the value should be around 200,000,000
     assert(m1.value < 100000000 * 1.5)
+    assert(m1.value > 100000000 * 0.5)
     assert(m2.value < 100000000 * 1.5)
+    assert(m2.value > 100000000 * 0.5)
+  }
+
+  test("NvtxWithMetrics: duplicate timing on the same metrics") {
+    val m1 = new LocalGpuMetric()
+    val m2 = new LocalGpuMetric()
+    withResource(new NvtxWithMetrics("a", NvtxColor.BLUE, m1, m2)) { _ =>
+      withResource(new NvtxWithMetrics("b", NvtxColor.BLUE, m2, m1)) { _ =>
+        Thread.sleep(100)
+      }
+    }
+
+    // if the timing is duplicated, the value should be around 200,000,000
+    assert(m1.value < 100000000 * 1.5)
+    assert(m1.value > 100000000 * 0.5)
+    assert(m2.value < 100000000 * 1.5)
+    assert(m2.value > 100000000 * 0.5)
   }
 }
