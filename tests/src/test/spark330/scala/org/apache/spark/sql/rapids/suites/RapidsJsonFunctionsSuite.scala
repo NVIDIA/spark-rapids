@@ -26,9 +26,17 @@ import org.apache.spark.sql.rapids.utils.{RapidsJsonConfTrait, RapidsSQLTestsTra
 
 class RapidsJsonFunctionsSuite
     extends JsonFunctionsSuite with RapidsSQLTestsTrait with RapidsJsonConfTrait {
+
+  val originalTimeZone = TimeZone.getDefault
+  
   override def beforeAll(): Unit = {
     super.beforeAll()
     // Set timezone to UTC to avoid fallback, so that tests run on GPU to detect bugs
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  } 
+  }
+
+  override def afterAll(): Unit = {
+    TimeZone.setDefault(originalTimeZone)
+    super.afterAll()
+  }
 }
