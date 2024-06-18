@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1123,7 +1123,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (!needTimeZoneCheck) return
 
     // Level 2 check
-    if (!isTimeZoneSupported) return checkUTCTimezone(this)
+    if (!isTimeZoneSupported) return checkUTCTimezone(this, getZoneId())
 
     // Level 3 check
     val zoneId = getZoneId()
@@ -1203,8 +1203,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
    *
    * @param meta to check whether it's UTC
    */
-  def checkUTCTimezone(meta: RapidsMeta[_, _, _]): Unit = {
-    if (!GpuOverrides.isUTCTimezone()) {
+  def checkUTCTimezone(meta: RapidsMeta[_, _, _], zoneId: ZoneId): Unit = {
+    if (!GpuOverrides.isUTCTimezone(zoneId)) {
       meta.willNotWorkOnGpu(
         TimeZoneDB.nonUTCTimezoneNotSupportedStr(meta.wrapped.getClass.toString))
     }
