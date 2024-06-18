@@ -455,7 +455,7 @@ def test_buckets_write_correctness(spark_tmp_path, spark_tmp_table_factory):
 
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
-def test_buckets_write_fallback_for_map(spark_tmp_path, spark_tmp_table_factory):
+def test_buckets_write_fallback_unsupported_types(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [["id", binary_gen], ["data", long_gen]]
     assert_gpu_fallback_write(
