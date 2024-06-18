@@ -368,10 +368,8 @@ In versions of Spark before 3.5.0 there is no maximum to how deeply nested JSON 
 no matter what version of Spark is used. If the nesting level is over this the JSON is considered
 invalid and all values will be returned as nulls.
 
-Only structs are supported for nested types. There are also some issues with arrays of structs. If
-your data includes this, even if you are not reading it, you might get an exception. You can
-try to set `spark.rapids.sql.json.read.mixedTypesAsString.enabled` to true to work around this,
-but it also has some issues with it.
+Mixed types can have some problems. If an item being read could have some lines that are arrays 
+and others that are structs/dictionaries it is possible an error will be thrown.
 
 Dates and Timestamps have some issues and may return values for technically invalid inputs.
 
@@ -497,6 +495,7 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`,
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
+- Empty pattern: `""`
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
