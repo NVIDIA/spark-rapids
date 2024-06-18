@@ -3797,14 +3797,6 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
     ),
-    expr[RaiseError](
-      "Throw an exception",
-      ExprChecks.unaryProject(
-        TypeSig.NULL, TypeSig.NULL,
-        TypeSig.STRING, TypeSig.STRING),
-      (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
-      }),
     expr[DynamicPruningExpression](
       "Dynamic pruning expression marker",
       ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.BOOLEAN, TypeSig.BOOLEAN),
@@ -3820,7 +3812,8 @@ object GpuOverrides extends Logging {
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
-        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ SparkShimImpl.getExprs
+        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ RaiseErrorShim.exprs ++
+        SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,

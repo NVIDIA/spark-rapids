@@ -719,9 +719,8 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <!-- TODO: https://github.com/NVIDIA/spark-rapids/issues/10867 -->
-        <spark-rapids-jni.version>24.06.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>24.06.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>24.08.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>24.08.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -887,6 +886,7 @@
             340,
             341,
             342,
+            343,
             350,
             351
         </noSnapshotScala213.buildvers>
