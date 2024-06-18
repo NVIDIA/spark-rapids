@@ -453,7 +453,7 @@ def test_buckets_write_correctness(spark_tmp_path, spark_tmp_table_factory):
         assert_equal_with_local_sort(ret_cpu, ret_gpu)
         cur_bucket_id += 1
 
-
+@ignore_order(local=True)
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
 def test_buckets_write_fallback_unsupported_types(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'

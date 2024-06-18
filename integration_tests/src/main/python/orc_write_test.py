@@ -230,6 +230,7 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
         data_path,
         conf={'spark.rapids.sql.format.orc.write.enabled': True})
 
+@ignore_order(local=True)
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
 def test_buckets_write_fallback_unsupported_types(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
