@@ -101,9 +101,8 @@ def _assert_equal(cpu, gpu, float_check, path):
     else:
         assert False, "Found unexpected type {} at {}".format(t, path)
 
-def assert_equal_with_sort(cpu, gpu):
-    if should_sort_locally():
-        _sort_locally(cpu, gpu)
+def assert_equal_with_local_sort(cpu, gpu):
+    _sort_locally(cpu, gpu)
     assert_equal(cpu, gpu)
 
 def assert_equal(cpu, gpu):

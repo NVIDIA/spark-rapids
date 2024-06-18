@@ -418,7 +418,6 @@ def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
         conf=writer_confs)
 
 
-@ignore_order(local=True)
 def test_buckets_write_correctness(spark_tmp_path, spark_tmp_table_factory):
     cpu_path = spark_tmp_path + '/PARQUET_DATA/CPU'
     gpu_path = spark_tmp_path + '/PARQUET_DATA/GPU'
@@ -451,7 +450,7 @@ def test_buckets_write_correctness(spark_tmp_path, spark_tmp_table_factory):
         # Verify the result bucket by bucket
         ret_cpu = read_single_bucket(cpu_path, cur_bucket_id)
         ret_gpu = read_single_bucket(gpu_path, cur_bucket_id)
-        assert_equal_with_sort(ret_cpu, ret_gpu)
+        assert_equal_with_local_sort(ret_cpu, ret_gpu)
         cur_bucket_id += 1
 
 
