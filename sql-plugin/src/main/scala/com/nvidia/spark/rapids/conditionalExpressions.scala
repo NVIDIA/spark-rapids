@@ -369,10 +369,14 @@ case class GpuCaseWhen(
       ) {
         // when branches size > 2;
         // return type is string type;
-        // all the then and else exprs are Scalars.
+        // all the then and else expressions are Scalars.
         // Avoid to use multiple `computeIfElse`s which will create multiple temp columns
 
-        // 1. select first true index from bool columns
+        // 1. select first true index from bool columns, if no true, index will be out of bound
+        // e.g.:
+        //  case when bool result column 0: true,  false, false
+        //  case when bool result column 1: false, true,  false
+        //  result is: [0, 1, 2]
         val whenBoolCols = branches.safeMap(_._1.columnarEval(batch).getBase).toArray
         val firstTrueIndex: ColumnVector = withResource(whenBoolCols) { _ =>
           CaseWhen.selectFirstTrueIndex(whenBoolCols)
@@ -387,14 +391,22 @@ case class GpuCaseWhen(
                 .asInstanceOf[UTF8String].getBytes)
             val scalarCol = ColumnVector.fromUTF8Strings(scalarsBytes: _*)
             withResource(scalarCol) { _ =>
-              // 3. execute final select
-              val finalRet = CaseWhen.selectFromIndex(scalarCol, firstTrueIndex)
+
+              val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
+                // 3. execute final select
+                // default gather OutOfBoundsPolicy is nullify,
+                // If index is out of bound, return null
+                withResource(oneColumnTable.gather(firstTrueIndex)) { resultTable =>
+                  resultTable.getColumn(0).incRefCount()
+                }
+              }
               // return final column vector
               GpuColumnVector.from(finalRet, dataType)
             }
           }
         }
       } else {
+        // execute from tail to front recursively
         // `elseRet` will be closed in `computeIfElse`.
         val elseRet = elseValue
           .map(_.columnarEvalAny(batch))
