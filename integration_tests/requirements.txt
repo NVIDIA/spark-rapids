@@ -13,8 +13,9 @@
 # limitations under the License.
 pytest
 sre_yield
-pandas
-pyarrow
+numpy <= 1.24.4
+pandas == 1.4.3
+pyarrow == 16.1.0
 pytest-xdist >= 2.0.0
 findspark
 fastparquet == 0.8.3
