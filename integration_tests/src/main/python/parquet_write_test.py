@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -224,6 +224,10 @@ def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
         def start(self, rand):
             self._start(rand, lambda : None)
+
+        def _cache_repr(self):
+            return super()._cache_repr() + '(all_nulls)'
+
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_gpu_and_cpu_writes_are_equal_collect(
