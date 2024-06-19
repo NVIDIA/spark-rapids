@@ -24,7 +24,7 @@ import org.apache.spark.sql.functions
 import org.apache.spark.sql.internal.SQLConf
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
-  test("Test aggregate replay") {
+  test("Aggregate") {
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "10")
@@ -47,7 +47,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Test broadcast join replay") {
+  test("Broadcast join") {
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "32")
@@ -74,7 +74,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Test subquery") {
+  test("Subquery") {
     withGpuSparkSession{ spark =>
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
       spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "13")
@@ -100,7 +100,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Test no broadcast join replay") {
+  test("No broadcast join") {
     withGpuSparkSession{ spark =>
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
@@ -128,7 +128,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Test AQE replay") {
+  test("AQE") {
     withGpuSparkSession{ spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
