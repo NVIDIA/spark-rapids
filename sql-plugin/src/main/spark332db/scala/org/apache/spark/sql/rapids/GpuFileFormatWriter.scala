@@ -99,6 +99,7 @@ object GpuFileFormatWriter extends Logging {
       options: Map[String, String],
       useStableSort: Boolean,
       concurrentWriterPartitionFlushSize: Long,
+      forceHiveHashForBucketing: Boolean = false,
       numStaticPartitionCols: Int = 0): Set[String] = {
     require(partitionColumns.size >= numStaticPartitionCols)
 
@@ -120,7 +121,7 @@ object GpuFileFormatWriter extends Logging {
     val dataColumns = finalOutputSpec.outputColumns.filterNot(partitionSet.contains)
 
     val writerBucketSpec = GpuBucketingUtils.getWriterBucketSpec(bucketSpec, dataColumns,
-      options, false)
+      options, forceHiveHashForBucketing)
     val sortColumns = bucketSpec.toSeq.flatMap {
       spec => spec.sortColumnNames.map(c => dataColumns.find(_.name == c).get)
     }

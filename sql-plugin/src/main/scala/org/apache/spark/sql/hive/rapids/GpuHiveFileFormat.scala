@@ -45,7 +45,7 @@ object GpuHiveFileFormat extends Logging {
     val insertCmd = meta.wrapped
     // Bucketing write
     GpuBucketingUtils.tagForHiveBucketingWrite(meta, insertCmd.table.bucketSpec,
-      insertCmd.outputColumns, false)
+      insertCmd.outputColumns, meta.conf.isForceHiveHashForBucketedWrite)
 
     // Infer the file format from the serde string, similar as what Spark does in
     // RelationConversions for Hive.
