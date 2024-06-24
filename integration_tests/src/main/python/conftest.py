@@ -221,7 +221,8 @@ def pytest_runtest_setup(item):
     _allow_any_non_gpu_databricks = False
     non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
-    _per_test_ansi_mode_enabled = not item.get_closest_marker('disable_ansi_mode')
+    _per_test_ansi_mode_enabled = None if item.get_closest_marker('disable_ansi_mode') is None \
+      else not item.get_closest_marker('disable_ansi_mode')
 
     if non_gpu_databricks:
         if is_databricks_runtime():
