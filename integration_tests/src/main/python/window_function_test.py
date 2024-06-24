@@ -166,7 +166,7 @@ def test_float_window_min_max_all_nans(data_gen):
   )
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window(data_gen):
@@ -180,7 +180,7 @@ def test_decimal128_count_window(data_gen):
         'from window_agg_table')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window_no_part(data_gen):
@@ -194,7 +194,7 @@ def test_decimal128_count_window_no_part(data_gen):
         'from window_agg_table')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_sum_window(data_gen):
@@ -208,7 +208,7 @@ def test_decimal_sum_window(data_gen):
         'from window_agg_table')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_sum_window_no_part(data_gen):
@@ -222,7 +222,7 @@ def test_decimal_sum_window_no_part(data_gen):
         'from window_agg_table')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_running_sum_window(data_gen):
@@ -237,7 +237,7 @@ def test_decimal_running_sum_window(data_gen):
         conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_running_sum_window_no_part(data_gen):
@@ -313,7 +313,7 @@ def test_window_aggs_for_ranges_numeric_long_overflow(data_gen):
         'from window_agg_table')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
@@ -364,7 +364,7 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
         conf = conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
@@ -409,7 +409,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
         conf = conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
@@ -497,7 +497,7 @@ def test_window_batched_unbounded(b_gen, batch_size):
         conf = conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
@@ -536,7 +536,7 @@ def test_rows_based_running_window_unpartitioned(b_gen, batch_size):
         conf = conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Testing multiple batch sizes.
 @pytest.mark.parametrize('a_gen', integral_gens + [string_gen, date_gen, timestamp_gen], ids=meta_idfn('data:'))
 @allow_non_gpu(*non_utc_allow)
@@ -711,7 +711,7 @@ def test_window_running_rank(data_gen):
         conf = conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
@@ -757,7 +757,7 @@ def test_rows_based_running_window_partitioned(b_gen, c_gen, batch_size):
 
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Test different batch sizes.
 @pytest.mark.parametrize('part_gen', [int_gen, long_gen], ids=idfn)  # Partitioning is not really the focus of the test.
@@ -825,7 +825,7 @@ def test_range_running_window_runs_batched(part_gen, order_gen, batch_size):
         conf=conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # Test that we can do a running window sum on floats and doubles and decimal. This becomes problematic because we do the agg in parallel
 # which means that the result can switch back and forth from Inf to not Inf depending on the order of aggregations.
 # We test this by limiting the range of the values in the sum to never hit Inf, and by using abs so we don't have
@@ -857,7 +857,7 @@ def test_window_running_float_decimal_sum(batch_size):
         conf = conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @approximate_float
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Test different batch sizes.
@@ -901,7 +901,7 @@ def test_range_running_window_float_decimal_sum_runs_batched(batch_size):
         conf=conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
@@ -1023,7 +1023,7 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
         ''')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
 # without lead and lag
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
@@ -1132,7 +1132,7 @@ def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
         ''')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # Test for RANGE queries, with timestamp order-by expressions.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
@@ -1181,7 +1181,7 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
         conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
@@ -1228,7 +1228,7 @@ def test_window_aggregations_for_decimal_and_float_ranges(data_gen):
         conf={})
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
@@ -1334,7 +1334,7 @@ def test_window_aggs_for_rows_collect_list():
         conf={'spark.rapids.sql.window.collectList.enabled': True})
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
 # This test is more directed at Databricks and their running window optimization instead of ours
@@ -1377,7 +1377,7 @@ def test_running_window_function_exec_for_all_aggs():
         conf={'spark.rapids.sql.window.collectList.enabled': True})
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # Test the Databricks WindowExec which combines a WindowExec with a ProjectExec and provides the output
 # fields that we need to handle with an extra GpuProjectExec and we need the input expressions to compute
 # a window function of another window function case
@@ -1700,7 +1700,7 @@ def test_nested_part_fallback(part_gen):
     assert_gpu_fallback_collect(do_it, 'WindowExec')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 # single-level structs (no nested structs) are now supported by the plugin
 @pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]])], ids=meta_idfn('partBy:'))
@@ -1765,7 +1765,7 @@ def test_window_rows_stddev(preceding, following):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order
 def test_unbounded_to_unbounded_window():
     # This is specifically to test a bug that caused overflow issues when calculating
@@ -1819,7 +1819,7 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
         'FROM window_agg_table')
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @tz_sensitive_test
 @allow_non_gpu(*non_supported_tz_allow)
 @ignore_order(local=True)
@@ -1861,7 +1861,7 @@ def test_to_date_with_window_functions():
     )
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
@@ -1918,7 +1918,7 @@ def spark_bugs_in_decimal_sorting():
     return v < "3.1.4" or v < "3.3.1" or v < "3.2.3" or v < "3.4.0"
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1g'], ids=idfn)
@@ -1963,7 +1963,7 @@ def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
         conf=conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
@@ -2003,7 +2003,7 @@ def test_window_aggs_for_batched_finite_row_windows_partitioned(data_gen, batch_
         conf=conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
@@ -2043,7 +2043,7 @@ def test_window_aggs_for_batched_finite_row_windows_unpartitioned(data_gen, batc
         conf=conf)
 
 
-@ansi_mode_disabled  # https://github.com/NVIDIA/spark-rapids/issues/5114
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [_grpkey_int_with_nulls,], ids=idfn)
 def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
