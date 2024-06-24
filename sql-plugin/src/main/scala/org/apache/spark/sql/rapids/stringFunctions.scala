@@ -2056,13 +2056,24 @@ class GpuConvMeta(
   override def tagExprForGpu(): Unit = {
     val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
     val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
+    val errorPostfix = "only literal 10 or 16 for from_base and to_base are supported"
     (fromBaseLit, toBaseLit) match {
-      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
-        if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
+      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
+        val isBaseSupported = (base: Any) => base match {
+          case 10 | 16 => true
+          case _ => false
+        }
+        if (!isBaseSupported(fromBaseVal) || !isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"either ${fromBaseVal} or ${toBaseVal} is not supported; " +
+            s"${errorPostfix}")
+        } else {
+          ()
+        }
       case _ =>
-        (willNotWorkOnGpu(because = s"either ${fromBaseLit.getOrElse("''")} or " +
-          s"${toBaseLit.getOrElse("''")} is not supported; only literal 10 or 16 for " +
-          "from_base and to_base are supported"))
+        // This will never happen in production as the function signature enforces
+        // integer types for the bases, but nice to have an edge case handling.
+        (willNotWorkOnGpu(because = "either from_base or to_base is not an integer literal; " +
+          errorPostfix))
     }
   }
 
