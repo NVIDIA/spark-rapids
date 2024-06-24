@@ -17,12 +17,16 @@
 package com.nvidia.spark.rapids.lore
 
 import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector}
+import com.nvidia.spark.rapids.GpuCoalesceExec.EmptyPartition
 import com.nvidia.spark.rapids.lore.GpuLore.pathOfChild
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.{Partition, TaskContext}
+import org.apache.spark.{Partition, SparkContext, TaskContext}
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.rapids.execution.GpuBroadcastHelper
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -91,3 +95,11 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   }
 }
 
+class SimpleRDD(_sc: SparkContext, data: Broadcast[Any], schema: StructType) extends
+  RDD[ColumnarBatch](_sc, Nil) {
+  override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
+    Seq(GpuBroadcastHelper.getBroadcastBatch(data, schema)).iterator
+  }
+
+  override protected def getPartitions: Array[Partition] = Array(EmptyPartition(0))
+}

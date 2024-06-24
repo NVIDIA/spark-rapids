@@ -23,14 +23,16 @@ import scala.reflect.ClassTag
 
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, GpuFilterExec, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.shims.ShimLeafExecNode
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkEnv
+
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, SparkPlan, SQLExecution}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
+import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec}
 import org.apache.spark.sql.types.DataType
 
 case class LoreRDDMeta(numPartitions: Int, outputPartitions: Seq[Int], attrs: Seq[Attribute])
@@ -116,6 +118,8 @@ object GpuLore {
       plan match {
         case b: GpuBroadcastExchangeExec =>
           b.withNewChildren(Seq(newChild))
+        case b: BroadcastQueryStageExec =>
+          b.broadcast.withNewChildren(Seq(newChild))
         case _ => newChild
       }
     }
@@ -151,7 +155,7 @@ object GpuLore {
   private val idGen: ConcurrentMap[String, AtomicInteger] =
     new ConcurrentHashMap[String, AtomicInteger]()
 
-  private def nextLoreIdOfSparkPlan(plan: SparkPlan): Option[Int] = {
+  private def nextLoreIdOf(plan: SparkPlan): Option[Int] = {
     // When the execution id is not set, it means there is no actual execution happening, in this
     // case we don't need to generate lore id.
     Option(plan.session.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
@@ -165,19 +169,18 @@ object GpuLore {
 
     val newPlan = loreDumpIds match {
       case Some(dumpIds) =>
-        println(s"Dumping lore output for $dumpIds")
         // We need to dump the output of the output of nodes with the lore id in the dump ids
         val loreOutputRootPath = rapidsConf.get(RapidsConf.LORE_DUMP_PATH).getOrElse(throw
           new IllegalArgumentException(s"${RapidsConf.LORE_DUMP_PATH.key} must be set " +
             s"when ${RapidsConf.LORE_DUMP_IDS.key} is set."))
-        println(s"Dumping lore output to $loreOutputRootPath")
 
         sparkPlan.foreachUp {
-          case g: GpuExec if !g.isInstanceOf[GpuLoreReplayExec] =>
-            nextLoreIdOfSparkPlan(g).foreach { loreId =>
+          case g: GpuExec =>
+            nextLoreIdOf(g).foreach { loreId =>
               g.setTagValue(LORE_ID_TAG, loreId.toString)
 
               dumpIds.get(loreId).foreach { outputLoreIds =>
+                checkUnsupportedOperator(g)
                 val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
                 g.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
                 val loreOutputInfo = LoreOutputInfo(outputLoreIds,
@@ -187,8 +190,8 @@ object GpuLore {
                   case (child, idx) =>
                     val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output)
                     child match {
-                      case c: GpuBroadcastExchangeExec =>
-                        c.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
+                      case c: BroadcastQueryStageExec =>
+                        c.broadcast.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
                       case o => o.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
                     }
                 }
@@ -208,7 +211,7 @@ object GpuLore {
         // We don't need to dump the output of the nodes, just tag the lore id
         sparkPlan.foreachUp {
           case g: GpuExec =>
-            nextLoreIdOfSparkPlan(g).foreach { loreId =>
+            nextLoreIdOf(g).foreach { loreId =>
               g.setTagValue(LORE_ID_TAG, loreId.toString)
             }
           case _ =>
@@ -217,7 +220,6 @@ object GpuLore {
         sparkPlan
     }
 
-    newPlan.foreachUp(node => println(s"${node.verboseString(1000)}"))
     newPlan
   }
 
@@ -232,7 +234,6 @@ object GpuLore {
       case sub: ExecSubqueryExpression =>
         if (sub.plan.child.isInstanceOf[GpuExec]) {
           val dumpRDDInfo = LoreDumpRDDInfo(nextPlanId, loreOutputInfo, sub.plan.child.output)
-          println(s"Tagging subquery plan with $dumpRDDInfo, ${sub.plan.child.verboseString(1000)}")
           sub.plan.child match {
             case p: GpuColumnarToRowExec => p.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
             case c => c.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
@@ -245,5 +246,14 @@ object GpuLore {
       case _ =>
     }
     nextPlanId
+  }
+
+  private def checkUnsupportedOperator(plan: SparkPlan): Unit = {
+    if (plan.isInstanceOf[ShimLeafExecNode] ||
+      plan.isInstanceOf[GpuCustomShuffleReaderExec]
+    ) {
+      throw new UnsupportedOperationException(s"Currently we don't support dumping input of " +
+        s"${plan.getClass.getSimpleName} operator.")
+    }
   }
 }

@@ -391,7 +391,7 @@ trait GpuExec extends SparkPlan {
     }
   }
 
-  private def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
+  protected def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
     getTagValue(LORE_DUMP_RDD_TAG).map { info =>
       val rdd = new GpuLoreDumpRDD(info, inner)
       rdd.saveMeta()

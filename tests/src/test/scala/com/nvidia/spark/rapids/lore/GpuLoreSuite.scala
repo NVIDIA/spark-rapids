@@ -20,139 +20,91 @@ import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, Rapid
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.functions
+import org.apache.spark.sql.{functions, DataFrame, SparkSession}
 import org.apache.spark.sql.internal.SQLConf
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   test("Aggregate") {
-    withGpuSparkSession{ spark =>
-      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "10")
-
-      val df = spark.range(0, 1000, 1, 100)
+    doTestReplay("10") { spark =>
+      spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
         .agg(functions.sum("value").as("total"))
-
-      val res = df.collect().length
-
-
-      val restoredRes = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-10"),
-          spark.sparkContext.hadoopConfiguration))
-        .executeCollect()
-        .length
-
-      assert(res == restoredRes)
     }
   }
 
   test("Broadcast join") {
-    withGpuSparkSession{ spark =>
-      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "32")
-
+    doTestReplay("32") { spark =>
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
-        .groupBy("key").agg(functions.sum("value").as("count"))
+        .groupBy("key")
+        .agg(functions.sum("value").as("count"))
+
       val df2 = spark.range(0, 1000, 1, 10)
         .selectExpr("(id % 10 + 5) as key", "id % 100 as value")
-        .groupBy("key").agg(functions.sum("value").as("count"))
+        .groupBy("key")
+        .agg(functions.sum("value").as("count"))
 
-      val df = df1.join(df2, Seq("key"))
-
-      val res = df.collect().length
-
-
-      val resCount = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-            new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-32"),
-            spark.sparkContext.hadoopConfiguration))
-        .executeCollect()
-        .length
-
-      assert(res == resCount)
+      df1.join(df2, Seq("key"))
     }
   }
 
   test("Subquery") {
-    withGpuSparkSession{ spark =>
-      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "13")
-
+    doTestReplay("13") { spark =>
       spark.range(0, 100, 1, 10)
         .createTempView("df1")
 
       spark.range(50, 1000, 1, 10)
         .createTempView("df2")
 
-      val df = spark.sql("select * from df1 where id > (select max(id) from df2)")
-
-      val res = df.collect().length
-
-
-      val resCount = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-13"),
-        spark.sparkContext.hadoopConfiguration))
-        .executeCollect()
-        .length
-
-      assert(res == resCount)
+      spark.sql("select * from df1 where id > (select max(id) from df2)")
     }
   }
 
   test("No broadcast join") {
-    withGpuSparkSession{ spark =>
+    doTestReplay("30") { spark =>
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
-      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "30")
 
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
-        .groupBy("key").agg(functions.sum("value").as("count"))
+        .groupBy("key")
+        .agg(functions.sum("value").as("count"))
+
       val df2 = spark.range(0, 1000, 1, 10)
         .selectExpr("(id % 10 + 5) as key", "id % 100 as value")
-        .groupBy("key").agg(functions.sum("value").as("count"))
+        .groupBy("key")
+        .agg(functions.sum("value").as("count"))
 
-      val df = df1.join(df2, Seq("key"))
-
-      val res = df.collect().length
-
-
-      val resCount = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-30"),
-        spark.sparkContext.hadoopConfiguration))
-        .executeCollect()
-        .length
-
-      assert(res == resCount)
+      df1.join(df2, Seq("key"))
     }
   }
 
-  test("AQE") {
-    withGpuSparkSession{ spark =>
+  test("AQE broadcast") {
+    doTestReplay("90") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
-      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "77")
 
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
-        .groupBy("key").agg(functions.sum("value").as("count"))
+        .groupBy("key")
+        .agg(functions.sum("value").as("count"))
+
       val df2 = spark.range(0, 1000, 1, 10)
         .selectExpr("(id % 10 + 5) as key", "id % 100 as value")
-        .groupBy("key").agg(functions.sum("value").as("count"))
+        .groupBy("key")
+        .agg(functions.sum("value").as("count"))
 
-      val df = df1.join(df2, Seq("key"))
+      df1.join(df2, Seq("key"))
+    }
+  }
 
-      val res = df.collect().length
+  test("AQE Exchange") {
+    doTestReplay("28") { spark =>
+      spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
-
-      val resCount = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-77"),
-        spark.sparkContext.hadoopConfiguration))
-        .executeCollect()
-        .length
-
-      assert(res == resCount)
+      spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id % 100 as value")
+        .groupBy("key")
+        .agg(functions.sum("value").as("total"))
     }
   }
 
@@ -175,6 +127,26 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         .length
 
       assert(20 == restoredRes)
+    }
+  }
+
+  private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
+    val loreId = OutputLoreId.parse(loreDumpIds).head._1
+    withGpuSparkSession { spark =>
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, loreDumpIds)
+
+      val df = dfFunc(spark)
+
+      val expectedLength = df.collect().length
+
+      val restoredResultLength = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
+        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
+        spark.sparkContext.hadoopConfiguration))
+        .executeCollect()
+        .length
+
+      assert(expectedLength == restoredResultLength)
     }
   }
 }

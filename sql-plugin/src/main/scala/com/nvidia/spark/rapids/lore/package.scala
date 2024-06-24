@@ -16,6 +16,38 @@
 
 package com.nvidia.spark.rapids
 
+/**
+ * Lore framework is used for dumping input data of a gpu executor to disk so that it can be
+ * replayed in local environment for performance analysis.
+ * <br>
+ * When [[RapidsConf.TAG_LORE_ID_ENABLED]] is set, during the planning phase we will tag a lore
+ * id to each gpu operator. Lore id is guaranteed to be unique within a query, and it's supposed
+ * to be same for operators with same plan.
+ * <br>
+ * When [[RapidsConf.LORE_DUMP_IDS]] is set, during the execution phase we will dump the input
+ * data of gpu operators with lore id to disk. The dumped data can be replayed in local
+ * environment. The dumped data will reside in [[RapidsConf.LORE_DUMP_PATH]], and typically will
+ * following directory hierarchy:
+ * {{{
+ * loreId-10/
+ *   input-0/
+ *     rdd.meta
+ *     partition-0/
+ *       partition.meta
+ *       batch-0.parquet
+ *       batch-1.parquet
+ *    partition-1/
+ *      partition.meta
+ *      batch-0.parquet
+ *
+ *loreId-15/
+ *  input-0/
+ *    rdd.meta
+ *    partition-0/
+ *      partition.meta
+ *      batch-0.parquet
+ * }}}
+ */
 package object lore {
   type LoreId = Int
   type OutputLoreIds = Map[LoreId, OutputLoreId]
