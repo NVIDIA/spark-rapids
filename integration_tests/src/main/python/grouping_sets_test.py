@@ -41,6 +41,8 @@ _grouping_set_sqls = [
         'GROUP BY a, GROUPING SETS((a, b), (a), (), (a, b), (a), (b), ())',
 ]
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # test nested syntax of grouping set, rollup and cube
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grouping_set_gen], ids=idfn)
