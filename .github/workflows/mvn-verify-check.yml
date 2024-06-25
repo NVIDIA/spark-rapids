@@ -110,13 +110,13 @@ jobs:
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
           # default version
           echo "defaultSparkVersion=${SPARK_BASE_SHIM_VERSION}" >> $GITHUB_OUTPUT
-          jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8,\"pom-directory\":.}" "${SPARK_BASE_SHIM_VERSION}")
+          jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8,\"pom-directory\":\".\"}" "${SPARK_BASE_SHIM_VERSION}")
           # jdk11
-          jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11,\"pom-directory\":.}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
+          jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11,\"pom-directory\":\".\"}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
           # jdk17
-          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"pom-directory\":.}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"pom-directory\":\".\"}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
           # jdk17 scala 2.13
-          jdk17Scala213VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"pom-directory\":scala2.13}" "${SPARK_SHIM_VERSIONS_JDK17_SCALA213[@]}")
+          jdk17Scala213VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"pom-directory\":\"scala2.13\"}" "${SPARK_SHIM_VERSIONS_JDK17_SCALA213[@]}")
           # jdk
           jdkVersionArrBody=$jdkHeadVersionArrBody$jdk11VersionArrBody$jdk17VersionArrBody$jdk17Scala213VersionArrBody
           jdkVersionArrBody=${jdkVersionArrBody:1}
