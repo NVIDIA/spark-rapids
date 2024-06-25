@@ -2059,10 +2059,7 @@ class GpuConvMeta(
     val errorPostfix = "only literal 10 or 16 are supported for source and target radixes"
     (fromBaseLit, toBaseLit) match {
       case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
-        def isBaseSupported(base: Any): Boolean = base match {
-          case 10 | 16 => true
-          case _ => false
-        }
+        def isBaseSupported(base: Any): Boolean = base == 10 || base == 16
         if (!isBaseSupported(fromBaseVal) && !isBaseSupported(toBaseVal)) {
           willNotWorkOnGpu(because = s"both ${fromBaseVal} and ${toBaseVal} are not " +
             s"a supported radix, ${errorPostfix}")
