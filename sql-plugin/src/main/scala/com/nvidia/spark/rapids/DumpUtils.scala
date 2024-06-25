@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{ByteArrayOutputStream, File, FileInputStream, FileOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.io.{ByteArrayOutputStream, File, FileInputStream, FileOutputStream, ObjectInputStream, ObjectOutputStream, OutputStream}
 import java.util.Random
 
 import scala.collection.mutable
@@ -118,7 +118,7 @@ object DumpUtils extends Logging {
 
   private def dumpToParquetFileImp(table: Table, filePrefix: String): String = {
     val path = genPath(filePrefix)
-    withResource(new ParquetDumper(path, table)) { dumper =>
+    withResource(new ParquetDumper(new FileOutputStream(path), table)) { dumper =>
       dumper.writeTable(table)
       path
     }
@@ -146,9 +146,9 @@ object DumpUtils extends Logging {
 }
 
 // parquet dumper
-class ParquetDumper(path: String, table: Table) extends HostBufferConsumer
+class ParquetDumper(private[this] val outputStream: OutputStream, table: Table)
+  extends HostBufferConsumer
   with AutoCloseable {
-  private[this] val outputStream = new FileOutputStream(path)
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
 

@@ -735,6 +735,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("0")
 
+  val LORE_DUMP_PATH = conf("spark.rapids.LORE.pathPrefix")
+    .doc("Specifies a URI path to use when dumping with LORE, the default path is: " +
+      "file:/tmp/lore/")
+    .internal()
+    .stringConf
+    .createWithDefault("file:/tmp/lore/")
+
   val PROFILE_PATH = conf("spark.rapids.profile.pathPrefix")
     .doc("Enables profiling and specifies a URI path to use when writing profile data")
     .internal()
@@ -2535,6 +2542,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val loreDumpOperator: Option[String] = get(LORE_DUMP_OPERATOR)
 
   lazy val loreDumpPartitions: String = get(LORE_DUMP_PARTITIONS)
+
+  lazy val loreDumpPath: String = get(LORE_DUMP_PATH)
 
   lazy val profilePath: Option[String] = get(PROFILE_PATH)
 
