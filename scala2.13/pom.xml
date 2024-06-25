@@ -920,7 +920,7 @@
         <all.buildvers>
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
-            ${databricks.buildvers},
+            ${databricks.buildvers}
         </all.buildvers>
         <noSnapshotScala213.buildvers>
             330,
