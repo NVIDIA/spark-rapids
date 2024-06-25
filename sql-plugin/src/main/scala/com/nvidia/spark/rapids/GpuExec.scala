@@ -122,7 +122,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
-    case w :WrappedGpuMetric => w.sqlMetric
+    case w: WrappedGpuMetric => w.sqlMetric
     case i => throw new IllegalArgumentException(s"found unsupported GpuMetric ${i.getClass}")
   }
 
@@ -228,6 +228,7 @@ trait GpuExec extends SparkPlan {
   @transient lazy val loreDumpOperator: Option[String] = RapidsConf.LORE_DUMP_OPERATOR.get(conf)
   @transient lazy val loreDumpLOREIds: String = RapidsConf.LORE_DUMP_LORE_IDS.get(conf)
   @transient lazy val loreDumpPartitions: String = RapidsConf.LORE_DUMP_PARTITIONS.get(conf)
+  @transient lazy val loreDumpPath: String = RapidsConf.LORE_DUMP_PATH.get(conf)
 
   // For LORE DumpedExecReplayer, the spark plan is deserialized from the plan.meta file, so
   // some of the transient fields will be null, and we need to workaround this
@@ -273,9 +274,9 @@ trait GpuExec extends SparkPlan {
    */
   def outputBatching: CoalesceGoal = null
 
-  private [this] lazy val metricsConf = MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf))
+  private[this] lazy val metricsConf = MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf))
 
-  private [this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
+  private[this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
     if (level >= metricsConf) {
       WrappedGpuMetric(f)
     } else {
@@ -333,7 +334,7 @@ trait GpuExec extends SparkPlan {
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
-      additionalMetrics
+    additionalMetrics
 
   def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
 
@@ -391,8 +392,8 @@ trait GpuExec extends SparkPlan {
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val hadoopConf = new SerializableConfiguration(sparkSession.sparkContext.hadoopConfiguration)
-    def getOutputStream(filePath: String): FSDataOutputStream = {
-      val hadoopPath = new Path(filePath)
+
+    def getOutputStream(hadoopPath: Path): FSDataOutputStream = {
       val fs = hadoopPath.getFileSystem(hadoopConf.value)
       fs.create(hadoopPath, true)
     }
@@ -412,7 +413,7 @@ trait GpuExec extends SparkPlan {
       // dump plan node
       val planBytes = serializeObject(this)
       val fos = getOutputStream(
-        s"file:/tmp/lore/lore_id=${myLoreId}_plan_id=${childPlanId}/plan.meta")
+        new Path(new Path(loreDumpPath), s"lore_id=${myLoreId}_plan_id=${childPlanId}/plan.meta"))
       fos.write(planBytes)
       fos.close()
     }
@@ -454,21 +455,24 @@ trait GpuExec extends SparkPlan {
               val cbTypes = GpuColumnVector.extractTypes(cb)
               val bytes = serializeObject(cbTypes)
               val fos = getOutputStream(
-                s"file:/tmp/lore/lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
-                  s"partition_id=${partitionId}/" +
-                  s"batch_id=${batchId}/col_types.meta")
+                new Path(new Path(loreDumpPath),
+                  s"lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
+                    s"partition_id=${partitionId}/" +
+                    s"batch_id=${batchId}/col_types.meta"))
               fos.write(bytes)
               fos.close()
             }
 
             // dump data for column batch to /tmp dir
             withResource(GpuColumnVector.from(cb)) { table =>
-              val path = s"/tmp/lore/lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
-                s"partition_id=${partitionId}/" +
-                s"batch_id=${batchId}/cb_data.parquet"
-              withResource(new ParquetDumper(path, table)) { dumper =>
+              val fos = getOutputStream(
+                new Path(new Path(loreDumpPath),
+                  s"lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
+                    s"partition_id=${partitionId}/" +
+                    s"batch_id=${batchId}/cb_data.parquet"))
+              // ParquetDumper will close the output stream
+              withResource(new ParquetDumper(fos, table)) { dumper =>
                 dumper.writeTable(table)
-                path
               }
             }
           }
