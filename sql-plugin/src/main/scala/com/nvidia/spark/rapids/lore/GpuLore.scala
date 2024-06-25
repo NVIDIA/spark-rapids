@@ -23,11 +23,11 @@ import scala.reflect.ClassTag
 
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, GpuFilterExec, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.ShimLeafExecNode
+import com.nvidia.spark.rapids.shims.{ShimLeafExecNode, SparkShimImpl}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.spark.SparkEnv
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, SparkPlan, SQLExecution}
@@ -80,7 +80,8 @@ object GpuLore {
   }
 
   def dumpPlan[T <: SparkPlan : ClassTag](plan: T, rootPath: Path): Unit = {
-    dumpObject(plan, pathOfRootPlanMeta(rootPath), plan.session.sparkContext.hadoopConfiguration)
+    dumpObject(plan, pathOfRootPlanMeta(rootPath),
+      SparkShimImpl.sessionFromPlan(plan).sparkContext.hadoopConfiguration)
   }
 
   def dumpObject[T: ClassTag](obj: T, path: Path, hadoopConf: Configuration): Unit = {
@@ -158,7 +159,9 @@ object GpuLore {
   private def nextLoreIdOf(plan: SparkPlan): Option[Int] = {
     // When the execution id is not set, it means there is no actual execution happening, in this
     // case we don't need to generate lore id.
-    Option(plan.session.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
+    Option(SparkShimImpl.sessionFromPlan(plan)
+      .sparkContext
+      .getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
       .map { executionId =>
         idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
       }

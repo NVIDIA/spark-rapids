@@ -32,7 +32,7 @@ import org.apache.spark.util.SerializableConfiguration
 
 case class GpuLoreReplayExec(idxInParent: Int, parentRootPath: Path) extends LeafExecNode
   with GpuExec {
-  private lazy val rdd = new GpuLoreReplayRDD(session.sparkContext,
+  private lazy val rdd = new GpuLoreReplayRDD(sparkSession.sparkContext,
     GpuLore.pathOfChild(parentRootPath, idxInParent))
   override def output: Seq[Attribute] = rdd.loreRDDMeta.attrs
 

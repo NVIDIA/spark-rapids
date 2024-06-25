@@ -135,6 +135,16 @@ Name | Description | Default Value | Applicable at
 <a name="sql.json.read.decimal.enabled"></a>spark.rapids.sql.json.read.decimal.enabled|When reading a quoted string as a decimal Spark supports reading non-ascii unicode digits, and the RAPIDS Accelerator does not.|true|Runtime
 <a name="sql.json.read.double.enabled"></a>spark.rapids.sql.json.read.double.enabled|JSON reading is not 100% compatible when reading doubles.|true|Runtime
 <a name="sql.json.read.float.enabled"></a>spark.rapids.sql.json.read.float.enabled|JSON reading is not 100% compatible when reading floats.|true|Runtime
+<a name="sql.lore.dumpPath"></a>spark.rapids.sql.lore.dumpPath|The path to dump the lore nodes' input data. This must be set if spark.rapids.sql.lore.idsToDump has
+been set.|None|Runtime
+<a name="sql.lore.idsToDump"></a>spark.rapids.sql.lore.idsToDump|Specify the lore ids of operators to dump. The format is a comma separated list of
+lore ids. For example: "1,2,3" will dump the gpu exec nodes with lore ids 1, 2, and 3.
+By default, all partitions of operators' input will be dumped. If you want to dump only
+some partitions, you can specify the partition index after the lore id, e.g. 1[0-2 4-5
+7], 2[0 4 5-8] , will dump partitions 0, 1, 2, 4, 5 and 7 of the operator with lore id
+ 1, and partitions 0, 4, 5, 6, 7, 8 of the operator with lore id 2.
+If this is not set, no lore nodes will be dumped.|None|Runtime
+<a name="sql.lore.tag.enabled"></a>spark.rapids.sql.lore.tag.enabled|Enable add a lore id to each gpu plan node|true|Runtime
 <a name="sql.mode"></a>spark.rapids.sql.mode|Set the mode for the Rapids Accelerator. The supported modes are explainOnly and executeOnGPU. This config can not be changed at runtime, you must restart the application for it to take affect. The default mode is executeOnGPU, which means the RAPIDS Accelerator plugin convert the Spark operations and execute them on the GPU when possible. The explainOnly mode allows running queries on the CPU and the RAPIDS Accelerator will evaluate the queries as if it was going to run on the GPU. The explanations of what would have run on the GPU and why are output in log messages. When using explainOnly mode, the default explain output is ALL, this can be changed by setting spark.rapids.sql.explain. See that config for more details.|executeongpu|Startup
 <a name="sql.optimizer.joinReorder.enabled"></a>spark.rapids.sql.optimizer.joinReorder.enabled|When enabled, joins may be reordered for improved query performance|true|Runtime
 <a name="sql.python.gpu.enabled"></a>spark.rapids.sql.python.gpu.enabled|This is an experimental feature and is likely to change in the future. Enable (true) or disable (false) support for scheduling Python Pandas UDFs with GPU resources. When enabled, pandas UDFs are assumed to share the same GPU that the RAPIDs accelerator uses and will honor the python GPU configs|false|Runtime
