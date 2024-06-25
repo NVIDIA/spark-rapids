@@ -52,6 +52,7 @@ ApproximatePercentile,4
 ArrayContains,4
 ArrayExcept,4
 ArrayExists,4
+ArrayFilter,4
 ArrayIntersect,4
 ArrayMax,4
 ArrayMin,4
@@ -75,6 +76,7 @@ BitwiseAnd,4
 BitwiseNot,4
 BitwiseOr,4
 BitwiseXor,4
+BoundReference,4
 CaseWhen,4
 Cbrt,4
 Ceil,4

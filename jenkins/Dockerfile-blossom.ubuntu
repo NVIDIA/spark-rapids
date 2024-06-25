@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,52 +19,52 @@
 # Build the image for rapids-plugin development environment
 #
 # Arguments:
-#       CUDA_VER=11.X.Y
-#       UBUNTU_VER=20.04
-#       UCX_CUDA_VER=11 (major CUDA version)
-#       UCX_VER=1.13.1
+#       CUDA_VER=[11.X.Y,12.X.Y]
+#       UBUNTU_VER=[20.04,22.0.4]
+#       UCX_VER=1.16.0
+#       TARGETPLATFORM=[linux/amd64,linux/arm64]
+#       ARCH=[amd64,arm64]
+#       UCX_ARCH=[x86_64,aarch64]
 ###
 
-ARG CUDA_VER=11.0.3
+ARG CUDA_VER=11.8.0
 ARG UBUNTU_VER=20.04
-ARG UCX_VER=1.15.0
-ARG UCX_CUDA_VER=11
-FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
+ARG UCX_VER=1.16.0
+ARG TARGETPLATFORM=linux/amd64
+# multi-platform build with: docker buildx build --platform linux/arm64,linux/amd64 <ARGS> on either amd64 or arm64 host
+# check available official arm-based docker images at https://hub.docker.com/r/nvidia/cuda/tags (OS/ARCH)
+FROM --platform=$TARGETPLATFORM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG UBUNTU_VER
 ARG UCX_VER
-ARG UCX_CUDA_VER
+ARG ARCH=amd64
 ARG UCX_ARCH=x86_64
-
-# https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
-RUN UB_VER=$(echo ${UBUNTU_VER} | tr -d '.') && \
-    apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UB_VER}/x86_64/3bf863cc.pub || true
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync
 
+# libnuma1 and libgomp1 are required by ucx packaging
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git zip unzip wget
+    openjdk-8-jdk openjdk-11-jdk python3.9 python3.9-distutils python3-setuptools tzdata git zip unzip wget \
+    inetutils-ping expect wget libnuma1 libgomp1 locales
 
 # apt python3-pip would install pip for OS default python3 version only
 # like for ubuntu 18.04, it would only install pip for python3.6
 # so we install pip for specific python version explicitly
-RUN wget https://bootstrap.pypa.io/get-pip.py && python3.8 get-pip.py
+RUN wget https://bootstrap.pypa.io/get-pip.py && python3.9 get-pip.py
 
 # Set default jdk as 1.8.0
-RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
+RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-${ARCH}
 
-RUN ln -sfn /usr/bin/python3.8 /usr/bin/python
-RUN ln -sfn /usr/bin/python3.8 /usr/bin/python3
+RUN ln -sfn /usr/bin/python3.9 /usr/bin/python
+RUN ln -sfn /usr/bin/python3.9 /usr/bin/python3
 RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order fastparquet==0.8.3
 
-# libnuma1 and libgomp1 are required by ucx packaging
-RUN apt install -y inetutils-ping expect wget libnuma1 libgomp1
-
-RUN mkdir -p /tmp/ucx && \
+RUN UCX_CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f1` && \
+    mkdir -p /tmp/ucx && \
     cd /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}-${UCX_ARCH}.tar.bz2 && \
     tar -xvf *.bz2 && \
@@ -72,8 +72,6 @@ RUN mkdir -p /tmp/ucx && \
     rm -rf /tmp/ucx
 
 # export JAVA_HOME for mvn option 'source-javadoc'
-ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
-
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-${ARCH}
 # install locale and generate UTF-8, but don't set it as default, the test cases should specify it somehow
-RUN apt-get install -y locales
 RUN locale-gen en_US.UTF-8

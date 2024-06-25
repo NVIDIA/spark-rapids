@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
@@ -65,7 +66,7 @@ class DynamicPruningSuite
               // NOTE: We remove the AdaptiveSparkPlanExec since we can't re-run the new plan
               // under AQE because that fundamentally requires some rewrite and stage
               // ordering which we can't do for this test.
-              case GpuSubqueryBroadcastExec(name, index, buildKeys, child) =>
+              case GpuSubqueryBroadcastExec(name, Seq(index), buildKeys, child) =>
                 val newChild = child match {
                   case a @ AdaptiveSparkPlanExec(_, _, _, _, _) =>
                     (new GpuTransitionOverrides()).apply(ColumnarToRowExec(a.executedPlan))

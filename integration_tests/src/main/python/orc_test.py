@@ -41,26 +41,52 @@ def get_orc_timestamp_gen(nullable=True):
 orc_timestamp_gen = get_orc_timestamp_gen()
 
 # test with original orc file reader, the multi-file parallel reader for cloud
-original_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'PERFILE'}
-multithreaded_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+__original_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'PERFILE'}
+__multithreaded_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
                                       'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '0',
                                       'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
-multithreaded_orc_file_reader_combine_ordered_conf = {
+__multithreaded_orc_file_reader_combine_ordered_conf = {
     'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
     'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
     'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
-multithreaded_orc_file_reader_combine_unordered_conf = {
+__multithreaded_orc_file_reader_combine_unordered_conf_no_chunked = {
     'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
     'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
-    'spark.rapids.sql.reader.multithreaded.read.keepOrder': False}
-coalescing_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'COALESCING'}
-reader_opt_confs_common = [original_orc_file_reader_conf, multithreaded_orc_file_reader_conf,
-                           coalescing_orc_file_reader_conf,
-                           multithreaded_orc_file_reader_combine_ordered_conf]
-reader_opt_confs = reader_opt_confs_common + [
-    pytest.param(multithreaded_orc_file_reader_combine_unordered_conf, marks=pytest.mark.ignore_order(local=True))]
+    'spark.rapids.sql.reader.multithreaded.read.keepOrder': False,
+    'spark.rapids.sql.reader.chunked': False}
+__multithreaded_orc_file_reader_combine_unordered_conf_chunked = {
+    'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+    'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+    'spark.rapids.sql.reader.multithreaded.read.keepOrder': False,
+    'spark.rapids.sql.reader.chunked': True,
+    'spark.rapids.sql.reader.chunked.limitMemoryUsage': False}
+__multithreaded_orc_file_reader_combine_unordered_conf_chunked_limited_memory = {
+    'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+    'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+    'spark.rapids.sql.reader.multithreaded.read.keepOrder': False,
+    'spark.rapids.sql.reader.chunked': True,
+    'spark.rapids.sql.reader.chunked.limitMemoryUsage': True}
+__coalescing_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'COALESCING'}
+__reader_opt_confs_common = [__original_orc_file_reader_conf, __multithreaded_orc_file_reader_conf,
+                             __coalescing_orc_file_reader_conf,
+                             __multithreaded_orc_file_reader_combine_ordered_conf]
+__reader_opt_confs_no_chunked = [{**conf, 'spark.rapids.sql.reader.chunked': False}
+                                 for conf in __reader_opt_confs_common] + \
+                                [pytest.param(__multithreaded_orc_file_reader_combine_unordered_conf_no_chunked,
+                                              marks=pytest.mark.ignore_order(local=True))]
+__reader_opt_confs_chunked = [{**conf, 'spark.rapids.sql.reader.chunked': True,
+                               'spark.rapids.sql.reader.chunked.limitMemoryUsage': True}
+                              for conf in __reader_opt_confs_common] + \
+                             [{**conf, 'spark.rapids.sql.reader.chunked': True,
+                               'spark.rapids.sql.reader.chunked.limitMemoryUsage': False}
+                              for conf in __reader_opt_confs_common] + \
+                             [pytest.param(__multithreaded_orc_file_reader_combine_unordered_conf_chunked,
+                                           marks=pytest.mark.ignore_order(local=True))] + \
+                             [pytest.param(__multithreaded_orc_file_reader_combine_unordered_conf_chunked_limited_memory,
+                                           marks=pytest.mark.ignore_order(local=True))]
+reader_opt_confs = __reader_opt_confs_no_chunked + __reader_opt_confs_chunked
 # The Count result can not be sorted, so local sort can not be used.
-reader_opt_confs_for_count = reader_opt_confs_common + [multithreaded_orc_file_reader_combine_unordered_conf]
+reader_opt_confs_for_count = __reader_opt_confs_common + [__multithreaded_orc_file_reader_combine_unordered_conf_no_chunked]
 
 non_utc_allow_orc_file_source_scan=['ColumnarToRowExec', 'FileSourceScanExec'] if is_not_utc() else []
 
@@ -145,7 +171,7 @@ flattened_orc_gens = orc_basic_gens + orc_array_gens_sample + orc_struct_gens_sa
 def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens =[string_gen,
         byte_gen, short_gen, int_gen, long_gen, boolean_gen]
- 
+
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -182,7 +208,7 @@ orc_pred_push_gens = [
         # date_gen
         DateGen(start=date(1590, 1, 1)),
         # Once https://github.com/NVIDIA/spark-rapids/issues/140 is fixed replace this with
-        # timestamp_gen 
+        # timestamp_gen
         orc_timestamp_gen]
 
 @pytest.mark.order(2)
@@ -376,7 +402,7 @@ def test_orc_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabled_l
         df2.write.orc(data_path + "/data2")
     with_cpu_session(setup_table)
     # Configure confs to read as a single task
-    all_confs = copy_and_update(coalescing_orc_file_reader_conf, {
+    all_confs = copy_and_update(__coalescing_orc_file_reader_conf, {
         "spark.sql.sources.useV1SourceList": v1_enabled_list,
         "spark.sql.files.minPartitionNum": "1"})
     assert_gpu_and_cpu_are_equal_collect(
@@ -750,7 +776,7 @@ def test_orc_scan_with_aggregate_no_pushdown_on_col_partition(spark_tmp_path, ag
     |    MAX    |        Y         |      N       |
     """
     data_path = spark_tmp_path + '/ORC_DATA/pushdown_02.orc'
-    
+
     # should not fallback to CPU
     assert_gpu_and_cpu_are_equal_collect(
                 lambda spark: _do_orc_scan_with_agg_on_partitioned_column(spark, data_path, aggregate),
@@ -761,7 +787,7 @@ def test_orc_read_count(spark_tmp_path):
     data_path = spark_tmp_path + '/ORC_DATA'
     orc_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
-    
+
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.orc(data_path))
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.orc(data_path))
@@ -856,7 +882,7 @@ def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, orc_impl
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.orc.impl': orc_impl})
-    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)),
             ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
             ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
             ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
@@ -864,7 +890,7 @@ def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, orc_impl
             ('v1', LongGen()),
             ('v2', LongGen()),
             ('v3', LongGen())]
- 
+
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/ORC_DATA'
     reader = read_func(data_path)

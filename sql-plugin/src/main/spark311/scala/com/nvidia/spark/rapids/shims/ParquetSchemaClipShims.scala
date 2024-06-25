@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ import org.apache.parquet.schema.OriginalType._
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
 
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 object ParquetSchemaClipShims {
@@ -64,13 +65,13 @@ object ParquetSchemaClipShims {
       if (originalType == null) s"$typeName" else s"$typeName ($originalType)"
 
     def typeNotSupported() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not supported: $typeString")
+      throw new RapidsAnalysisException(s"Parquet type not supported: $typeString")
 
     def typeNotImplemented() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $typeString")
+      throw RapidsErrorUtils.parquetTypeUnsupportedYetError(typeString)
 
     def illegalType() =
-      TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $typeString")
+      throw RapidsErrorUtils.illegalParquetTypeError(typeString)
 
     // When maxPrecision = -1, we skip precision range check, and always respect the precision
     // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored
@@ -80,8 +81,7 @@ object ParquetSchemaClipShims {
       val scale = field.getDecimalMetadata.getScale
 
       if (!(maxPrecision == -1 || 1 <= precision && precision <= maxPrecision)) {
-       TrampolineUtil.throwAnalysisException(
-         s"Invalid decimal precision: $typeName " +
+       throw new RapidsAnalysisException(s"Invalid decimal precision: $typeName " +
              s"cannot store $precision digits (max $maxPrecision)")
       }
 
@@ -121,7 +121,7 @@ object ParquetSchemaClipShims {
 
       case INT96 =>
         if (!SQLConf.get.isParquetINT96AsTimestamp) {
-          TrampolineUtil.throwAnalysisException(
+          throw new RapidsAnalysisException(
             "INT96 is not supported unless it's interpreted as timestamp. " +
                 s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
         }

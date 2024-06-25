@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
@@ -1055,12 +1056,13 @@ object GpuRegExpUtils {
 }
 
 class GpuRLikeMeta(
-    expr: RLike,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
-
+      expr: RLike,
+      conf: RapidsConf,
+      parent: Option[RapidsMeta[_, _, _]],
+      rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
+    import RegexOptimizationType._
     private var pattern: Option[String] = None
+    private var rewriteOptimizationType: RegexOptimizationType = NoOptimization
 
     override def tagExprForGpu(): Unit = {
       GpuRegExpUtils.tagForRegExpEnabled(this)
@@ -1068,8 +1070,13 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            val (transpiledAST, _) =
-                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None, None)
+            val originalPattern = str.toString
+            val regexAst = new RegexParser(originalPattern).parse()
+            if (conf.isRlikeRegexRewriteEnabled) {
+              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
+            }
+            val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
+                .getTranspiledAST(regexAst, None, None)
             GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
           } catch {
@@ -1082,8 +1089,19 @@ class GpuRLikeMeta(
     }
 
     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-      GpuRLike(lhs, rhs, pattern.getOrElse(
-        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+      rewriteOptimizationType match {
+        case NoOptimization => {
+          val patternStr = pattern.getOrElse(throw new IllegalStateException(
+            "Expression has not been tagged with cuDF regex pattern"))
+          GpuRLike(lhs, rhs, patternStr)
+        }
+        case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
+        case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
+        case PrefixRange(s, length, start, end) =>
+          GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
+        case _ => throw new IllegalStateException("Unexpected optimization type")
+      }
     }
 }
 
@@ -1107,6 +1125,52 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
+}
+
+case class GpuMultipleContains(input: Expression, searchList: Seq[String])
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def child: Expression = input
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    assert(searchList.length > 1)
+    val accInit = withResource(Scalar.fromString(searchList.head)) { searchScalar =>
+      input.getBase.stringContains(searchScalar)
+    }
+    searchList.tail.foldLeft(accInit) { (acc, search) =>
+      val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
+        input.getBase.stringContains(searchScalar)
+      }
+      withResource(acc) { _ =>
+        withResource(containsSearch) { _ =>
+          acc.or(containsSearch)
+        }
+      }
+    }
+  }
+}
+
+case class GpuLiteralRangePattern(left: Expression, right: Expression, 
+    length: Int, start: Int, end: Int)
+  extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    RegexRewriteUtils.literalRangePattern(lhs.getBase, rhs.getBase, length, start, end)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 }
 
 abstract class GpuRegExpTernaryBase
@@ -1962,6 +2026,27 @@ case class GpuStringToMap(strExpr: Expression,
   }
 }
 
+object GpuStringInstr {
+  def optimizeContains(cmp: GpuExpression): GpuExpression = {
+    cmp match {
+      case GpuGreaterThan(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(0, _)) =>
+        // instr(A, B) > 0 becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuGreaterThanOrEqual(GpuStringInstr(str, substr: GpuLiteral), GpuLiteral(1, _)) =>
+        // instr(A, B) >= 1 becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuLessThan(GpuLiteral(0, _), GpuStringInstr(str, substr: GpuLiteral)) =>
+        // 0 < instr(A, B) becomes contains(A, B)
+        GpuContains(str, substr)
+      case GpuLessThanOrEqual(GpuLiteral(1, _), GpuStringInstr(str, substr: GpuLiteral)) =>
+        // 1 <= instr(A, B) becomes contains(A, B)
+        GpuContains(str, substr)
+      case _ =>
+        cmp
+    }
+  }
+}
+
 case class GpuStringInstr(str: Expression, substr: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
@@ -2327,7 +2412,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, dataType)) { col =>
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { col =>
       doColumnar(col, rhs)
     }
   }

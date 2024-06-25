@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,18 +20,20 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.rapids.{GpuDataSourceBase, GpuOrcFileFormat}
+import org.apache.spark.sql.rapids.{BucketIdMetaUtils, GpuDataSourceBase, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 final class CreateDataSourceTableAsSelectCommandMeta(
@@ -44,9 +46,9 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   private var origProvider: Class[_] = _
 
   override def tagSelfForGpu(): Unit = {
-    if (cmd.table.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
-    }
+    val outputColumns =
+      DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
+    BucketIdMetaUtils.tagForBucketingWrite(this, cmd.table.bucketSpec, outputColumns)
     if (cmd.table.provider.isEmpty) {
       willNotWorkOnGpu("provider must be defined")
     }

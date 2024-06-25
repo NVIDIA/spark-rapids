@@ -15,6 +15,7 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -24,7 +25,6 @@ import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
-import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonWriter, GpuPythonRunnerCommon}
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
@@ -34,7 +34,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
 class GpuArrowPythonRunner(
-    funcs: Seq[ChainedPythonFunctions],
+    funcs: Seq[(ChainedPythonFunctions, Long)],
     evalType: Int,
     argOffsets: Array[Array[Int]],
     pythonInSchema: StructType,
@@ -43,8 +43,8 @@ class GpuArrowPythonRunner(
     maxBatchSize: Long,
     override val pythonOutSchema: StructType,
     jobArtifactUUID: Option[String] = None)
-  extends GpuBasePythonRunner[ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID)
-    with GpuArrowPythonOutput with GpuPythonRunnerCommon {
+  extends GpuBasePythonRunner[ColumnarBatch](funcs.map(_._1), evalType, argOffsets,
+    jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
   protected override def newWriter(
       env: SparkEnv,
@@ -56,7 +56,7 @@ class GpuArrowPythonRunner(
 
       val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, maxBatchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {
-          PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
+          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets)
         }
       }
       val isInputNonEmpty = inputIterator.nonEmpty

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,9 +145,17 @@ class GpuPartitioningSuite extends AnyFunSuite {
     }
   }
 
-  test("GPU partition with compression") {
+  test("GPU partition with lz4 compression") {
+    testGpuPartitionWithCompression("lz4")
+  }
+
+  test("GPU partition with zstd compression") {
+    testGpuPartitionWithCompression("zstd")
+  }
+
+  private def testGpuPartitionWithCompression(codecName: String): Unit = {
     val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "lz4")
+        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, codecName)
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val spillPriority = 7L

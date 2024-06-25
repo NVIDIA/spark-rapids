@@ -36,6 +36,7 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
 spark-rapids-shim-json-lines ***/
@@ -49,7 +50,6 @@ import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD}
-import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python.{GpuArrowWriter, GpuPythonRunnerCommon}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -62,7 +62,7 @@ import org.apache.spark.util.Utils
  * and receive it back in JVM as batches of single DataFrame.
  */
 class GpuCoGroupedArrowPythonRunner(
-    funcs: Seq[ChainedPythonFunctions],
+    funcs: Seq[(ChainedPythonFunctions, Long)],
     evalType: Int,
     argOffsets: Array[Array[Int]],
     leftSchema: StructType,
@@ -72,7 +72,7 @@ class GpuCoGroupedArrowPythonRunner(
     batchSize: Int,
     override val pythonOutSchema: StructType,
     jobArtifactUUID: Option[String] = None)
-  extends GpuBasePythonRunner[(ColumnarBatch, ColumnarBatch)](funcs, evalType,
+  extends GpuBasePythonRunner[(ColumnarBatch, ColumnarBatch)](funcs.map(_._1), evalType,
     argOffsets, jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
   protected override def newWriterThread(
@@ -89,7 +89,7 @@ class GpuCoGroupedArrowPythonRunner(
           PythonRDD.writeUTF(k, dataOut)
           PythonRDD.writeUTF(v, dataOut)
         }
-        PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
+        WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets)
       }
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {

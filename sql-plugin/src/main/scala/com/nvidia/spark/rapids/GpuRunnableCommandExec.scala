@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -82,10 +82,9 @@ object GpuRunnableCommand {
       if (fs.exists(filePath) &&
           fs.getFileStatus(filePath).isDirectory &&
           fs.listStatus(filePath).length != 0) {
-        TrampolineUtil.throwAnalysisException(
-          s"CREATE-TABLE-AS-SELECT cannot create table with location to a non-empty directory " +
-              s"${tablePath} . To allow overwriting the existing non-empty directory, " +
-              s"set '$allowNonEmptyLocationInCTASKey' to true.")
+        throw RapidsErrorUtils.
+          createTableAsSelectWithNonEmptyDirectoryError(tablePath.toString,
+            allowNonEmptyLocationInCTASKey)
       }
     }
   }

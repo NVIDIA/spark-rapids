@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
-import org.apache.spark.api.python.ChainedPythonFunctions
+import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
@@ -98,7 +98,7 @@ case class GpuFlatMapGroupsInPandasExec(
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
     Seq(groupingAttributes.map(SortOrder(_, Ascending)))
 
-  private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
+  private val udf = func.asInstanceOf[GpuPythonUDF]
 
   // One batch as input to keep the integrity for each group
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
@@ -111,7 +111,7 @@ case class GpuFlatMapGroupsInPandasExec(
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+    val chainedFunc = Seq((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id))
     val localOutput = output
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.
@@ -123,7 +123,8 @@ case class GpuFlatMapGroupsInPandasExec(
         resolveArgOffsets(child, groupingAttributes)
 
     val runnerFactory = GpuGroupedPythonRunnerFactory(conf, chainedFunc, Array(argOffsets),
-        DataTypeUtilsShim.fromAttributes(dedupAttrs), pythonOutputSchema)
+        DataTypeUtilsShim.fromAttributes(dedupAttrs), pythonOutputSchema,
+        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>

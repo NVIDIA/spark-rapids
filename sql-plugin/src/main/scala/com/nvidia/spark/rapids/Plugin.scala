@@ -20,21 +20,24 @@ import java.lang.reflect.InvocationTargetException
 import java.net.URL
 import java.time.ZoneId
 import java.util.Properties
+import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.JavaConverters._
 import scala.sys.process._
 import scala.util.Try
 
-import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
+import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
-import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
+import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -73,19 +76,25 @@ object RapidsPluginUtils extends Logging {
   private val TASK_GPU_AMOUNT_KEY = "spark.task.resource.gpu.amount"
   private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
   private val SPARK_MASTER = "spark.master"
+  private val SPARK_RAPIDS_REPO_URL = "https://github.com/NVIDIA/spark-rapids"
+
+  lazy val buildInfoEvent = SparkRapidsBuildInfoEvent(
+    sparkRapidsBuildInfo = loadProps(PLUGIN_PROPS_FILENAME),
+    sparkRapidsJniBuildInfo = loadProps(JNI_PROPS_FILENAME),
+    cudfBuildInfo = loadProps(CUDF_PROPS_FILENAME),
+    sparkRapidsPrivateBuildInfo =loadProps(PRIVATE_PROPS_FILENAME)
+  )
+
+
 
   {
-    val pluginProps = loadProps(PLUGIN_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator build: $pluginProps")
-    val jniProps = loadProps(JNI_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator JNI build: $jniProps")
-    val cudfProps = loadProps(CUDF_PROPS_FILENAME)
-    logInfo(s"cudf build: $cudfProps")
-    val privateProps = loadProps(PRIVATE_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator Private ${privateProps}")
-    val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
-    val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
-    val privateRev = privateProps.getProperty("revision", "UNKNOWN")
+    logInfo(s"RAPIDS Accelerator build: ${buildInfoEvent.sparkRapidsBuildInfo}")
+    logInfo(s"RAPIDS Accelerator JNI build: ${buildInfoEvent.sparkRapidsJniBuildInfo}")
+    logInfo(s"cudf build: ${buildInfoEvent.cudfBuildInfo}")
+    logInfo(s"RAPIDS Accelerator Private ${buildInfoEvent.sparkRapidsPrivateBuildInfo}")
+    val pluginVersion = buildInfoEvent.sparkRapidsBuildInfo.getOrElse("version", "UNKNOWN")
+    val cudfVersion = buildInfoEvent.cudfBuildInfo.getOrElse("version", "UNKNOWN")
+    val privateRev = buildInfoEvent.sparkRapidsPrivateBuildInfo.getOrElse("revision", "UNKNOWN")
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf ${cudfVersion}, " +
       s"private revision ${privateRev}")
   }
@@ -125,11 +134,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.04.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.08.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-24.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.08.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-24.04.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.08.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -155,18 +164,17 @@ object RapidsPluginUtils extends Logging {
     lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
         s"Please make sure there is only one $jarName jar in the classpath. "
 
-    require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
-
+    // revisionMap.size could be 0 when debugging in IDE, so allow it in that case
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
-        if (revisionMap.size != 1 || revisionMap.values.exists(_.size != 1)) {
+        if (revisionMap.size > 1 || revisionMap.values.exists(_.size != 1)) {
           logWarning(msg)
         }
       case AllowMultipleJars.SAME_REVISION =>
         val recommended = "If it is impossible to fix the classpath you can suppress the " +
               s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS, but this " +
               s"can cause unpredictable behavior as the plugin may pick up the wrong jar."
-        require(revisionMap.size == 1, msg + recommended)
+        require(revisionMap.size <= 1, msg + recommended)
         if (revisionMap.values.exists(_.size != 1)) {
           logWarning(msg + recommended)
         }
@@ -175,7 +183,7 @@ object RapidsPluginUtils extends Logging {
             s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS." +
             " But setting it to ALWAYS can cause unpredictable behavior as the plugin may pick " +
             "up the wrong jar."
-        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
+        require(revisionMap.size <= 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
     }
   }
 
@@ -292,7 +300,7 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  def loadProps(resourceName: String): Properties = {
+  def loadProps(resourceName: String): Map[String, String] = {
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
     val resource = classLoader.getResourceAsStream(resourceName)
     if (resource == null) {
@@ -300,7 +308,7 @@ object RapidsPluginUtils extends Logging {
     }
     val props = new Properties
     props.load(resource)
-    props
+    props.asScala.toMap
   }
 
   private def loadExtensions[T <: AnyRef](extClass: Class[T], classes: Seq[String]): Seq[T] = {
@@ -346,7 +354,71 @@ object RapidsPluginUtils extends Logging {
       loadExtensions(classOf[SparkPlugin], pluginClasses)
     }
   }
+
+  /**
+   * Extracts supported GPU architectures from the given properties file
+   */
+  private def getSupportedGpuArchitectures(props: Map[String, String], origin: String): Set[Int] = {
+    props.getOrElse("gpu_architectures", sys.error(s"GPU architectures not found in $origin"))
+      .split(";")
+      .map(_.toInt)
+      .toSet
+  }
+
+  /**
+   * Checks if the current GPU architecture is supported by the spark-rapids-jni
+   * and cuDF libraries.
+   */
+  def validateGpuArchitecture(): Unit = {
+    val gpuArch = Cuda.getComputeCapabilityMajor * 10 + Cuda.getComputeCapabilityMinor
+    validateGpuArchitectureInternal(gpuArch,
+      getSupportedGpuArchitectures(buildInfoEvent.sparkRapidsJniBuildInfo, JNI_PROPS_FILENAME),
+      getSupportedGpuArchitectures(buildInfoEvent.cudfBuildInfo, CUDF_PROPS_FILENAME))
+  }
+
+  /**
+   * Checks the validity of the provided GPU architecture in the provided architecture set.
+   *
+   * See: https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html
+   */
+  def validateGpuArchitectureInternal(gpuArch: Int, jniSupportedGpuArchs: Set[Int],
+      cudfSupportedGpuArchs: Set[Int]): Unit = {
+    val supportedGpuArchs = jniSupportedGpuArchs.intersect(cudfSupportedGpuArchs)
+    if (supportedGpuArchs.isEmpty) {
+      val jniSupportedGpuArchsStr = jniSupportedGpuArchs.toSeq.sorted.mkString(", ")
+      val cudfSupportedGpuArchsStr = cudfSupportedGpuArchs.toSeq.sorted.mkString(", ")
+      throw new IllegalStateException(s"Compatibility check failed for GPU architecture " +
+        s"$gpuArch. Supported GPU architectures by JNI: $jniSupportedGpuArchsStr and " +
+        s"cuDF: $cudfSupportedGpuArchsStr. Please report this issue at $SPARK_RAPIDS_REPO_URL." +
+        s" This check can be disabled by setting `spark.rapids.skipGpuArchitectureCheck` to" +
+        s" `true`, but it may lead to functional failures.")
+    }
+
+    val minSupportedGpuArch = supportedGpuArchs.min
+    // Check if the device architecture is supported
+    if (gpuArch < minSupportedGpuArch) {
+      throw new RuntimeException(s"Device architecture $gpuArch is unsupported." +
+        s" Minimum supported architecture: $minSupportedGpuArch.")
+    }
+    val supportedMajorGpuArchs = supportedGpuArchs.map(_ / 10)
+    val majorGpuArch = gpuArch / 10
+    // Warn the user if the device's major architecture is not available
+    if (!supportedMajorGpuArchs.contains(majorGpuArch)) {
+      val supportedMajorArchStr = supportedMajorGpuArchs.toSeq.sorted.mkString(", ")
+      logWarning(s"No precompiled binaries for device major architecture $majorGpuArch. " +
+        "This may lead to expensive JIT compile on startup. " +
+        s"Binaries available for architectures $supportedMajorArchStr.")
+    }
+  }
 }
+
+
+case class SparkRapidsBuildInfoEvent(
+  sparkRapidsBuildInfo: Map[String, String],
+  sparkRapidsJniBuildInfo: Map[String, String],
+  cudfBuildInfo: Map[String, String],
+  sparkRapidsPrivateBuildInfo: Map[String, String]
+) extends SparkListenerEvent
 
 /**
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
@@ -374,6 +446,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
         }
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m: GpuCoreDumpMsg => GpuCoreDumpHandler.handleMsg(m)
+      case m: ProfileMsg => ProfilerOnDriver.handleMsg(m)
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
   }
@@ -386,6 +459,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     RapidsPluginUtils.detectMultipleJars(conf)
     RapidsPluginUtils.logPluginMode(conf)
     GpuCoreDumpHandler.driverInit(sc, conf)
+    ProfilerOnDriver.init(sc, conf)
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
@@ -402,6 +476,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     logDebug("Loading extra driver plugins: " +
       s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")
     extraDriverPlugins.foreach(_.init(sc, pluginContext))
+    TrampolineUtil.postEvent(sc, buildInfoEvent)
     conf.rapidsConfMap
   }
 
@@ -422,21 +497,26 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
+  private val activeTaskNvtx = new ConcurrentHashMap[Thread, NvtxRange]()
 
   override def init(
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
-      if (Cuda.getComputeCapabilityMajor < 6) {
-        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
-          " is unsupported, requires 6.0+")
-      }
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
+      ProfilerOnExecutor.init(pluginContext, conf)
+
+      // Checks if the current GPU architecture is supported by the
+      // spark-rapids-jni and cuDF libraries.
+      // Note: We allow this check to be skipped for off-chance cases.
+      if (!conf.skipGpuArchCheck) {
+        RapidsPluginUtils.validateGpuArchitecture()
+      }
 
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)
@@ -517,16 +597,14 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   private def checkCudfVersion(conf: RapidsConf): Unit = {
     try {
-      val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
-      val expectedCudfVersion = Option(pluginProps.getProperty("cudf_version")).getOrElse {
+      val expectedCudfVersion = buildInfoEvent.sparkRapidsBuildInfo.getOrElse("cudf_version",
         throw CudfVersionMismatchException("Could not find cudf version in " +
-            RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
-      }
-      val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
-      val cudfVersion = Option(cudfProps.getProperty("version")).getOrElse {
+            RapidsPluginUtils.PLUGIN_PROPS_FILENAME))
+
+      val cudfVersion = buildInfoEvent.cudfBuildInfo.getOrElse("version",
         throw CudfVersionMismatchException("Could not find cudf version in " +
-            RapidsPluginUtils.CUDF_PROPS_FILENAME)
-      }
+            RapidsPluginUtils.CUDF_PROPS_FILENAME))
+
       // compare cudf version in the classpath with the cudf version expected by plugin
       if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
         throw CudfVersionMismatchException(s"Found cudf version $cudfVersion, RAPIDS Accelerator " +
@@ -581,6 +659,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
+    ProfilerOnExecutor.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
@@ -611,14 +690,33 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
     extraExecutorPlugins.foreach(_.onTaskFailed(failureReason))
+    endTaskNvtx()
   }
 
   override def onTaskStart(): Unit = {
+    startTaskNvtx(TaskContext.get)
     extraExecutorPlugins.foreach(_.onTaskStart())
+    ProfilerOnExecutor.onTaskStart()
   }
 
   override def onTaskSucceeded(): Unit = {
     extraExecutorPlugins.foreach(_.onTaskSucceeded())
+    endTaskNvtx()
+  }
+
+  private def startTaskNvtx(taskCtx: TaskContext): Unit = {
+    val stageId = taskCtx.stageId()
+    val taskAttemptId = taskCtx.taskAttemptId()
+    val attemptNumber = taskCtx.attemptNumber()
+    activeTaskNvtx.put(Thread.currentThread(),
+      new NvtxRange(s"Stage $stageId Task $taskAttemptId-$attemptNumber", NvtxColor.DARK_GREEN))
+  }
+
+  private def endTaskNvtx(): Unit = {
+    val nvtx = activeTaskNvtx.remove(Thread.currentThread())
+    if (nvtx != null) {
+      nvtx.close()
+    }
   }
 }
 
