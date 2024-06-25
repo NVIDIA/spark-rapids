@@ -2274,6 +2274,32 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  val DELTA_LOW_SHUFFLE_MERGE_SCATTER_DEL_VECTOR_BATCH_SIZE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size")
+      .doc("Option to set max batch size when scattering deletion vector")
+      .internal()
+      .integerConf
+      .createWithDefault(32 * 1024)
+
+  val DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold")
+      .doc("Currently we need to broadcast deletion vector to all executors to perform low " +
+        "shuffle merge. When we detect the deletion vector broadcast size is larger than this " +
+        "value, we will fallback to normal shuffle merge.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(20 * 1024 * 1024)
+
+  val ENABLE_DELTA_LOW_SHUFFLE_MERGE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
+    .doc("Option to turn on the low shuffle merge for Delta Lake. Currently there are some " +
+      "limitations for this feature: \n" +
+      "1. We only support Databricks Runtime 13.3 and Deltalake 2.4. \n" +
+      s"2. The file scan mode must be set to ${RapidsReaderType.PERFILE} \n" +
+      "3. The deletion vector size must be smaller than " +
+      s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} \n")
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -3082,6 +3108,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
+
+  lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

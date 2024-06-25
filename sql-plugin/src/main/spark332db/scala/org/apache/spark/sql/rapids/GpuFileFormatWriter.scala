@@ -31,7 +31,7 @@ import java.util.{Date, UUID}
 
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.RapidsFileSourceMetaUtils
+import com.nvidia.spark.rapids.shims.{GpuBucketingUtils, RapidsFileSourceMetaUtils}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._
@@ -119,13 +119,8 @@ object GpuFileFormatWriter extends Logging {
       .map(RapidsFileSourceMetaUtils.cleanupFileSourceMetadataInformation))
     val dataColumns = finalOutputSpec.outputColumns.filterNot(partitionSet.contains)
 
-    val writerBucketSpec: Option[GpuWriterBucketSpec] = bucketSpec.map { spec =>
-      // TODO: Cannot support this until we:
-      // support Hive hash partitioning on the GPU
-      throw new UnsupportedOperationException("GPU hash partitioning for bucketed data is not "
-          + "compatible with the CPU version")
-    }
-
+    val writerBucketSpec = GpuBucketingUtils.getWriterBucketSpec(bucketSpec, dataColumns,
+      options, false)
     val sortColumns = bucketSpec.toSeq.flatMap {
       spec => spec.sortColumnNames.map(c => dataColumns.find(_.name == c).get)
     }
@@ -419,8 +414,8 @@ object GpuFileFormatWriter extends Logging {
       } else {
         concurrentOutputWriterSpec match {
           case Some(spec) =>
-            new GpuDynamicPartitionDataConcurrentWriter(
-              description, taskAttemptContext, committer, spec, TaskContext.get())
+            new GpuDynamicPartitionDataConcurrentWriter(description, taskAttemptContext,
+              committer, spec)
           case _ =>
             new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
         }

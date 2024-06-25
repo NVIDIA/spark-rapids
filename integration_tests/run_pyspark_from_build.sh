@@ -171,11 +171,16 @@ else
         TEST_TYPE_PARAM="--test_type $TEST_TYPE"
     fi
 
+    # We found that when parallelism > 8, as it increases, the test speed will become slower and slower. So we set the default maximum parallelism to 8.
+    # Note that MAX_PARALLEL varies with the hardware, OS, and test case. Please overwrite it with an appropriate value if needed.
+    MAX_PARALLEL=${MAX_PARALLEL:-8}
     if [[ ${TEST_PARALLEL} -lt 2 ]];
     then
         # With xdist 0 and 1 are the same parallelism but
         # 0 is more efficient
         TEST_PARALLEL_OPTS=()
+    elif [[ ${TEST_PARALLEL} -gt ${MAX_PARALLEL} ]]; then
+        TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL")
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
@@ -245,6 +250,12 @@ else
     DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
     export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
+
+    # Set driver memory to speed up tests such as deltalake
+    if [[ -n "${DRIVER_MEMORY}" ]]; then
+        export PYSP_TEST_spark_driver_memory="${DRIVER_MEMORY}"
+    fi
+
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
     export PYSP_TEST_spark_sql_shuffle_partitions='4'

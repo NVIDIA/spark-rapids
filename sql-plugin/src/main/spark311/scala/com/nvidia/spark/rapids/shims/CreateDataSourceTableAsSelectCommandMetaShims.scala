@@ -41,7 +41,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.rapids.{GpuDataSourceBase, GpuOrcFileFormat}
+import org.apache.spark.sql.rapids.{BucketIdMetaUtils, GpuDataSourceBase, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 
@@ -56,9 +56,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   private var gpuProvider: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (cmd.table.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
-    }
+    BucketIdMetaUtils.tagForBucketingWrite(this, cmd.table.bucketSpec, cmd.outputColumns)
     if (cmd.table.provider.isEmpty) {
       willNotWorkOnGpu("provider must be defined")
     }
