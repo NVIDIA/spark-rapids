@@ -111,6 +111,14 @@
             </properties>
         </profile>
         <profile>
+            <id>jdk17-scala213-test</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk17.scala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>jdk17-test</id>
             <properties>
                 <included_buildvers>

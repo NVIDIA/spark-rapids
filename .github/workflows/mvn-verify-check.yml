@@ -43,7 +43,7 @@ jobs:
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
       sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
-      scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
+      scala213Jdk8Versions: ${{ steps.allShimVersionsStep.outputs.scala213Jdk8Versions }}
     steps:
       - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v4
@@ -110,13 +110,15 @@ jobs:
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
           # default version
           echo "defaultSparkVersion=${SPARK_BASE_SHIM_VERSION}" >> $GITHUB_OUTPUT
-          jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8}" "${SPARK_BASE_SHIM_VERSION}")
+          jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8,\"pom-directory\":.}" "${SPARK_BASE_SHIM_VERSION}")
           # jdk11
-          jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
+          jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11,\"pom-directory\":.}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
           # jdk17
-          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"pom-directory\":.}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+          # jdk17 scala 2.13
+          jdk17Scala213VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"pom-directory\":scala2.13}" "${SPARK_SHIM_VERSIONS_JDK17_SCALA213[@]}")
           # jdk
-          jdkVersionArrBody=$jdkHeadVersionArrBody$jdk11VersionArrBody$jdk17VersionArrBody
+          jdkVersionArrBody=$jdkHeadVersionArrBody$jdk11VersionArrBody$jdk17VersionArrBody$jdk17Scala213VersionArrBody
           jdkVersionArrBody=${jdkVersionArrBody:1}
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
           echo "jdkVersions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
@@ -127,16 +129,10 @@ jobs:
           svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
           # get private artifact version
           privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
-          # do not add empty snapshot versions or when private version is released one (does not include snapshot shims)
-          if [[ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 && $privateVer == *"-SNAPSHOT" ]]; then
-            svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
-            svArrBodySnapshot=${svArrBodySnapshot:1}
-            svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
-          else
-            svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot)
-          fi
+          # Only setting nosnapshot as the only 2.13 snapshot uses jdk 17 which will be tested by a different job
+          svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot)
 
-          echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
+          echo "scala213Jdk8Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
     needs: cache-dependencies
@@ -191,7 +187,7 @@ jobs:
     needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Versions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Jdk8Versions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -284,6 +280,7 @@ jobs:
           while true; do
             mvn verify \
               -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
+              -f ${{ matrix.pom-directory }}/pom.xml \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
