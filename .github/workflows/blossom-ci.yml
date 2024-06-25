@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: ${{ fromJson(needs.Authorization.outputs.args).repo }}
           ref: ${{ fromJson(needs.Authorization.outputs.args).ref }}
@@ -98,7 +98,7 @@ jobs:
 
       # repo specific steps
       - name: Setup java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: adopt
           java-version: 8
