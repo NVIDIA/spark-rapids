@@ -913,7 +913,8 @@
             340
         </jdk11.buildvers>
         <jdk17.buildvers>
-            330
+            330,
+            400
         </jdk17.buildvers>
         <all.buildvers>
             ${noSnapshot.buildvers},
