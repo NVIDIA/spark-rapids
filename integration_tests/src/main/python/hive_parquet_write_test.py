@@ -19,7 +19,7 @@ from conftest import is_databricks_runtime
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, is_before_spark_320, is_spark_351_or_later
+from spark_session import with_cpu_session, is_before_spark_320, is_spark_350_or_later
 
 # Disable the meta conversion from Hive write to FrameData write in Spark, to test
 # "GpuInsertIntoHiveTable" for Parquet write.
@@ -55,7 +55,7 @@ _hive_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), 
 _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive_map_gens]
 
 # ProjectExec falls back on databricks due to no GPU version of "MapFromArrays".
-fallback_nodes = ['ProjectExec'] if is_databricks_runtime() or is_spark_351_or_later() else []
+fallback_nodes = ['ProjectExec'] if is_databricks_runtime() or is_spark_350_or_later() else []
 
 
 @allow_non_gpu(*(non_utc_allow + fallback_nodes))
