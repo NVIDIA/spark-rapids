@@ -733,6 +733,7 @@
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
         <ucx.baseVersion>1.16.0</ucx.baseVersion>
+        <roaringbitmap.version>1.0.6</roaringbitmap.version>
         <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
         <ucx.version>${ucx.baseVersion}</ucx.version>
         <rapids.compressed.artifact>true</rapids.compressed.artifact>
@@ -886,6 +887,7 @@
             340,
             341,
             342,
+            343,
             350,
             351
         </noSnapshotScala213.buildvers>
@@ -1014,6 +1016,15 @@
                 <artifactId>alluxio-shaded-client</artifactId>
                 <version>${alluxio.client.version}</version>
                 <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <!-- For shade, spark 3.2 and earlier uses an older version(0.9.0), which doesn't
+                 contain the required api we use.
+                 -->
+                <groupId>org.roaringbitmap</groupId>
+                <artifactId>RoaringBitmap</artifactId>
+                <version>${roaringbitmap.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
               <groupId>org.scalatest</groupId>

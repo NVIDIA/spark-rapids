@@ -33,101 +33,17 @@
 {"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import java.io.EOFException
-import java.nio.ByteBuffer
-import java.nio.channels.SeekableByteChannel
-
-import ai.rapids.cudf.HostMemoryBuffer
-import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuMetric
-import com.nvidia.spark.rapids.filecache.FileCache
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.OrcProto
-import org.apache.orc.impl.{BufferChunk, BufferChunkList, DataReaderProperties, InStream, OrcCodecPool}
+import org.apache.orc.impl.DataReaderProperties
 
 class GpuOrcDataReader(
     props: DataReaderProperties,
     conf: Configuration,
-    metrics: Map[String, GpuMetric]) extends GpuOrcDataReaderBase(props, conf, metrics) {
-
-  private class BufferChunkLoader(useDirect: Boolean) extends BlockLoader {
-    override def loadRemoteBlocks(
-        baseOffset: Long,
-        first: DiskRangeList,
-        last: DiskRangeList,
-        data: ByteBuffer): DiskRangeList = {
-      var current = first
-      val offset = current.getOffset
-      while (current ne last.next) {
-        val buffer = if (current eq last) data else data.duplicate()
-        buffer.position((current.getOffset - offset).toInt)
-        buffer.limit((current.getEnd - offset).toInt)
-        current.asInstanceOf[BufferChunk].setChunk(buffer)
-        // see if the filecache wants any of this data
-        val cacheToken = FileCache.get.startDataRangeCache(filePathString,
-          baseOffset + current.getOffset, current.getLength, conf)
-        cacheToken.foreach { token =>
-          val hmb = closeOnExcept(HostMemoryBuffer.allocate(current.getLength, false)) { hmb =>
-            hmb.setBytes(0, buffer.array(),
-              buffer.arrayOffset() + buffer.position(), current.getLength)
-            hmb
-          }
-          token.complete(hmb)
-        }
-        current = current.next
-      }
-      current
-    }
-
-    override def loadCachedBlock(
-        chunk: DiskRangeList,
-        channel: SeekableByteChannel): DiskRangeList = {
-      val buffer = if (useDirect) {
-        ByteBuffer.allocateDirect(chunk.getLength)
-      } else {
-        ByteBuffer.allocate(chunk.getLength)
-      }
-      while (buffer.remaining() > 0) {
-        if (channel.read(buffer) < 0) {
-          throw new EOFException(s"Unexpected EOF while reading cached block for $filePathString")
-        }
-      }
-      buffer.flip()
-      chunk.asInstanceOf[BufferChunk].setChunk(buffer)
-      chunk
-    }
-  }
-
-  override protected def parseStripeFooter(buf: ByteBuffer, size: Int): OrcProto.StripeFooter = {
-    OrcProto.StripeFooter.parseFrom(
-      InStream.createCodedInputStream(InStream.create("footer",
-        new BufferChunk(buf, 0), 0, size, compression)))
-  }
-
-  override def getCompressionOptions: InStream.StreamOptions = compression
-
-  override def readFileData(chunks: BufferChunkList, forceDirect: Boolean): BufferChunkList = {
-    if (chunks != null) {
-      readDiskRanges(chunks.get, 0, new BufferChunkLoader(forceDirect))
-    }
-    chunks
-  }
-
-  override def close(): Unit = {
-    if (compression.getCodec != null) {
-      if (compression.getCodec != null) {
-        OrcCodecPool.returnCodec(compression.getCodec.getKind, compression.getCodec)
-        compression.withCodec(null)
-      }
-    }
-    super.close()
-  }
-}
+    metrics: Map[String, GpuMetric]) extends GpuOrcDataReader320Plus(props, conf, metrics)
 
 object GpuOrcDataReader {
   // File cache is being used, so we want read ranges that can be cached separately

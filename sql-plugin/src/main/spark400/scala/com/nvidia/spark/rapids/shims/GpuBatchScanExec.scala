@@ -44,7 +44,7 @@ case class GpuBatchScanExec(
     spjParams: StoragePartitionJoinParams = StoragePartitionJoinParams()
   ) extends GpuBatchScanExecBase(scan, runtimeFilters) {
 
-  @transient lazy val batch: Batch = if (scan == null) null else scan.toBatch
+  @transient override lazy val batch: Batch = if (scan == null) null else scan.toBatch
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
     case other: GpuBatchScanExec =>
