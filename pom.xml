@@ -920,6 +920,8 @@
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
             ${databricks.buildvers},
+            <!-- We are adding 400 here because currently the github premerge tests build everything for Scala 213 against jdk 8 -->
+            400
         </all.buildvers>
         <noSnapshotScala213.buildvers>
             330,
@@ -934,7 +936,6 @@
             351
         </noSnapshotScala213.buildvers>
         <snapshotScala213.buildvers>
-            400
         </snapshotScala213.buildvers>
         <allScala213.buildvers>
             ${noSnapshotScala213.buildvers},
