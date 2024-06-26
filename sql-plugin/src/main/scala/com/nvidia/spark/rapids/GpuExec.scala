@@ -32,8 +32,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -406,7 +406,7 @@ trait GpuExec extends SparkPlan {
     if (loreDumpOperator.exists(o => o.equals(className)) ||
       loreDumpLOREIds.split(',').contains(myLoreId)
     ) {
-      val childAsGpuExec = this.asInstanceOf[UnaryLike[SparkPlan]].child.asInstanceOf[GpuExec]
+      val childAsGpuExec = this.asInstanceOf[UnaryExecNode].child.asInstanceOf[GpuExec]
       childAsGpuExec.shouldDumpOutput = true
       childAsGpuExec.dumpForLOREId = myLoreId
       val childPlanId = childAsGpuExec.id

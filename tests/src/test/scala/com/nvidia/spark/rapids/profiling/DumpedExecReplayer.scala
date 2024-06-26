@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.GpuExec
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.trees.UnaryLike
+import org.apache.spark.sql.execution.UnaryExecNode
 
 object DumpedExecReplayer extends Logging {
 
@@ -56,9 +56,9 @@ object DumpedExecReplayer extends Logging {
     // restore SparkPlan
     val restoredExec = deserializeObject[GpuExec](planMetaPath)
 
-    if (!restoredExec.isInstanceOf[UnaryLike[_]]) throw new IllegalStateException(
+    if (!restoredExec.isInstanceOf[UnaryExecNode]) throw new IllegalStateException(
       s"For now, restored exec only supports UnaryLike: ${restoredExec.getClass}")
-    val unaryLike = restoredExec.asInstanceOf[UnaryLike[_]]
+    val unaryLike = restoredExec.asInstanceOf[UnaryExecNode]
 
     if (!unaryLike.child.isInstanceOf[GpuExec]) throw new IllegalStateException(
       s"For now, restored exec's child only supports GpuExec: " +
