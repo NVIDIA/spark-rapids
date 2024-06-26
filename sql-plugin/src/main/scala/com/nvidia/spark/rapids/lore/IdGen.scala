@@ -20,6 +20,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.concurrent.atomic.AtomicInteger
 
 import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
@@ -36,7 +37,8 @@ object IdGen {
   private def nextLoreIdOfSparkPlan(plan: SparkPlan): Option[Int] = {
     // When the execution id is not set, it means there is no actual execution happening, in this
     // case we don't need to generate lore id.
-    Option(plan.session.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
+    Option(SparkShimImpl.sessionFromPlan(plan).sparkContext.
+      getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
       .map { executionId =>
         idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
       }
