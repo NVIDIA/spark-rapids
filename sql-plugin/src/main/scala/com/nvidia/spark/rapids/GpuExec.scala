@@ -420,6 +420,7 @@ trait GpuExec extends SparkPlan {
     val shouldDumpOutputToBroadcast = shouldDumpOutput
     val dumpForLOREIdToBroadcast = dumpForLOREId
     val loreDumpPartitionsToBroadcast = loreDumpPartitions
+    val loreDumpPathToBroadcast = loreDumpPath
 
     var orig: RDD[ColumnarBatch] = null
     orig = internalDoExecuteColumnar()
@@ -455,7 +456,7 @@ trait GpuExec extends SparkPlan {
               val cbTypes = GpuColumnVector.extractTypes(cb)
               val bytes = serializeObject(cbTypes)
               val fos = getOutputStream(
-                new Path(new Path(loreDumpPath),
+                new Path(new Path(loreDumpPathToBroadcast),
                   s"lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
                     s"partition_id=${partitionId}/" +
                     s"batch_id=${batchId}/col_types.meta"))
@@ -466,7 +467,7 @@ trait GpuExec extends SparkPlan {
             // dump data for column batch to /tmp dir
             withResource(GpuColumnVector.from(cb)) { table =>
               val fos = getOutputStream(
-                new Path(new Path(loreDumpPath),
+                new Path(new Path(loreDumpPathToBroadcast),
                   s"lore_id=${dumpForLOREIdToBroadcast}_plan_id=${planId}/" +
                     s"partition_id=${partitionId}/" +
                     s"batch_id=${batchId}/cb_data.parquet"))
