@@ -29,6 +29,7 @@ def test_scalar_subquery_basics(data_gen):
         where a > (select first(a) from table)
         ''')
 
+
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
 def test_scalar_subquery_struct(basic_gen):
@@ -53,7 +54,11 @@ def test_scalar_subquery_struct(basic_gen):
         where (select first(ss) from table)['child']['c0'] > ss.child.c0
         ''')
     # struct of array
-    gen = [('ss', StructGen([['arr', ArrayGen(basic_gen)]]))]
+    # Note: The test query accesses the first two elements of the array.  The datagen is set up
+    #       to generate arrays of a minimum of two elements.  Otherwise, the test will fail in ANSI mode.
+    #       No meaningful test coverage is lost.  Accessing invalid indices of arrays is already tested
+    #       as part of array_test.py::test_array_item_ansi_fail_invalid_index.
+    gen = [('ss', StructGen([['arr', ArrayGen(basic_gen, min_length=2)]]))]
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, length=100, num_slices=1),
@@ -63,13 +68,18 @@ def test_scalar_subquery_struct(basic_gen):
         where (select first(ss) from table).arr[0] > ss.arr[1]
         ''')
 
+
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
 def test_scalar_subquery_array(basic_gen):
+    # Note: For this test, all the array inputs are sized so that ArrayIndexOutOfBounds conditions are
+    #       avoided.  This is to ensure that the tests don't fail with exceptions in ANSI mode.
+    #       Note that no meaningful test coverage is lost here.  ArrayIndexOutOfBounds exceptions are
+    #       already tested as part of array_test.py::test_array_item_ansi_fail_invalid_index.
     # single-level array
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(basic_gen))], num_slices=1),
+        lambda spark: gen_df(spark, [('arr', ArrayGen(basic_gen, min_length=1))], num_slices=1),
         'table',
         '''select sort_array(arr),
                   sort_array((select last(arr) from table))
@@ -79,7 +89,7 @@ def test_scalar_subquery_array(basic_gen):
     # nested array
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(ArrayGen(basic_gen)))]
+        lambda spark: gen_df(spark, [('arr', ArrayGen(ArrayGen(basic_gen, min_length=2), min_length=11))]
                              , length=100
                              , num_slices=1),
         'table',
@@ -91,7 +101,7 @@ def test_scalar_subquery_array(basic_gen):
     # array of struct
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(StructGen([['a', basic_gen]])))]
+        lambda spark: gen_df(spark, [('arr', ArrayGen(StructGen([['a', basic_gen]]), min_length=11))]
                              , length=100
                              , num_slices=1),
         'table',
@@ -102,6 +112,10 @@ def test_scalar_subquery_array(basic_gen):
 
 @ignore_order(local=True)
 def test_scalar_subquery_map():
+    # Note: For this test, all the array inputs are sized so that ArrayIndexOutOfBounds conditions are
+    #       avoided.  This is to ensure that the tests don't fail with exceptions in ANSI mode.
+    #       Note that no meaningful test coverage is lost here.  ArrayIndexOutOfBounds exceptions are
+    #       already tested as part of array_test.py::test_array_item_ansi_fail_invalid_index.
     map_gen = map_string_string_gen[0]
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
@@ -115,7 +129,7 @@ def test_scalar_subquery_map():
     # array of map
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(map_gen))], length=100, num_slices=1),
+        lambda spark: gen_df(spark, [('arr', ArrayGen(map_gen, min_length=1))], length=100, num_slices=1),
         'table',
         '''select arr[0]['key_0'],
                   (select first(arr) from table)[0]['key_1'],
