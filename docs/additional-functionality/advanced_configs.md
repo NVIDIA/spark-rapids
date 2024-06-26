@@ -19,6 +19,7 @@ For commonly used configurations and examples of setting options, please refer t
 
 Name | Description | Default Value | Applicable at
 -----|-------------|--------------|--------------
+<a name="LORE.tagging"></a>spark.rapids.LORE.tagging|Enable tagging a LORE id to each gpu plan node|true|Runtime
 <a name="alluxio.automount.enabled"></a>spark.rapids.alluxio.automount.enabled|Enable the feature of auto mounting the cloud storage to Alluxio. It requires the Alluxio master is the same node of Spark driver node. The Alluxio master's host and port will be read from alluxio.master.hostname and alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like "s3://bar/b.csv" to "alluxio://0.1.2.3:19998/bar/b.csv", and the bucket "s3://bar" will be mounted to "/bar" in Alluxio automatically.|false|Runtime
 <a name="alluxio.bucket.regex"></a>spark.rapids.alluxio.bucket.regex|A regex to decide which bucket should be auto-mounted to Alluxio. E.g. when setting as "^s3://bucket.*", the bucket which starts with "s3://bucket" will be mounted to Alluxio and the path "s3://bucket-foo/a.csv" will be replaced to "alluxio://0.1.2.3:19998/bucket-foo/a.csv". It's only valid when setting spark.rapids.alluxio.automount.enabled=true. The default value matches all the buckets in "s3://" or "s3a://" scheme.|^s3a{0,1}://.*|Runtime
 <a name="alluxio.home"></a>spark.rapids.alluxio.home|The Alluxio installation home path or link to the installation home path. |/opt/alluxio|Startup
