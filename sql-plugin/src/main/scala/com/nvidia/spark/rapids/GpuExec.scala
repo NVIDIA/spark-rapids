@@ -152,12 +152,34 @@ sealed abstract class GpuMetric extends Serializable {
   def +=(v: Long): Unit
   def add(v: Long): Unit
 
+  private var isTimerActive = false
+
+  final def tryActivateTimer(): Boolean = {
+    if (!isTimerActive) {
+      isTimerActive = true
+      true
+    } else {
+      false
+    }
+  }
+
+  final def deactivateTimer(duration: Long): Unit = {
+    if (isTimerActive) {
+      isTimerActive = false
+      add(duration)
+    }
+  }
+
   final def ns[T](f: => T): T = {
-    val start = System.nanoTime()
-    try {
+    if (tryActivateTimer()) {
+      val start = System.nanoTime()
+      try {
+        f
+      } finally {
+        deactivateTimer(System.nanoTime() - start)
+      }
+    } else {
       f
-    } finally {
-      add(System.nanoTime() - start)
     }
   }
 }

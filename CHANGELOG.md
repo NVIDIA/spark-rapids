@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-06-10
+Generated on 2024-06-13
 
 ## Release 24.06
 
@@ -48,6 +48,8 @@ Generated on 2024-06-10
 ### PRs
 |||
 |:---|:---|
+|[#11052](https://github.com/NVIDIA/spark-rapids/pull/11052)|Add spark343 shim for scala2.13 dist jar|
+|[#10981](https://github.com/NVIDIA/spark-rapids/pull/10981)|Update latest changelog [skip ci]|
 |[#10984](https://github.com/NVIDIA/spark-rapids/pull/10984)|[DOC] Update docs for 24.06.0 release [skip ci]|
 |[#10974](https://github.com/NVIDIA/spark-rapids/pull/10974)|Update rapids JNI and private dependency to 24.06.0|
 |[#10947](https://github.com/NVIDIA/spark-rapids/pull/10947)|Prevent contains-PrefixRange optimization if not preceded by wildcards|

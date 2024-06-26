@@ -322,10 +322,11 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (cmd.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
+    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
+      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
+    } else {
+      BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
-
     val spark = SparkSession.active
     val formatCls = cmd.fileFormat.getClass
     fileFormat = if (formatCls == classOf[CSVFileFormat]) {
