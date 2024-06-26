@@ -14,10 +14,10 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from conftest import is_not_utc
 from data_gen import *
-from marks import allow_non_gpu
+from marks import allow_non_gpu, disable_ansi_mode
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_340
@@ -224,21 +224,46 @@ def test_multi_orderby_with_limit_single_part(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).coalesce(1).orderBy(f.col('a'), f.col('b').desc()).limit(100))
 
+
+@disable_ansi_mode  # ANSI mode is tested separately, in test_orderby_with_ansi_exceptions
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
 def test_orderby_with_processing(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
-            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')))
+            # avoid ambiguity in the order by statement for floating point by including `a` as a backup ordering column
+            lambda spark: unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')))
 
+
+@pytest.mark.parametrize('is_ansi_enabled', [False, True])
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+def test_orderby_with_ansi_exceptions(data_gen, is_ansi_enabled):
+    """
+    Test to check that ANSI mode is honoured when there's an order-by with a subtraction expression.
+    With ANSI mode enabled, the subtraction will overflow, causing an ArithmeticException.
+    """
+    conf = {'spark.sql.ansi.enabled': is_ansi_enabled}
+
+    def test_function(spark):
+        return unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a'))
+
+    if is_ansi_enabled:
+        assert_gpu_and_cpu_error(lambda spark: test_function(spark).collect(),
+                                 conf=conf,
+                                 error_message='ArithmeticException')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(test_function, conf=conf)
+
+
+@disable_ansi_mode  # ANSI mode is tested separately, in test_orderby_with_ansi_exceptions
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
 def test_orderby_with_processing_and_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
-            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')).limit(100))
+        # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
+        lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')).limit(100))
 
 
+@disable_ansi_mode  # ANSI mode is tested separately, in test_orderby_with_ansi_exceptions
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [StructGen([('child0', long_gen)])], ids=idfn)
 def test_single_nested_orderby_with_processing_and_limit(data_gen):
