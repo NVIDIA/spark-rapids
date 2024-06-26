@@ -28,7 +28,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.RapidsMeta
 
-import org.apache.spark.sql.catalyst.catalog.BucketSpec
+import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.rapids.{BucketIdMetaUtils, GpuWriterBucketSpec}
 
@@ -68,6 +68,17 @@ object GpuBucketingUtils {
       BucketIdMetaUtils.tagForBucketingHiveWrite(meta, bucketSpec, outColumns)
     } else {
       BucketIdMetaUtils.tagForBucketingWrite(meta, bucketSpec, outColumns)
+    }
+  }
+
+  // Only for GpuInsertIntoHiveTable. The "InsertIntoHiveTable" in normal Spark before 330
+  // does not support the bucketed write. But some customized Spark binaries before 330 indeed
+  // support it. So "forceHiveHash" is introduced to give a chance to enable the bucket write.
+  def getBucketSpec(table: CatalogTable, forceHiveHash: Boolean): Option[BucketSpec] = {
+    if (forceHiveHash) {
+      table.bucketSpec
+    } else {
+      None
     }
   }
 }

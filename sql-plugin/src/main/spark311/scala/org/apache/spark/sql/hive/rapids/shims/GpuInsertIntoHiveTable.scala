@@ -221,7 +221,7 @@ case class GpuInsertIntoHiveTable(
       outputLocation = tmpLocation.toString,
       forceHiveHashForBucketing = forceHiveHashForBucketing,
       partitionAttributes = partitionAttributes,
-      bucketSpec = table.bucketSpec,
+      bucketSpec = GpuBucketingUtils.getBucketSpec(table, forceHiveHashForBucketing),
       options = GpuBucketingUtils.getOptionsWithHiveBucketWrite(table.bucketSpec))
 
     if (partition.nonEmpty) {

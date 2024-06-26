@@ -14,20 +14,23 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect
+from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_equal_with_local_sort
 from conftest import is_databricks_runtime
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, is_before_spark_320, is_spark_350_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_spark_350_or_later, is_before_spark_330
 
 # Disable the meta conversion from Hive write to FrameData write in Spark, to test
 # "GpuInsertIntoHiveTable" for Parquet write.
 _write_to_hive_conf = {"spark.sql.hive.convertMetastoreParquet": False}
 
-_hive_basic_gens = [
-    byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, boolean_gen,
-    DateGen(start=date(1590, 1, 1)), _restricted_timestamp(),
+_hive_bucket_gens = [
+    boolean_gen, byte_gen, short_gen, int_gen, long_gen, string_gen, float_gen, double_gen,
+    DateGen(start=date(1590, 1, 1))]
+
+_hive_basic_gens = _hive_bucket_gens + [
+    _restricted_timestamp(),
     DecimalGen(precision=19, scale=1, nullable=True),
     DecimalGen(precision=23, scale=5, nullable=True),
     DecimalGen(precision=36, scale=3, nullable=True)]
@@ -174,3 +177,52 @@ def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_
         spark_tmp_table_factory,
         write_to_hive_sql,
         _write_to_hive_conf)
+
+
+@pytest.mark.skipif(is_before_spark_330(),
+                    reason="InsertIntoHiveTable supports bucketed write since Spark 330")
+def test_insert_hive_bucketed_table(spark_tmp_table_factory):
+    def gen_table(spark):
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(_hive_bucket_gens)]
+        types_sql_str = ','.join('{} {}'.format(
+            name, gen.data_type.simpleString()) for name, gen in gen_list)
+        col_names_str = ','.join(name for name, gen in gen_list)
+        data_table = spark_tmp_table_factory.get()
+        gen_df(spark, gen_list).createOrReplaceTempView(data_table)
+        return data_table, types_sql_str, col_names_str
+
+    (input_data, input_schema, input_cols_str) = with_cpu_session(gen_table)
+    num_buckets = 4
+
+    def insert_hive_table(spark, out_table):
+        spark.sql(
+            "CREATE TABLE {} ({}) STORED AS PARQUET CLUSTERED BY ({}) INTO {} BUCKETS".format(
+                out_table, input_schema, input_cols_str, num_buckets))
+        spark.sql(
+            "INSERT OVERWRITE {} SELECT * FROM {}".format(out_table, input_data))
+
+    cpu_table = spark_tmp_table_factory.get()
+    gpu_table = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark: insert_hive_table(spark, cpu_table), _write_to_hive_conf)
+    with_gpu_session(lambda spark: insert_hive_table(spark, gpu_table), _write_to_hive_conf)
+
+    def read_single_bucket(table, bucket_id):
+        # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
+        # fileCounter is always 0 in this test. For example '_00002.c000' is for
+        # bucket id being 2.
+        # We leverage this bucket segment in the file path to filter rows belong to a bucket.
+        bucket_segment = '_' + "{}".format(bucket_id).rjust(5, '0') + '.c000'
+        return with_cpu_session(
+            lambda spark: spark.sql("select * from {}".format(table))
+            .withColumn('file_name', f.input_file_name())
+            .filter(f.col('file_name').contains(bucket_segment))
+            .drop('file_name')  # need to drop the file_name column for comparison.
+            .collect())
+
+    cur_bucket_id = 0
+    while cur_bucket_id < num_buckets:
+        # Verify the result bucket by bucket
+        ret_cpu = read_single_bucket(cpu_table, cur_bucket_id)
+        ret_gpu = read_single_bucket(gpu_table, cur_bucket_id)
+        assert_equal_with_local_sort(ret_cpu, ret_gpu)
+        cur_bucket_id += 1
