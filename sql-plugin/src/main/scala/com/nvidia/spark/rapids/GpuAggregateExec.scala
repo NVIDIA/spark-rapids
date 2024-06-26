@@ -1758,6 +1758,7 @@ case class GpuHashAggregateExec(
        |${ExplainUtils.generateFieldString("Functions", aggregateExpressions)}
        |${ExplainUtils.generateFieldString("Aggregate Attributes", aggregateAttributes)}
        |${ExplainUtils.generateFieldString("Results", resultExpressions)}
+       |Lore: ${loreArgs.mkString(", ")}
        |""".stripMargin
   }
 

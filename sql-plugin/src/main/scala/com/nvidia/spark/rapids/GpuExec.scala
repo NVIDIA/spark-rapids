@@ -20,7 +20,7 @@ import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
-import com.nvidia.spark.rapids.lore.GpuLore.{lordIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
+import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 
@@ -378,11 +378,14 @@ trait GpuExec extends SparkPlan {
     }.getOrElse(orig)
   }
 
-  override def nodeName: String = {
-    val loreId = lordIdOf(this)
-    val lorePath = getTagValue(LORE_DUMP_PATH_TAG)
-    val loreRDDInfo = getTagValue(LORE_DUMP_RDD_TAG)
-    s"${super.nodeName} [loreId=$loreId] [lorePath=$lorePath] [loreRDDInfo=$loreRDDInfo]"
+  override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs
+
+  protected def loreArgs: Iterator[String] = {
+    val loreIdStr = loreIdOf(this).map(id => s"[loreId=$id]")
+    val lorePathStr = getTagValue(LORE_DUMP_PATH_TAG).map(path => s"[lorePath=$path]")
+    val loreRDDInfoStr = getTagValue(LORE_DUMP_RDD_TAG).map(info => s"[loreRDDInfo=$info]")
+
+    List(loreIdStr, lorePathStr, loreRDDInfoStr).flatten.iterator
   }
 
   private def dumpLoreMetaInfo(): Unit = {

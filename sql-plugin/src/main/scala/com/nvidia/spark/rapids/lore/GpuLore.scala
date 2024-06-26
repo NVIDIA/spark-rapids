@@ -226,7 +226,7 @@ object GpuLore {
     newPlan
   }
 
-  def lordIdOf(node: SparkPlan): Option[String] = {
+  def loreIdOf(node: SparkPlan): Option[String] = {
     node.getTagValue(LORE_ID_TAG)
   }
 
