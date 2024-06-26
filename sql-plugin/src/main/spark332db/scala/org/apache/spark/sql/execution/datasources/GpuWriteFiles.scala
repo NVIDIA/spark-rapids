@@ -157,7 +157,7 @@ case class GpuWriteFilesExec(
         s" mismatch:\n$this")
   }
 
-  override protected def stringArgs: Iterator[Any] = Iterator(child)
+  override def stringArgs: Iterator[Any] = Iterator(child)
 }
 
 object GpuWriteFiles {
