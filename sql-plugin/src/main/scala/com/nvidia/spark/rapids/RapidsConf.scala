@@ -708,6 +708,71 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
       .createWithDefault("MODERATE")
 
+  val PROFILE_PATH = conf("spark.rapids.profile.pathPrefix")
+    .doc("Enables profiling and specifies a URI path to use when writing profile data")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_EXECUTORS = conf("spark.rapids.profile.executors")
+    .doc("Comma-separated list of executors IDs and hyphenated ranges of executor IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createWithDefault("0")
+
+  val PROFILE_TIME_RANGES_SECONDS = conf("spark.rapids.profile.timeRangesInSeconds")
+    .doc("Comma-separated list of start-end ranges of time, in seconds, since executor startup " +
+      "to start and stop profiling. For example, a value of 10-30,100-110 will have the profiler " +
+      "wait for 10 seconds after executor startup then profile for 20 seconds, then wait for " +
+      "70 seconds then profile again for the next 10 seconds")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_JOBS = conf("spark.rapids.profile.jobs")
+    .doc("Comma-separated list of job IDs and hyphenated ranges of job IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_STAGES = conf("spark.rapids.profile.stages")
+    .doc("Comma-separated list of stage IDs and hyphenated ranges of stage IDs to " +
+      "profile when profiling is enabled")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
+    .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
+      "stage-level profiling is used.")
+    .internal()
+    .integerConf
+    .createWithDefault(1000)
+
+  val PROFILE_COMPRESSION = conf("spark.rapids.profile.compression")
+    .doc("Specifies the compression codec to use when writing profile data, one of " +
+      "zstd or none")
+    .internal()
+    .stringConf
+    .transform(_.toLowerCase(java.util.Locale.ROOT))
+    .checkValues(Set("zstd", "none"))
+    .createWithDefault("zstd")
+
+  val PROFILE_FLUSH_PERIOD_MILLIS = conf("spark.rapids.profile.flushPeriodMillis")
+    .doc("Specifies the time period in milliseconds to flush profile records. " +
+      "A value <= 0 will disable time period flushing.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
+  val PROFILE_WRITE_BUFFER_SIZE = conf("spark.rapids.profile.writeBufferSize")
+    .doc("Buffer size to use when writing profile records.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(1024 * 1024)
+
   // ENABLE/DISABLE PROCESSING
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
@@ -919,6 +984,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
       .doc("Enable tiered projections.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_RLIKE_REGEX_REWRITE = conf("spark.rapids.sql.rLikeRegexRewrite.enabled")
+      .doc("Enable the optimization to rewrite rlike regex to contains in some cases.")
       .internal()
       .booleanConf
       .createWithDefault(true)
@@ -1493,6 +1564,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault(false.toString)
 
+  val FOLDABLE_NON_LIT_ALLOWED = conf("spark.rapids.sql.test.isFoldableNonLitAllowed")
+    .doc("Only to be used in tests. If `true` the foldable expressions that are not literals " +
+      "will be allowed")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1752,7 +1830,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
     .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-      "Supported codecs: lz4, copy, none")
+      "Supported codecs: zstd, lz4, copy, none")
     .internal()
     .startupOnly()
     .stringConf
@@ -1764,6 +1842,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
+
+  val SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE =
+    conf("spark.rapids.shuffle.compression.zstd.chunkSize")
+      .doc("A configurable chunk size to use when compressing with ZSTD.")
+      .internal()
+      .startupOnly()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024)
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
@@ -2202,6 +2288,32 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  val DELTA_LOW_SHUFFLE_MERGE_SCATTER_DEL_VECTOR_BATCH_SIZE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size")
+      .doc("Option to set max batch size when scattering deletion vector")
+      .internal()
+      .integerConf
+      .createWithDefault(32 * 1024)
+
+  val DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold")
+      .doc("Currently we need to broadcast deletion vector to all executors to perform low " +
+        "shuffle merge. When we detect the deletion vector broadcast size is larger than this " +
+        "value, we will fallback to normal shuffle merge.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(20 * 1024 * 1024)
+
+  val ENABLE_DELTA_LOW_SHUFFLE_MERGE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
+    .doc("Option to turn on the low shuffle merge for Delta Lake. Currently there are some " +
+      "limitations for this feature: \n" +
+      "1. We only support Databricks Runtime 13.3 and Deltalake 2.4. \n" +
+      s"2. The file scan mode must be set to ${RapidsReaderType.PERFILE} \n" +
+      "3. The deletion vector size must be smaller than " +
+      s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} \n")
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2237,7 +2349,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.06.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.08.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2390,6 +2502,24 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
+  lazy val profilePath: Option[String] = get(PROFILE_PATH)
+
+  lazy val profileExecutors: String = get(PROFILE_EXECUTORS)
+
+  lazy val profileTimeRangesSeconds: Option[String] = get(PROFILE_TIME_RANGES_SECONDS)
+
+  lazy val profileJobs: Option[String] = get(PROFILE_JOBS)
+
+  lazy val profileStages: Option[String] = get(PROFILE_STAGES)
+
+  lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
+
+  lazy val profileCompression: String = get(PROFILE_COMPRESSION)
+
+  lazy val profileFlushPeriodMillis: Int = get(PROFILE_FLUSH_PERIOD_MILLIS)
+
+  lazy val profileWriteBufferSize: Long = get(PROFILE_WRITE_BUFFER_SIZE)
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
@@ -2427,6 +2557,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
   /**
    * Convert a string value to the injection configuration OomInjection.
@@ -2638,6 +2770,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
 
+  lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
+
   lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
 
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
@@ -2832,6 +2966,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
 
+  lazy val shuffleCompressionZstdChunkSize: Long = get(SHUFFLE_COMPRESSION_ZSTD_CHUNK_SIZE)
+
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shuffleMultiThreadedMaxBytesInFlight: Long =
@@ -2990,6 +3126,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
+
+  lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

@@ -444,6 +444,37 @@ def test_regexp_like():
                 'regexp_like(a, "a[bc]d")'),
         conf=_regexp_conf)
 
+def test_rlike_rewrite_optimization():
+    gen = mk_str_gen('[ab\n]{3,6}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a',
+                'rlike(a, "(abb)(.*)")',
+                'rlike(a, "abb(.*)")',
+                'rlike(a, "(.*)(abb)(.*)")',
+                'rlike(a, "^(abb)(.*)")',
+                'rlike(a, "^abb")',
+                'rlike(a, "^.*(aaa)")',
+                'rlike(a, "\\\\A(abb)(.*)")',
+                'rlike(a, "\\\\Aabb")',
+                'rlike(a, "^(abb)\\\\Z")',
+                'rlike(a, "^abb$")',
+                'rlike(a, "ab(.*)cd")',
+                'rlike(a, "^^abb")',
+                'rlike(a, "(.*)(.*)abb")',
+                'rlike(a, "(.*).*abb.*(.*).*")',
+                'rlike(a, ".*^abb$")',
+                'rlike(a, "ab[a-c]{3}")',
+                'rlike(a, "a[a-c]{1,3}")',
+                'rlike(a, "a[a-c]{1,}")',
+                'rlike(a, "a[a-c]+")',
+                'rlike(a, "(aaa|bbb|ccc)")',
+                'rlike(a, ".*.*(aaa|bbb).*.*")',
+                'rlike(a, "^.*(aaa|bbb|ccc)")',
+                'rlike(a, "aaa|bbb")',
+                'rlike(a, "aaa|(bbb|ccc)")'),
+        conf=_regexp_conf)
+
 def test_regexp_replace_character_set_negated():
     gen = mk_str_gen('[abcd]{0,3}[\r\n]{0,2}[abcd]{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -762,6 +793,15 @@ def test_rlike_fallback_empty_group():
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a()?"'),
+            'RLike',
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_empty_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike ""'),
             'RLike',
         conf=_regexp_conf)
 

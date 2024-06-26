@@ -58,6 +58,7 @@ case class GpuShuffleExchangeExec(
     cpuOutputPartitioning: Partitioning)
     extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
         with ShuffleExchangeLike {
+  def shuffleId: Int = shuffleDependencyColumnar.shuffleId
 
   override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
 

@@ -62,9 +62,9 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
-            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
           val projectList: Seq[BaseExprMeta[NamedExpression]] =
-            takeExec.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            takeExec.projectList.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
           override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
 
           override def convertToGpu(): GpuExec = {

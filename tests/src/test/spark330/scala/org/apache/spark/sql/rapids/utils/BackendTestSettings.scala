@@ -83,6 +83,7 @@ abstract class BackendTestSettings {
   // or a description like "This simply can't work on GPU".
   // It should never be "unknown" or "need investigation"
   case class KNOWN_ISSUE(reason: String) extends ExcludeReason
+  case class ADJUST_UT(reason: String) extends ExcludeReason
   case class WONT_FIX_ISSUE(reason: String) extends ExcludeReason
 
 

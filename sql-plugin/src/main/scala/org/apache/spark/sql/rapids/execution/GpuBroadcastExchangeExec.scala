@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -514,33 +514,8 @@ abstract class GpuBroadcastExchangeExecBase(
 }
 
 object GpuBroadcastExchangeExecBase {
-  /**
-   * Create a thread factory that names threads with a prefix and also sets the threads to daemon.
-   */
-  private def namedThreadFactory(prefix: String): ThreadFactory = {
-    new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build()
-  }
-
-  /**
-   * Create a cached thread pool whose max number of threads is `maxThreadNumber`. Thread names
-   * are formatted as prefix-ID, where ID is a unique, sequentially assigned integer.
-   */
-  private def newDaemonCachedThreadPool(
-      prefix: String, maxThreadNumber: Int, keepAliveSeconds: Int = 60): ThreadPoolExecutor = {
-    val threadFactory = namedThreadFactory(prefix)
-    val threadPool = new ThreadPoolExecutor(
-      maxThreadNumber, // corePoolSize: the max number of threads to create before queuing the tasks
-      maxThreadNumber, // maximumPoolSize: because we use LinkedBlockingDeque, this one is not used
-      keepAliveSeconds,
-      TimeUnit.SECONDS,
-      new LinkedBlockingQueue[Runnable],
-      threadFactory)
-    threadPool.allowCoreThreadTimeOut(true)
-    threadPool
-  }
-
   val executionContext = ExecutionContext.fromExecutorService(
-    newDaemonCachedThreadPool("gpu-broadcast-exchange",
+    org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool("gpu-broadcast-exchange",
       SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
 
   protected def checkRowLimit(numRows: Int) = {

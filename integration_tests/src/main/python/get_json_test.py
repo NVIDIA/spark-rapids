@@ -315,7 +315,6 @@ def test_get_json_object_jni_java_tests():
             conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 
-@allow_non_gpu('ProjectExec')
 def test_get_json_object_deep_nested_json():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
@@ -391,3 +390,28 @@ def test_get_json_object_number_normalization_legacy():
         conf={'spark.rapids.sql.expression.GetJsonObject': 'true',
               'spark.rapids.sql.getJsonObject.legacy.enabled': 'true'})
     assert([[row[1]] for row in gpu_result] == data)
+
+@pytest.mark.parametrize('data_gen', [StringGen(r'''-?[1-9]\d{0,5}\.\d{1,20}''', nullable=False),
+                                      StringGen(r'''-?[1-9]\d{0,20}\.\d{1,5}''', nullable=False),
+                                      StringGen(r'''-?[1-9]\d{0,5}E-?\d{1,20}''', nullable=False),
+                                      StringGen(r'''-?[1-9]\d{0,20}E-?\d{1,5}''', nullable=False)], ids=idfn)
+def test_get_json_object_floating_normalization(data_gen):
+    schema = StructType([StructField("jsonStr", StringType())])
+    normalization = lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a',
+                        'get_json_object(a,"$")'
+                        ).collect()
+    gpu_res = [[row[1]] for row in with_gpu_session(
+        normalization,
+        conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})]
+    cpu_res = [[row[1]] for row in with_cpu_session(normalization)]
+    def json_string_to_float(x):
+        if x == '"-Infinity"':
+            return float('-inf')
+        elif x == '"Infinity"':
+            return float('inf')
+        else:
+            return float(x)
+    for i in range(len(gpu_res)):
+        # verify relatively diff < 1e-9 (default value for is_close)
+        assert math.isclose(json_string_to_float(gpu_res[i][0]), json_string_to_float(cpu_res[i][0]))
