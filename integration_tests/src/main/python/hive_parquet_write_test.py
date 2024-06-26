@@ -19,7 +19,7 @@ from conftest import is_databricks_runtime
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_spark_350_or_later, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_spark_350_or_later, is_before_spark_330, is_spark_330_or_later
 
 # Disable the meta conversion from Hive write to FrameData write in Spark, to test
 # "GpuInsertIntoHiveTable" for Parquet write.
@@ -59,6 +59,20 @@ _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive
 
 # ProjectExec falls back on databricks due to no GPU version of "MapFromArrays".
 fallback_nodes = ['ProjectExec'] if is_databricks_runtime() or is_spark_350_or_later() else []
+
+
+def read_single_bucket(table, bucket_id):
+    # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
+    # fileCounter is always 0 in this test. For example '_00002.c000' is for
+    # bucket id being 2.
+    # We leverage this bucket segment in the file path to filter rows belong to a bucket.
+    bucket_segment = '_' + "{}".format(bucket_id).rjust(5, '0') + '.c000'
+    return with_cpu_session(
+        lambda spark: spark.sql("select * from {}".format(table))
+        .withColumn('file_name', f.input_file_name())
+        .filter(f.col('file_name').contains(bucket_segment))
+        .drop('file_name')  # need to drop the file_name column for comparison.
+        .collect())
 
 
 @allow_non_gpu(*(non_utc_allow + fallback_nodes))
@@ -205,24 +219,53 @@ def test_insert_hive_bucketed_table(spark_tmp_table_factory):
     gpu_table = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark: insert_hive_table(spark, cpu_table), _write_to_hive_conf)
     with_gpu_session(lambda spark: insert_hive_table(spark, gpu_table), _write_to_hive_conf)
-
-    def read_single_bucket(table, bucket_id):
-        # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
-        # fileCounter is always 0 in this test. For example '_00002.c000' is for
-        # bucket id being 2.
-        # We leverage this bucket segment in the file path to filter rows belong to a bucket.
-        bucket_segment = '_' + "{}".format(bucket_id).rjust(5, '0') + '.c000'
-        return with_cpu_session(
-            lambda spark: spark.sql("select * from {}".format(table))
-            .withColumn('file_name', f.input_file_name())
-            .filter(f.col('file_name').contains(bucket_segment))
-            .drop('file_name')  # need to drop the file_name column for comparison.
-            .collect())
-
-    cur_bucket_id = 0
-    while cur_bucket_id < num_buckets:
+    for cur_bucket_id in range(num_buckets):
         # Verify the result bucket by bucket
         ret_cpu = read_single_bucket(cpu_table, cur_bucket_id)
         ret_gpu = read_single_bucket(gpu_table, cur_bucket_id)
         assert_equal_with_local_sort(ret_cpu, ret_gpu)
-        cur_bucket_id += 1
+
+
+@pytest.mark.skipif(is_spark_330_or_later(),
+                    reason = "InsertIntoHiveTable supports bucketed write since Spark 330")
+@pytest.mark.parametrize("hive_hash", [True, False])
+def test_insert_hive_bucketed_table_before_330(spark_tmp_table_factory, hive_hash):
+    num_buckets = 4
+
+    def insert_hive_table(spark, out_table):
+        data_table = spark_tmp_table_factory.get()
+        two_col_df(spark, int_gen, long_gen).createOrReplaceTempView(data_table)
+        spark.sql(
+            """CREATE TABLE {} (a int, b long) STORED AS PARQUET
+            CLUSTERED BY (a) INTO {} BUCKETS""".format(out_table, num_buckets))
+        spark.sql(
+            "INSERT OVERWRITE {} SELECT * FROM {}".format(out_table, data_table))
+
+    all_confs = copy_and_update(_write_to_hive_conf, {
+        "hive.enforce.bucketing": False,  # allow the write with bucket spec
+        "hive.enforce.sorting": False,  # allow the write with bucket spec
+        "spark.rapids.sql.format.write.forceHiveHashForBucketing": hive_hash
+    })
+    cpu_table = spark_tmp_table_factory.get()
+    gpu_table = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark: insert_hive_table(spark, cpu_table), all_confs)
+    with_gpu_session(lambda spark: insert_hive_table(spark, gpu_table), all_confs)
+
+    all_cpu_rows = with_cpu_session(
+        lambda spark: spark.sql("select * from {}".format(cpu_table)).collect())
+    all_gpu_rows = with_cpu_session(
+        lambda spark: spark.sql("select * from {}".format(gpu_table)).collect())
+    assert_equal_with_local_sort(all_cpu_rows, all_gpu_rows)
+
+    for cur_bucket_id in range(num_buckets):
+        ret_cpu = read_single_bucket(cpu_table, cur_bucket_id)
+        ret_gpu = read_single_bucket(gpu_table, cur_bucket_id)
+        if hive_hash:
+            # GPU will write the right bucketed table, but CPU will not. Because
+            # InsertIntoHiveTable supports bucketed write only since Spark 330.
+            # GPU behaviors differently than the normal Spark.
+            assert len(ret_gpu) > 0 and len(ret_cpu) == 0
+        else:
+            # Both GPU and CPU write the data but no bucketing, actually.
+            assert len(ret_gpu) == 0 and len(ret_cpu) == 0
+

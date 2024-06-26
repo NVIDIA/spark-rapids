@@ -20,8 +20,7 @@ from marks import *
 from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session, with_gpu_session
 from hive_parquet_write_test import _hive_bucket_gens, _hive_array_gens, _hive_struct_gens
 from hive_write_test import _restricted_timestamp
-
-import pyspark.sql.functions as f
+from hive_parquet_write_test import read_single_bucket
 
 _hive_write_conf = {
     "hive.enforce.bucketing": "true",
@@ -56,20 +55,6 @@ def test_write_hive_bucketed_table(spark_tmp_table_factory, file_format):
     gpu_table = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark: write_hive_table(spark, cpu_table), _hive_write_conf)
     with_gpu_session(lambda spark: write_hive_table(spark, gpu_table), _hive_write_conf)
-
-    def read_single_bucket(table, bucket_id):
-        # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
-        # fileCounter is always 0 in this test. For example '_00002.c000' is for
-        # bucket id being 2.
-        # We leverage this bucket segment in the file path to filter rows belong to a bucket.
-        bucket_segment = '_' + "{}".format(bucket_id).rjust(5, '0') + '.c000'
-        return with_cpu_session(
-            lambda spark: spark.sql("select * from {}".format(table))
-            .withColumn('file_name', f.input_file_name())
-            .filter(f.col('file_name').contains(bucket_segment))
-            .drop('file_name')  # need to drop the file_name column for comparison.
-            .collect())
-
     cur_bucket_id = 0
     while cur_bucket_id < num_buckets:
         # Verify the result bucket by bucket

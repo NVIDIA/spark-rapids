@@ -129,11 +129,11 @@ def test_optimized_hive_ctas_bucketed_table(storage, spark_tmp_table_factory):
     # verify the basic functionality by only the int_gen.
     with_cpu_session(lambda spark: three_col_df(
         spark, int_gen, int_gen, int_gen).createOrReplaceTempView(in_table))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(
-            """CREATE TABLE {} STORED AS {}
-            CLUSTERED BY (b) INTO 3 BUCKETS
-            AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)))
+    assert_gpu_and_cpu_sql_writes_are_equal_collect(
+        spark_tmp_table_factory,
+        lambda spark, out_table: """CREATE TABLE {} STORED AS {}
+            CLUSTERED BY (b) INTO 3 BUCKETS AS SELECT * FROM {}""".format(
+            out_table, storage, in_table))
 
 def test_hive_copy_ints_to_long(spark_tmp_table_factory):
     do_hive_copy(spark_tmp_table_factory, int_gen, "INT", "BIGINT")
