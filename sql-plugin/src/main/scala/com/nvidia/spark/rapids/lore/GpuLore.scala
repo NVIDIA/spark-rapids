@@ -187,7 +187,7 @@ object GpuLore {
                 val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
                 g.setTagValue(LORE_DUMP_PATH_TAG, currentExecRootPath.toString)
                 val loreOutputInfo = LoreOutputInfo(outputLoreIds,
-                  currentExecRootPath)
+                  currentExecRootPath.toString)
 
                 g.children.zipWithIndex.foreach {
                   case (child, idx) =>

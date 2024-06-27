@@ -25,7 +25,9 @@ case class OutputLoreId(loreId: LoreId, partitionIds: Set[Int]) {
     partitionIds.contains(partitionId)
 }
 
-case class LoreOutputInfo(outputLoreId: OutputLoreId, path: Path)
+case class LoreOutputInfo(outputLoreId: OutputLoreId, pathStr: String) {
+  def path: Path = new Path(pathStr)
+}
 
 object OutputLoreId {
   private val PARTITION_ID_RANGE_REGEX = raw"(\d+)-(\d+)".r("start", "end")
