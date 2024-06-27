@@ -2051,8 +2051,8 @@ object RegexRewrite {
       Option[(String, Int, Int, Int)] = {
     val haveLiteralPrefix = isLiteralString(astLs.dropRight(1))
     val endsWithRange = astLs.lastOption match {
-      case Some(ast) => removeBrackets(Seq(ast)) match {
-        case Seq(RegexRepetition(
+      case Some(ast) => removeBrackets(collection.Seq(ast)) match {
+        case collection.Seq(RegexRepetition(
             RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
             quantifier)) => {
           val (start, end) = (a, b) match {
