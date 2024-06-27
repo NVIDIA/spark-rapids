@@ -2301,25 +2301,23 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .createWithDefault(false)
 
   val TAG_LORE_ID_ENABLED = conf("spark.rapids.sql.lore.tag.enabled")
-    .doc("Enable add a lore id to each gpu plan node")
+    .doc("Enable add a LORE id to each gpu plan node")
+    .internal()
     .booleanConf
     .createWithDefault(true)
 
   val LORE_DUMP_IDS = conf("spark.rapids.sql.lore.idsToDump")
-    .doc("""Specify the lore ids of operators to dump. The format is a comma separated list of
-           |lore ids. For example: "1,2,3" will dump the gpu exec nodes with lore ids 1, 2, and 3.
-           |By default, all partitions of operators' input will be dumped. If you want to dump only
-           |some partitions, you can specify the partition index after the lore id, e.g. 1[0-2 4-5
-           |7], 2[0 4 5-8] , will dump partitions 0, 1, 2, 4, 5 and 7 of the operator with lore id
-           | 1, and partitions 0, 4, 5, 6, 7, 8 of the operator with lore id 2.
-           |If this is not set, no lore nodes will be dumped.""".stripMargin)
+    .doc("Specify the LORE ids of operators to dump. The format is a comma separated list of " +
+      "LORE ids. For example: \"1,2,3\" will dump the input of gpu operator with LORE ids 1, 2, " +
+      "and 3. For more details, please refer to docs/dev/lore.md . If this is not set, no data " +
+      "will be dumped.")
     .stringConf
     .createOptional
 
   val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
-    .doc(
-      s"""The path to dump the lore nodes' input data. This must be set if ${LORE_DUMP_IDS.key} has
-         |been set.""".stripMargin)
+    .doc(s"The path to dump the LORE nodes' input data. This must be set if ${LORE_DUMP_IDS.key} " +
+      "has been set. The data of each LORE node will be dumped to a subfolder with name " +
+      "'loreId-<LORE id>' under this path. For more details, please refer to docs/dev/lore.md .")
     .stringConf
     .createOptional
 
@@ -3133,6 +3131,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
+
+  lazy val loreDumpIds: Option[String] = get(LORE_DUMP_IDS)
+
+  lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import scala.reflect.ClassTag
 
-import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, GpuFilterExec, RapidsConf}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, GpuFilterExec, GpuHashAggregateExec, GpuProjectExec, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{ShimLeafExecNode, SparkShimImpl}
 import org.apache.hadoop.conf.Configuration
@@ -30,7 +30,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec}
 import org.apache.spark.sql.types.DataType
@@ -113,9 +113,11 @@ object GpuLore {
   def restoreGpuExec(rootPath: Path, hadoopConf: Configuration): GpuExec = {
     val rootExec = loadObject[GpuExec](pathOfRootPlanMeta(rootPath), hadoopConf)
 
+    checkUnsupportedOperator(rootExec)
+
     // Load children
     val newChildren = rootExec.children.zipWithIndex.map { case (plan, idx) =>
-      val newChild = GpuLoreReplayExec(idx, rootPath)
+      val newChild = GpuLoreReplayExec(idx, rootPath.toString)
       plan match {
         case b: GpuBroadcastExchangeExec =>
           b.withNewChildren(Seq(newChild))
@@ -127,27 +129,48 @@ object GpuLore {
 
     rootExec match {
       case b: GpuFilterExec =>
-        val newExpr = restoreSubqueryExpression(1, b.condition, rootPath)
+        val newExpr = restoreSubqueryExpression(1, b.condition, rootPath)._1
         b.makeCopy(Array(newExpr, newChildren.head)).asInstanceOf[GpuExec]
+      case p: GpuProjectExec =>
+        var nextPlanId = 1
+        val newExprs = p.expressions.map { expr =>
+          val (newExpr, nextId) = restoreSubqueryExpression(nextPlanId, expr, rootPath)
+          nextPlanId = nextId
+          newExpr
+        }.toList
+
+        p.makeCopy(Array(newExprs, newChildren.head)).asInstanceOf[GpuExec]
       case _ => rootExec.withNewChildren(newChildren)
         .asInstanceOf[GpuExec]
     }
   }
 
   private def restoreSubqueryExpression(startIdx: Int, expression: Expression,
-      rootPath: Path): Expression = {
+      rootPath: Path): (Expression, Int) = {
     var nextIdx = startIdx
     val newExpr = expression.transformUp {
-      case sub: ExecSubqueryExpression if sub.plan.child.isInstanceOf[GpuExec] =>
-        var newChild: SparkPlan = GpuLoreReplayExec(nextIdx, rootPath)
-        if (!sub.plan.supportsColumnar) {
-          newChild = GpuColumnarToRowExec(newChild)
+      case sub: ExecSubqueryExpression  =>
+        val innerPlan = sub.plan.child
+
+        if (innerPlan.isInstanceOf[GpuExec]) {
+          var newChild: SparkPlan = GpuLoreReplayExec(nextIdx, rootPath.toString)
+
+          if (!innerPlan.supportsColumnar) {
+            newChild = GpuColumnarToRowExec(newChild)
+          }
+          val newSubqueryExec = sub.plan match {
+            case ReusedSubqueryExec(subqueryExec) => subqueryExec.withNewChildren(Seq(newChild))
+              .asInstanceOf[BaseSubqueryExec]
+            case p: BaseSubqueryExec => p.withNewChildren(Seq(newChild))
+              .asInstanceOf[BaseSubqueryExec]
+          }
+          nextIdx += 1
+          sub.withNewPlan(newSubqueryExec)
+        } else {
+          sub
         }
-        val newSubqueryExec = sub.plan.withNewChildren(Seq(newChild)).asInstanceOf[BaseSubqueryExec]
-        nextIdx += 1
-        sub.withNewPlan(newSubqueryExec)
     }
-    newExpr
+    (newExpr, nextIdx)
   }
 
   /**
@@ -168,12 +191,12 @@ object GpuLore {
   }
 
   def tagForLore(sparkPlan: SparkPlan, rapidsConf: RapidsConf): SparkPlan = {
-    val loreDumpIds = rapidsConf.get(RapidsConf.LORE_DUMP_IDS).map(OutputLoreId.parse)
+    val loreDumpIds = rapidsConf.loreDumpIds.map(OutputLoreId.parse)
 
     val newPlan = loreDumpIds match {
       case Some(dumpIds) =>
-        // We need to dump the output of the output of nodes with the lore id in the dump ids
-        val loreOutputRootPath = rapidsConf.get(RapidsConf.LORE_DUMP_PATH).getOrElse(throw
+        // We need to dump the output of nodes with the lore id in the dump ids
+        val loreOutputRootPath = rapidsConf.loreDumpPath.getOrElse(throw
           new IllegalArgumentException(s"${RapidsConf.LORE_DUMP_PATH.key} must be set " +
             s"when ${RapidsConf.LORE_DUMP_IDS.key} is set."))
 
@@ -202,6 +225,22 @@ object GpuLore {
                 g match {
                   case f: GpuFilterExec =>
                     tagForSubqueryPlan(1, f.condition, loreOutputInfo)
+                  case p: GpuProjectExec =>
+                    p.projectList.foldLeft(1)((nextPlanId, expr) =>
+                      tagForSubqueryPlan(nextPlanId, expr, loreOutputInfo))
+                  case agg: GpuHashAggregateExec =>
+                    agg.aggregateExpressions.flatMap(_.aggregateFunction.children).collect {
+                      // The reason we can't support dumping subquery expression in aggregate
+                      // function is that typically aggregation function will be split into
+                      // partial aggregation and final aggregation, and the
+                      // [ReuseExchangeAndSubquery] rule will replace final aggregation's subquery
+                      // with reused subquery expression. The problem is this rule happens in
+                      // last step, even after columnar rule, so the tag will no longer work. We
+                      // may add some physical rules to handle this in future, but given that
+                      // this is a corner case, we don't support it for now.
+                        case _: ExecSubqueryExpression => throw new IllegalArgumentException(
+                          "Unable to support dumping subquery expression in aggregate function")
+                      }
                   case _ =>
                 }
               }
@@ -235,16 +274,18 @@ object GpuLore {
     var nextPlanId = startId
     expression.foreachUp {
       case sub: ExecSubqueryExpression =>
-        if (sub.plan.child.isInstanceOf[GpuExec]) {
-          val dumpRDDInfo = LoreDumpRDDInfo(nextPlanId, loreOutputInfo, sub.plan.child.output)
-          sub.plan.child match {
+        val innerPlan = sub.plan.child
+        if (innerPlan.isInstanceOf[GpuExec]) {
+          val dumpRDDInfo = LoreDumpRDDInfo(nextPlanId, loreOutputInfo, innerPlan.output)
+          innerPlan match {
             case p: GpuColumnarToRowExec => p.child.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
             case c => c.setTagValue(LORE_DUMP_RDD_TAG, dumpRDDInfo)
           }
 
           nextPlanId += 1
         } else {
-          throw new IllegalArgumentException(s"Subquery plan ${sub.plan} is not a GpuExec")
+          throw new IllegalArgumentException(s"Subquery plan ${innerPlan.getClass.getSimpleName} " +
+            s"is not a GpuExec")
         }
       case _ =>
     }

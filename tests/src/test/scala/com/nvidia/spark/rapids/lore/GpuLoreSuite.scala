@@ -49,7 +49,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("Subquery") {
+  test("Subquery Filter") {
     doTestReplay("13") { spark =>
       spark.range(0, 100, 1, 10)
         .createTempView("df1")
@@ -58,6 +58,24 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
         .createTempView("df2")
 
       spark.sql("select * from df1 where id > (select max(id) from df2)")
+    }
+  }
+
+  test("Subquery in projection") {
+    doTestReplay("11") { spark =>
+      spark.sql(
+        """
+          |CREATE TEMPORARY VIEW t1
+          |AS SELECT * FROM VALUES
+          |(1, "a"),
+          |(2, "a"),
+          |(3, "a") t(id, value)
+          |""".stripMargin)
+
+      spark.sql(
+        """
+          |SELECT *, (SELECT COUNT(*) FROM t1) FROM t1
+          |""".stripMargin)
     }
   }
 

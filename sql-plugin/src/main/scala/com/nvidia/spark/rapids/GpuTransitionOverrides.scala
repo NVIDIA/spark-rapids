@@ -824,7 +824,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
         }
 
-        if (rapidsConf.get(RapidsConf.TAG_LORE_ID_ENABLED)) {
+        if (rapidsConf.isTagLoreIdEnabled) {
           updatedPlan = GpuLore.tagForLore(updatedPlan, rapidsConf)
         }
 

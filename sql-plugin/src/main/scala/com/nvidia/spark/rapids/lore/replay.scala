@@ -30,10 +30,10 @@ import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-case class GpuLoreReplayExec(idxInParent: Int, parentRootPath: Path) extends LeafExecNode
+case class GpuLoreReplayExec(idxInParent: Int, parentRootPath: String) extends LeafExecNode
   with GpuExec {
   private lazy val rdd = new GpuLoreReplayRDD(sparkSession.sparkContext,
-    GpuLore.pathOfChild(parentRootPath, idxInParent))
+    GpuLore.pathOfChild(new Path(parentRootPath), idxInParent).toString)
   override def output: Seq[Attribute] = rdd.loreRDDMeta.attrs
 
   override def doExecute(): RDD[InternalRow] = {
@@ -45,20 +45,23 @@ case class GpuLoreReplayExec(idxInParent: Int, parentRootPath: Path) extends Lea
   }
 }
 
-class GpuLoreReplayRDD(sc: SparkContext, override val rootPath: Path)
+class GpuLoreReplayRDD(sc: SparkContext, rootPathStr: String)
   extends RDD[ColumnarBatch](sc, Nil) with GpuLoreRDD {
-  private val hadoopConf = new SerializableConfiguration(sc.hadoopConfiguration)
+
+  override def rootPath: Path = new Path(rootPathStr)
+
+  private val hadoopConf = sc.broadcast(new SerializableConfiguration(sc.hadoopConfiguration))
   private[lore] val loreRDDMeta: LoreRDDMeta = GpuLore.loadObject(pathOfMeta, sc
     .hadoopConfiguration)
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
     val partitionPath = pathOfPartition(split.index)
-    withResource(partitionPath.getFileSystem(hadoopConf.value)) { fs =>
+    withResource(partitionPath.getFileSystem(hadoopConf.value.value)) { fs =>
       if (!fs.exists(partitionPath)) {
         Iterator.empty
       } else {
         val partitionMeta = GpuLore.loadObject[LoreRDDPartitionMeta](
-          pathOfPartitionMeta(split.index), hadoopConf.value)
+          pathOfPartitionMeta(split.index), hadoopConf.value.value)
         new Iterator[ColumnarBatch] {
           private var batchIdx: Int = 0
 
@@ -68,7 +71,7 @@ class GpuLoreReplayRDD(sc: SparkContext, override val rootPath: Path)
 
           override def next(): ColumnarBatch = {
             val batchPath = pathOfBatch(split.index, batchIdx)
-            val ret = withResource(batchPath.getFileSystem(hadoopConf.value)) { fs =>
+            val ret = withResource(batchPath.getFileSystem(hadoopConf.value.value)) { fs =>
               if (!fs.exists(batchPath)) {
                 throw new IllegalStateException(s"Batch file $batchPath does not exist")
               }

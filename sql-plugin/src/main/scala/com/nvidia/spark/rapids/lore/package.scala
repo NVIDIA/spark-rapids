@@ -26,27 +26,8 @@ package com.nvidia.spark.rapids
  * <br>
  * When [[RapidsConf.LORE_DUMP_IDS]] is set, during the execution phase we will dump the input
  * data of gpu operators with lore id to disk. The dumped data can be replayed in local
- * environment. The dumped data will reside in [[RapidsConf.LORE_DUMP_PATH]], and typically will
- * following directory hierarchy:
- * {{{
- * loreId-10/
- *   input-0/
- *     rdd.meta
- *     partition-0/
- *       partition.meta
- *       batch-0.parquet
- *       batch-1.parquet
- *    partition-1/
- *      partition.meta
- *      batch-0.parquet
- *
- *loreId-15/
- *  input-0/
- *    rdd.meta
- *    partition-0/
- *      partition.meta
- *      batch-0.parquet
- * }}}
+ * environment. The dumped data will reside in [[RapidsConf.LORE_DUMP_PATH]]. For more details,
+ * please refer to `docs/dev/lore.md`.
  */
 package object lore {
   type LoreId = Int
