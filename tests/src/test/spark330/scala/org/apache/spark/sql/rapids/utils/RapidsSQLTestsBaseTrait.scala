@@ -151,10 +151,10 @@ object RapidsSQLTestsBaseTrait extends Logging {
   }
 
   def nativeSparkConf(origin: SparkConf, warehouse: String): SparkConf = {
-    // Timezone is fixed to UTC to allow timestamps to work by default
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting
     Locale.setDefault(Locale.US)
+    // Spark use "America/Los_Angeles" as default timezone in tests
+    TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
 
     val conf = origin
       .set("spark.rapids.sql.enabled", "true")
@@ -163,8 +163,6 @@ object RapidsSQLTestsBaseTrait extends Logging {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
-      // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
-      .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")
