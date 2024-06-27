@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
 from data_gen import *
 from marks import *
 
@@ -109,6 +109,44 @@ def test_scalar_subquery_array(basic_gen):
         from table
         where (select first(arr) from table)[0].a > arr[0].a
         ''')
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('is_ansi_enabled', [False, True])
+def test_scalar_subquery_array_ansi_mode_failures(is_ansi_enabled):
+    """
+    This tests the case where the array scalar returned from a subquery might be indexed into
+    with an out-of-range index value:
+      - With ANSI mode enabled, an exception is expected.
+      - With ANSI mode disabled, a NULL value is expected.
+    This is only to test the corner case that used to be tested in `test_scalar_subquery_array`,
+    before ANSI support was added.
+    A more thorough test for invalid indices is done in array_test.py::test_array_item_ansi_fail_invalid_index,
+    and is out of the scope of this test.
+    """
+    conf = {'spark.sql.ansi.enabled': is_ansi_enabled}
+
+    def test_function(spark):
+        table_name = 'scalar_subquery_array_input'
+        # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
+        df = gen_df(spark, [('arr', ArrayGen(long_gen))], num_slices=1)
+        df.createOrReplaceTempView(table_name)
+        query = '''
+          SELECT SORT_ARRAY(arr),
+                 SORT_ARRAY((SELECT LAST(arr) FROM {}))
+          FROM {}
+          WHERE (SELECT FIRST(arr) FROM {})[0] > arr[0]
+        '''.format(table_name, table_name, table_name)
+        return spark.sql(query)
+
+    if is_ansi_enabled:
+        assert_gpu_and_cpu_error(
+            lambda spark: test_function(spark).collect(),
+            conf=conf,
+            error_message='ArrayIndexOutOfBoundsException')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(test_function, conf=conf)
+
 
 @ignore_order(local=True)
 def test_scalar_subquery_map():
