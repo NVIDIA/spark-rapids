@@ -41,12 +41,6 @@
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${jni.classifier}</classifier>
         </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-private_${scala.binary.version}</artifactId>
-            <version>${spark-rapids-private.version}</version>
-            <classifier>${spark.version.classifier}</classifier>
-        </dependency>
     </dependencies>
     <build>
         <plugins>
