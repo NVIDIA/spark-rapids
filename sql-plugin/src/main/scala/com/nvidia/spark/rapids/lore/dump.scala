@@ -35,7 +35,7 @@ case class LoreDumpRDDInfo(idxInParent: Int, loreOutputInfo: LoreOutputInfo, att
 
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   extends RDD[ColumnarBatch](input) with GpuLoreRDD {
-  override val rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
+  override def rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
 
   private val hadoopConf = new SerializableConfiguration(this.context.hadoopConfiguration)
 

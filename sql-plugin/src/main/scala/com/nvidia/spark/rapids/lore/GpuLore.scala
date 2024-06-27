@@ -40,7 +40,7 @@ case class LoreRDDMeta(numPartitions: Int, outputPartitions: Seq[Int], attrs: Se
 case class LoreRDDPartitionMeta(numBatches: Int, dataType: Seq[DataType])
 
 trait GpuLoreRDD {
-  val rootPath: Path
+  def rootPath: Path
 
   def pathOfMeta: Path = new Path(rootPath, "rdd.meta")
 
