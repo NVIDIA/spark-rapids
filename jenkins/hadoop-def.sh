@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 
 set -e
 
-spark_version=${1:-"3.1.1"}
+spark_version=${1:-"3.2.0"}
 scala_version=${2:-"2.12"}
 # Split spark version into base version (e.g. 3.3.0) and suffix (e.g. SNAPSHOT)
 PRE_IFS=$IFS
