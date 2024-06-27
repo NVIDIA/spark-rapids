@@ -33,10 +33,7 @@
         <profile>
             <id>jdk9plus</id>
             <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.source>${java.specification.version}</maven.compiler.source>
-                <maven.compiler.release>${maven.compiler.source}</maven.compiler.release>
-                <maven.compiler.target>${maven.compiler.source}</maven.compiler.target>
+                <maven.compiler.source>1.8</maven.compiler.source>
             </properties>
             <activation>
                 <!-- activate for all java versions after 9 -->
