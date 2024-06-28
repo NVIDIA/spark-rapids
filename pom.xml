@@ -1361,7 +1361,6 @@ This will force full Scala code rebuild in downstream modules.
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
                         <recompileMode>${scala.recompileMode}</recompileMode>
-                        <release>${java.major.version}</release>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>
@@ -1554,11 +1553,11 @@ This will force full Scala code rebuild in downstream modules.
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <!-- #if scala-2.12 -->
                         <requireJavaVersion>
                             <message>Only Java 8, 11, and 17 are supported!</message>
                             <version>[1.8,1.9),[11,12),[17,18)</version>
                         </requireJavaVersion>
-                        <!-- #if scala-2.12 -->
                         <requireProperty>
                           <property>buildver</property>
                           <regex>^(?!400).*$</regex>
@@ -1566,6 +1565,10 @@ This will force full Scala code rebuild in downstream modules.
                         </requireProperty>
                         <!-- #endif scala-2.12 -->
                         <!-- #if scala-2.13 --><!--
+                        <requireJavaVersion>
+                            <message>Build for Scala 2.13 is only available with Java 17+</message>
+                            <version>[17,)</version>
+                        </requireJavaVersion>
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
                             <property>buildver</property>
