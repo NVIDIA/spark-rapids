@@ -70,61 +70,66 @@ def test_scalar_subquery_struct(basic_gen):
 
 
 @ignore_order(local=True)
+@pytest.mark.parametrize('is_ansi_enabled', [False, True])
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
-def test_scalar_subquery_array(basic_gen):
-    # Note: For this test, all the array inputs are sized so that ArrayIndexOutOfBounds conditions are
-    #       avoided.  This is to ensure that the tests don't fail with exceptions in ANSI mode.
-    #       Note that no meaningful test coverage is lost here.  ArrayIndexOutOfBounds exceptions are
-    #       already tested as part of array_test.py::test_array_item_ansi_fail_invalid_index.
+def test_scalar_subquery_array(is_ansi_enabled, basic_gen):
+    """
+    For this test, all the array inputs are sized so that ArrayIndexOutOfBounds conditions are
+    avoided.  This is to ensure that the tests don't fail with exceptions in ANSI mode.
+    Note that no meaningful test coverage is lost here.  ArrayIndexOutOfBounds exceptions are
+    already tested as part of array_test.py::test_array_item_ansi_fail_invalid_index.
+    """
+    conf = {'spark.sql.ansi.enabled': is_ansi_enabled}
+
     # single-level array
+    test_array_gen = ArrayGen(basic_gen, min_length=1 if is_ansi_enabled else 0)
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(basic_gen, min_length=1))], num_slices=1),
+        lambda spark: gen_df(spark, [('arr', test_array_gen)], num_slices=1),
         'table',
         '''select sort_array(arr),
                   sort_array((select last(arr) from table))
         from table
         where (select first(arr) from table)[0] > arr[0]
-        ''')
+        ''',
+        conf=conf)
+
     # nested array
+    test_array_gen = ArrayGen(ArrayGen(basic_gen, min_length=2 if is_ansi_enabled else 0),
+                              min_length=11 if is_ansi_enabled else 0)
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(ArrayGen(basic_gen, min_length=2), min_length=11))]
-                             , length=100
-                             , num_slices=1),
+        lambda spark: gen_df(spark, [('arr', test_array_gen)], length=100, num_slices=1),
         'table',
         '''select sort_array(arr[10]),
                   sort_array((select last(arr) from table)[10])
         from table
         where (select first(arr) from table)[0][1] > arr[0][1]
-        ''')
+        ''',
+        conf=conf)
+
     # array of struct
+    test_array_gen = ArrayGen(StructGen([['a', basic_gen]]), min_length=11 if is_ansi_enabled else 0)
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
-        lambda spark: gen_df(spark, [('arr', ArrayGen(StructGen([['a', basic_gen]]), min_length=11))]
-                             , length=100
-                             , num_slices=1),
+        lambda spark: gen_df(spark, [('arr', test_array_gen)], length=100, num_slices=1),
         'table',
         '''select arr[10].a, (select last(arr) from table)[10].a
         from table
         where (select first(arr) from table)[0].a > arr[0].a
-        ''')
+        ''',
+        conf=conf)
 
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('is_ansi_enabled', [False, True])
-def test_scalar_subquery_array_ansi_mode_failures(is_ansi_enabled):
+def test_scalar_subquery_array_ansi_mode_failures():
     """
     This tests the case where the array scalar returned from a subquery might be indexed into
-    with an out-of-range index value:
-      - With ANSI mode enabled, an exception is expected.
-      - With ANSI mode disabled, a NULL value is expected.
-    This is only to test the corner case that used to be tested in `test_scalar_subquery_array`,
-    before ANSI support was added.
+    with an out-of-range index value. With ANSI mode enabled, an exception is expected.
+
     A more thorough test for invalid indices is done in array_test.py::test_array_item_ansi_fail_invalid_index,
     and is out of the scope of this test.
     """
-    conf = {'spark.sql.ansi.enabled': is_ansi_enabled}
 
     def test_function(spark):
         table_name = 'scalar_subquery_array_input'
@@ -139,13 +144,10 @@ def test_scalar_subquery_array_ansi_mode_failures(is_ansi_enabled):
         '''.format(table_name, table_name, table_name)
         return spark.sql(query)
 
-    if is_ansi_enabled:
-        assert_gpu_and_cpu_error(
-            lambda spark: test_function(spark).collect(),
-            conf=conf,
-            error_message='ArrayIndexOutOfBoundsException')
-    else:
-        assert_gpu_and_cpu_are_equal_collect(test_function, conf=conf)
+    assert_gpu_and_cpu_error(
+        lambda spark: test_function(spark).collect(),
+        conf=ansi_enabled_conf,
+        error_message='ArrayIndexOutOfBoundsException')
 
 
 @ignore_order(local=True)
