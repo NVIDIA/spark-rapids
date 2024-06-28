@@ -19,7 +19,6 @@ package com.nvidia.spark
 import com.nvidia.spark.rapids.ShimLoader
 
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, SparkPlugin}
-import org.apache.spark.internal.Logging
 
 /**
  * The RAPIDS plugin for Spark.
