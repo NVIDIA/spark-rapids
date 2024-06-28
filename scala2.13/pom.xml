@@ -505,8 +505,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark330db</spark.version.classifier>
                 <spark.version>${spark330db.version}</spark.version>
                 <spark.test.version>${spark330db.version}</spark.test.version>
@@ -531,8 +529,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark332db</spark.version.classifier>
                 <spark.version>${spark332db.version}</spark.version>
                 <spark.test.version>${spark332db.version}</spark.test.version>
@@ -556,8 +552,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark341db</spark.version.classifier>
                 <spark.version>${spark341db.version}</spark.version>
                 <spark.test.version>${spark341db.version}</spark.test.version>
@@ -755,7 +749,6 @@
         <allowConventionalDistJar>false</allowConventionalDistJar>
         <buildver>311</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
         <spark.version>${spark330.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
@@ -829,7 +822,8 @@
         <spark351.version>3.5.1</spark351.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
-        <scala.plugin.version>4.3.0</scala.plugin.version>
+        <!-- same as Apache Spark 4.0.0 -->
+        <scala.plugin.version>4.7.1</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
         <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
@@ -1559,11 +1553,11 @@ This will force full Scala code rebuild in downstream modules.
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <!-- #if scala-2.12 --><!--
                         <requireJavaVersion>
                             <message>Only Java 8, 11, and 17 are supported!</message>
                             <version>[1.8,1.9),[11,12),[17,18)</version>
                         </requireJavaVersion>
-                        <!-- #if scala-2.12 --><!--
                         <requireProperty>
                           <property>buildver</property>
                           <regex>^(?!400).*$</regex>
@@ -1571,6 +1565,10 @@ This will force full Scala code rebuild in downstream modules.
                         </requireProperty>
                         --><!-- #endif scala-2.12 -->
                         <!-- #if scala-2.13 -->
+                        <requireJavaVersion>
+                            <message>Build for Scala 2.13 is only available with Java 17+</message>
+                            <version>[17,)</version>
+                        </requireJavaVersion>
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
                             <property>buildver</property>
