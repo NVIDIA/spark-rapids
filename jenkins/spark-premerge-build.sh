@@ -188,6 +188,7 @@ ci_scala213() {
 
     # Download a Scala 2.13 version of Spark
     prepare_spark 3.3.0 2.13
+    export SHUFFLE_SPARK_SHIM=spark330 
 
     # build Scala 2.13 versions
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
