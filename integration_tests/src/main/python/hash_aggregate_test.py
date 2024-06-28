@@ -1273,6 +1273,20 @@ def test_generic_reductions(data_gen):
             'count(1)'),
         conf=local_conf)
 
+@ignore_order(local=True)
+def test_hash_groupby_with_minby():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, int_gen, int_gen, UniqueLongGen())
+            .groupby('a').agg(f.min_by('b', 'c'))
+    )
+
+@ignore_order(local=True)
+def test_reduction_with_minby():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
+            "min_by(a, b)")
+    )
+
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_count(data_gen):

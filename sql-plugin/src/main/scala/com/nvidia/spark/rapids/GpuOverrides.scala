@@ -2264,6 +2264,31 @@ object GpuOverrides extends Logging {
         // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
+    expr[MinBy](
+      "min_by aggregate operator",
+      ExprChecks.reductionAndGroupByAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
+            + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+            TypeSig.all),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
+            + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+            TypeSig.orderable))
+      ),
+      (minBy, conf, p, r) => new AggExprMeta[MinBy](minBy, conf, p, r) {
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          // Only two children (value expression, ordering expression)
+          require(childExprs.length == 2)
+          GpuMinBy(childExprs.head, childExprs.last)
+        }
+
+        // MinBy does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
