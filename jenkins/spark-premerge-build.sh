@@ -203,6 +203,9 @@ ci_scala213() {
 
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     cd .. # Run integration tests in the project root dir to leverage test cases and resource files
+
+    rapids_shuffle_smoke_test
+
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
