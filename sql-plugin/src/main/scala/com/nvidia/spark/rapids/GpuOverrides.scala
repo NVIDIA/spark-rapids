@@ -3205,8 +3205,7 @@ object GpuOverrides extends Logging {
       "hive hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL - TypeSig.TIMESTAMP,
-          TypeSig.all))),
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
         def convertToGpu(): GpuExpression =
           GpuHiveHash(childExprs.map(_.convertToGpu()))

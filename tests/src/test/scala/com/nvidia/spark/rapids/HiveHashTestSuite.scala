@@ -78,6 +78,12 @@ class HiveHashTestSuite extends SparkQueryCompareTestSuite {
       null, -0x12345678, 171922, 19899, 17766, -0, 16897, null, 18888),
     DateType)
 
+  def genTimestampColumn: GpuColumnVector = GpuColumnVector.from(
+    CudfColumnVector.timestampMicroSecondsFromBoxedLongs(null, 0, -0, 100, -100,
+      0x123456789abcdefL, -0x123456789abcdefL, 1719561256196L, -1719561256196L, null,
+      1234567890, -1234567890, 999, -999, null),
+    TimestampType)
+
   private def testHiveHashOnGpuAndCpuThenClose(cols: GpuColumnVector*): Unit = {
     val (numRows, cpuRefs, gpuRefs) = closeOnExcept(cols) { _ =>
       val rowsNum = cols.head.getRowCount
@@ -141,6 +147,10 @@ class HiveHashTestSuite extends SparkQueryCompareTestSuite {
 
   test("Test hive hash dates") {
     testHiveHashOnGpuAndCpuThenClose(genDateColumn)
+  }
+
+  test("Test hive hash timestamps") {
+    testHiveHashOnGpuAndCpuThenClose(genTimestampColumn)
   }
 
   test("Test hive hash strings") {
