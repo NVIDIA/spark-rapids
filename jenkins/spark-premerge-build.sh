@@ -188,6 +188,8 @@ ci_scala213() {
 
     # Download a Scala 2.13 version of Spark
     prepare_spark 3.3.0 2.13
+    # Match the shim version to the Spark we are using for integration tests
+    # in order to pick the correct shuffle manager in our shuffle smoke tests
     export SHUFFLE_SPARK_SHIM=spark330 
 
     # build Scala 2.13 versions
@@ -205,8 +207,6 @@ ci_scala213() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     cd .. # Run integration tests in the project root dir to leverage test cases and resource files
 
-    rapids_shuffle_smoke_test
-
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
@@ -218,6 +218,8 @@ ci_scala213() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    rapids_shuffle_smoke_test
 }
 
 prepare_spark() {
