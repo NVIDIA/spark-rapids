@@ -19,7 +19,7 @@ from conftest import is_databricks_runtime
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_spark_350_or_later, is_before_spark_330, is_spark_330_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_spark_350_or_later, is_before_spark_330, is_spark_330_or_later, is_databricks122_or_later
 
 # Disable the meta conversion from Hive write to FrameData write in Spark, to test
 # "GpuInsertIntoHiveTable" for Parquet write.
@@ -192,7 +192,7 @@ def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_
         _write_to_hive_conf)
 
 
-@pytest.mark.skipif(is_before_spark_330(),
+@pytest.mark.skipif(is_before_spark_330() or (not is_databricks122_or_later()),
                     reason="InsertIntoHiveTable supports bucketed write since Spark 330")
 def test_insert_hive_bucketed_table(spark_tmp_table_factory):
     def gen_table(spark):
@@ -225,8 +225,8 @@ def test_insert_hive_bucketed_table(spark_tmp_table_factory):
         assert_equal_with_local_sort(ret_cpu, ret_gpu)
 
 
-@pytest.mark.skipif(is_spark_330_or_later(),
-                    reason = "InsertIntoHiveTable supports bucketed write since Spark 330")
+@pytest.mark.skipif(is_spark_330_or_later() or is_databricks122_or_later(),
+                    reason="InsertIntoHiveTable supports bucketed write since Spark 330")
 @pytest.mark.parametrize("hive_hash", [True, False])
 def test_insert_hive_bucketed_table_before_330(spark_tmp_table_factory, hive_hash):
     num_buckets = 4
