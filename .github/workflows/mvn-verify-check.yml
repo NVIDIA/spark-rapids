@@ -38,6 +38,9 @@ env:
 jobs:
   cache-dependencies:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java-version: [8, 17]
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
@@ -49,7 +52,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 8
+          java-version: ${{ matrix.java-version }}
       - name: Generate daily cache key
         id: generateCacheKey
         run: |
@@ -69,18 +72,21 @@ jobs:
           set -x
           max_retry=3; delay=30; i=1
           while true; do
-            for pom in pom.xml scala2.13/pom.xml
-            do
-              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
-                -Dexpression=included_buildvers \
-                -DforceStdout -PnoSnapshots -q | tr -d ',' | \
-                  xargs -n 1 bash -c \
-                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
+            # https://github.com/NVIDIA/spark-rapids/issues/8847
+            # specify expected versions
+            export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
+            export PATH=${JAVA_HOME}/bin:${PATH}
+            java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+            [ "${{ matrix.java-version }}" == "8" ] && pom="pom.xml" || pom="scala2.13/pom.xml"
+            mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
+              -Dexpression=included_buildvers \
+              -DforceStdout -PnoSnapshots -q | tr -d ',' | \
+                xargs -n 1 bash -c \
+                  'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
 
-              # compile base versions to cache scala compiler and compiler bridge
-              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
-                process-test-resources -pl sql-plugin-api -am
-            done && break || {
+            # compile base versions to cache scala compiler and compiler bridge
+            mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
+              process-test-resources -pl sql-plugin-api -am && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
@@ -197,7 +203,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: adopt
-          java-version: 8
+          java-version: 17 
 
       - name: Cache local Maven repository
         uses: actions/cache@v4
@@ -214,7 +220,7 @@ jobs:
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
           # specify expected versions
-          export JAVA_HOME=${JAVA_HOME_8_X64}
+          export JAVA_HOME=${JAVA_HOME_17_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # verify Scala 2.13 build files
