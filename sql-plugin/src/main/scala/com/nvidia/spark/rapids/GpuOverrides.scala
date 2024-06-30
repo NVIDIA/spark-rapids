@@ -4711,4 +4711,5 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       GpuOverrides.doConvertPlan(wrap, conf, optimizations)
     }
   }
+
 }
