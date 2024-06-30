@@ -135,7 +135,6 @@ jobs:
           echo "scala213Jdk8Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
-    needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.cache-dependencies.outputs.sparkTailVersions) }}
