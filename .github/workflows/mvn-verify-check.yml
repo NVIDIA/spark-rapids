@@ -69,7 +69,7 @@ jobs:
           set -x
           max_retry=3; delay=30; i=1
           while true; do
-            for pom in pom.xml scala2.13/pom.xml
+            for pom in pom.xml
             do
               mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
                 -Dexpression=included_buildvers \
