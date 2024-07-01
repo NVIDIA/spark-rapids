@@ -36,11 +36,10 @@ class OutputLoreIdSuite extends AnyFunSuite {
     assert(loreIds == expectedLoreIds)
   }
 
-  test("Parse empty output lore id") {
-    val expectedLoreIds = Map(1 -> OutputLoreId(1), 2 -> OutputLoreId(2))
-    val loreIds = OutputLoreId.parse("1 , 2")
-
-    assert(loreIds == expectedLoreIds)
+  test("Parse empty output lore id should fail") {
+    assertThrows[IllegalArgumentException] {
+      OutputLoreId.parse(" 1, 2 ")
+    }
   }
 
   test("Parse mixed") {
@@ -49,7 +48,7 @@ class OutputLoreIdSuite extends AnyFunSuite {
       2 -> OutputLoreId(2, Set(4, 5, 8)),
       3 -> OutputLoreId(3, Set(1, 2, 4, 8))
     )
-    val loreIds = OutputLoreId.parse("1, 2[4-6 8] , 3[1 2 4 8]")
+    val loreIds = OutputLoreId.parse("1[*], 2[4-6 8] , 3[1 2 4 8]")
 
     assert(loreIds == expectedLoreIds)
   }

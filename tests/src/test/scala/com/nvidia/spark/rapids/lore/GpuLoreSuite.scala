@@ -25,7 +25,7 @@ import org.apache.spark.sql.internal.SQLConf
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   test("Aggregate") {
-    doTestReplay("10") { spark =>
+    doTestReplay("10[*]") { spark =>
       spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -34,7 +34,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Broadcast join") {
-    doTestReplay("32") { spark =>
+    doTestReplay("32[*]") { spark =>
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -50,7 +50,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Subquery Filter") {
-    doTestReplay("13") { spark =>
+    doTestReplay("13[*]") { spark =>
       spark.range(0, 100, 1, 10)
         .createTempView("df1")
 
@@ -62,7 +62,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("Subquery in projection") {
-    doTestReplay("11") { spark =>
+    doTestReplay("11[*]") { spark =>
       spark.sql(
         """
           |CREATE TEMPORARY VIEW t1
@@ -80,7 +80,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("No broadcast join") {
-    doTestReplay("30") { spark =>
+    doTestReplay("30[*]") { spark =>
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -98,7 +98,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("AQE broadcast") {
-    doTestReplay("90") { spark =>
+    doTestReplay("90[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -116,7 +116,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("AQE Exchange") {
-    doTestReplay("28") { spark =>
+    doTestReplay("28[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       spark.range(0, 1000, 1, 100)
@@ -139,8 +139,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
 
       val restoredRes = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-3"),
-        spark.sparkContext.hadoopConfiguration))
+        new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-3"), spark))
         .executeCollect()
         .length
 
@@ -160,7 +159,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
       val restoredResultLength = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
         new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"),
-        spark.sparkContext.hadoopConfiguration))
+        spark))
         .executeCollect()
         .length
 

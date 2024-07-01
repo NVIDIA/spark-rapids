@@ -31,13 +31,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 
-case class LoreDumpRDDInfo(idxInParent: Int, loreOutputInfo: LoreOutputInfo, attrs: Seq[Attribute])
+case class LoreDumpRDDInfo(idxInParent: Int, loreOutputInfo: LoreOutputInfo, attrs: Seq[Attribute],
+    hadoopConf: Broadcast[SerializableConfiguration])
 
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   extends RDD[ColumnarBatch](input) with GpuLoreRDD {
   override def rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
-
-  private val hadoopConf = new SerializableConfiguration(this.context.hadoopConfiguration)
 
   def saveMeta(): Unit = {
     val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index), info.attrs)
@@ -64,14 +63,16 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
           if (!hasNext) {
             // This is the last batch, save the partition meta
             val partitionMeta = LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
-            GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index), hadoopConf.value)
+            GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
+              info.hadoopConf.value.value)
           }
           ret
         }
 
         private def dumpCurrentBatch(): ColumnarBatch = {
           val outputPath = pathOfBatch(split.index, batchIdx)
-          val outputStream = outputPath.getFileSystem(hadoopConf.value).create(outputPath, false)
+          val outputStream = outputPath.getFileSystem(info.hadoopConf.value.value)
+            .create(outputPath, false)
           DumpUtils.dumpToParquet(nextBatch.get, outputStream)
           nextBatch.get
         }

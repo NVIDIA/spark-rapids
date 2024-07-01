@@ -32,13 +32,11 @@ case class LoreOutputInfo(outputLoreId: OutputLoreId, pathStr: String) {
 object OutputLoreId {
   private val PARTITION_ID_RANGE_REGEX = raw"(\d+)-(\d+)".r("start", "end")
   private val PARTITION_ID_REGEX = raw"(\d+)".r("partitionId")
-  private val PARTITION_IDS_REGEX = raw"($PARTITION_ID_RANGE_REGEX|$PARTITION_ID_REGEX)" +
-    raw"( +($PARTITION_ID_RANGE_REGEX|$PARTITION_ID_REGEX))*".r
   private val PARTITION_ID_SEP_REGEX = raw" +".r
 
   private val OUTPUT_LORE_ID_SEP_REGEX = ", *".r
   private val OUTPUT_LORE_ID_REGEX =
-    raw"(?<loreId>\d+)(\[(?<partitionIds>$PARTITION_IDS_REGEX)\])?".r
+    raw"(?<loreId>\d+)(\[(?<partitionIds>.*)\])?".r
 
   def apply(loreId: Int): OutputLoreId = OutputLoreId(loreId, Set.empty)
 
@@ -46,16 +44,20 @@ object OutputLoreId {
     OUTPUT_LORE_ID_REGEX.findFirstMatchIn(inputStr).map { m =>
       val loreId = m.group("loreId").toInt
       val partitionIds: Set[Int] = m.group("partitionIds") match {
-        case null => Set.empty
-        case partitionIdsStr =>
+        case partitionIdsStr if partitionIdsStr != null =>
           PARTITION_ID_SEP_REGEX.split(partitionIdsStr).flatMap {
             case PARTITION_ID_REGEX(partitionId) =>
               Seq(partitionId.toInt)
             case PARTITION_ID_RANGE_REGEX(start, end) =>
               start.toInt until end.toInt
-            case partitionIdStr => throw new IllegalArgumentException(s"Invalid partition id: " +
-              s"$partitionIdStr")
+            case "*" => Set.empty
+            case partitionIdStr => throw new IllegalArgumentException(s"Invalid partition " +
+              s"id: $partitionIdStr")
           }.toSet
+        case null => {
+          throw new IllegalArgumentException(s"Invalid output lore id string: $inputStr, " +
+            s"partition ids not found!")
+        }
       }
       OutputLoreId(loreId, partitionIds)
     }.getOrElse(throw new IllegalArgumentException(s"Invalid output lore ids: $inputStr"))

@@ -16,15 +16,16 @@
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
-import java.util
 
+import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
-
+import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 import org.apache.spark.SparkConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
@@ -2308,16 +2309,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
 
   val LORE_DUMP_IDS = conf("spark.rapids.sql.lore.idsToDump")
     .doc("Specify the LORE ids of operators to dump. The format is a comma separated list of " +
-      "LORE ids. For example: \"1,2,3\" will dump the input of gpu operator with LORE ids 1, 2, " +
-      "and 3. For more details, please refer to docs/dev/lore.md . If this is not set, no data " +
-      "will be dumped.")
+      "LORE ids. For example: \"1[0]\" will dump partition 0 of input of gpu operator " +
+      "with lore id 1. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md). If this is not set, no data will be dumped.")
     .stringConf
     .createOptional
 
   val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
     .doc(s"The path to dump the LORE nodes' input data. This must be set if ${LORE_DUMP_IDS.key} " +
       "has been set. The data of each LORE node will be dumped to a subfolder with name " +
-      "'loreId-<LORE id>' under this path. For more details, please refer to docs/dev/lore.md .")
+      "'loreId-<LORE id>' under this path. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md).")
     .stringConf
     .createOptional
 
@@ -3134,7 +3136,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
 
-  lazy val loreDumpIds: Option[String] = get(LORE_DUMP_IDS)
+  lazy val loreDumpIds: Map[LoreId, OutputLoreId] = get(LORE_DUMP_IDS)
+    .map(OutputLoreId.parse)
+    .getOrElse(Map.empty)
 
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
