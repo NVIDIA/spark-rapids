@@ -196,6 +196,7 @@
             </activation>
             <properties>
                 <buildver>321cdh</buildver>
+                <scala.plugin.version>4.3.0</scala.plugin.version>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -458,6 +459,7 @@
             </activation>
             <properties>
                 <buildver>330cdh</buildver>
+                <scala.plugin.version>4.3.0</scala.plugin.version>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
@@ -481,6 +483,7 @@
             </activation>
             <properties>
                 <buildver>332cdh</buildver>
+                <scala.plugin.version>4.3.0</scala.plugin.version>
                 <spark.version>${spark332cdh.version}</spark.version>
                 <spark.test.version>${spark332cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
