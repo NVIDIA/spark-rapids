@@ -56,7 +56,8 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     super.beforeAll()
     initializeSession()
     _spark.sparkContext.setLogLevel("WARN")
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    // Spark use "America/Los_Angeles" as default timezone in tests
+    TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
   }
 
   override def afterAll(): Unit = {
@@ -102,8 +103,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", warehouse)
-        // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
-        .config("spark.sql.session.timeZone","UTC")
         .config("spark.rapids.sql.explain", "ALL")
         .config("spark.rapids.sql.test.isFoldableNonLitAllowed", "true")
         // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail

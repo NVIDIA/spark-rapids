@@ -2084,11 +2084,25 @@ class GpuConvMeta(
   override def tagExprForGpu(): Unit = {
     val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
     val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
+    val errorPostfix = "only literal 10 or 16 are supported for source and target radixes"
     (fromBaseLit, toBaseLit) match {
-      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
-        if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
+      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
+        def isBaseSupported(base: Any): Boolean = base == 10 || base == 16
+        if (!isBaseSupported(fromBaseVal) && !isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"both ${fromBaseVal} and ${toBaseVal} are not " +
+            s"a supported radix, ${errorPostfix}")
+        } else if (!isBaseSupported(fromBaseVal)) {
+          willNotWorkOnGpu(because = s"${fromBaseVal} is not a supported source radix, " +
+            s"${errorPostfix}")
+        } else if (!isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"${toBaseVal} is not a supported target radix, " +
+            s"${errorPostfix}")
+        }
       case _ =>
-        willNotWorkOnGpu(because = "only literal 10 or 16 for from_base and to_base are supported")
+        // This will never happen in production as the function signature enforces
+        // integer types for the bases, but nice to have an edge case handling.
+        willNotWorkOnGpu(because = "either source radix or target radix is not an integer " +
+          "literal, " + errorPostfix)
     }
   }
 
