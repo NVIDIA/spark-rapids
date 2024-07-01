@@ -915,7 +915,7 @@
             340
         </jdk11.buildvers>
         <jdk17.buildvers>
-        <!-- We don't support any version on JDK 17 for Scala 2.12 -->
+            330
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
             330,
