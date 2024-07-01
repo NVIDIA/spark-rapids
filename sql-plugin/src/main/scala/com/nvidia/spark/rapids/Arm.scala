@@ -43,8 +43,8 @@ object Arm extends ArmScalaSpecificImpl {
   }
 
   /** Executes the provided code block and then closes the sequence of resources */
-  def withResource[T <: AutoCloseable, V](r: scala.collection.Seq[T])
-    (block: scala.collection.Seq[T] => V): V = {
+  def withResource[T <: AutoCloseable, V](r: Seq[T])
+    (block: Seq[T] => V): V = {
     try {
       block(r)
     } finally {

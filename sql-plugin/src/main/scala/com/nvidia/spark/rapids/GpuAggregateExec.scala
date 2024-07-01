@@ -134,7 +134,7 @@ object AggregateUtils extends Logging {
    * @return lazy spillable batch which has NOT been marked spillable
    */
   private def concatenateAndMerge(
-      batches: mutable.Buffer[SpillableColumnarBatch],
+      batches: mutable.ArrayBuffer[SpillableColumnarBatch],
       metrics: GpuHashAggregateMetrics,
       concatAndMergeHelper: AggHelper): SpillableColumnarBatch = {
     // TODO: concatenateAndMerge (and calling code) could output a sequence
