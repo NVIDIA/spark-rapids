@@ -38,7 +38,7 @@ package org.apache.spark.sql.hive.rapids.shims
 import java.util.Locale
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
-import com.nvidia.spark.rapids.shims.GpuBucketingUtils
+import com.nvidia.spark.rapids.shims.{BucketingUtilsShim, BucketSpecForHiveShim}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
@@ -221,8 +221,8 @@ case class GpuInsertIntoHiveTable(
       outputLocation = tmpLocation.toString,
       forceHiveHashForBucketing = forceHiveHashForBucketing,
       partitionAttributes = partitionAttributes,
-      bucketSpec = GpuBucketingUtils.getBucketSpec(table, forceHiveHashForBucketing),
-      options = GpuBucketingUtils.getOptionsWithHiveBucketWrite(table.bucketSpec))
+      bucketSpec = BucketSpecForHiveShim.getBucketSpec(table, forceHiveHashForBucketing),
+      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec))
 
     if (partition.nonEmpty) {
       if (numDynamicPartitions > 0) {

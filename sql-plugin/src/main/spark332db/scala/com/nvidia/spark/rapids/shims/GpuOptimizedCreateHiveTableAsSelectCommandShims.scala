@@ -199,7 +199,7 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
 
     val outputColumns =
       DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
-    GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns,
+    BucketingUtilsShim.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns,
       conf.isForceHiveHashForBucketedWrite)
 
     val serde = tableDesc.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)

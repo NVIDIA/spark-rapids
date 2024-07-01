@@ -322,8 +322,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
-      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
+    if (BucketingUtilsShim.isHiveHashBucketing(cmd.options)) {
+      BucketingUtilsShim.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
         conf.isForceHiveHashForBucketedWrite)
     } else {
       BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)

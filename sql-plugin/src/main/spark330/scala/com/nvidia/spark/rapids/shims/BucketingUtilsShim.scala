@@ -17,6 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 {"spark": "330cdh"}
+{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
@@ -35,12 +36,12 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.RapidsMeta
 
-import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
+import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.datasources.BucketingUtils
 import org.apache.spark.sql.rapids.{BucketIdMetaUtils, GpuWriterBucketSpec}
 
-object GpuBucketingUtils {
+object BucketingUtilsShim {
 
   def getWriterBucketSpec(
       bucketSpec: Option[BucketSpec],
@@ -79,9 +80,5 @@ object GpuBucketingUtils {
       outColumns: Seq[Attribute], forceHiveHash: Boolean): Unit = {
     // From Spark330, Hive write always uses HiveHash to generate bucket IDs.
     BucketIdMetaUtils.tagForBucketingHiveWrite(meta, bucketSpec, outColumns)
-  }
-
-  def getBucketSpec(table: CatalogTable, forceHiveHash: Boolean): Option[BucketSpec] = {
-    table.bucketSpec
   }
 }
