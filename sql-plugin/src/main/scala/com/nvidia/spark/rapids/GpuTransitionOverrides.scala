@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -201,6 +201,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
+      // In Spark an AdaptiveSparkPlanExec when doing a broadcast expects to only ever see
+      // a BroadcastQueryStageExec as its child. The ColumnarToRowExec can be inserted by Spark
+      // when it sees us doing columnar processing and the output expects rows. But we cannot
+      // keep the ColumnarToRowExec there, nor can we insert in a GpuBroadcastToRowExec in its
+      // place. We have to have to rearrange the order of operations so it is a child of the
+      // BroadcastQueryStageExec (which will likely involve another broadcast)
       e.plan match {
         case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
@@ -211,8 +217,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             case IdentityBroadcastMode => (Some(0), None)
             case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
           }
-          GpuBroadcastToRowExec(keys, b.mode, e)(index, keyExprs)
-        case _ => GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+          SparkShimImpl.newBroadcastQueryStageExec(e,
+            GpuBroadcastToRowExec(keys, b.mode, e.plan)(index, keyExprs))
+        case b: GpuBroadcastExchangeExec =>
+          // This should never happen as AQE with a BroadcastQueryStageExec should
+          // only show up on a reused exchange, btu just in case we try to do the right
+          // thing here
+          SparkShimImpl.newBroadcastQueryStageExec(e,
+            BroadcastExchangeExec(b.mode, GpuColumnarToRowExec(b)))
+        case other =>
+          throw new IllegalStateException(s"Don't know how to handle a " +
+            s"BroadcastQueryStageExec with $other")
       }
 
     // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec

@@ -335,3 +335,54 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
         non_exist_classes="GpuBroadcastExchangeExec",
         conf=conf)
 
+# Verify that DPP and AQE can coexist in even some odd cases involving multiple tables
+@ignore_order(local=True)
+def test_aqe_join_with_dpp(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def write_data(spark):
+        spark.range(34).selectExpr("concat('test_', id % 9) as test_id",
+            "concat('site_', id % 2) as site_id").repartition(200).write.parquet(data_path + "/tests")
+        spark.range(1000).selectExpr(
+                "CAST(if (id % 2 == 0, '1990-01-01', '1990-01-02') as DATE) as day",
+                "concat('test_', (id % 9) + 100) as test_id", 
+                "concat('site_', id % 40) as site_id",
+                "rand(1) as extra_info").write.partitionBy("day", "site_id", "test_id").parquet(data_path + "/infoA")
+        spark.range(1000).selectExpr(
+                "CAST(if (id % 2 == 0, '1990-01-01', '1990-01-02') as DATE) as day",
+                "concat('exp_', id % 9) as test_spec",
+                "concat('LONG_SITE_NAME_', id % 40) as site_id",
+                "rand(0) as extra_info").write.partitionBy("day", "site_id").parquet(data_path + "/infoB")
+
+    with_cpu_session(write_data)
+
+    def run_test(spark):
+        spark.read.parquet(data_path + "/tests/").createOrReplaceTempView("tests")
+        spark.read.parquet(data_path + "/infoA/").createOrReplaceTempView("infoA")
+        spark.read.parquet(data_path + "/infoB/").createOrReplaceTempView("infoB")
+        return spark.sql("""
+        with tmp as 
+        (SELECT
+          site_id,
+          day,
+          test_id
+         FROM
+          infoA
+        UNION ALL
+         SELECT
+           CASE
+             WHEN site_id = 'LONG_SITE_NAME_0' then 'site_0'
+             WHEN site_id = 'LONG_SITE_NAME_1' then 'site_1'
+             ELSE site_id
+           END AS site_id,
+           day,
+           test_spec AS test_id
+           FROM infoB
+        )
+        SELECT *
+        FROM tmp a
+        JOIN tests b ON a.test_id = b.test_id AND a.site_id = b.site_id
+        WHERE day = '1990-01-01'
+        AND a.site_id IN ('site_0', 'site_1')
+        """)
+
+    assert_gpu_and_cpu_are_equal_collect(run_test, conf=_adaptive_conf)
