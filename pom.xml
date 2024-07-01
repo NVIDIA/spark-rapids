@@ -200,6 +200,9 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- Keeping the scala plugin version 4.3.0 as we were seeing compilation errors only for
+                cdh Shims when building with the 4.7.1 version -->
+                <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -463,6 +466,9 @@
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- Keeping the scala plugin version 4.3.0 as we were seeing compilation errors only for
+                cdh Shims when building with the 4.7.1 version -->
+                <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -486,6 +492,9 @@
                 <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- Keeping the scala plugin version 4.3.0 as we were seeing compilation errors only for
+                cdh Shims when building with the 4.7.1 version -->
+                <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -822,15 +831,8 @@
         <spark351.version>3.5.1</spark351.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
-        <!-- same as Apache Spark 4.0.0 for Scala 2.13 -->
-        <!-- #if scala-2.13 --><!--
+        <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.7.1</scala.plugin.version>
-        --><!-- #endif scala-2.13 -->
-        <!-- Keeping the scala plugin version 4.3.0 as we were seeing compilation errors only for
-        cdh Shims when building with the 4.7.1 version -->
-        <!-- #if scala-2.12 -->
-        <scala.plugin.version>4.3.0</scala.plugin.version>
-        <!-- #endif scala-2.12 -->
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
         <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
