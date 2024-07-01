@@ -223,7 +223,7 @@ object AggregateUtils extends Logging {
       withResource(new NvtxWithMetrics("agg merge pass", NvtxColor.BLUE, concatTime,
         opTime)) { _ =>
         // continue merging as long as some batches are able to be combined
-        if (!mergePass(aggregatedBatches, targetMergeBatchSize, helper, metrics))
+        if (!mergePass(aggregatedBatches, targetMergeBatchSize, helper, metrics)) {
           if (aggregatedBatches.size > 1 && isReductionOnly) {
             // We were unable to merge the aggregated batches within the target batch size limit,
             // which means normally we would fallback to a sort-based approach. However for
@@ -243,7 +243,8 @@ object AggregateUtils extends Logging {
               aggregatedBatches += batch
             }
           }
-        return
+          return
+        }
       }
     }
   }
