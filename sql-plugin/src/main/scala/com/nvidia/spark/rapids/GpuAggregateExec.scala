@@ -1033,8 +1033,9 @@ class GpuMergeAggregateIterator(
 
       def split(): ListBuffer[AggregatePartition] = {
         withResource(new NvtxWithMetrics("agg repartition", NvtxColor.CYAN, repartitionTime)) { _ =>
-          if (seed > hashSeed + 20) {
-            throw new IllegalStateException("At most repartition 3 times for a partition")
+          if (seed >= hashSeed + 100) {
+            throw new IllegalStateException("repartitioned too many times, please " +
+              "consider disabling repartition-based fallback for aggregation")
           }
           val totalSize = batches.map(_.sizeInBytes).sum
           val newSeed = seed + 10
@@ -1049,26 +1050,26 @@ class GpuMergeAggregateIterator(
           }
         }
       }
-    }
 
-    private def preparePartitions(
-        newSeed: Int,
-        partitioner: GpuBatchSubPartitioner,
-        partitions: ListBuffer[AggregatePartition]): Unit = {
-      (0 until partitioner.partitionsCount).foreach { id =>
-        val buffer = ListBuffer.empty[SpillableColumnarBatch]
-        buffer ++= partitioner.releaseBatchesByPartition(id)
-        val newPart = AggregatePartition.apply(buffer, newSeed)
-        if (newPart.totalRows() > 0) {
-          partitions += newPart
-        } else {
-          newPart.safeClose()
+      private def preparePartitions(
+          newSeed: Int,
+          partitioner: GpuBatchSubPartitioner,
+          partitions: ListBuffer[AggregatePartition]): Unit = {
+        (0 until partitioner.partitionsCount).foreach { id =>
+          val buffer = ListBuffer.empty[SpillableColumnarBatch]
+          buffer ++= partitioner.releaseBatchesByPartition(id)
+          val newPart = AggregatePartition.apply(buffer, newSeed)
+          if (newPart.totalRows() > 0) {
+            partitions += newPart
+          } else {
+            newPart.safeClose()
+          }
         }
       }
-    }
 
-    private[this] def computeNumPartitions(totalSize: Long): Int = {
-      Math.floorDiv(totalSize, targetMergeBatchSize).toInt + 1
+      private[this] def computeNumPartitions(totalSize: Long): Int = {
+        Math.floorDiv(totalSize, targetMergeBatchSize).toInt + 1
+      }
     }
 
     private val hashSeed = 100
