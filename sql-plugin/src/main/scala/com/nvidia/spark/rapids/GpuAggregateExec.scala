@@ -1315,7 +1315,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     val allowSinglePassAgg = (conf.forceSinglePassPartialSortAgg ||
         (conf.allowSinglePassPartialSortAgg &&
             hasSingleBasicGroupingKey &&
-            estimatedPreProcessGrowth > 1.1)) &&
+            estimatedPreProcessGrowth > conf.singlePassPartialSortAggGrowthThreshold)) &&
         canUsePartialSortAgg &&
         groupingCanBeSorted
 
