@@ -1510,6 +1510,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val SINGLE_PASS_PARTIAL_SORT_AGG_GROWTH_THRESHOLD: ConfEntryWithDefault[Double] =
+    conf("spark.rapids.sql.agg.singlePassPartialSort.estimatedGrowthThreshold")
+      .doc("Even if spark.rapids.sql.agg.singlePassPartialSortEnabled is true, if the estimated " +
+        "growth of size per row is less than this config, single pass partial sort will not " +
+        "be enabled")
+      .internal()
+      .doubleConf
+      .createWithDefault(1.1)
+
   val SKIP_AGG_PASS_REDUCTION_RATIO = conf("spark.rapids.sql.agg.skipAggPassReductionRatio")
     .doc("In non-final aggregation stages, if the previous pass has a row reduction ratio " +
         "greater than this value, the next aggregation pass will be skipped." +
@@ -3097,6 +3106,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val batchedBoundedRowsWindowMax: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
+
+  lazy val singlePassPartialSortAggGrowthThreshold: Double =
+    get(SINGLE_PASS_PARTIAL_SORT_AGG_GROWTH_THRESHOLD)
 
   lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
