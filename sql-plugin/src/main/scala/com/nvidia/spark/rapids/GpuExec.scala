@@ -96,7 +96,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
   val DESCRIPTION_SORT_TIME = "sort time"
-  val DESCRIPTION_REPARTITION_TIME = "repartition time spent in agg"
+  val DESCRIPTION_REPARTITION_TIME = "repartition time"
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
   val DESCRIPTION_FILTER_TIME = "filter time"
