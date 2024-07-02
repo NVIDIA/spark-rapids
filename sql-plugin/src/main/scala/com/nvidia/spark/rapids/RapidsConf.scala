@@ -23,6 +23,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
+import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -2308,6 +2309,28 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val TAG_LORE_ID_ENABLED = conf("spark.rapids.sql.lore.tag.enabled")
+    .doc("Enable add a LORE id to each gpu plan node")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val LORE_DUMP_IDS = conf("spark.rapids.sql.lore.idsToDump")
+    .doc("Specify the LORE ids of operators to dump. The format is a comma separated list of " +
+      "LORE ids. For example: \"1[0]\" will dump partition 0 of input of gpu operator " +
+      "with lore id 1. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md). If this is not set, no data will be dumped.")
+    .stringConf
+    .createOptional
+
+  val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
+    .doc(s"The path to dump the LORE nodes' input data. This must be set if ${LORE_DUMP_IDS.key} " +
+      "has been set. The data of each LORE node will be dumped to a subfolder with name " +
+      "'loreId-<LORE id>' under this path. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md).")
+    .stringConf
+    .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -3120,6 +3143,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
+
+  lazy val loreDumpIds: Map[LoreId, OutputLoreId] = get(LORE_DUMP_IDS)
+    .map(OutputLoreId.parse)
+    .getOrElse(Map.empty)
+
+  lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
