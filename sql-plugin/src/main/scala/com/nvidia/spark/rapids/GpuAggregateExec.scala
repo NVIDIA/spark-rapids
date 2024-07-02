@@ -119,7 +119,7 @@ object AggregateUtils extends Logging {
     }
 
     // Calculate the max rows that can be processed during computation within the budget
-    val maxRows = totalBudget / computationBytesPerRow
+    val maxRows = Math.max(totalBudget / computationBytesPerRow, 1)
 
     // Finally compute the input target batching size taking into account the cudf row limits
     Math.min(inputRowSize * maxRows, Int.MaxValue)
@@ -212,7 +212,7 @@ object AggregateUtils extends Logging {
    */
   def tryMergeAggregatedBatches(
       aggregatedBatches: mutable.Buffer[SpillableColumnarBatch],
-      isReductionOnly: Boolean,
+      forceMergeRegardlessOfOversize: Boolean,
       metrics: GpuHashAggregateMetrics,
       targetMergeBatchSize: Long,
       helper: AggHelper
@@ -224,14 +224,19 @@ object AggregateUtils extends Logging {
         opTime)) { _ =>
         // continue merging as long as some batches are able to be combined
         if (!mergePass(aggregatedBatches, targetMergeBatchSize, helper, metrics)) {
-          if (aggregatedBatches.size > 1 && isReductionOnly) {
+          if (aggregatedBatches.size > 1 && forceMergeRegardlessOfOversize) {
             // We were unable to merge the aggregated batches within the target batch size limit,
-            // which means normally we would fallback to a sort-based approach. However for
-            // reduction-only aggregation there are no keys to use for a sort. The only way this
-            // can work is if all batches are merged. This will exceed the target batch size limit,
-            // but at this point it is either risk an OOM/cudf error and potentially work or
-            // not work at all.
-            logWarning(s"Unable to merge reduction-only aggregated batches within " +
+            // which means normally we would fallback to a sort-based approach.
+            // There are two exceptions:
+            // 1. reduction-only aggregation case, there are no keys to use for a sort.
+            // The only way this can work is if all batches are merged. This will exceed
+            // the target batch size limit but at this point it is either risk an OOM/cudf error
+            // and potentially work or not work at all.
+            // 2. re-partition agg case where all batches are have only 1 row each (Usually
+            // this only happens in test cases). Doing more re-partitioning will not help to reduce
+            // the partition size anymore. In this case we should merge all the batches into one
+            // regardless of the target size.
+            logWarning(s"Unable to merge aggregated batches within " +
               s"target batch limit of $targetMergeBatchSize, attempting to merge remaining " +
               s"${aggregatedBatches.size} batches beyond limit")
             withResource(mutable.ArrayBuffer[SpillableColumnarBatch]()) { batchesToConcat =>
@@ -1022,6 +1027,10 @@ class GpuMergeAggregateIterator(
 
       def totalSize(): Long = batches.map(_.sizeInBytes).sum
 
+      def isAllBatchesSingleRow: Boolean = {
+        batches.forall(_.numRows() == 1)
+      }
+
       def split(): ListBuffer[AggregatePartition] = {
         withResource(new NvtxWithMetrics("agg repartition", NvtxColor.CYAN, repartitionTime)) { _ =>
           if (seed > hashSeed + 20) {
@@ -1081,7 +1090,8 @@ class GpuMergeAggregateIterator(
         }
 
         val headPartition = aggPartitions.remove(0)
-        if (headPartition.totalSize() > targetMergeBatchSize) {
+        if (!headPartition.isAllBatchesSingleRow &&
+          headPartition.totalSize() > targetMergeBatchSize) {
           deferredAggPartitions += headPartition
           return next()
         }
@@ -1089,7 +1099,7 @@ class GpuMergeAggregateIterator(
         withResource(headPartition) { _ =>
           val batchSizeBeforeMerge = headPartition.batches.size
           AggregateUtils.tryMergeAggregatedBatches(
-            headPartition.batches, isReductionOnly, metrics,
+            headPartition.batches, isReductionOnly || headPartition.isAllBatchesSingleRow, metrics,
             targetMergeBatchSize, concatAndMergeHelper)
           if (headPartition.batches.size != 1) {
             throw new IllegalStateException(
