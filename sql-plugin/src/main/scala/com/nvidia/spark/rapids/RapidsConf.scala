@@ -745,6 +745,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
+    .doc("Whether the profiler should capture async CUDA allocation and free events")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
     .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
       "stage-level profiling is used.")
@@ -772,7 +778,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Buffer size to use when writing profile records.")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1024 * 1024)
+    .createWithDefault(8 * 1024 * 1024)
 
   // ENABLE/DISABLE PROCESSING
 
@@ -2530,6 +2536,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val profileStages: Option[String] = get(PROFILE_STAGES)
 
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
+
+  lazy val profileAsyncAllocCapture: Boolean = get(PROFILE_ASYNC_ALLOC_CAPTURE)
 
   lazy val profileCompression: String = get(PROFILE_COMPRESSION)
 
