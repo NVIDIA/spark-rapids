@@ -1109,7 +1109,7 @@ def test_bloom_filter_join_with_merge_all_null_filters(spark_tmp_path):
 
 
 @ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "FilterExec", "BroadcastHashJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec")
+@allow_non_gpu("ProjectExec", "FilterExec", "BroadcastHashJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec", "BatchScanExec")
 @pytest.mark.parametrize("disable_build", [True, False])
 def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, disable_build):
     data_path_parquet = spark_tmp_path + "/parquet"
@@ -1145,7 +1145,7 @@ def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, disable_b
 
 
 @ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "BroadcastNestedLoopJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec")
+@allow_non_gpu("ProjectExec", "BroadcastNestedLoopJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec", "BatchScanExec")
 @pytest.mark.parametrize("disable_build", [True, False])
 def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable_build):
     data_path_parquet = spark_tmp_path + "/parquet"
