@@ -291,6 +291,31 @@ def test_hash_repartition_exact(gen, num_parts):
                     .withColumn('hashed', f.hash(*part_on))\
                     .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)))
 
+
+# TODO: Fix failing test.
+@ignore_order(local=True)  # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@pytest.mark.parametrize('num_parts', [2], ids=idfn)
+@pytest.mark.parametrize('is_ansi_mode', [False], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_hash_repartition_exact_longs_no_overflow(num_parts, is_ansi_mode):
+    # data_gen = [('a', LongGen(min_val=-1000, max_val=1000, special_cases=[]) if is_ansi_mode else LongGen())]
+    # data_gen = LongGen(max_val=10, special_cases=[])
+    data_gen = [('a', LongGen(min_val=0, max_val=10, special_cases=[]))]
+    part_on = [f.col('a') + 15]
+    conf = {'spark.sql.ansi.enabled': is_ansi_mode}
+    def gen_and_write(spark):
+        df = gen_df(spark, data_gen, length=1024)
+        # if spark.conf.get("spark.conf.")
+        df.repartition(1).write.mode("overwrite").orc("/tmp/test_input")
+        return df
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_and_write(spark)
+                        .repartition(num_parts, *part_on)
+                        .withColumn('id', f.spark_partition_id())
+                        .withColumn('hashed', f.hash(*part_on))
+                        .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)), conf=conf)
+
+
 # Test a query that should cause Spark to leverage getShuffleRDD
 @ignore_order(local=True)
 def test_union_with_filter():
