@@ -28,7 +28,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
 
-// This shim is used in GpuInsertIntoHiveTable for only Spark/cdh/db 31x, 32x and 33x .
+// This shim is used in GpuInsertIntoHiveTable for only Spark/cdh/db 33x.
 object BucketSpecForHiveShim {
   def getBucketSpec(table: CatalogTable, forceHiveHash: Boolean): Option[BucketSpec] = {
     table.bucketSpec

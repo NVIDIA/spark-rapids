@@ -192,16 +192,18 @@ def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_
         _write_to_hive_conf)
 
 
-@pytest.mark.skipif(is_before_spark_330() or (not is_databricks122_or_later()),
+@pytest.mark.skipif(is_before_spark_330() or (is_databricks_runtime() and not is_databricks122_or_later()),
                     reason="InsertIntoHiveTable supports bucketed write since Spark 330")
 def test_insert_hive_bucketed_table(spark_tmp_table_factory):
+    num_rows = 2048
+
     def gen_table(spark):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(_hive_bucket_gens)]
         types_sql_str = ','.join('{} {}'.format(
             name, gen.data_type.simpleString()) for name, gen in gen_list)
         col_names_str = ','.join(name for name, gen in gen_list)
         data_table = spark_tmp_table_factory.get()
-        gen_df(spark, gen_list).createOrReplaceTempView(data_table)
+        gen_df(spark, gen_list, num_rows).createOrReplaceTempView(data_table)
         return data_table, types_sql_str, col_names_str
 
     (input_data, input_schema, input_cols_str) = with_cpu_session(gen_table)
@@ -218,11 +220,17 @@ def test_insert_hive_bucketed_table(spark_tmp_table_factory):
     gpu_table = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark: insert_hive_table(spark, cpu_table), _write_to_hive_conf)
     with_gpu_session(lambda spark: insert_hive_table(spark, gpu_table), _write_to_hive_conf)
+    cpu_rows, gpu_rows = 0, 0
     for cur_bucket_id in range(num_buckets):
         # Verify the result bucket by bucket
         ret_cpu = read_single_bucket(cpu_table, cur_bucket_id)
+        cpu_rows += len(ret_cpu)
         ret_gpu = read_single_bucket(gpu_table, cur_bucket_id)
+        gpu_rows += len(ret_gpu)
         assert_equal_with_local_sort(ret_cpu, ret_gpu)
+
+    assert cpu_rows == num_rows
+    assert gpu_rows == num_rows
 
 
 @pytest.mark.skipif(is_spark_330_or_later() or is_databricks122_or_later(),
