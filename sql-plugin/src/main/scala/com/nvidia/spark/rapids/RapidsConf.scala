@@ -1518,6 +1518,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
     .createWithDefault(1.0)
 
+  val FALLBACK_ALGORITHM_FOR_OVERSIZE_AGG = conf("spark.rapids.sql.agg.fallbackAlgorithm")
+    .doc("When agg cannot be done in a single pass, use sort-based fallback or " +
+      "repartition-based fallback.")
+    .stringConf
+    .checkValues(Set("sort", "repartition"))
+    .createWithDefault("sort")
+
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
     .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
@@ -3101,6 +3108,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
   lazy val skipAggPassReductionRatio: Double = get(SKIP_AGG_PASS_REDUCTION_RATIO)
+
+  lazy val aggFallbackAlgorithm: String = get(FALLBACK_ALGORITHM_FOR_OVERSIZE_AGG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 

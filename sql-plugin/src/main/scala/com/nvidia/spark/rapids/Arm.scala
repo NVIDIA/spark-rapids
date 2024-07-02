@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.util.control.ControlThrowable
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -122,6 +122,20 @@ object Arm extends ArmScalaSpecificImpl {
 
   /** Executes the provided code block, closing the resources only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V](r: ArrayBuffer[T])(block: ArrayBuffer[T] => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
+      case t: Throwable =>
+        r.safeClose(t)
+        throw t
+    }
+  }
+
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: ListBuffer[T])(block: ListBuffer[T] => V): V = {
     try {
       block(r)
     } catch {
