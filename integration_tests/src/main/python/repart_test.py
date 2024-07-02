@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from spark_session import is_before_spark_320, is_before_spark_330
 from conftest import is_not_utc
 from data_gen import *
@@ -266,7 +266,6 @@ def test_hash_fallback(data_gen):
     ([('a', long_gen), ('b', StructGen([('b1', long_gen)]))], ['a']),
     ([('a', long_gen), ('b', ArrayGen(long_gen, max_length=2))], ['a']),
     ([('a', byte_gen)], [f.col('a') - 5]), 
-    ([('a', long_gen)], [f.col('a') + 15]),
     ([('a', ArrayGen(long_gen, max_length=2)), ('b', long_gen)], ['a']),
     ([('a', StructGen([('aa', ArrayGen(long_gen, max_length=2))])), ('b', long_gen)], ['a']),
     ([('a', byte_gen), ('b', boolean_gen)], ['a', 'b']),
@@ -292,14 +291,12 @@ def test_hash_repartition_exact(gen, num_parts):
                     .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)))
 
 
-# TODO: Fix failing test. First test fails with ARITHMETIC_OVERFLOW even with ANSI off.
 @ignore_order(local=True)  # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
-@pytest.mark.parametrize('is_ansi_mode', [False], ids=idfn)
+@pytest.mark.parametrize('is_ansi_mode', [False, True], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_repartition_exact_longs_no_overflow(num_parts, is_ansi_mode):
-    # gen = LongGen(min_val=-1000, max_val=1000, special_cases=[]) if is_ansi_mode else long_gen
-    gen = long_gen if not is_ansi_mode else LongGen(min_val=-1000, max_val=1000, special_cases=[])
+    gen = LongGen(min_val=-1000, max_val=1000, special_cases=[]) if is_ansi_mode else long_gen
     data_gen = [('a', gen)]
     part_on = [f.col('a') + 15]
     conf = {'spark.sql.ansi.enabled': is_ansi_mode}
@@ -310,6 +307,26 @@ def test_hash_repartition_exact_longs_no_overflow(num_parts, is_ansi_mode):
                         .withColumn('id', f.spark_partition_id())
                         .withColumn('hashed', f.hash(*part_on))
                         .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)), conf=conf)
+
+
+@ignore_order(local=True)  # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@pytest.mark.parametrize('num_parts', [10, 17], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_hash_repartition_long_overflow_ansi_exception(num_parts):
+    data_gen = [('a', long_gen)]
+    part_on = [f.col('a') + 15]
+    conf = ansi_enabled_conf
+
+    def test_function(spark):
+        return gen_df(spark, data_gen, length=1024)\
+            .repartition(num_parts, *part_on)\
+            .withColumn('id', f.spark_partition_id())\
+            .withColumn('hashed', f.hash(*part_on))\
+            .selectExpr('*', 'pmod(hashed, {})'.format(num_parts))
+
+    assert_gpu_and_cpu_error(
+        lambda spark: test_function(spark).collect(),
+        conf=conf, error_message="ArithmeticException")
 
 
 # Test a query that should cause Spark to leverage getShuffleRDD
