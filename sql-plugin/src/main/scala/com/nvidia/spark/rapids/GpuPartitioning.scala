@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
@@ -35,11 +35,13 @@ object GpuPartitioning {
 }
 
 trait GpuPartitioning extends Partitioning {
-  private[this] val (maxCompressionBatchSize, _useGPUShuffle, _useMultiThreadedShuffle) = {
+  private[this] val (maxCompressionBatchSize, _useGPUShuffle, _useMultiThreadedShuffle,
+      _isSerdeOnGPU) = {
     val rapidsConf = new RapidsConf(SQLConf.get)
     (rapidsConf.shuffleCompressionMaxBatchMemory,
       GpuShuffleEnv.useGPUShuffle(rapidsConf),
-      GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf))
+      GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf),
+      GpuShuffleEnv.isSerdeOnGpu(rapidsConf))
   }
 
   final def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
@@ -50,6 +52,8 @@ trait GpuPartitioning extends Partitioning {
   def usesGPUShuffle: Boolean = _useGPUShuffle
 
   def usesMultiThreadedShuffle: Boolean = _useMultiThreadedShuffle
+
+  def serdeOnGPU: Boolean = _isSerdeOnGPU
 
   def sliceBatch(vectors: Array[RapidsHostColumnVector], start: Int, end: Int): ColumnarBatch = {
     var ret: ColumnarBatch = null
@@ -63,13 +67,13 @@ trait GpuPartitioning extends Partitioning {
 
   def sliceInternalOnGpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
-    // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
+      // The first index will always be 0, so we need to skip it.
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
         val contiguousTables = withResource(partitionColumns) { _ =>
           withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
-            table.contiguousSplit(parts: _*)
+            withRetryNoSplit(table.contiguousSplit(parts: _*))
           }
         }
         GpuShuffleEnv.rapidsShuffleCodec match {
@@ -91,8 +95,63 @@ trait GpuPartitioning extends Partitioning {
       Array[ColumnarBatch]()
     }
 
-    GpuSemaphore.releaseIfNecessary(TaskContext.get())
-    batches
+    if (_isSerdeOnGPU) {
+      closeOnExcept(moveToHostAndClose(batches)) { hostBatches =>
+        // All the data should be on host now for shuffle, leaving GPU for a while.
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        hostBatches
+      }
+    } else {
+      batches
+    }
+  }
+
+  /**
+   * Move the small split batches from device to host in the following steps:
+   *   1) Concatenate all the split device buffers into a single contiguous buffer,
+   *   2) Move the single device buffer to host,
+   *   3) Rebuild the split batches on host.
+   * to avoid too many small data copying between device and host.
+   */
+  private def moveToHostAndClose(batches: Array[ColumnarBatch]): Array[ColumnarBatch] = {
+    // 1) Merge all the split device buffers and collect offsets and table metas
+    val (singleDevBuf, metas, offsets) = withResource(batches) { _ =>
+      val devBufs = new Array[DeviceMemoryBuffer](batches.length)
+      val metas = batches.zipWithIndex.map { case (cb, idx) =>
+        cb.column(0) match {
+          case packCol: GpuPackedTableColumn =>
+            devBufs(idx) = packCol.getTableBuffer
+            MetaUtils.buildTableMeta(0, packCol.getContiguousTable)
+          case compCol: GpuCompressedColumnVector =>
+            devBufs(idx) = compCol.getTableBuffer
+            compCol.getTableMeta
+        }
+      }
+      val offsets = devBufs.scanLeft(0L)(_ + _.getLength)
+      closeOnExcept(DeviceMemoryBuffer.allocate(offsets.last)) { buf =>
+        devBufs.zipWithIndex.foreach { case (b, idx) =>
+          buf.copyFromDeviceBufferAsync(offsets(idx), b, 0, b.getLength,
+            Cuda.DEFAULT_STREAM)
+        }
+        Cuda.DEFAULT_STREAM.sync()
+        (buf, metas, offsets)
+      }
+    }
+    // 2) Move the single device buffer to host
+    val singleHostBuf = withResource(singleDevBuf) { _ =>
+      closeOnExcept(HostMemoryBuffer.allocate(singleDevBuf.getLength)) { buf =>
+        buf.copyFromDeviceBuffer(singleDevBuf)
+        buf
+      }
+    }
+    // 3) Rebuild the split batches on host
+    withResource(singleHostBuf) { _ =>
+      metas.zipWithIndex.safeMap { case (meta, idx) =>
+        val start = offsets(idx)
+        val end = offsets(idx + 1)
+        PackedTableHostColumnVector.from(meta, singleHostBuf.slice(start, end - start))
+      }
+    }
   }
 
   private def reslice(batch: ColumnarBatch, numSlices: Int): Seq[ColumnarBatch] = {
@@ -175,7 +234,7 @@ trait GpuPartitioning extends Partitioning {
 
   def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
-    val sliceOnGpu = usesGPUShuffle
+    val sliceOnGpu = usesGPUShuffle || _isSerdeOnGPU
     val nvtxRangeKey = if (sliceOnGpu) {
       "sliceInternalOnGpu"
     } else {
@@ -211,7 +270,8 @@ trait GpuPartitioning extends Partitioning {
 
       // add each table either to the batch to be compressed or to the empty batch tracker
       contiguousTables.zipWithIndex.foreach { case (ct, i) =>
-        if (ct.getRowCount == 0) {
+        // Buffer is empty when no rows or all rows are null, so check the buffer directly.
+        if (ct.getBuffer == null || ct.getBuffer.getLength == 0) {
           emptyBatches.append((GpuPackedTableColumn.from(ct), i))
         } else {
           compressor.addTableToCompress(ct)

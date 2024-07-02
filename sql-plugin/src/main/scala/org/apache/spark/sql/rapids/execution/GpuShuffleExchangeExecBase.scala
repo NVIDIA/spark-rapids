@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,10 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
-import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency, TaskContext}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -208,6 +209,8 @@ abstract class GpuShuffleExchangeExecBase(
         createNanoTimingMetric(DEBUG_LEVEL,"rs. shuffle combine time"),
     "rapidsShuffleWriteIoTime" ->
         createNanoTimingMetric(DEBUG_LEVEL,"rs. shuffle write io time"),
+    "rapidsShufflePartitionTime" ->
+      createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle partition time"),
     "rapidsShuffleReadTime" ->
         createNanoTimingMetric(ESSENTIAL_LEVEL,"rs. shuffle read time")
   ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)
@@ -231,7 +234,9 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    gpuLongMetric("dataSize"))
+    gpuLongMetric("dataSize"), allMetrics("rapidsShuffleSerializationTime"),
+    allMetrics("rapidsShuffleDeserializationTime"), gpuOutputPartitioning.serdeOnGPU,
+    sparkTypes, new RapidsConf(conf).gpuTargetBatchSizeBytes)
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -314,7 +319,8 @@ object GpuShuffleExchangeExecBase {
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
     def getPartitioned: ColumnarBatch => Any = {
-      batch => partitioner.columnarEvalAny(batch)
+      val partitionMetric = metrics("rapidsShufflePartitionTime")
+      batch => partitionMetric.ns(partitioner.columnarEvalAny(batch))
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>
@@ -323,12 +329,17 @@ object GpuShuffleExchangeExecBase {
           private var partitioned : Array[(ColumnarBatch, Int)] = _
           private var at = 0
           private val mutablePair = new MutablePair[Int, ColumnarBatch]()
-          private def partNextBatch(): Unit = {
-            if (partitioned != null) {
-              partitioned.map(_._1).safeClose()
-              partitioned = null
-              at = 0
+          Option(TaskContext.get()).foreach { tc =>
+            onTaskCompletion(tc) {
+              if (partitioned != null) {
+                partitioned.drop(at).map(_._1).safeClose()
+              }
             }
+          }
+
+          private def partNextBatch(): Unit = {
+            partitioned = null
+            at = 0
             if (iter.hasNext) {
               var batch = iter.next()
               while (batch.numRows == 0 && iter.hasNext) {
@@ -343,7 +354,6 @@ object GpuShuffleExchangeExecBase {
                   metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
                 })
                 metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-                at = 0
               } else {
                 batch.close()
               }
@@ -359,10 +369,7 @@ object GpuShuffleExchangeExecBase {
           }
 
           override def next(): Product2[Int, ColumnarBatch] = {
-            if (partitioned == null || at >= partitioned.length) {
-              partNextBatch()
-            }
-            if (partitioned == null || at >= partitioned.length) {
+            if (!hasNext) {
               throw new NoSuchElementException("Walked off of the end...")
             }
             val tup = partitioned(at)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.math.RoundingMode
 
-import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{DeviceMemoryBuffer, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
@@ -62,13 +62,28 @@ class GpuSinglePartitioningSuite extends AnyFunSuite {
               assertResult(1)(result.length)
               assertResult(0)(result.head._2)
               val resultBatch = result.head._1
-              // verify this is a contiguous split table
-              assert(GpuPackedTableColumn.isBatchPacked(resultBatch))
-              val packedColumn = resultBatch.column(0).asInstanceOf[GpuPackedTableColumn]
-              val actual = packedColumn.getContiguousTable
-              assertResult(expected.getBuffer.getLength)(actual.getBuffer.getLength)
-              assertResult(expected.getMetadataDirectBuffer)(actual.getMetadataDirectBuffer)
-              TestUtils.compareTables(expected.getTable, actual.getTable)
+              if (GpuPackedTableColumn.isBatchPacked(resultBatch)) {
+                // verify this is a contiguous split table
+                val packedColumn = resultBatch.column(0).asInstanceOf[GpuPackedTableColumn]
+                val actual = packedColumn.getContiguousTable
+                assertResult(expected.getBuffer.getLength)(actual.getBuffer.getLength)
+                assertResult(expected.getMetadataDirectBuffer)(actual.getMetadataDirectBuffer)
+                TestUtils.compareTables(expected.getTable, actual.getTable)
+              } else {
+                assert(PackedTableHostColumnVector.isBatchPackedOnHost(resultBatch))
+                val packedCol = resultBatch.column(0).asInstanceOf[PackedTableHostColumnVector]
+                assertResult(expected.getBuffer.getLength)(packedCol.getTableBuffer.getLength)
+                val hostBuf = packedCol.getTableBuffer
+                val data = closeOnExcept(DeviceMemoryBuffer.allocate(hostBuf.getLength)) {
+                  devBuf =>
+                    devBuf.copyFromHostBuffer(hostBuf)
+                    devBuf
+                }
+                val actualTable = withResource(data)(
+                  MetaUtils.getTableFromMeta(_, packedCol.getTableMeta))
+                withResource(actualTable)(TestUtils.compareTables(expected.getTable, _))
+              }
+
             } finally {
               result.foreach(_._1.close())
             }

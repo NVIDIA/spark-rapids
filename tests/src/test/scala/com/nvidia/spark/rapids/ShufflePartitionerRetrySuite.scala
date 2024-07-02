@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder, SpecificInternalRow}
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
 import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -36,7 +37,9 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
   }
 
   private def testRoundRobinPartitioner(partNum: Int) = {
-    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+    val conf = new SparkConf()
+    TestUtils.withGpuSparkSession(conf) { _ =>
+      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val rrp = GpuRoundRobinPartitioning(partNum)
       // batch will be closed within columnarEvalAny
       val batch = buildBatch
@@ -55,7 +58,9 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
   }
 
   test("GPU range partition with retry") {
-    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+    val conf = new SparkConf()
+    TestUtils.withGpuSparkSession(conf) { _ =>
+      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       // Initialize range bounds
       val fieldTypes: Array[DataType] = Array(IntegerType)
       val bounds = new SpecificInternalRow(fieldTypes)

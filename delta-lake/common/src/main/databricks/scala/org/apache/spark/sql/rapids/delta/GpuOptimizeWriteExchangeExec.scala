@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * This file was derived from OptimizeWriteExchange.scala
  * in the Delta Lake project at https://github.com/delta-io/delta
@@ -26,7 +26,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning}
+import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -39,6 +39,7 @@ import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShufflePartitionS
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.{SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, ShuffledBatchRDD}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
@@ -84,6 +85,8 @@ case class GpuOptimizeWriteExchangeExec(
         createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle combine time"),
     "rapidsShuffleWriteIoTime" ->
         createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle write io time"),
+    "rapidsShufflePartitionTime" ->
+      createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle partition time"),
     "rapidsShuffleReadTime" ->
         createNanoTimingMetric(ESSENTIAL_LEVEL, "rs. shuffle read time")
   ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)
@@ -97,8 +100,12 @@ case class GpuOptimizeWriteExchangeExec(
     ) ++ additionalMetrics
   }
 
-  private lazy val serializer: Serializer =
-    new GpuColumnarBatchSerializer(gpuLongMetric("dataSize"))
+  private lazy val sparkTypes: Array[DataType] = child.output.map(_.dataType).toArray
+
+  private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
+    gpuLongMetric("dataSize"), allMetrics("rapidsShuffleSerializationTime"),
+    allMetrics("rapidsShuffleDeserializationTime"), partitioning.serdeOnGPU,
+    sparkTypes, new RapidsConf(conf).gpuTargetBatchSizeBytes)
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -116,7 +123,7 @@ case class GpuOptimizeWriteExchangeExec(
       inputRDD,
       child.output,
       partitioning,
-      child.output.map(_.dataType).toArray,
+      sparkTypes,
       serializer,
       useGPUShuffle=partitioning.usesGPUShuffle,
       useMultiThreadedShuffle=partitioning.usesMultiThreadedShuffle,
