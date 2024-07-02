@@ -687,6 +687,12 @@ Min,S,`min`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NA,PS,NS
 Min,S,`min`,None,reduction,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NA,PS,NS
 Min,S,`min`,None,window,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
 Min,S,`min`,None,window,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,NS,NS
+MinBy,S,`min_by`,None,aggregation,value,S,S,S,S,S,S,S,S,PS,S,S,S,S,NS,PS,PS,PS,NS
+MinBy,S,`min_by`,None,aggregation,ordering,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NA,PS,NS
+MinBy,S,`min_by`,None,aggregation,result,S,S,S,S,S,S,S,S,PS,S,S,S,S,NS,PS,PS,PS,NS
+MinBy,S,`min_by`,None,reduction,value,S,S,S,S,S,S,S,S,PS,S,S,S,S,NS,PS,PS,PS,NS
+MinBy,S,`min_by`,None,reduction,ordering,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NA,PS,NS
+MinBy,S,`min_by`,None,reduction,result,S,S,S,S,S,S,S,S,PS,S,S,S,S,NS,PS,PS,PS,NS
 Percentile,S,`percentile`,None,aggregation,input,NA,S,S,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Percentile,S,`percentile`,None,aggregation,percentage,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA
 Percentile,S,`percentile`,None,aggregation,frequency,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA

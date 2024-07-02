@@ -182,6 +182,7 @@ Md5,4
 MicrosToTimestamp,4
 MillisToTimestamp,4
 Min,4
+MinBy,4
 Minute,4
 MonotonicallyIncreasingID,4
 Month,4
