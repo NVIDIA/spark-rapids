@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
       hadoopConf: Configuration,
       fileFormat: ColumnarFileFormat,
       outputLocation: String,
+      forceHiveHashForBucketing: Boolean,
       customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
       partitionAttributes: Seq[Attribute] = Nil,
       bucketSpec: Option[BucketSpec] = None,
@@ -65,6 +66,7 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
       statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
       options = options,
       useStableSort = false,                  // TODO: Fetch from RapidsConf.
+      forceHiveHashForBucketing = forceHiveHashForBucketing,
       concurrentWriterPartitionFlushSize = 0L // TODO: Fetch from RapidsConf.
     )
   }

@@ -323,8 +323,9 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
-      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
+    if (BucketingUtilsShim.isHiveHashBucketing(cmd.options)) {
+      BucketingUtilsShim.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
+        conf.isForceHiveHashForBucketedWrite)
     } else {
       BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
@@ -3200,6 +3201,15 @@ object GpuOverrides extends Logging {
 
         def convertToGpu(): GpuExpression =
           GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
+      }),
+    expr[HiveHash](
+      "hive hash operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
+        def convertToGpu(): GpuExpression =
+          GpuHiveHash(childExprs.map(_.convertToGpu()))
       }),
     expr[Contains](
       "Contains",
