@@ -195,6 +195,12 @@ jobs:
           distribution: adopt
           java-version: 17 
 
+      - name: Cache local Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
+
       - name: check runtime before tests
         run: |
           env | grep JAVA
