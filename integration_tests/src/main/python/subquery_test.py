@@ -86,11 +86,11 @@ def test_scalar_subquery_array(is_ansi_enabled, basic_gen):
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], num_slices=1),
-        'table',
+        'my_array_table',
         '''select sort_array(arr),
-                  sort_array((select last(arr) from table))
-        from table
-        where (select first(arr) from table)[0] > arr[0]
+                  sort_array((select last(arr) from my_array_table))
+        from my_array_table
+        where (select first(arr) from my_array_table)[0] > arr[0]
         ''',
         conf=conf)
 
