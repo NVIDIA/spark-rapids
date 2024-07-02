@@ -13,46 +13,51 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
+from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import *
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
-def test_scalar_subquery_basics(data_gen):
+def test_scalar_subquery_basics(spark_tmp_table_factory, data_gen):
     # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
+    table_name = spark_tmp_table_factory.get()
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, [('a', data_gen)], num_slices=1),
-        'table',
-        '''select a, (select last(a) from table)
-        from table
-        where a > (select first(a) from table)
-        ''')
+        table_name,
+        '''select a, (select last(a) from {})
+        from {}
+        where a > (select first(a) from {})
+        '''.format(table_name, table_name, table_name))
 
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
-def test_scalar_subquery_struct(basic_gen):
+def test_scalar_subquery_struct(spark_tmp_table_factory, basic_gen):
     # single-level struct
     gen = [('ss', StructGen([['a', basic_gen], ['b', basic_gen]]))]
+    table_name = spark_tmp_table_factory.get()
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, num_slices=1),
-        'table',
-        '''select ss, (select last(ss) from table)
-        from table
-        where (select first(ss) from table).b > ss.a
-        ''')
+        table_name,
+        '''select ss, (select last(ss) from {})
+        from {}
+        where (select first(ss) from {}).b > ss.a
+        '''.format(table_name, table_name, table_name))
+
     # nested struct
     gen = [('ss', StructGen([['child', StructGen([['c0', basic_gen]])]]))]
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, num_slices=1),
-        'table',
-        '''select ss, (select last(ss) from table)
-        from table
-        where (select first(ss) from table)['child']['c0'] > ss.child.c0
-        ''')
+        table_name,
+        '''select ss, (select last(ss) from {})
+        from {}
+        where (select first(ss) from {})['child']['c0'] > ss.child.c0
+        '''.format(table_name, table_name, table_name))
+
     # struct of array
     # Note: The test query accesses the first two elements of the array.  The datagen is set up
     #       to generate arrays of a minimum of two elements.  Otherwise, the test will fail in ANSI mode.
@@ -62,17 +67,17 @@ def test_scalar_subquery_struct(basic_gen):
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, length=100, num_slices=1),
-        'table',
-        '''select sort_array(ss.arr), sort_array((select last(ss) from table)['arr'])
-        from table
-        where (select first(ss) from table).arr[0] > ss.arr[1]
-        ''')
+        table_name,
+        '''select sort_array(ss.arr), sort_array((select last(ss) from {})['arr'])
+        from {}
+        where (select first(ss) from {}).arr[0] > ss.arr[1]
+        '''.format(table_name, table_name, table_name))
 
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('is_ansi_enabled', [False, True])
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
-def test_scalar_subquery_array(is_ansi_enabled, basic_gen):
+def test_scalar_subquery_array(spark_tmp_table_factory, is_ansi_enabled, basic_gen):
     """
     For this test, all the array inputs are sized so that ArrayIndexOutOfBounds conditions are
     avoided.  This is to ensure that the tests don't fail with exceptions in ANSI mode.
@@ -80,18 +85,19 @@ def test_scalar_subquery_array(is_ansi_enabled, basic_gen):
     already tested as part of array_test.py::test_array_item_ansi_fail_invalid_index.
     """
     conf = {'spark.sql.ansi.enabled': is_ansi_enabled}
+    table_name = spark_tmp_table_factory.get()
 
     # single-level array
     test_array_gen = ArrayGen(basic_gen, min_length=1 if is_ansi_enabled else 0)
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], num_slices=1),
-        'my_array_table',
+        table_name,
         '''select sort_array(arr),
-                  sort_array((select last(arr) from my_array_table))
-        from my_array_table
-        where (select first(arr) from my_array_table)[0] > arr[0]
-        ''',
+                  sort_array((select last(arr) from {}))
+        from {}
+        where (select first(arr) from {})[0] > arr[0]
+        '''.format(table_name, table_name, table_name),
         conf=conf)
 
     # nested array
@@ -100,12 +106,12 @@ def test_scalar_subquery_array(is_ansi_enabled, basic_gen):
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], length=100, num_slices=1),
-        'table',
+        table_name,
         '''select sort_array(arr[10]),
-                  sort_array((select last(arr) from table)[10])
-        from table
-        where (select first(arr) from table)[0][1] > arr[0][1]
-        ''',
+                  sort_array((select last(arr) from {})[10])
+        from {}
+        where (select first(arr) from {})[0][1] > arr[0][1]
+        '''.format(table_name, table_name, table_name),
         conf=conf)
 
     # array of struct
@@ -113,16 +119,16 @@ def test_scalar_subquery_array(is_ansi_enabled, basic_gen):
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], length=100, num_slices=1),
-        'table',
-        '''select arr[10].a, (select last(arr) from table)[10].a
-        from table
-        where (select first(arr) from table)[0].a > arr[0].a
-        ''',
+        table_name,
+        '''select arr[10].a, (select last(arr) from {})[10].a
+        from {}
+        where (select first(arr) from {})[0].a > arr[0].a
+        '''.format(table_name, table_name, table_name),
         conf=conf)
 
 
 @ignore_order(local=True)
-def test_scalar_subquery_array_ansi_mode_failures():
+def test_scalar_subquery_array_ansi_mode_failures(spark_tmp_table_factory):
     """
     This tests the case where the array scalar returned from a subquery might be indexed into
     with an out-of-range index value. With ANSI mode enabled, an exception is expected.
@@ -130,9 +136,9 @@ def test_scalar_subquery_array_ansi_mode_failures():
     A more thorough test for invalid indices is done in array_test.py::test_array_item_ansi_fail_invalid_index,
     and is out of the scope of this test.
     """
+    table_name = spark_tmp_table_factory.get()
 
     def test_function(spark):
-        table_name = 'scalar_subquery_array_input'
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         df = gen_df(spark, [('arr', ArrayGen(long_gen))], num_slices=1)
         df.createOrReplaceTempView(table_name)
@@ -151,38 +157,41 @@ def test_scalar_subquery_array_ansi_mode_failures():
 
 
 @ignore_order(local=True)
-def test_scalar_subquery_map():
+def test_scalar_subquery_map(spark_tmp_table_factory):
     # Note: For this test, all the array inputs are sized so that ArrayIndexOutOfBounds conditions are
     #       avoided.  This is to ensure that the tests don't fail with exceptions in ANSI mode.
     #       Note that no meaningful test coverage is lost here.  ArrayIndexOutOfBounds exceptions are
     #       already tested as part of array_test.py::test_array_item_ansi_fail_invalid_index.
+    table_name = spark_tmp_table_factory.get()
     map_gen = map_string_string_gen[0]
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('kv', map_gen)], length=100, num_slices=1),
-        'table',
+        table_name,
         '''select kv['key_0'],
-                  (select first(kv) from table)['key_1'],
-                  (select last(kv) from table)['key_2']
-        from table
-        ''')
+                  (select first(kv) from {})['key_1'],
+                  (select last(kv) from {})['key_2']
+        from {}
+        '''.format(table_name, table_name, table_name))
+
     # array of map
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', ArrayGen(map_gen, min_length=1))], length=100, num_slices=1),
-        'table',
+        table_name,
         '''select arr[0]['key_0'],
-                  (select first(arr) from table)[0]['key_1'],
-                  (select last(arr[0]) from table)['key_2']
-        from table
-        ''')
+                  (select first(arr) from {})[0]['key_1'],
+                  (select last(arr[0]) from {})['key_2']
+        from {}
+        '''.format(table_name, table_name, table_name))
+
     # struct of map
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('ss', StructGen([['kv', map_gen]]))], length=100, num_slices=1),
-        'table',
+        table_name,
         '''select ss['kv']['key_0'],
-                  (select first(ss) from table)['kv']['key_1'],
-                  (select last(ss.kv) from table)['key_2']
-        from table
-        ''')
+                  (select first(ss) from {})['kv']['key_1'],
+                  (select last(ss.kv) from {})['key_2']
+        from {}
+        '''.format(table_name, table_name, table_name))
