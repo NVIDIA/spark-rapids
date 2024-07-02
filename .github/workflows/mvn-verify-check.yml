@@ -38,21 +38,18 @@ env:
 jobs:
   cache-dependencies:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        java-version: [8, 17]
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
       sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
-      scala213Jdk8Versions: ${{ steps.allShimVersionsStep.outputs.scala213Jdk8Versions }}
+      scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
     steps:
       - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: ${{ matrix.java-version }}
+          java-version: 8
       - name: Generate daily cache key
         id: generateCacheKey
         run: |
@@ -72,20 +69,13 @@ jobs:
           set -x
           max_retry=3; delay=30; i=1
           while true; do
-            # https://github.com/NVIDIA/spark-rapids/issues/8847
-            # specify expected versions
-            export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
-            export PATH=${JAVA_HOME}/bin:${PATH}
-            java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-            [ "${{ matrix.java-version }}" == "8" ] && pom="pom.xml" || pom="scala2.13/pom.xml"
-            mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
+            mvn ${{ env.COMMON_MVN_FLAGS }} --file pom.xml help:evaluate -pl dist \
               -Dexpression=included_buildvers \
               -DforceStdout -PnoSnapshots -q | tr -d ',' | \
                 xargs -n 1 bash -c \
-                  'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
-
+                  'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ pom.xml
             # compile base versions to cache scala compiler and compiler bridge
-            mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
+            mvn ${{ env.COMMON_MVN_FLAGS }} --file pom.xml \
               process-test-resources -pl sql-plugin-api -am && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
@@ -138,7 +128,7 @@ jobs:
           # Only setting nosnapshot as the only 2.13 snapshot uses jdk 17 which will be tested by a different job
           svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot)
 
-          echo "scala213Jdk8Versions=$svJsonStr" >> $GITHUB_OUTPUT
+          echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
     needs: cache-dependencies
@@ -193,7 +183,7 @@ jobs:
     needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Jdk8Versions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Versions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -204,12 +194,6 @@ jobs:
         with:
           distribution: adopt
           java-version: 17 
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
