@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
@@ -322,10 +323,11 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (cmd.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
+    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
+      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
+    } else {
+      BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
-
     val spark = SparkSession.active
     val formatCls = cmd.fileFormat.getClass
     fileFormat = if (formatCls == classOf[CSVFileFormat]) {
@@ -3797,14 +3799,6 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
     ),
-    expr[RaiseError](
-      "Throw an exception",
-      ExprChecks.unaryProject(
-        TypeSig.NULL, TypeSig.NULL,
-        TypeSig.STRING, TypeSig.STRING),
-      (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
-      }),
     expr[DynamicPruningExpression](
       "Dynamic pruning expression marker",
       ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.BOOLEAN, TypeSig.BOOLEAN),
@@ -3820,7 +3814,8 @@ object GpuOverrides extends Logging {
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
-        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ SparkShimImpl.getExprs
+        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ RaiseErrorShim.exprs ++
+        SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -4349,7 +4344,7 @@ object GpuOverrides extends Logging {
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
-    policy match {
+    policy.toUpperCase match {
       case "LEGACY" => LegacyTimeParserPolicy
       case "EXCEPTION" => ExceptionTimeParserPolicy
       case "CORRECTED" => CorrectedTimeParserPolicy
@@ -4714,7 +4709,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           }
         }
       }
-      GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      val convertedPlan = GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      if (conf.isTagLoreIdEnabled) {
+        GpuLore.tagForLore(convertedPlan, conf)
+      } else {
+        convertedPlan
+      }
     }
   }
 }

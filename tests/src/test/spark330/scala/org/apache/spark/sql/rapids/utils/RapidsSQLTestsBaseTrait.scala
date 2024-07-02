@@ -21,25 +21,34 @@ package org.apache.spark.sql.rapids.utils
 
 import java.util.{Locale, TimeZone}
 
+import org.apache.hadoop.fs.FileUtil
 import org.scalactic.source.Position
 import org.scalatest.Tag
 
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.Tests.IS_TESTING
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.utils.RapidsTestConstants.RAPIDS_TEST
 import org.apache.spark.sql.test.SharedSparkSession
 
 
 /** Basic trait for Rapids SQL test cases. */
 trait RapidsSQLTestsBaseTrait extends SharedSparkSession with RapidsTestsBaseTrait {
-
   protected override def afterAll(): Unit = {
     // SparkFunSuite will set this to true, and forget to reset to false
     System.clearProperty(IS_TESTING.key)
     super.afterAll()
+  }
+
+  override protected def testFile(fileName: String): String = {
+    import RapidsSQLTestsBaseTrait.sparkTestResourcesDir
+
+    java.nio.file.Paths.get(sparkTestResourcesDir(getClass).toString, fileName)
+      .toString
   }
 
   protected def testRapids(testName: String, testTag: Tag*)(testFun: => Any)(implicit
@@ -107,12 +116,45 @@ trait RapidsSQLTestsBaseTrait extends SharedSparkSession with RapidsTestsBaseTra
   }
 }
 
-object RapidsSQLTestsBaseTrait {
+object RapidsSQLTestsBaseTrait extends Logging {
+  private val resourceMap = scala.collection.mutable.Map.empty[String, java.nio.file.Path]
+  private val testJarUrlRegex = raw"jar:file:(/.*-tests.jar)!.*".r
+  TrampolineUtil.addShutdownHook(10000, () => {
+    resourceMap.valuesIterator.foreach { dirPath =>
+      logWarning(s"Deleting expanded test jar dir $dirPath")
+      FileUtil.fullyDelete(dirPath.toFile)
+    }
+  })
+
+  private def expandJar(jarPath: String): java.nio.file.Path = {
+    val jarFile = new java.io.File(jarPath)
+    val destDir = java.nio.file.Files.createTempDirectory(jarFile.getName + ".expanded")
+    logWarning(s"Registering $destDir for deletion on exit")
+    FileUtil.unZip(jarFile, destDir.toFile)
+    destDir
+  }
+
+  def sparkTestResourcesDir(testClass: Class[_]): java.nio.file.Path = {
+    var sparkTestClass = testClass
+    while (sparkTestClass.getName.contains("rapids")) {
+      sparkTestClass = sparkTestClass.getSuperclass
+    }
+    val sparkTestClassResource = "/" + sparkTestClass.getName.replace(".", "/") + ".class"
+    val resourceURL = sparkTestClass.getResource(sparkTestClassResource).toString
+    val resourceJar = resourceURL match {
+      case testJarUrlRegex(testJarPath) => testJarPath
+      case _ => sys.error(s"Could not extract tests jar path from $resourceURL")
+    }
+    this.synchronized {
+      resourceMap.getOrElseUpdate(resourceJar, expandJar(resourceJar))
+    }
+  }
+
   def nativeSparkConf(origin: SparkConf, warehouse: String): SparkConf = {
-    // Timezone is fixed to UTC to allow timestamps to work by default
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting
     Locale.setDefault(Locale.US)
+    // Spark use "America/Los_Angeles" as default timezone in tests
+    TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
 
     val conf = origin
       .set("spark.rapids.sql.enabled", "true")
@@ -121,8 +163,6 @@ object RapidsSQLTestsBaseTrait {
         "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .set("spark.sql.warehouse.dir", warehouse)
       .set("spark.sql.cache.serializer", "com.nvidia.spark.ParquetCachedBatchSerializer")
-      // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
-      .set("spark.sql.session.timeZone", "UTC")
       .set("spark.rapids.sql.explain", "ALL")
       // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
       // .set("spark.rapids.sql.test.enabled", "true")

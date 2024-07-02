@@ -719,9 +719,8 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <!-- TODO: https://github.com/NVIDIA/spark-rapids/issues/10867 -->
-        <spark-rapids-jni.version>24.06.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>24.06.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>24.08.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>24.08.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.13</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -734,6 +733,7 @@
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
         <ucx.baseVersion>1.16.0</ucx.baseVersion>
+        <roaringbitmap.version>1.0.6</roaringbitmap.version>
         <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
         <ucx.version>${ucx.baseVersion}</ucx.version>
         <rapids.compressed.artifact>true</rapids.compressed.artifact>
@@ -887,6 +887,7 @@
             340,
             341,
             342,
+            343,
             350,
             351
         </noSnapshotScala213.buildvers>
@@ -1015,6 +1016,15 @@
                 <artifactId>alluxio-shaded-client</artifactId>
                 <version>${alluxio.client.version}</version>
                 <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <!-- For shade, spark 3.2 and earlier uses an older version(0.9.0), which doesn't
+                 contain the required api we use.
+                 -->
+                <groupId>org.roaringbitmap</groupId>
+                <artifactId>RoaringBitmap</artifactId>
+                <version>${roaringbitmap.version}</version>
+                <scope>compile</scope>
             </dependency>
             <dependency>
               <groupId>org.scalatest</groupId>

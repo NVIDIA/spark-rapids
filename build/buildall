@@ -265,7 +265,7 @@ function build_single_shim() {
       -Dmaven.scaladoc.skip \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl tools -am > "$LOG_FILE" 2>&1 || {
-        [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -20 "$LOG_FILE" || true
+        [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -500 "$LOG_FILE" || true
         exit 255
       }
 }
