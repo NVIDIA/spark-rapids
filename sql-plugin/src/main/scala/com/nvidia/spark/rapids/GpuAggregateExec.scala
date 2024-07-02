@@ -1038,7 +1038,7 @@ class GpuMergeAggregateIterator(
               "consider disabling repartition-based fallback for aggregation")
           }
           val totalSize = batches.map(_.sizeInBytes).sum
-          val newSeed = seed + 10
+          val newSeed = seed + 7
           val iter = cbIteratorStealingFromBuffer(batches)
           withResource(new GpuBatchSubPartitioner(
             iter, hashKeys, computeNumPartitions(totalSize), newSeed, "aggRepartition")) {
