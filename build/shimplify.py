@@ -188,6 +188,7 @@ __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
 __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
 __all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
+__allScala213_shims_arr = sorted(__csv_ant_prop_as_arr('allScala213.buildvers'))
 
 __log = logging.getLogger('shimplify')
 __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
@@ -372,7 +373,8 @@ def __generate_symlinks():
 
 def __map_version_array(shim_json_string):
     shim_ver = str(json.loads(shim_json_string).get('spark'))
-    assert shim_ver in __all_shims_arr, "all.buildvers in pom.xml does not contain %s" % shim_ver
+    assert shim_ver in __all_shims_arr or shim_ver in __allScala213_shims_arr, "all.buildvers or " \
+        "allScala213.buildvers in pom.xml does not contain %s" % shim_ver
     return shim_ver
 
 def __traverse_source_tree_of_all_shims(src_type, func):

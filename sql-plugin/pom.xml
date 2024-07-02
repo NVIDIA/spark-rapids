@@ -103,6 +103,19 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    <!-- #if scala-2.13 --><!--
+    <profiles>
+        <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+        </profile>
+    </profiles>
+    --><!-- #endif scala-2.13 -->
     <build>
         <resources>
           <resource>
