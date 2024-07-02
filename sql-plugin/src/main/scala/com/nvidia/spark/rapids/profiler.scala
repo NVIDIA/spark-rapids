@@ -80,7 +80,12 @@ object ProfilerOnExecutor extends Logging {
           case c => Some(TrampolineUtil.createCodec(pluginCtx.conf(), c))
         }
         val w = new ProfileWriter(pluginCtx, pathPrefix, codec)
-        Profiler.init(w, conf.profileWriteBufferSize, conf.profileFlushPeriodMillis)
+        val profilerConf = new Profiler.Config.Builder()
+          .withWriteBufferSize(conf.profileWriteBufferSize)
+          .withFlushPeriodMillis(conf.profileFlushPeriodMillis)
+          .withAllocAsyncCapturing(conf.profileAsyncAllocCapture)
+          .build()
+        Profiler.init(w, profilerConf)
         Some(w)
       } else {
         None
