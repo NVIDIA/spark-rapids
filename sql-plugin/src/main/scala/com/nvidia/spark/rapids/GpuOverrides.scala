@@ -1141,15 +1141,6 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuUnaryMinus(child, ansiEnabled)
       }),
-    expr[UnaryPositive](
-      "A numeric value with a + in front of it",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
-        TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
-        TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
-      }),
     expr[Year](
       "Returns the year from a date or timestamp",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
@@ -3815,7 +3806,7 @@ object GpuOverrides extends Logging {
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
         BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ RaiseErrorShim.exprs ++
-        SparkShimImpl.getExprs
+        UnaryPositiveOverrides.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
