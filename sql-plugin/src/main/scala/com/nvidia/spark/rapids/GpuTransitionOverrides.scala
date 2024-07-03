@@ -205,7 +205,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // a BroadcastQueryStageExec as its child. The ColumnarToRowExec can be inserted by Spark
       // when it sees us doing columnar processing and the output expects rows. But we cannot
       // keep the ColumnarToRowExec there, nor can we insert in a GpuBroadcastToRowExec in its
-      // place. We have to have to rearrange the order of operations so it is a child of the
+      // place. We have to rearrange the order of operations so it is a child of the
       // BroadcastQueryStageExec (which will likely involve another broadcast)
       e.plan match {
         case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
@@ -221,7 +221,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             GpuBroadcastToRowExec(keys, b.mode, e.plan)(index, keyExprs))
         case b: GpuBroadcastExchangeExec =>
           // This should never happen as AQE with a BroadcastQueryStageExec should
-          // only show up on a reused exchange, btu just in case we try to do the right
+          // only show up on a reused exchange, but just in case we try to do the right
           // thing here
           SparkShimImpl.newBroadcastQueryStageExec(e,
             BroadcastExchangeExec(b.mode, GpuColumnarToRowExec(b)))
