@@ -18092,7 +18092,7 @@ are limited.
 <tr>
 <td rowSpan="6">MinBy</td>
 <td rowSpan="6">`min_by`</td>
-<td rowSpan="6">min_by aggregate operator</td>
+<td rowSpan="6">MinBy aggregate operator. It may produce different results than CPU when multiple rows in a group have same minimum value in the ordering column and different associated values in the value column.</td>
 <td rowSpan="6">None</td>
 <td rowSpan="3">aggregation</td>
 <td>value</td>

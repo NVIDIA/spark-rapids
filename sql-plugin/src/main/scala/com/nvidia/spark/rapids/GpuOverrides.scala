@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
@@ -2265,7 +2266,9 @@ object GpuOverrides extends Logging {
         override val needsAnsiCheck: Boolean = false
       }),
     expr[MinBy](
-      "min_by aggregate operator",
+      "MinBy aggregate operator. It may produce different results than CPU when " +
+        "multiple rows in a group have same minimum value in the ordering column and " +
+        "different associated values in the value column.",
       ExprChecks.reductionAndGroupByAgg(
         (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
@@ -4733,7 +4736,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           }
         }
       }
-      GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      val convertedPlan = GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      if (conf.isTagLoreIdEnabled) {
+        GpuLore.tagForLore(convertedPlan, conf)
+      } else {
+        convertedPlan
+      }
     }
   }
 }

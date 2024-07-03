@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -427,7 +427,10 @@ def test_cast_float_to_timestamp_ansi_for_nan_inf(type, invalid_value):
         data = [invalid_value]
         df = spark.createDataFrame(data, type)
         return df.select(f.col('value').cast(TimestampType())).collect()
-    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "SparkDateTimeException")
+
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True},
+                             error_message="SparkDateTimeException"
+                             if is_before_spark_400() else "DateTimeException")
 
 # if float.floor > Long.max or float.ceil < Long.min, throw exception
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
@@ -583,7 +586,7 @@ def test_cast_string_to_day_time_interval_exception(invalid_string):
         data=[invalid_string]
         df = spark.createDataFrame(data, StringType())
         return df.select(f.col('value').cast(dtType)).collect()
-    assert_gpu_and_cpu_error(fun, {}, "java.lang.IllegalArgumentException")
+    assert_gpu_and_cpu_error(fun, {}, "IllegalArgumentException")
 
 @pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_integral_no_overflow():
