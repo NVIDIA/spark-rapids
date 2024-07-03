@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatches}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
+import com.nvidia.spark.rapids.RapidsConf.AggFallbackAlgorithm
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -858,7 +859,7 @@ class GpuMergeAggregateIterator(
     useTieredProject: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    aggFallbackAlgorithm: String,
+    aggFallbackAlgorithm: AggFallbackAlgorithm.Value,
     localInputRowsCount: LocalGpuMetric)
     extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
@@ -938,12 +939,11 @@ class GpuMergeAggregateIterator(
           })
         } else {
           // fallback to sort agg, this is the third pass agg
-          aggFallbackAlgorithm.toLowerCase match {
-            case "repartition" =>
+          aggFallbackAlgorithm match {
+            case AggFallbackAlgorithm.REPARTITION =>
               fallbackIter = Some(buildRepartitionFallbackIterator())
-            case "sort" => fallbackIter = Some(buildSortFallbackIterator())
-            case _ => throw new IllegalArgumentException(
-              s"Unsupported aggregation fallback algorithm: $aggFallbackAlgorithm")
+            case AggFallbackAlgorithm.SORT =>
+              fallbackIter = Some(buildSortFallbackIterator())
           }
         }
         fallbackIter.get.next()
@@ -1027,7 +1027,7 @@ class GpuMergeAggregateIterator(
 
       def totalSize(): Long = batches.map(_.sizeInBytes).sum
 
-      def isAllBatchesSingleRow: Boolean = {
+      def areAllBatchesSingleRow: Boolean = {
         batches.forall(_.numRows() == 1)
       }
 
@@ -1091,7 +1091,7 @@ class GpuMergeAggregateIterator(
         }
 
         val headPartition = aggPartitions.remove(0)
-        if (!headPartition.isAllBatchesSingleRow &&
+        if (!headPartition.areAllBatchesSingleRow &&
           headPartition.totalSize() > targetMergeBatchSize) {
           deferredAggPartitions += headPartition
           return next()
@@ -1100,7 +1100,7 @@ class GpuMergeAggregateIterator(
         withResource(headPartition) { _ =>
           val batchSizeBeforeMerge = headPartition.batches.size
           AggregateUtils.tryMergeAggregatedBatches(
-            headPartition.batches, isReductionOnly || headPartition.isAllBatchesSingleRow, metrics,
+            headPartition.batches, isReductionOnly || headPartition.areAllBatchesSingleRow, metrics,
             targetMergeBatchSize, concatAndMergeHelper)
           if (headPartition.batches.size != 1) {
             throw new IllegalStateException(
@@ -1970,7 +1970,7 @@ case class GpuHashAggregateExec(
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    aggFallbackAlgorithm: String
+    aggFallbackAlgorithm: AggFallbackAlgorithm.Value
 ) extends ShimUnaryExecNode with GpuExec {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
@@ -2178,7 +2178,7 @@ class DynamicGpuPartialSortAggregateIterator(
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    aggFallbackAlgorithm: String
+    aggFallbackAlgorithm: AggFallbackAlgorithm.Value
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
   private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty

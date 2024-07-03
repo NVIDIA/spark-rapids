@@ -1524,6 +1524,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(Set("sort", "repartition"))
     .createWithDefault("sort")
 
+  object AggFallbackAlgorithm extends Enumeration {
+    val SORT, REPARTITION = Value
+  }
+
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
     .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
@@ -3086,7 +3090,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val skipAggPassReductionRatio: Double = get(SKIP_AGG_PASS_REDUCTION_RATIO)
 
-  lazy val aggFallbackAlgorithm: String = get(FALLBACK_ALGORITHM_FOR_OVERSIZE_AGG)
+  lazy val aggFallbackAlgorithm: AggFallbackAlgorithm.Value = {
+    get(FALLBACK_ALGORITHM_FOR_OVERSIZE_AGG) match {
+      case "sort" => AggFallbackAlgorithm.SORT
+      case "repartition" => AggFallbackAlgorithm.REPARTITION
+      case other => throw new IllegalArgumentException(s"Internal Error $other is not supported " +
+        s"for ${FALLBACK_ALGORITHM_FOR_OVERSIZE_AGG.key}")
+    }
+  }
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
