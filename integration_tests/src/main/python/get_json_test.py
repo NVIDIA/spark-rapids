@@ -128,7 +128,8 @@ def test_get_json_object_normalize_non_string_output():
             conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
 
-@pytest.mark.skipif(condition= spark_version() >= "4.0", reason="TODO: Issue for failing test.")
+@pytest.mark.skipif(condition= spark_version() >= "4.0",
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11130")
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"?":"QUESTION"}']]
