@@ -26,10 +26,10 @@ def test_scalar_subquery_basics(spark_tmp_table_factory, data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, [('a', data_gen)], num_slices=1),
         table_name,
-        '''select a, (select last(a) from {})
-        from {}
-        where a > (select first(a) from {})
-        '''.format(table_name, table_name, table_name))
+        f'''select a, (select last(a) from {table_name})
+        from {table_name}
+        where a > (select first(a) from {table_name})
+        ''')
 
 
 @ignore_order(local=True)
@@ -42,10 +42,10 @@ def test_scalar_subquery_struct(spark_tmp_table_factory, basic_gen):
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, num_slices=1),
         table_name,
-        '''select ss, (select last(ss) from {})
-        from {}
-        where (select first(ss) from {}).b > ss.a
-        '''.format(table_name, table_name, table_name))
+        f'''select ss, (select last(ss) from {table_name})
+        from {table_name}
+        where (select first(ss) from {table_name}).b > ss.a
+        ''')
 
     # nested struct
     gen = [('ss', StructGen([['child', StructGen([['c0', basic_gen]])]]))]
@@ -53,10 +53,10 @@ def test_scalar_subquery_struct(spark_tmp_table_factory, basic_gen):
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, num_slices=1),
         table_name,
-        '''select ss, (select last(ss) from {})
-        from {}
-        where (select first(ss) from {})['child']['c0'] > ss.child.c0
-        '''.format(table_name, table_name, table_name))
+        f'''select ss, (select last(ss) from {table_name})
+        from {table_name}
+        where (select first(ss) from {table_name})['child']['c0'] > ss.child.c0
+        ''')
 
     # struct of array
     # Note: The test query accesses the first two elements of the array.  The datagen is set up
@@ -68,10 +68,10 @@ def test_scalar_subquery_struct(spark_tmp_table_factory, basic_gen):
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, gen, length=100, num_slices=1),
         table_name,
-        '''select sort_array(ss.arr), sort_array((select last(ss) from {})['arr'])
-        from {}
-        where (select first(ss) from {}).arr[0] > ss.arr[1]
-        '''.format(table_name, table_name, table_name))
+        f'''select sort_array(ss.arr), sort_array((select last(ss) from {table_name})['arr'])
+        from {table_name}
+        where (select first(ss) from {table_name}).arr[0] > ss.arr[1]
+        ''')
 
 
 @ignore_order(local=True)
@@ -93,11 +93,11 @@ def test_scalar_subquery_array(spark_tmp_table_factory, is_ansi_enabled, basic_g
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], num_slices=1),
         table_name,
-        '''select sort_array(arr),
-                  sort_array((select last(arr) from {}))
-        from {}
-        where (select first(arr) from {})[0] > arr[0]
-        '''.format(table_name, table_name, table_name),
+        f'''select sort_array(arr),
+                  sort_array((select last(arr) from {table_name}))
+        from {table_name}
+        where (select first(arr) from {table_name})[0] > arr[0]
+        ''',
         conf=conf)
 
     # nested array
@@ -107,11 +107,11 @@ def test_scalar_subquery_array(spark_tmp_table_factory, is_ansi_enabled, basic_g
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], length=100, num_slices=1),
         table_name,
-        '''select sort_array(arr[10]),
-                  sort_array((select last(arr) from {})[10])
-        from {}
-        where (select first(arr) from {})[0][1] > arr[0][1]
-        '''.format(table_name, table_name, table_name),
+        f'''select sort_array(arr[10]),
+                  sort_array((select last(arr) from {table_name})[10])
+        from {table_name}
+        where (select first(arr) from {table_name})[0][1] > arr[0][1]
+        ''',
         conf=conf)
 
     # array of struct
@@ -120,10 +120,10 @@ def test_scalar_subquery_array(spark_tmp_table_factory, is_ansi_enabled, basic_g
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', test_array_gen)], length=100, num_slices=1),
         table_name,
-        '''select arr[10].a, (select last(arr) from {})[10].a
-        from {}
-        where (select first(arr) from {})[0].a > arr[0].a
-        '''.format(table_name, table_name, table_name),
+        f'''select arr[10].a, (select last(arr) from {table_name})[10].a
+        from {table_name}
+        where (select first(arr) from {table_name})[0].a > arr[0].a
+        ''',
         conf=conf)
 
 
@@ -142,12 +142,12 @@ def test_scalar_subquery_array_ansi_mode_failures(spark_tmp_table_factory):
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         df = gen_df(spark, [('arr', ArrayGen(long_gen))], num_slices=1)
         df.createOrReplaceTempView(table_name)
-        query = '''
+        query = f'''
           SELECT SORT_ARRAY(arr),
-                 SORT_ARRAY((SELECT LAST(arr) FROM {}))
-          FROM {}
-          WHERE (SELECT FIRST(arr) FROM {})[0] > arr[0]
-        '''.format(table_name, table_name, table_name)
+                 SORT_ARRAY((SELECT LAST(arr) FROM {table_name}))
+          FROM {table_name}
+          WHERE (SELECT FIRST(arr) FROM {table_name})[0] > arr[0]
+        '''
         return spark.sql(query)
 
     assert_gpu_and_cpu_error(
@@ -168,30 +168,30 @@ def test_scalar_subquery_map(spark_tmp_table_factory):
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('kv', map_gen)], length=100, num_slices=1),
         table_name,
-        '''select kv['key_0'],
-                  (select first(kv) from {})['key_1'],
-                  (select last(kv) from {})['key_2']
-        from {}
-        '''.format(table_name, table_name, table_name))
+        f'''select kv['key_0'],
+                  (select first(kv) from {table_name})['key_1'],
+                  (select last(kv) from {table_name})['key_2']
+        from {table_name}
+        ''')
 
     # array of map
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('arr', ArrayGen(map_gen, min_length=1))], length=100, num_slices=1),
         table_name,
-        '''select arr[0]['key_0'],
-                  (select first(arr) from {})[0]['key_1'],
-                  (select last(arr[0]) from {})['key_2']
-        from {}
-        '''.format(table_name, table_name, table_name))
+        f'''select arr[0]['key_0'],
+                  (select first(arr) from {table_name})[0]['key_1'],
+                  (select last(arr[0]) from {table_name})['key_2']
+        from {table_name}
+        ''')
 
     # struct of map
     assert_gpu_and_cpu_are_equal_sql(
         # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
         lambda spark: gen_df(spark, [('ss', StructGen([['kv', map_gen]]))], length=100, num_slices=1),
         table_name,
-        '''select ss['kv']['key_0'],
-                  (select first(ss) from {})['kv']['key_1'],
-                  (select last(ss.kv) from {})['key_2']
-        from {}
-        '''.format(table_name, table_name, table_name))
+        f'''select ss['kv']['key_0'],
+                  (select first(ss) from {table_name})['kv']['key_1'],
+                  (select last(ss.kv) from {table_name})['key_2']
+        from {table_name}
+        ''')
