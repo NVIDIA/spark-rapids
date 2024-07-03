@@ -188,7 +188,6 @@ jobs:
           done
 
   package-tests-scala213:
-    needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Versions) }}
@@ -202,12 +201,6 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
