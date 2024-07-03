@@ -811,9 +811,6 @@
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <noSnapshot.buildvers>
-            311,
-            312,
-            313,
             320,
             321,
             321cdh,
