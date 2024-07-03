@@ -40,10 +40,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
-      defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
-      sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
-      sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
-      scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
+      defaultSparkVersion: ${{ steps.all212ShimVersionsStep.outputs.defaultSparkVersion }}
+      sparkTailVersions: ${{ steps.all212ShimVersionsStep.outputs.tailVersions }}
+      sparkJDKVersions: ${{ steps.all212ShimVersionsStep.outputs.jdkVersions }}
     steps:
       - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v4
@@ -89,7 +88,7 @@ jobs:
           }
           done
       - name: all shim versions
-        id: allShimVersionsStep
+        id: all212ShimVersionsStep
         run: |
           set -x
           . jenkins/version-def.sh
@@ -169,15 +168,15 @@ jobs:
           }
           done
 
-  package-tests-scala213:
-    continue-on-error: ${{ matrix.isSnapshot }}
-    strategy:
-      matrix: ${{ fromJSON(steps.set-matrix.outputs.matrix) }}
-      fail-fast: false
+  set-scala213-versions:
     runs-on: ubuntu-latest
+    outputs:
+      scala213Versions: ${{ steps.all213ShimVersionsStep.outputs.scala213Versions }}
+      sparkJDK17Versions: ${{ steps.all213ShimVersionsStep.outputs.jdkVersions }}
     steps:
-      - id: set-matrix
+      - id: all213ShimVersionsStep
         run: |
+          set -x
           SCALA_BINARY_VER=2.13
           . jenkins/version-def.sh
           svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
@@ -188,13 +187,30 @@ jobs:
 
           echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
+          # jdk17
+          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+
+          jdkVersionArrBody=$jdk17VersionArrBody
+          jdkVersionArrBody=${jdkVersionArrBody:1}
+          jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
+          echo "jdkVersions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
+
+  package-tests-scala213:
+    needs: set-scala213-versions
+    continue-on-error: ${{ matrix.isSnapshot }}
+    strategy:
+      matrix: ${{ fromJSON(needs.set-scala213-versions.outputs.scala213Versions }}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+
       - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v4
         with:
           distribution: adopt
-          java-version: 8
+          java-version: 17
 
       - name: check runtime before tests
         run: |
@@ -205,7 +221,7 @@ jobs:
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
           # specify expected versions
-          export JAVA_HOME=${JAVA_HOME_8_X64}
+          export JAVA_HOME=${JAVA_HOME_17_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # verify Scala 2.13 build files
@@ -233,8 +249,47 @@ jobs:
           }
           done
 
+  verify-213-modules:
+    needs: set-scala213-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJSON(needs.set-scala213-versions.outputs.sparkJDK17Versions) }}
+    steps:
+      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
 
-  verify-all-modules:
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v4
+        with:
+          distribution: adopt
+          java-version: 17
+
+      - name: check runtime before tests
+        run: |
+          env | grep JAVA
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+
+      - name: Build JDK
+        run: |
+          # https://github.com/NVIDIA/spark-rapids/issues/8847
+          # specify expected versions
+          export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
+          export PATH=${JAVA_HOME}/bin:${PATH}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+          # test command, will retry for 3 times if failed.
+          max_retry=3; delay=30; i=1
+          while true; do
+            mvn verify \
+              -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
+              ${{ env.COMMON_MVN_FLAGS }} && break || {
+            if [[ $i -le $max_retry ]]; then
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+            else
+              echo "mvn command failed. Exit 1"; exit 1
+            fi
+          }
+          done
+
+  verify-all-212-modules:
     needs: cache-dependencies
     runs-on: ubuntu-latest
     strategy:
