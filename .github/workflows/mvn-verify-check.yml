@@ -190,7 +190,7 @@ jobs:
           echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
           # jdk17
-          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17}" "${SPARK_SHIM_VERSIONS_JDK17_SCALA213[@]}")
 
           jdkVersionArrBody=$jdk17VersionArrBody
           jdkVersionArrBody=${jdkVersionArrBody:1}
