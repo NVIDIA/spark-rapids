@@ -38,9 +38,6 @@ env:
 jobs:
   cache-dependencies:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        java-version: [8, 17]
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
@@ -52,48 +49,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: ${{ matrix.java-version }}
-      - name: Generate daily cache key
-        id: generateCacheKey
-        run: |
-          set -x
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
-          echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
-      - name: Cache local Maven repository
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ env.dailyCacheKey }}
-          restore-keys: ${{ runner.os }}-maven-
-      - name: populate-daily-cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          set -x
-          max_retry=3; delay=30; i=1
-          while true; do
-            # https://github.com/NVIDIA/spark-rapids/issues/8847
-            # specify expected versions
-            export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
-            export PATH=${JAVA_HOME}/bin:${PATH}
-            java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-            [ "${{ matrix.java-version }}" == "8" ] && pom="pom.xml" || pom="scala2.13/pom.xml"
-            mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
-              -Dexpression=included_buildvers \
-              -DforceStdout -PnoSnapshots -q | tr -d ',' | \
-                xargs -n 1 bash -c \
-                  'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
-
-            # compile base versions to cache scala compiler and compiler bridge
-            mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
-              process-test-resources -pl sql-plugin-api -am && break || {
-            if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
-            else
-              echo "mvn command failed. Exit 1"; exit 1
-            fi
-          }
-          done
+          java-version: 8
       - name: all shim versions
         id: allShimVersionsStep
         run: |
@@ -156,12 +112,6 @@ jobs:
           distribution: adopt
           java-version: 8
 
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
-
       - name: check runtime before tests
         run: |
           env | grep JAVA
@@ -203,13 +153,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: adopt
-          java-version: 17 
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
+          java-version: 17
 
       - name: check runtime before tests
         run: |
@@ -263,12 +207,6 @@ jobs:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
 
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
-
       - name: check runtime before tests
         run: |
           env | grep JAVA
@@ -310,12 +248,6 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
