@@ -24,9 +24,8 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
-import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes, StringType}
+import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 object GpuExpressionWithSideEffectUtils {
 
@@ -364,11 +363,11 @@ case class GpuCaseWhen(
       columnarEvalWithSideEffects(batch)
     } else {
       if (caseWhenFuseEnabled && branches.size > 2 &&
-          inputTypesForMerging.head == StringType &&
+          GpuColumnVectorUtils.isCaseWhenFusionSupportedType(inputTypesForMerging.head) &&
         (branches.map(_._2) ++ elseValue).forall(_.isInstanceOf[GpuLiteral])
       ) {
         // when branches size > 2;
-        // return type is string type;
+        // return type is supported types: Boolean/Byte/Int/String/Decimal ...
         // all the then and else expressions are Scalars.
         // Avoid to use multiple `computeIfElse`s which will create multiple temp columns
 
@@ -387,11 +386,7 @@ case class GpuCaseWhen(
               .asInstanceOf[GpuScalar])
           withResource(thenElseScalars) { _ =>
             // 2. generate a column to store all scalars
-            val scalarsBytes = thenElseScalars.map(ret => ret.getValue
-                .asInstanceOf[UTF8String].getBytes)
-            val scalarCol = ColumnVector.fromUTF8Strings(scalarsBytes: _*)
-            withResource(scalarCol) { _ =>
-
+            withResource(GpuColumnVectorUtils.createFromScalarList(thenElseScalars)) { scalarCol =>
               val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
                 // 3. execute final select
                 // default gather OutOfBoundsPolicy is nullify,
