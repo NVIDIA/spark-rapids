@@ -26,12 +26,12 @@ class MetricsSuite extends AnyFunSuite {
     val m1 = new LocalGpuMetric()
     m1.ns(
       m1.ns(
-        Thread.sleep(100)
+        Thread.sleep(1000)
       )
     )
     // if the timing is duplicated, the value should be around 200,000,000
-    assert(m1.value < 100000000 * 1.5)
-    assert(m1.value > 100000000 * 0.5)
+    assert(m1.value < 1000000000 * 1.9)
+    assert(m1.value > 1000000000 * 0.5)
   }
 
   test("MetricRange: duplicate timing on the same metrics") {
@@ -39,15 +39,15 @@ class MetricsSuite extends AnyFunSuite {
     val m2 = new LocalGpuMetric()
     withResource(new MetricRange(m1, m2)) { _ =>
       withResource(new MetricRange(m2, m1)) { _ =>
-        Thread.sleep(100)
+        Thread.sleep(1000)
       }
     }
 
     // if the timing is duplicated, the value should be around 200,000,000
-    assert(m1.value < 100000000 * 1.5)
-    assert(m1.value > 100000000 * 0.5)
-    assert(m2.value < 100000000 * 1.5)
-    assert(m2.value > 100000000 * 0.5)
+    assert(m1.value < 1000000000 * 1.9)
+    assert(m1.value > 1000000000 * 0.5)
+    assert(m2.value < 1000000000 * 1.9)
+    assert(m2.value > 1000000000 * 0.5)
   }
 
   test("NvtxWithMetrics: duplicate timing on the same metrics") {
@@ -55,14 +55,14 @@ class MetricsSuite extends AnyFunSuite {
     val m2 = new LocalGpuMetric()
     withResource(new NvtxWithMetrics("a", NvtxColor.BLUE, m1, m2)) { _ =>
       withResource(new NvtxWithMetrics("b", NvtxColor.BLUE, m2, m1)) { _ =>
-        Thread.sleep(100)
+        Thread.sleep(1000)
       }
     }
 
     // if the timing is duplicated, the value should be around 200,000,000
-    assert(m1.value < 100000000 * 1.5)
-    assert(m1.value > 100000000 * 0.5)
-    assert(m2.value < 100000000 * 1.5)
-    assert(m2.value > 100000000 * 0.5)
+    assert(m1.value < 1000000000 * 1.9)
+    assert(m1.value > 1000000000 * 0.5)
+    assert(m2.value < 1000000000 * 1.9)
+    assert(m2.value > 1000000000 * 0.5)
   }
 }
