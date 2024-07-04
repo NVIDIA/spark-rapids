@@ -30,8 +30,6 @@ def fastparquet_unavailable():
         return False
     except ImportError:
         return True
-    except ValueError: # TODO: remove when https://github.com/NVIDIA/spark-rapids/issues/11070 is fixed
-        return True
 
 
 rebase_write_corrected_conf = {
