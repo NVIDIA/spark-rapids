@@ -105,22 +105,20 @@ object GpuDeltaParquetFileFormatUtils {
         delVectorScatterTimeMetric.ns {
           withResource(Scalar.fromBool(false)) { s =>
             withResource(CudfColumnVector.fromScalar(s, batch.numRows())) { c =>
-              var table = new Table(c)
-              val posIter = new RoaringBitmapIterator(
+              val table = new RoaringBitmapIterator(
                 delVec.getLongIteratorFrom(rowIdxStart),
                 rowIdxStart,
                 rowIdxStart + batch.numRows(),
               ).grouped(Math.min(maxBatchSize, batch.numRows()))
-
-              for (posChunk <- posIter) {
-                withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
-                  withResource(Scalar.fromBool(true)) { s =>
-                    table = withResource(table) { _ =>
-                      Table.scatter(Array(s), poses, table)
-                    }
-                  }
-                }
-              }
+               .foldLeft(new Table(c)){ (table, posChunk) =>
+                 withResource(table) { _ =>
+                   withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
+                     withResource(Scalar.fromBool(true)) { s =>
+                       Table.scatter(Array(s), poses, table)
+                     }
+                   }
+                 }
+               }
 
               withResource(table) { _ =>
                 GpuColumnVector.from(table.getColumn(0).incRefCount(),

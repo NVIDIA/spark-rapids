@@ -95,10 +95,10 @@ case class GpuDelta24xParquetFileFormat(
     (file: PartitionedFile) => {
       val input = dataReader(file)
       val dv = delVecs.flatMap(_.value.get(new URI(file.filePath.toString())))
-        .map(dv => {
+        .map { dv =>
           delVecSizeMetric += dv.descriptor.inlineData.length
           RoaringBitmapWrapper.deserializeFromBytes(dv.descriptor.inlineData).inner
-        })
+        }
       addMetadataColumnToIterator(prepareSchema(requiredSchema),
         dv,
         input.asInstanceOf[Iterator[ColumnarBatch]],
