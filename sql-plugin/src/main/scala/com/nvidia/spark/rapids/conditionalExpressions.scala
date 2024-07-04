@@ -386,17 +386,18 @@ case class GpuCaseWhen(
               .asInstanceOf[GpuScalar])
           withResource(thenElseScalars) { _ =>
             // 2. generate a column to store all scalars
-            withResource(GpuColumnVectorUtils.createFromScalarList(thenElseScalars)) { scalarCol =>
-              val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
-                // 3. execute final select
-                // default gather OutOfBoundsPolicy is nullify,
-                // If index is out of bound, return null
-                withResource(oneColumnTable.gather(firstTrueIndex)) { resultTable =>
-                  resultTable.getColumn(0).incRefCount()
+            withResource(GpuColumnVectorUtils.createFromScalarList(thenElseScalars, dataType)) {
+              scalarCol =>
+                val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
+                  // 3. execute final select
+                  // default gather OutOfBoundsPolicy is nullify,
+                  // If index is out of bound, return null
+                  withResource(oneColumnTable.gather(firstTrueIndex)) { resultTable =>
+                    resultTable.getColumn(0).incRefCount()
+                  }
                 }
-              }
-              // return final column vector
-              GpuColumnVector.from(finalRet, dataType)
+                // return final column vector
+                GpuColumnVector.from(finalRet, dataType)
             }
           }
         }

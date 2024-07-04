@@ -296,17 +296,85 @@ def test_conditional_with_side_effects_unary_minus(data_gen, ansi_enabled):
             'CASE WHEN a > -32768 THEN -a ELSE null END'),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
 
-def test_case_when_all_then_values_are_scalars():
+_case_when_scalars = [
+    ['True', 'False', 'null', 'True', 'False'],
+    ['CAST(1 AS TINYINT)', 'CAST(2 AS TINYINT)', 'CAST(3 AS TINYINT)', 'CAST(4 AS TINYINT)', 'CAST(5 AS TINYINT)'],
+    ['CAST(1 AS SMALLINT)', 'CAST(2 AS SMALLINT)', 'CAST(3 AS SMALLINT)', 'CAST(4 AS SMALLINT)', 'CAST(5 AS SMALLINT)'],
+    ['1', '2', '3', '4', '5'],
+    ['CAST(1 AS BIGINT)',          'CAST(2 AS BIGINT)',          'CAST(3 AS BIGINT)',          'CAST(4 AS BIGINT)',          'CAST(5 AS BIGINT)'],
+    ['CAST(1.1 AS FLOAT)',         'CAST(2.2 AS FLOAT)',         'CAST(3.3 AS FLOAT)',         'CAST(4.4 AS FLOAT)',         'CAST(5.5 AS FLOAT)'],
+    ['CAST(1.1 AS DOUBLE)',        'CAST(2.2 AS DOUBLE)',        'CAST(3.3 AS DOUBLE)',        'CAST(4.4 AS DOUBLE)',        'CAST(5.5 AS DOUBLE)'],
+    ["'str_value1'",               "'str_value2'",               "'str_value3'",               "'str_value4'",               "'str_else'"],
+    ['CAST(1.1 AS DECIMAL(7,3))',  'CAST(2.2 AS DECIMAL(7,3))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'],
+    ['CAST(1.1 AS DECIMAL(12,2))', 'CAST(2.2 AS DECIMAL(12,2))', 'CAST(3.3 AS DECIMAL(12,2))', 'CAST(4.4 AS DECIMAL(12,2))', 'CAST(5.5 AS DECIMAL(12,2))'],
+    ['CAST(1.1 AS DECIMAL(20,2))', 'CAST(2.2 AS DECIMAL(20,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(20,2))', 'CAST(5.5 AS DECIMAL(20,2))'],
+]
+@pytest.mark.parametrize('case_when_scalars', _case_when_scalars, ids=idfn)
+def test_case_when_all_then_values_are_scalars(case_when_scalars):
     data_gen = [
         ("a", boolean_gen),
         ("b", boolean_gen),
         ("c", boolean_gen),
         ("d", boolean_gen),
-        ("e", boolean_gen)]
+        ("e", boolean_gen)
+    ]
+    sql =  """
+            select case 
+                when a then {} 
+                when b then {} 
+                when c then {} 
+                when d then {} 
+                else {}
+            end 
+            from tab
+            """
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen),
         "tab",
-        "select case when a then 'aaa' when b then 'bbb' when c then 'ccc' " +
-        "when d then 'ddd' when e then 'eee' else 'unknown' end from tab",
+        sql.format(case_when_scalars[0], case_when_scalars[1], case_when_scalars[2], case_when_scalars[3], case_when_scalars[4]),
         conf = {'spark.rapids.sql.case_when.fuse': 'true'})
 
+# test corner cases:
+#  - when exprs has nulls
+#  - else expr is null
+def test_case_when_all_then_values_are_scalars_with_nulls():
+    bool_rows = [(True, False, False, None),
+                 (False, False, True, None),
+                 (False, False, None, None),
+                 (None, None, True, False),
+                 (False, False, False, False),
+                 (None, None, None, None)]
+    sql =  """
+            select case 
+                when a then 'aaa' 
+                when b then 'bbb' 
+                when c then 'ccc' 
+                when d then 'ddd' 
+                else {}
+            end 
+            from tab
+            """
+    sql_without_else =  """
+            select case 
+                when a then 'aaa' 
+                when b then 'bbb' 
+                when c then 'ccc' 
+                when d then 'ddd' 
+            end 
+            from tab
+            """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql.format("'unknown'"),
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql.format("null"), # set else as null
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql_without_else,
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})

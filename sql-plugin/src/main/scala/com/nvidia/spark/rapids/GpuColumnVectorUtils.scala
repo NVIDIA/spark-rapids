@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.{ColumnVector => CudfCV, DType, HostColumnVector, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import java.lang.reflect.Method
-
-import ai.rapids.cudf.{ColumnVector => CudfCV, Table}
+import java.util.function.Consumer
 
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnVector
@@ -54,7 +55,15 @@ object GpuColumnVectorUtils {
     }
   }
 
-  def createFromScalarList(scalars: Seq[GpuScalar]): CudfCV = {
+  /**
+   * Create column vector from scalars
+   * @param scalars literals
+   * @param dataType only used by creating decimal column vector,
+   *                 need to distinct decimal32, decimal64, decimal128,
+   *                 should not infer from scalars
+   * @return column vector for the specified scalars
+   */
+  def createFromScalarList(scalars: Seq[GpuScalar], dataType: DataType): CudfCV = {
     scalars.head.dataType match {
       case BooleanType =>
         val booleans = scalars.map(s => s.getValue.asInstanceOf[java.lang.Boolean])
@@ -81,12 +90,50 @@ object GpuColumnVectorUtils {
         val utf8Bytes = scalars.map(s => s.getValue.asInstanceOf[UTF8String].getBytes)
         CudfCV.fromUTF8Strings(utf8Bytes: _*)
       case DecimalType() =>
-        val utf8Bytes = scalars.map(s => s.getValue.asInstanceOf[Decimal].toBigDecimal
-            .asInstanceOf[java.math.BigDecimal])
-        CudfCV.fromDecimals(utf8Bytes: _*)
+        val decimals = scalars.map(s => s.getValue.asInstanceOf[Decimal].toJavaBigDecimal)
+        fromDecimals(dataType.asInstanceOf[DecimalType], decimals: _*)
       case _ =>
         throw new UnsupportedOperationException(s"Creating column vector from a GpuScalar list" +
             s" is not supported for type ${scalars.head.dataType}.")
+    }
+  }
+
+  /**
+   * Create decimal column vector according to DecimalType.
+   * Note: it will create 3 types of column vector according to DecimalType precision
+   *  - Decimal 32 bits
+   *  - Decimal 64 bits
+   *  - Decimal 128 bits
+   * E.g.: If the max of values are decimal 32 bits, but DecimalType is 128 bits,
+   * then return a Decimal 128 bits column vector
+   */
+  def fromDecimals(dt: DecimalType, values: java.math.BigDecimal*): CudfCV = {
+    val hcv = HostColumnVector.build(
+      fromJavaBigDecimal(dt),
+      values.length,
+      new Consumer[HostColumnVector.Builder]() {
+        override def accept(b: HostColumnVector.Builder): Unit = {
+          b.appendBoxed(values: _*)
+        }
+      }
+    )
+    withResource(hcv) { _ =>
+      hcv.copyToDevice()
+    }
+  }
+
+  private def fromJavaBigDecimal(dt: DecimalType): DType = {
+    if (dt.precision <= 9) {
+      DType.create(DType.DTypeEnum.DECIMAL32, -dt.scale)
+    } else if (dt.precision <= 18) {
+      DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
+    }
+    else if (dt.precision <= 38) {
+      DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
+    }
+    else {
+      throw new IllegalArgumentException(
+        "Precision " + dt.precision + " exceeds max precision cuDF can support " + 38)
     }
   }
 }
