@@ -103,7 +103,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
-  val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
+  val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of fallback tasks"
   val DESCRIPTION_READ_FS_TIME = "time to read fs data"
   val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
   val DESCRIPTION_FILECACHE_FOOTER_HITS = "cached footer hits"
