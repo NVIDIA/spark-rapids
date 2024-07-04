@@ -52,4 +52,5 @@ PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
 $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 # Install fastparquet (and numpy as its dependency).
-$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES numpy fastparquet==2024.5.0
+echo -e "fastparquet==0.8.3;python_version=='3.8'\nfastparquet==2024.5.0;python_version>='3.9'" > fastparquet.txt
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES -r fastparquet.txt
