@@ -29,7 +29,7 @@ class MetricsSuite extends AnyFunSuite {
         Thread.sleep(1000)
       )
     )
-    // if the timing is duplicated, the value should be around 200,000,000
+    // if the timing is duplicated, the value should be around 2,000,000,000
     assert(m1.value < 1000000000 * 1.9)
     assert(m1.value > 1000000000 * 0.5)
   }
@@ -43,7 +43,7 @@ class MetricsSuite extends AnyFunSuite {
       }
     }
 
-    // if the timing is duplicated, the value should be around 200,000,000
+    // if the timing is duplicated, the value should be around 2,000,000,000
     assert(m1.value < 1000000000 * 1.9)
     assert(m1.value > 1000000000 * 0.5)
     assert(m2.value < 1000000000 * 1.9)
@@ -59,7 +59,7 @@ class MetricsSuite extends AnyFunSuite {
       }
     }
 
-    // if the timing is duplicated, the value should be around 200,000,000
+    // if the timing is duplicated, the value should be around 2,000,000,000
     assert(m1.value < 1000000000 * 1.9)
     assert(m1.value > 1000000000 * 0.5)
     assert(m2.value < 1000000000 * 1.9)
