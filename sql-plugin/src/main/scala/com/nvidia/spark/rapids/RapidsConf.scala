@@ -23,6 +23,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
+import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -744,6 +745,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
+    .doc("Whether the profiler should capture async CUDA allocation and free events")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
     .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
       "stage-level profiling is used.")
@@ -771,7 +778,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Buffer size to use when writing profile records.")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1024 * 1024)
+    .createWithDefault(8 * 1024 * 1024)
 
   // ENABLE/DISABLE PROCESSING
 
@@ -1508,6 +1515,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .booleanConf
     .createWithDefault(true)
+
+  val SKIP_AGG_PASS_REDUCTION_RATIO = conf("spark.rapids.sql.agg.skipAggPassReductionRatio")
+    .doc("In non-final aggregation stages, if the previous pass has a row reduction ratio " +
+        "greater than this value, the next aggregation pass will be skipped." +
+        "Setting this to 1 essentially disables this feature.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
+    .createWithDefault(1.0)
 
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
@@ -2300,7 +2315,29 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
-    val CASE_WHEN_FUSE =
+  val TAG_LORE_ID_ENABLED = conf("spark.rapids.sql.lore.tag.enabled")
+    .doc("Enable add a LORE id to each gpu plan node")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val LORE_DUMP_IDS = conf("spark.rapids.sql.lore.idsToDump")
+    .doc("Specify the LORE ids of operators to dump. The format is a comma separated list of " +
+      "LORE ids. For example: \"1[0]\" will dump partition 0 of input of gpu operator " +
+      "with lore id 1. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md). If this is not set, no data will be dumped.")
+    .stringConf
+    .createOptional
+
+  val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
+    .doc(s"The path to dump the LORE nodes' input data. This must be set if ${LORE_DUMP_IDS.key} " +
+      "has been set. The data of each LORE node will be dumped to a subfolder with name " +
+      "'loreId-<LORE id>' under this path. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md).")
+    .stringConf
+    .createOptional
+
+  val CASE_WHEN_FUSE =
     conf("spark.rapids.sql.case_when.fuse")
       .doc("If when branches is greater than 2 and all then/else values in case when are string " +
         "scalar, fuse mode improves the performance. By default this is enabled.")
@@ -2507,6 +2544,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val profileStages: Option[String] = get(PROFILE_STAGES)
 
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
+
+  lazy val profileAsyncAllocCapture: Boolean = get(PROFILE_ASYNC_ALLOC_CAPTURE)
 
   lazy val profileCompression: String = get(PROFILE_COMPRESSION)
 
@@ -3077,6 +3116,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
+  lazy val skipAggPassReductionRatio: Double = get(SKIP_AGG_PASS_REDUCTION_RATIO)
+
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val maxRegExpStateMemory: Long =  {
@@ -3119,7 +3160,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
 
-    lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
+  lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
+
+  lazy val loreDumpIds: Map[LoreId, OutputLoreId] = get(LORE_DUMP_IDS)
+    .map(OutputLoreId.parse)
+    .getOrElse(Map.empty)
+
+  lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
+
+  lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,6 +41,8 @@ _grouping_set_sqls = [
         'GROUP BY a, GROUPING SETS((a, b), (a), (), (a, b), (a), (b), ())',
 ]
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 # test nested syntax of grouping set, rollup and cube
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grouping_set_gen], ids=idfn)

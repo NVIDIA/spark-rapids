@@ -2035,7 +2035,7 @@ object RegexRewrite {
   @scala.annotation.tailrec
   private def removeBrackets(astLs: collection.Seq[RegexAST]): collection.Seq[RegexAST] = {
     astLs match {
-      case collection.Seq(RegexGroup(_, term, None)) => removeBrackets(term.children())
+      case collection.Seq(RegexGroup(_, RegexSequence(terms), None)) => removeBrackets(terms)
       case _ => astLs
     }
   }
@@ -2051,28 +2051,31 @@ object RegexRewrite {
       Option[(String, Int, Int, Int)] = {
     val haveLiteralPrefix = isLiteralString(astLs.dropRight(1))
     val endsWithRange = astLs.lastOption match {
-      case Some(RegexRepetition(
-          RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
-          quantifier)) => {
-        val (start, end) = (a, b) match {
-          case (RegexChar(start), RegexChar(end)) => (start, end)
-          case _ => return None
-        }
-        val length = quantifier match {
-          // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
-          // [a-b]{minLen} because the matching will return the result once it finds the 
-          // minimum match so y here is unnecessary.
-          case QuantifierVariableLength(minLen, _) => minLen
-          case QuantifierFixedLength(len) => len
-          case SimpleQuantifier(ch) => ch match {
-            case '*' | '?' => 0
-            case '+' => 1
+      case Some(ast) => removeBrackets(collection.Seq(ast)) match {
+        case collection.Seq(RegexRepetition(
+            RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
+            quantifier)) => {
+          val (start, end) = (a, b) match {
+            case (RegexChar(start), RegexChar(end)) => (start, end)
             case _ => return None
           }
-          case _ => return None
+          val length = quantifier match {
+            // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
+            // [a-b]{minLen} because the matching will return the result once it finds the 
+            // minimum match so y here is unnecessary.
+            case QuantifierVariableLength(minLen, _) => minLen
+            case QuantifierFixedLength(len) => len
+            case SimpleQuantifier(ch) => ch match {
+              case '*' | '?' => 0
+              case '+' => 1
+              case _ => return None
+            }
+            case _ => return None
+          }
+          // Convert start and end to code points
+          Some((length, start.toInt, end.toInt))
         }
-        // Convert start and end to code points
-        Some((length, start.toInt, end.toInt))
+        case _ => None
       }
       case _ => None
     }
@@ -2153,7 +2156,7 @@ object RegexRewrite {
       }
     }
 
-    val noStartsWithAst = stripLeadingWildcards(noTailingWildcards)
+    val noStartsWithAst = removeBrackets(stripLeadingWildcards(noTailingWildcards))
 
     // Check if the pattern is a contains literal pattern
     if (isLiteralString(noStartsWithAst)) {
