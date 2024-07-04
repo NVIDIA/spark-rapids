@@ -53,4 +53,4 @@ $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield r
 
 # Install fastparquet (and numpy as its dependency).
 $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES numpy
-$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES fastparquet==0.8.3
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES fastparquet==2024.5.0
