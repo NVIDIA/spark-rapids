@@ -1148,8 +1148,11 @@ object GpuOverrides extends Logging {
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
+      (a, conf, p, r) => new ExprMeta[UnaryPositive](a, conf, p, r) {
+        override val isFoldableNonLitAllowed: Boolean = true
+        override def convertToGpu(): GpuExpression =
+          GpuUnaryPositive(childExprs.head.convertToGpu())
+        
       }),
     expr[Year](
       "Returns the year from a date or timestamp",
