@@ -1584,63 +1584,63 @@ class SubstringIndexMeta(
     override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
-  private var regexp: String = _
+  //private var regexp: String = _
 
   override def tagExprForGpu(): Unit = {
     val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
-    if (delim == null || delim.length != 1) {
-      willNotWorkOnGpu("only a single character deliminator is supported")
-    }
+    // delim can be null in here just return "" them
+//    if (delim == null) {
+//      willNotWorkOnGpu("only a single character deliminator is supported")
+//    }
 
     val count = GpuOverrides.extractLit(expr.countExpr)
     if (canThisBeReplaced) {
       val c = count.get.value.asInstanceOf[Integer]
-      this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
+      //this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
     }
   }
 
   override def convertToGpu(
       column: Expression,
       delim: Expression,
-      count: Expression): GpuExpression = GpuSubstringIndex(column, this.regexp, delim, count)
+      count: Expression): GpuExpression = GpuSubstringIndex(column, delim, count)
 }
 
-object GpuSubstringIndex {
-  def makeExtractRe(delim: String, count: Integer): String = {
-    if (delim.length != 1) {
-      throw new IllegalStateException("NOT SUPPORTED")
-    }
-    val quotedDelim = CudfRegexp.cudfQuote(delim.charAt(0))
-    val notDelim = CudfRegexp.notCharSet(delim.charAt(0))
-    // substring_index has a deliminator and a count.  If the count is positive then
-    // you get back a substring from 0 until the Nth deliminator is found
-    // If the count is negative it goes in reverse
-    if (count == 0) {
-      // Count is zero so return a null regexp as a special case
-      null
-    } else if (count == 1) {
-      // If the count is 1 we want to match everything from the beginning of the string until we
-      // find the first occurrence of the deliminator or the end of the string
-      "\\A(" + notDelim + "*)"
-    } else if (count > 0) {
-      // If the count is > 1 we first match 0 up to count - 1 occurrences of the patten
-      // `not the deliminator 0 or more times followed by the deliminator`
-      // After that we go back to matching everything until we find the deliminator or the end of
-      // the string
-      "\\A((?:" + notDelim + "*" + quotedDelim + "){0," + (count - 1) + "}" + notDelim + "*)"
-    } else if (count == -1) {
-      // A -1 looks like 1 but we start looking at the end of the string
-      "(" + notDelim + "*)\\Z"
-    } else { //count < 0
-      // All others look like a positive count, but again we are matching starting at the end of
-      // the string instead of the beginning
-      "((?:" + notDelim + "*" + quotedDelim + "){0," + ((-count) - 1) + "}" + notDelim + "*)\\Z"
-    }
-  }
-}
+//object GpuSubstringIndex {
+//  def makeExtractRe(delim: String, count: Integer): String = {
+//    if (delim.length != 1) {
+//      throw new IllegalStateException("NOT SUPPORTED")
+//    }
+//    val quotedDelim = CudfRegexp.cudfQuote(delim.charAt(0))
+//    val notDelim = CudfRegexp.notCharSet(delim.charAt(0))
+//    // substring_index has a deliminator and a count.  If the count is positive then
+//    // you get back a substring from 0 until the Nth deliminator is found
+//    // If the count is negative it goes in reverse
+//    if (count == 0) {
+//      // Count is zero so return a null regexp as a special case
+//      null
+//    } else if (count == 1) {
+//      // If the count is 1 we want to match everything from the beginning of the string until we
+//      // find the first occurrence of the deliminator or the end of the string
+//      "\\A(" + notDelim + "*)"
+//    } else if (count > 0) {
+//      // If the count is > 1 we first match 0 up to count - 1 occurrences of the patten
+//      // `not the deliminator 0 or more times followed by the deliminator`
+//      // After that we go back to matching everything until we find the deliminator or the end of
+//      // the string
+//      "\\A((?:" + notDelim + "*" + quotedDelim + "){0," + (count - 1) + "}" + notDelim + "*)"
+//    } else if (count == -1) {
+//      // A -1 looks like 1 but we start looking at the end of the string
+//      "(" + notDelim + "*)\\Z"
+//    } else { //count < 0
+//      // All others look like a positive count, but again we are matching starting at the end of
+//      // the string instead of the beginning
+//      "((?:" + notDelim + "*" + quotedDelim + "){0," + ((-count) - 1) + "}" + notDelim + "*)\\Z"
+//    }
+//  }
+//}
 
 case class GpuSubstringIndex(strExpr: Expression,
-    regexp: String,
     ignoredDelimExpr: Expression,
     ignoredCountExpr: Expression)
   extends GpuTernaryExpressionArgsAnyScalarScalar with ImplicitCastInputTypes {
@@ -1660,6 +1660,16 @@ case class GpuSubstringIndex(strExpr: Expression,
   // spark-rapids plugin issue https://github.com/NVIDIA/spark-rapids/issues/8750
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
+    // here I would put the logic to deal with substringindex using
+    // substringLocatemultiple and substring
+    // 1. substringLocateMultiple to get all the index
+    withResource(str.getBase.stringLocateMultiple(delim.getBase)) { strLocateRes =>
+
+    }
+
+    // 2. and then substring to return the string
+
+
     if (regexp == null) {
       withResource(str.getBase.isNull) { isNull =>
         withResource(Scalar.fromString("")) { emptyString =>
@@ -1671,6 +1681,9 @@ case class GpuSubstringIndex(strExpr: Expression,
         table.getColumn(0).incRefCount()
       }
     }
+
+
+
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
