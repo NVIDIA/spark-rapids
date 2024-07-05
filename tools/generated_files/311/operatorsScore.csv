@@ -126,6 +126,7 @@ GreaterThan,4
 GreaterThanOrEqual,4
 Greatest,4
 HiveGenericUDF,4
+HiveHash,4
 HiveSimpleUDF,4
 Hour,4
 Hypot,4

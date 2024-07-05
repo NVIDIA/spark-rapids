@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.IOException
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand, RapidsConf}
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -165,6 +165,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           }
         }
       }
+      val forceHiveHashForBucketing =
+        RapidsConf.FORCE_HIVE_HASH_FOR_BUCKETED_WRITE.get(sparkSession.sessionState.conf)
 
       val updatedPartitionPaths =
         GpuFileFormatWriter.write(
@@ -181,6 +183,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           options = options,
           useStableSort = useStableSort,
           concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize,
+          forceHiveHashForBucketing = forceHiveHashForBucketing,
           numStaticPartitionCols = staticPartitions.size)
 
 

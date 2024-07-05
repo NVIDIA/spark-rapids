@@ -745,6 +745,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
+    .doc("Whether the profiler should capture async CUDA allocation and free events")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
     .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
       "stage-level profiling is used.")
@@ -772,7 +778,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Buffer size to use when writing profile records.")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1024 * 1024)
+    .createWithDefault(8 * 1024 * 1024)
 
   // ENABLE/DISABLE PROCESSING
 
@@ -1846,6 +1852,15 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(64 * 1024)
 
+  val FORCE_HIVE_HASH_FOR_BUCKETED_WRITE =
+    conf("spark.rapids.sql.format.write.forceHiveHashForBucketing")
+      .doc("Hive write commands before Spark 330 use Murmur3Hash for bucketed write. " +
+        "When enabled, HiveHash will be always used for this instead of Murmur3. This is " +
+        "used to align with some customized Spark binaries before 330.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
@@ -2531,6 +2546,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
 
+  lazy val profileAsyncAllocCapture: Boolean = get(PROFILE_ASYNC_ALLOC_CAPTURE)
+
   lazy val profileCompression: String = get(PROFILE_COMPRESSION)
 
   lazy val profileFlushPeriodMillis: Int = get(PROFILE_FLUSH_PERIOD_MILLIS)
@@ -3119,6 +3136,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val isForceHiveHashForBucketedWrite: Boolean = get(FORCE_HIVE_HASH_FOR_BUCKETED_WRITE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 

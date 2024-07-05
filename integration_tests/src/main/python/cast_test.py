@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import is_not_utc, is_supported_time_zone
+from conftest import is_not_utc, is_supported_time_zone, is_dataproc_serverless_runtime
 from data_gen import *
 from spark_session import *
 from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
@@ -181,7 +181,11 @@ def test_cast_string_timestamp_fallback():
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
-    decimal_gen_32bit, decimal_gen_32bit_neg_scale, DecimalGen(precision=7, scale=7),
+    decimal_gen_32bit,
+    pytest.param(decimal_gen_32bit_neg_scale, marks=
+        pytest.mark.skipif(is_dataproc_serverless_runtime(),
+                           reason="Dataproc Serverless does not support negative scale for Decimal cast")), 
+    DecimalGen(precision=7, scale=7),
     decimal_gen_64bit, decimal_gen_128bit, DecimalGen(precision=30, scale=2),
     DecimalGen(precision=36, scale=5), DecimalGen(precision=38, scale=0),
     DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),

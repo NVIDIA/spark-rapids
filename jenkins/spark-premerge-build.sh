@@ -183,6 +183,11 @@ ci_2() {
 
 ci_scala213() {
     echo "Run premerge ci (Scala 2.13) testing..."
+    # Run scala2.13 build and test against JDK17
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
+
     cd scala2.13
     ln -sf ../jenkins jenkins
 
