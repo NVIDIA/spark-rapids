@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileOutputStream, OutputStream}
 import java.util.Random
 
 import scala.collection.mutable
@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 
@@ -83,6 +83,23 @@ object DumpUtils extends Logging {
   }
 
   /**
+   * Dump columnar batch to output stream in parquet format. <br>
+   *
+   * @param columnarBatch The columnar batch to be dumped, should be GPU columnar batch. It
+   *                      should be closed by caller.
+   * @param outputStream Will be closed after writing.
+   */
+  def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream): Unit = {
+    closeOnExcept(outputStream) { _ =>
+      withResource(GpuColumnVector.from(columnarBatch)) { table =>
+        withResource(new ParquetDumper(outputStream, table)) { dumper =>
+          dumper.writeTable(table)
+        }
+      }
+    }
+  }
+
+  /**
    * Debug utility to dump table to parquet file. <br>
    * It's running on GPU. Parquet column names are generated from table column type info. <br>
    *
@@ -129,11 +146,14 @@ object DumpUtils extends Logging {
 }
 
 // parquet dumper
-class ParquetDumper(path: String, table: Table) extends HostBufferConsumer
+class ParquetDumper(private val outputStream: OutputStream, table: Table) extends HostBufferConsumer
   with AutoCloseable {
-  private[this] val outputStream = new FileOutputStream(path)
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
+
+  def this(path: String, table: Table) = {
+    this(new FileOutputStream(path), table)
+  }
 
   val tableWriter: TableWriter = {
     // avoid anything conversion, just dump as it is

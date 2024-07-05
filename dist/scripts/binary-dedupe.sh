@@ -127,11 +127,6 @@ done
 
 mv "$SPARK_SHARED_DIR" parallel-world/
 
-# TODO further dedupe by FEATURE version lines:
-#  spark30x-common
-#  spark31x-common
-#  spark32x-common
-
 # Verify that all class files in the conventional jar location are bitwise
 # identical regardless of the Spark-version-specific jar.
 #
