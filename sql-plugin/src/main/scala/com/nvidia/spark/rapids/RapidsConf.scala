@@ -1852,6 +1852,15 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(64 * 1024)
 
+  val FORCE_HIVE_HASH_FOR_BUCKETED_WRITE =
+    conf("spark.rapids.sql.format.write.forceHiveHashForBucketing")
+      .doc("Hive write commands before Spark 330 use Murmur3Hash for bucketed write. " +
+        "When enabled, HiveHash will be always used for this instead of Murmur3. This is " +
+        "used to align with some customized Spark binaries before 330.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
@@ -3127,6 +3136,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val isForceHiveHashForBucketedWrite: Boolean = get(FORCE_HIVE_HASH_FOR_BUCKETED_WRITE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 
