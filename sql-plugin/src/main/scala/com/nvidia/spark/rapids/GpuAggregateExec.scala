@@ -2011,6 +2011,7 @@ case class GpuHashAggregateExec(
        |${ExplainUtils.generateFieldString("Functions", aggregateExpressions)}
        |${ExplainUtils.generateFieldString("Aggregate Attributes", aggregateAttributes)}
        |${ExplainUtils.generateFieldString("Results", resultExpressions)}
+       |Lore: ${loreArgs.mkString(", ")}
        |""".stripMargin
   }
 
@@ -2141,10 +2142,12 @@ case class GpuHashAggregateExec(
       truncatedString(allAggregateExpressions, "[", ", ", "]", maxFields)
     val outputString = truncatedString(output, "[", ", ", "]", maxFields)
     if (verbose) {
-      s"GpuHashAggregate(keys=$keyString, functions=$functionString, output=$outputString)"
+      s"$nodeName (keys=$keyString, functions=$functionString, output=$outputString) " +
+        s"""${loreArgs.mkString(", ")}"""
     } else {
-      s"GpuHashAggregate(keys=$keyString, functions=$functionString)," +
-          s" filters=${aggregateExpressions.map(_.filter)})"
+      s"$nodeName (keys=$keyString, functions=$functionString)," +
+          s" filters=${aggregateExpressions.map(_.filter)})" +
+          s""" ${loreArgs.mkString(", ")}"""
     }
   }
   //

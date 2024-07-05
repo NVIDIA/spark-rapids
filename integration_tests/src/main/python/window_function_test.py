@@ -2102,8 +2102,8 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
                                       ],
                          ids=idfn)
 @pytest.mark.parametrize('rank_clause', [
-                            'RANK() OVER (PARTITION BY a ORDER BY b) ',
-                            'DENSE_RANK() OVER (PARTITION BY a ORDER BY b) ',
+                            'RANK() OVER (PARTITION BY a ORDER BY b, c) ',
+                            'DENSE_RANK() OVER (PARTITION BY a ORDER BY b, c) ',
                             'RANK() OVER (ORDER BY a,b,c) ',
                             'DENSE_RANK() OVER (ORDER BY a,b,c) ',
                         ])
@@ -2151,7 +2151,7 @@ def test_window_group_limits_fallback_for_row_number():
     data_gen = _grpkey_longs_with_no_nulls
     query = """
         SELECT * FROM (
-          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b) AS rnk
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b, c) AS rnk
           FROM window_agg_table
         )
         WHERE rnk < 3

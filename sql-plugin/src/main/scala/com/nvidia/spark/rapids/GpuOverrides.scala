@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
@@ -322,8 +323,9 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
-      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
+    if (BucketingUtilsShim.isHiveHashBucketing(cmd.options)) {
+      BucketingUtilsShim.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
+        conf.isForceHiveHashForBucketedWrite)
     } else {
       BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
@@ -3200,6 +3202,15 @@ object GpuOverrides extends Logging {
         def convertToGpu(): GpuExpression =
           GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
       }),
+    expr[HiveHash](
+      "hive hash operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
+        def convertToGpu(): GpuExpression =
+          GpuHiveHash(childExprs.map(_.convertToGpu()))
+      }),
     expr[Contains](
       "Contains",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
@@ -4708,7 +4719,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           }
         }
       }
-      GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      val convertedPlan = GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      if (conf.isTagLoreIdEnabled) {
+        GpuLore.tagForLore(convertedPlan, conf)
+      } else {
+        convertedPlan
+      }
     }
   }
 }
