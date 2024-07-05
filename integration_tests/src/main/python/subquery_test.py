@@ -146,7 +146,7 @@ def test_scalar_subquery_array_ansi_mode_failures(spark_tmp_table_factory):
           SELECT SORT_ARRAY(arr),
                  SORT_ARRAY((SELECT LAST(arr) FROM {table_name}))
           FROM {table_name}
-          WHERE (SELECT FIRST(arr) FROM {table_name})[0] > arr[0]
+          WHERE (SELECT CAST(ARRAY() AS ARRAY<BIGINT>))[0] > arr[0]
         '''
         return spark.sql(query)
 
