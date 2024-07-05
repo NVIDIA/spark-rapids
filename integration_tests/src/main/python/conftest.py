@@ -54,12 +54,18 @@ def array_columns_to_sort_locally():
 
 _allow_any_non_gpu = False
 _non_gpu_allowed = []
+_per_test_ansi_mode_enabled = None
 
 def is_allowing_any_non_gpu():
     return _allow_any_non_gpu
 
 def get_non_gpu_allowed():
     return _non_gpu_allowed
+
+
+def is_per_test_ansi_mode_enabled():
+    return _per_test_ansi_mode_enabled
+
 
 def get_validate_execs_in_gpu_plan():
     return _validate_execs_in_gpu_plan
@@ -80,6 +86,9 @@ def is_emr_runtime():
 
 def is_dataproc_runtime():
     return runtime_env() == "dataproc"
+
+def is_dataproc_serverless_runtime():
+    return runtime_env() == "dataproc_serverless"
 
 def get_test_tz():
     return os.environ.get('TZ', 'UTC')
@@ -210,10 +219,14 @@ def pytest_runtest_setup(item):
 
     global _allow_any_non_gpu
     global _non_gpu_allowed
+    global _per_test_ansi_mode_enabled
     _non_gpu_allowed_databricks = []
     _allow_any_non_gpu_databricks = False
     non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
+    _per_test_ansi_mode_enabled = None if item.get_closest_marker('disable_ansi_mode') is None \
+      else not item.get_closest_marker('disable_ansi_mode')
+
     if non_gpu_databricks:
         if is_databricks_runtime():
             if non_gpu_databricks.kwargs and non_gpu_databricks.kwargs['any']:

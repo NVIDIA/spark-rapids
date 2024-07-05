@@ -24,6 +24,7 @@ import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
@@ -43,9 +44,8 @@ object GpuHiveFileFormat extends Logging {
   def tagGpuSupport(meta: GpuInsertIntoHiveTableMeta): Option[ColumnarFileFormat] = {
     val insertCmd = meta.wrapped
     // Bucketing write
-    if (insertCmd.table.bucketSpec.isDefined) {
-      meta.willNotWorkOnGpu("bucketed tables are not supported yet")
-    }
+    BucketingUtilsShim.tagForHiveBucketingWrite(meta, insertCmd.table.bucketSpec,
+      insertCmd.outputColumns, meta.conf.isForceHiveHashForBucketedWrite)
 
     // Infer the file format from the serde string, similar as what Spark does in
     // RelationConversions for Hive.

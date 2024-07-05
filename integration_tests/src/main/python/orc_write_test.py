@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -209,7 +209,7 @@ def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark
 @pytest.mark.parametrize('codec', ['zlib', 'lzo'])
 def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
     gen = TimestampGen()
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path = spark_tmp_path + '/ORC_DATA'
     all_confs={'spark.sql.orc.compression.codec': codec, 'spark.rapids.sql.format.orc.write.enabled': True}
     assert_gpu_fallback_write(
             lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
@@ -218,17 +218,45 @@ def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_f
             'DataWritingCommandExec',
             conf=all_confs)
 
-@ignore_order
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
+@ignore_order(local=True)
+def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_fallback_write(
-            lambda spark, path: spark.range(10e4).write.bucketBy(4, "id").sortBy("id").format('orc').mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.orc(path),
-            data_path,
-            'DataWritingCommandExec',
-            conf = {'spark.rapids.sql.format.orc.write.enabled': True})
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).selectExpr("id % 100 as b_id", "data").write
+            .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf={'spark.rapids.sql.format.orc.write.enabled': True})
 
+@ignore_order(local=True)
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
+def test_buckets_write_fallback_unsupported_types(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    gen_list = [["id", binary_gen], ["data", long_gen]]
+    assert_gpu_fallback_write(
+        lambda spark, path: gen_df(spark, gen_list).selectExpr("id as b_id", "data").write
+            .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        'DataWritingCommandExec',
+        conf={'spark.rapids.sql.format.orc.write.enabled': True})
+
+@ignore_order(local=True)
+def test_partitions_and_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list)
+            .selectExpr("id % 5 as b_id", "id % 10 as p_id", "data").write
+            .partitionBy("p_id")
+            .bucketBy(4, "b_id").format('orc').mode('overwrite').option("path", path)
+        .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf={'spark.rapids.sql.format.orc.write.enabled': True})
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')

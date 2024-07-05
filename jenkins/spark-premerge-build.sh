@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -88,11 +88,11 @@ mvn_verify() {
     FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
-    jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-311}/"
+    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-311}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
-    rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+    rm -rf com/nvidia/shaded/ org/openucx/ spark-shared/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
     popd
 
     # Triggering here until we change the jenkins file
@@ -183,6 +183,11 @@ ci_2() {
 
 ci_scala213() {
     echo "Run premerge ci (Scala 2.13) testing..."
+    # Run scala2.13 build and test against JDK17
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
+
     cd scala2.13
     ln -sf ../jenkins jenkins
 

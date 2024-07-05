@@ -30,6 +30,7 @@ package org.apache.spark.sql.hive.rapids.shims
 import java.util.Locale
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
@@ -198,6 +199,9 @@ case class GpuInsertIntoHiveTable(
       // column names in order to make `loadDynamicPartitions` work.
       attr.withName(name.toLowerCase(Locale.ROOT))
     }
+    val forceHiveHashForBucketing =
+      RapidsConf.FORCE_HIVE_HASH_FOR_BUCKETED_WRITE.get(sparkSession.sessionState.conf)
+
 
     val writtenParts = gpuSaveAsHiveFile(
       sparkSession = sparkSession,
@@ -205,7 +209,10 @@ case class GpuInsertIntoHiveTable(
       hadoopConf = hadoopConf,
       fileFormat = fileFormat,
       outputLocation = tmpLocation.toString,
-      partitionAttributes = partitionAttributes)
+      forceHiveHashForBucketing = forceHiveHashForBucketing,
+      partitionAttributes = partitionAttributes,
+      bucketSpec = table.bucketSpec,
+      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec))
 
     if (partition.nonEmpty) {
       if (numDynamicPartitions > 0) {

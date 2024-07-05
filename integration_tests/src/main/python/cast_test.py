@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import is_not_utc, is_supported_time_zone
+from conftest import is_not_utc, is_supported_time_zone, is_dataproc_serverless_runtime
 from data_gen import *
 from spark_session import *
 from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
@@ -181,7 +181,11 @@ def test_cast_string_timestamp_fallback():
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
-    decimal_gen_32bit, decimal_gen_32bit_neg_scale, DecimalGen(precision=7, scale=7),
+    decimal_gen_32bit,
+    pytest.param(decimal_gen_32bit_neg_scale, marks=
+        pytest.mark.skipif(is_dataproc_serverless_runtime(),
+                           reason="Dataproc Serverless does not support negative scale for Decimal cast")), 
+    DecimalGen(precision=7, scale=7),
     decimal_gen_64bit, decimal_gen_128bit, DecimalGen(precision=30, scale=2),
     DecimalGen(precision=36, scale=5), DecimalGen(precision=38, scale=0),
     DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),
@@ -427,7 +431,10 @@ def test_cast_float_to_timestamp_ansi_for_nan_inf(type, invalid_value):
         data = [invalid_value]
         df = spark.createDataFrame(data, type)
         return df.select(f.col('value').cast(TimestampType())).collect()
-    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "SparkDateTimeException")
+
+    assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True},
+                             error_message="SparkDateTimeException"
+                             if is_before_spark_400() else "DateTimeException")
 
 # if float.floor > Long.max or float.ceil < Long.min, throw exception
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
@@ -583,7 +590,7 @@ def test_cast_string_to_day_time_interval_exception(invalid_string):
         data=[invalid_string]
         df = spark.createDataFrame(data, StringType())
         return df.select(f.col('value').cast(dtType)).collect()
-    assert_gpu_and_cpu_error(fun, {}, "java.lang.IllegalArgumentException")
+    assert_gpu_and_cpu_error(fun, {}, "IllegalArgumentException")
 
 @pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_integral_no_overflow():
