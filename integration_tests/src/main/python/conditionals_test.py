@@ -319,13 +319,13 @@ def test_case_when_all_then_values_are_scalars(case_when_scalars):
         ("e", boolean_gen)
     ]
     sql =  """
-            select case 
-                when a then {} 
-                when b then {} 
-                when c then {} 
-                when d then {} 
+            select case
+                when a then {}
+                when b then {}
+                when c then {}
+                when d then {}
                 else {}
-            end 
+            end
             from tab
             """
     assert_gpu_and_cpu_are_equal_sql(
@@ -339,7 +339,7 @@ def test_case_when_all_then_values_are_scalars(case_when_scalars):
 #  - else expr is null
 def test_case_when_all_then_values_are_scalars_with_nulls():
     bool_rows = [(True, False, False, None),
-                 (False, False, True, None),
+                 (False, True, True, None), # the second true will enable `when b then null` branch
                  (False, False, None, None),
                  (None, None, True, False),
                  (False, False, False, False),
@@ -347,20 +347,20 @@ def test_case_when_all_then_values_are_scalars_with_nulls():
     sql =  """
             select case 
                 when a then 'aaa' 
-                when b then 'bbb' 
+                when b then null
                 when c then 'ccc' 
                 when d then 'ddd' 
                 else {}
-            end 
+            end
             from tab
             """
     sql_without_else =  """
             select case 
-                when a then 'aaa' 
-                when b then 'bbb' 
-                when c then 'ccc' 
-                when d then 'ddd' 
-            end 
+                when a then cast(1.1 as decimal(7,2))
+                when b then null
+                when c then cast(3.3 as decimal(7,2))
+                when d then cast(4.4 as decimal(7,2))
+            end
             from tab
             """
     assert_gpu_and_cpu_are_equal_sql(

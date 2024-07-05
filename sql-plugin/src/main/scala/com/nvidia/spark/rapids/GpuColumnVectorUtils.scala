@@ -87,10 +87,24 @@ object GpuColumnVectorUtils {
         val doubles = scalars.map(s => s.getValue.asInstanceOf[java.lang.Double])
         CudfCV.fromBoxedDoubles(doubles: _*)
       case StringType =>
-        val utf8Bytes = scalars.map(s => s.getValue.asInstanceOf[UTF8String].getBytes)
+        val utf8Bytes = scalars.map(s => {
+          val v = s.getValue
+          if (v == null) {
+            null
+          } else {
+            v.asInstanceOf[UTF8String].getBytes
+          }
+        })
         CudfCV.fromUTF8Strings(utf8Bytes: _*)
       case DecimalType() =>
-        val decimals = scalars.map(s => s.getValue.asInstanceOf[Decimal].toJavaBigDecimal)
+        val decimals = scalars.map(s => {
+          val v = s.getValue
+          if (v == null) {
+            null
+          } else {
+           v.asInstanceOf[Decimal].toJavaBigDecimal
+          }
+        })
         fromDecimals(dataType.asInstanceOf[DecimalType], decimals: _*)
       case _ =>
         throw new UnsupportedOperationException(s"Creating column vector from a GpuScalar list" +
