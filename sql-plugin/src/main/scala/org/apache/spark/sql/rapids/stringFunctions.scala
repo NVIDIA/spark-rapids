@@ -1663,26 +1663,19 @@ case class GpuSubstringIndex(strExpr: Expression,
     // here I would put the logic to deal with substringindex using
     // substringLocatemultiple and substring
     // 1. substringLocateMultiple to get all the index
-    withResource(str.getBase.stringLocateMultiple(delim.getBase)) { strLocateRes =>
-
-    }
 
     // 2. and then substring to return the string
-
-
-    if (regexp == null) {
-      withResource(str.getBase.isNull) { isNull =>
-        withResource(Scalar.fromString("")) { emptyString =>
-          isNull.ifElse(str.getBase, emptyString)
-        }
-      }
-    } else {
-      withResource(str.getBase.extractRe(new RegexProgram(regexp))) { table: Table =>
-        table.getColumn(0).incRefCount()
-      }
-    }
-
-
+//    if (regexp == null) {
+//      withResource(str.getBase.isNull) { isNull =>
+//        withResource(Scalar.fromString("")) { emptyString =>
+//          isNull.ifElse(str.getBase, emptyString)
+//        }
+//      }
+//    } else {
+//      withResource(str.getBase.extractRe(new RegexProgram(regexp))) { table: Table =>
+//        table.getColumn(0).incRefCount()
+//      }
+//    }
 
   }
 
