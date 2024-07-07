@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
+import com.nvidia.spark.rapids.jni.GpuSubstringIndex
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
@@ -1585,6 +1586,8 @@ class SubstringIndexMeta(
     rule: DataFromReplacementRule)
     extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
   //private var regexp: String = _
+  private var delim: String = _
+  private var c: Integer = _
 
   override def tagExprForGpu(): Unit = {
     val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
@@ -1660,6 +1663,12 @@ case class GpuSubstringIndex(strExpr: Expression,
   // spark-rapids plugin issue https://github.com/NVIDIA/spark-rapids/issues/8750
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
+
+    withResource(str.getBase) { strV =>
+      com.nvidia.spark.rapids.jni.GpuSubstringIndex.gpuSubstringIndex(strV,
+        delim.getValue.asInstanceOf[String],
+        count.getValue.asInstanceOf[Int]);
+    }
     // here I would put the logic to deal with substringindex using
     // substringLocatemultiple and substring
     // 1. substringLocateMultiple to get all the index
