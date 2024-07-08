@@ -149,7 +149,6 @@ object DumpUtils extends Logging {
 class ParquetDumper(private val outputStream: OutputStream, table: Table) extends HostBufferConsumer
   with AutoCloseable {
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
-//  private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
 
   def this(path: String, table: Table) = {
     this(new FileOutputStream(path), table)
