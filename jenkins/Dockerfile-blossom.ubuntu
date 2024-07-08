@@ -61,7 +61,7 @@ RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-${ARCH}
 
 RUN ln -sfn /usr/bin/python3.9 /usr/bin/python
 RUN ln -sfn /usr/bin/python3.9 /usr/bin/python3
-RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order fastparquet==0.8.3
+RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order fastparquet==2024.5.0
 
 RUN UCX_CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f1` && \
     mkdir -p /tmp/ucx && \
