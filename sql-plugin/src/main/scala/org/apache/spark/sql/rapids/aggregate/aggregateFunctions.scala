@@ -2037,14 +2037,20 @@ abstract class CudfMaxMinByAggregate(
 
   // This is a short term solution. and better to have a dedicate reduction for this.
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = col => {
-    val orderCol = col.getChildColumnView(1).copyToColumnVector()
-    val tmpTable = withResource(orderCol)(_ =>new cudf.Table(orderCol, col))
-    val sorted = withResource(tmpTable) { _ =>
-      // columns in table [order, original struct]
-      tmpTable.orderBy(sortOrder(0))
-    }
-    withResource(sorted) { _ =>
-      sorted.getColumn(1).reduce(ReductionAggregation.nth(0, NullPolicy.INCLUDE))
+    val orderColView = col.getChildColumnView(1)
+    if (orderColView.getNullCount == orderColView.getRowCount) { // all nulls
+      GpuScalar.from(null, dataType)
+    } else {
+      val tmpTable = withResource(orderColView.copyToColumnVector())(
+        orderCol => new cudf.Table(orderCol, col)
+      )
+      val sorted = withResource(tmpTable) { _ =>
+        // columns in table [order, original struct]
+        tmpTable.orderBy(sortOrder(0))
+      }
+      withResource(sorted) { _ =>
+        sorted.getColumn(1).reduce(ReductionAggregation.nth(0, NullPolicy.INCLUDE))
+      }
     }
   }
 
