@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_400, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
 from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
@@ -357,6 +357,8 @@ def test_orc_write_column_name_with_dots(spark_tmp_path):
 @ignore_order
 def test_orc_do_not_lowercase_columns(spark_tmp_path):
     data_path = spark_tmp_path + "/ORC_DATA"
+    expected_error_message = "No StructField named acol" if is_before_spark_400() else \
+                             "Key `acol` is not exists."
     assert_gpu_and_cpu_writes_are_equal_collect(
         # column is uppercase
         lambda spark, path: spark.range(0, 1000).select(col("id").alias("Acol")).write.orc(path),
@@ -367,10 +369,10 @@ def test_orc_do_not_lowercase_columns(spark_tmp_path):
         with_cpu_session(lambda spark: spark.read.orc(data_path + "/CPU").schema["acol"])
         assert False
     except KeyError as e:
-        assert "No StructField named acol" in str(e)
+        assert expected_error_message in str(e)
     try:
         # reading lowercase causes exception
         with_gpu_session(lambda spark: spark.read.orc(data_path + "/GPU").schema["acol"])
         assert False
     except KeyError as e:
-        assert "No StructField named acol" in str(e)
+        assert expected_error_message in str(e)
