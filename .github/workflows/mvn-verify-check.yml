@@ -277,6 +277,16 @@ jobs:
           export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+           # verify Scala 2.13 build files
+          ./build/make-scala-version-build-files.sh 2.13
+          # verify git status
+          if [ -n "$(echo -n $(git status -s | grep 'scala2.13'))" ]; then
+              git add -N scala2.13/* && git diff 'scala2.13/*'
+              echo "Generated Scala 2.13 build files don't match what's in repository"
+              exit 1
+          fi
+          # change to Scala 2.13 Directory
+          cd scala2.13 
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
