@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     conda install -y -c conda-forge sre_yield && \
     conda clean -ay
 # install pytest plugins for xdist parallel run
-RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==0.8.3
+RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0
 
 RUN apt install -y inetutils-ping expect
 
