@@ -2863,6 +2863,26 @@ object GpuOverrides extends Logging {
           GpuArrayRemove(lhs, rhs)
       }
     ),
+    expr[MapFromArrays](
+      "Creates a new map from two arrays",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        ("array",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.all),
+        ("array",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.all)),
+        (in, conf, p, r) => new BinaryExprMeta[MapFromArrays](in, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuMapFromArrays(lhs, rhs)
+        }
+    ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
