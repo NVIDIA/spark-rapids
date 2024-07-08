@@ -23,4 +23,3 @@ import org.apache.spark.sql.catalyst.expressions.StringExpressionsSuite
 import org.apache.spark.sql.rapids.utils.RapidsTestsTrait
 
 class RapidsStringExpressionsSuite extends StringExpressionsSuite with RapidsTestsTrait {}
-git

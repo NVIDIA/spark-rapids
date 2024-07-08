@@ -22,13 +22,13 @@ import java.util.{Locale, Optional}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
-import com.nvidia.spark.rapids.jni.GpuSubstringIndex
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
@@ -1586,22 +1586,22 @@ class SubstringIndexMeta(
     rule: DataFromReplacementRule)
     extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
   //private var regexp: String = _
-  private var delim: String = _
-  private var c: Integer = _
+//  private var delim: String = _
+//  private var c: Integer = _
 
-  override def tagExprForGpu(): Unit = {
-    val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
-    // delim can be null in here just return "" them
-//    if (delim == null) {
-//      willNotWorkOnGpu("only a single character deliminator is supported")
+//  override def tagExprForGpu(): Unit = {
+//    val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
+//    // delim can be null in here just return "" them
+////    if (delim == null) {
+////      willNotWorkOnGpu("only a single character deliminator is supported")
+////    }
+//
+//    val count = GpuOverrides.extractLit(expr.countExpr)
+//    if (canThisBeReplaced) {
+//      val c = count.get.value.asInstanceOf[Integer]
+//      //this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
 //    }
-
-    val count = GpuOverrides.extractLit(expr.countExpr)
-    if (canThisBeReplaced) {
-      val c = count.get.value.asInstanceOf[Integer]
-      //this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
-    }
-  }
+//  }
 
   override def convertToGpu(
       column: Expression,
@@ -1665,7 +1665,7 @@ case class GpuSubstringIndex(strExpr: Expression,
       count: GpuScalar): ColumnVector = {
 
     withResource(str.getBase) { strV =>
-      com.nvidia.spark.rapids.jni.GpuSubstringIndex.gpuSubstringIndex(strV,
+      GpuSubstringIndexUtils.substringIndex(strV,
         delim.getValue.asInstanceOf[String],
         count.getValue.asInstanceOf[Int]);
     }
