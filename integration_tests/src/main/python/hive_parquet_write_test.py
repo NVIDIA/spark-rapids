@@ -192,6 +192,7 @@ def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_
         _write_to_hive_conf)
 
 
+@allow_non_gpu(*non_utc_allow)
 @pytest.mark.skipif(is_before_spark_330() or (is_databricks_runtime() and not is_databricks122_or_later()),
                     reason="InsertIntoHiveTable supports bucketed write since Spark 330")
 def test_insert_hive_bucketed_table(spark_tmp_table_factory):

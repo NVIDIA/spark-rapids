@@ -424,7 +424,10 @@ case class GpuFileSourceScanExec(
     "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
-    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME)
+    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
+    DELETION_VECTOR_SCATTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
+      DESCRIPTION_DELETION_VECTOR_SCATTER_TIME),
+    DELETION_VECTOR_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_DELETION_VECTOR_SIZE)
   ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
