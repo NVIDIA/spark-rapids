@@ -83,6 +83,15 @@ object GpuDeltaParquetFileFormatUtils {
     }
   }
 
+  private def createFalseTable(numRows: Int): Table = {
+    withResource(Scalar.fromBool(false)) { s =>
+      withResource(CudfColumnVector.fromScalar(s, numRows)) { c =>
+        new Table(c)
+      }
+    }
+  }
+
+
   private def addMetadataColumns(
       rowIdxPos: Option[Int],
       delRowIdx: Option[Int],
@@ -103,29 +112,25 @@ object GpuDeltaParquetFileFormatUtils {
 
       val delVecCol = delVec.map { delVec =>
         delVectorScatterTimeMetric.ns {
-          withResource(Scalar.fromBool(false)) { s =>
-            withResource(CudfColumnVector.fromScalar(s, batch.numRows())) { c =>
-              val table = new RoaringBitmapIterator(
-                delVec.getLongIteratorFrom(rowIdxStart),
-                rowIdxStart,
-                rowIdxStart + batch.numRows(),
-              ).grouped(Math.min(maxBatchSize, batch.numRows()))
-               .foldLeft(new Table(c)){ (table, posChunk) =>
-                 withResource(table) { _ =>
-                   withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
-                     withResource(Scalar.fromBool(true)) { s =>
-                       Table.scatter(Array(s), poses, table)
-                     }
-                   }
-                 }
-               }
+          val table = new RoaringBitmapIterator(
+            delVec.getLongIteratorFrom(rowIdxStart),
+            rowIdxStart,
+            rowIdxStart + batch.numRows())
+            .grouped(Math.min(maxBatchSize, batch.numRows()))
+            .foldLeft(createFalseTable(batch.numRows())){ (table, posChunk) =>
+              withResource(table) { _ =>
+                withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
+                  withResource(Scalar.fromBool(true)) { s =>
+                    Table.scatter(Array(s), poses, table)
+                  }
+                }
+              }
+            }
 
               withResource(table) { _ =>
                 GpuColumnVector.from(table.getColumn(0).incRefCount(),
                   METADATA_ROW_DEL_FIELD.dataType)
               }
-            }
-          }
         }
       }
 
