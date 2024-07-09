@@ -1163,18 +1163,48 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
 }
 
 case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBinaryExpression {
-  override def dataType: DataType = left.dataType
+
+  override def dataType: MapType = {
+    MapType(
+      keyType = left.dataType.asInstanceOf[ArrayType].elementType,
+      valueType = right.dataType.asInstanceOf[ArrayType].elementType,
+      valueContainsNull = right.dataType.asInstanceOf[ArrayType].containsNull)
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-      throw new UnsupportedOperationException("lhs: GpuColumnVector, rhs: GpuColumnVector")
+
+    withResource(ColumnView.makeStructView(lhs.getBase.getChildColumnView(0),
+      rhs.getBase.getChildColumnView(0))) { structView =>
+      withResource(lhs.getBase.getValid) { valid =>
+        withResource(lhs.getBase.getOffsets) { offsets =>
+          withResource(new ColumnView(DType.LIST, lhs.getBase.getRowCount,
+            java.util.Optional.of[java.lang.Long](lhs.getBase.getNullCount),
+            valid, offsets, Array(structView))) { retView =>
+            retView.copyToColumnVector()
+          }
+        }
+      }
+    }
   }
+
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException("lhs: GpuScalar, rhs: GpuColumnVector")
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
   }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    throw new UnsupportedOperationException("lhs: GpuColumnVector, rhs: GpuScalar")
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
   }
+
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    throw new UnsupportedOperationException("numRows: Int, lhs: GpuScalar, rhs: GpuScalar")
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
   }
 }
 
