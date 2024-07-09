@@ -19,7 +19,38 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.catalyst.expressions.StringExpressionsSuite
+import org.apache.spark.sql.catalyst.expressions.{Literal, StringExpressionsSuite, SubstringIndex}
 import org.apache.spark.sql.rapids.utils.RapidsTestsTrait
+import org.apache.spark.sql.types.StringType
 
-class RapidsStringExpressionsSuite extends StringExpressionsSuite with RapidsTestsTrait {}
+class RapidsStringExpressionsSuite extends StringExpressionsSuite with RapidsTestsTrait {
+  test("string substring_index function in rapids") {
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(3)), "www.apache.org")
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(2)), "www.apache")
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(1)), "www")
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(0)), "")
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(-3)), "www.apache.org")
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(-2)), "apache.org")
+    checkEvaluation(
+      SubstringIndex(Literal("www.apache.org"), Literal("."), Literal(-1)), "org")
+    checkEvaluation(
+      SubstringIndex(Literal(""), Literal("."), Literal(-2)), "")
+    checkEvaluation(
+      SubstringIndex(Literal.create(null, StringType), Literal("."), Literal(-2)), null)
+    checkEvaluation(SubstringIndex(
+      Literal("www.apache.org"), Literal.create(null, StringType), Literal(-2)), null)
+    // non ascii chars
+    // scalastyle:off
+    checkEvaluation(
+      SubstringIndex(Literal("大千世界大千世界"), Literal( "千"), Literal(2)), "大千世界大")
+    // scalastyle:on
+    checkEvaluation(
+      SubstringIndex(Literal("www||apache||org"), Literal( "||"), Literal(2)), "www||apache")
+  }
+}
