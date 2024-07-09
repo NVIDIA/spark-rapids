@@ -1165,16 +1165,16 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
 case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBinaryExpression {
   override def dataType: DataType = left.dataType
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-
+      throw new UnsupportedOperationException("lhs: GpuColumnVector, rhs: GpuColumnVector")
   }
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-
+    throw new UnsupportedOperationException("lhs: GpuScalar, rhs: GpuColumnVector")
   }
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-
+    throw new UnsupportedOperationException("lhs: GpuColumnVector, rhs: GpuScalar")
   }
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-
+    throw new UnsupportedOperationException("numRows: Int, lhs: GpuScalar, rhs: GpuScalar")
   }
 }
 
