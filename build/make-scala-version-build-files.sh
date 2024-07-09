@@ -20,7 +20,7 @@ set -e
 
 VALID_VERSIONS=( 2.13 )
 declare -A DEFAULT_SPARK
-DEFAULT_SPARK[2.12]="spark311"
+DEFAULT_SPARK[2.12]="spark320"
 DEFAULT_SPARK[2.13]="spark330"
 
 usage() {

@@ -85,7 +85,7 @@ fi
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
-# *: shim versions to build, e.g., PHASE_TYPE="311 321"
+# *: shim versions to build, e.g., PHASE_TYPE="320 321"
 PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
     # SPARK_SHIM_VERSIONS will be used for nightly artifact build

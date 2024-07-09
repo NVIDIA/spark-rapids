@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 /**
  * Note that the name is prefixed with "Shimmed" such that wildcard rules
- * under unshimmed-common-from-spark311.txt don't get confused and pick this class to be
+ * under unshimmed-common-from-spark320.txt don't get confused and pick this class to be
  * un-shimmed.
  */
 class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallbackBase {

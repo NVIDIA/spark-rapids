@@ -145,7 +145,6 @@
             <id>minimumFeatureVersionMix</id>
             <properties>
                 <included_buildvers>
-                    312,
                     320,
                     321cdh,
                     330,
@@ -389,7 +388,7 @@ self.log("... OK")
                             <target>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <equals arg1="spark311" arg2="${spark.version.classifier}"/>
+                                    <equals arg1="spark320" arg2="${spark.version.classifier}"/>
                                     <ac:then>
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>

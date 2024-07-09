@@ -34,7 +34,7 @@ MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 
 
 DIST_PL="dist"
 function mvnEval {
-    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
+    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease320 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
 }
 
 ART_ID=$(mvnEval project.artifactId)
