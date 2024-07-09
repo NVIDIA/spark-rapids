@@ -2060,7 +2060,7 @@ class CudfMaxBy(valueType: DataType, orderingType: DataType)
   override lazy val sortOrder: Int => cudf.OrderByArg =
     i => cudf.OrderByArg.desc(i, true)
   // TODO
-  override lazy val groupByAggregate: GroupByAggregation = null
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.maxBy()
 }
 
 class CudfMinBy(valueType: DataType, orderingType: DataType)
