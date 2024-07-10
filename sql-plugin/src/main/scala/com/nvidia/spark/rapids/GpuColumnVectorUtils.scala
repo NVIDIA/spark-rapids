@@ -123,7 +123,7 @@ object GpuColumnVectorUtils {
    */
   def fromDecimals(dt: DecimalType, values: java.math.BigDecimal*): CudfCV = {
     val hcv = HostColumnVector.build(
-      fromJavaBigDecimal(dt),
+      DecimalUtil.createCudfDecimal(dt),
       values.length,
       new Consumer[HostColumnVector.Builder]() {
         override def accept(b: HostColumnVector.Builder): Unit = {
@@ -133,21 +133,6 @@ object GpuColumnVectorUtils {
     )
     withResource(hcv) { _ =>
       hcv.copyToDevice()
-    }
-  }
-
-  private def fromJavaBigDecimal(dt: DecimalType): DType = {
-    if (dt.precision <= 9) {
-      DType.create(DType.DTypeEnum.DECIMAL32, -dt.scale)
-    } else if (dt.precision <= 18) {
-      DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
-    }
-    else if (dt.precision <= 38) {
-      DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
-    }
-    else {
-      throw new IllegalArgumentException(
-        "Precision " + dt.precision + " exceeds max precision cuDF can support " + 38)
     }
   }
 }

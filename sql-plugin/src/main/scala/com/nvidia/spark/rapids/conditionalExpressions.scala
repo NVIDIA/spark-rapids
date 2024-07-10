@@ -337,6 +337,10 @@ case class GpuCaseWhen(
     branches.exists(_._2.nullable) || elseValue.forall(_.nullable)
   }
 
+  private lazy val useFusion = caseWhenFuseEnabled && branches.size > 2 &&
+    GpuColumnVectorUtils.isCaseWhenFusionSupportedType(inputTypesForMerging.head) &&
+    (branches.map(_._2) ++ elseValue).forall(_.isInstanceOf[GpuLiteral])
+
   override def checkInputDataTypes(): TypeCheckResult = {
     if (TypeCoercion.haveSameType(inputTypesForMerging)) {
       // Make sure all branch conditions are boolean types.
@@ -362,10 +366,7 @@ case class GpuCaseWhen(
     if (branchesWithSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
-      if (caseWhenFuseEnabled && branches.size > 2 &&
-          GpuColumnVectorUtils.isCaseWhenFusionSupportedType(inputTypesForMerging.head) &&
-        (branches.map(_._2) ++ elseValue).forall(_.isInstanceOf[GpuLiteral])
-      ) {
+      if (useFusion) {
         // when branches size > 2;
         // return type is supported types: Boolean/Byte/Int/String/Decimal ...
         // all the then and else expressions are Scalars.
