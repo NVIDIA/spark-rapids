@@ -222,7 +222,7 @@ ci_scala213() {
 }
 
 prepare_spark() {
-    spark_ver=${1:-'3.1.1'}
+    spark_ver=${1:-'3.2.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"
