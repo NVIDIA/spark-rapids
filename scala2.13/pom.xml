@@ -93,6 +93,9 @@
         <profile>
             <id>release320</id>
             <activation>
+                <!-- #if scala-2.12 --><!--
+                <activeByDefault>true</activeByDefault>
+                --><!-- #endif scala-2.12 -->
                 <property>
                     <name>buildver</name>
                     <value>320</value>
