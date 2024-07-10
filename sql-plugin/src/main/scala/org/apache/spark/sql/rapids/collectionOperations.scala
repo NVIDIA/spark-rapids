@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.shims.{GetSequenceSize, ShimExpression}
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, NullIntolerant, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -1164,6 +1165,8 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
 
 case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBinaryExpression {
 
+  private val mapKeyDedupPolicy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
+
   override def dataType: MapType = {
     MapType(
       keyType = left.dataType.asInstanceOf[ArrayType].elementType,
@@ -1172,10 +1175,15 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
   }
 
   def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
-    withResource(lhs.getListOffsetsView) { lhsOffsets =>
+    val boolScalar = withResource(lhs.getListOffsetsView) { lhsOffsets =>
       withResource(rhs.getListOffsetsView) { rhsOffsets =>
-        lhsOffsets.equalTo(rhsOffsets).all.getBoolean
+        withResource(lhsOffsets.equalTo(rhsOffsets)) { compareOffsets =>
+          compareOffsets.all
+        }
       }
+    }
+    withResource(boolScalar) { all =>
+      all.getBoolean
     }
   }
 
@@ -1203,11 +1211,11 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     }
   }
 
-  def containsKeyDuplicates(keysList: ColumnVector): Boolean = {
+  def rowContainsDuplicates(keysList: ColumnVector): Boolean = {
     withResource(keysList.getChildColumnView(0)) { childView =>
       withResource(keysList.dropListDuplicates) { newKeyList =>
         withResource(newKeyList.getChildColumnView(0)) { newChildView =>
-          childView.getRowCount != keysList.getChildColumnView(0).getRowCount
+          childView.getRowCount != newChildView.getRowCount
         }
       }
     }
@@ -1216,7 +1224,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
 
     require(lhs.getRowCount == rhs.getRowCount,
-      "The key column and value column must have equal number of rows.")
+      "All columns must have the same number of rows")
 
     val (sanitizedLhsBase, sanitizedRhsBase) = nullSanitize(lhs.getBase,rhs.getBase)
 
@@ -1225,28 +1233,38 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     }
 
     require(nullKeysCount == 0,
-      "[NULL_MAP_KEY] Cannot use null as map key.")
+      "[NULL_MAP_KEY] Cannot use null as map key")
+
+    if(mapKeyDedupPolicy == "EXCEPTION") {
+      val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
+      require(!containsDuplicates,
+        "[DUPLICATED_MAP_KEY] Duplicate map key was found")
+    }
 
     require(compareOffsets(sanitizedLhsBase, sanitizedRhsBase),
-      "The key array and value array of MapData must have the same length.")
+      "The key array and value array of MapData must have the same length")
 
-    require(containsKeyDuplicates(sanitizedLhsBase),
-      "[DUPLICATED_MAP_KEY] Duplicate map key was found.")
-
-    //To Do - "spark.sql.mapKeyDedupPolicy" to "LAST_WIN"
-
-    withResource(ColumnView.makeStructView(lhs.getBase.getChildColumnView(0),
-      rhs.getBase.getChildColumnView(0))) { structView =>
-      withResource(lhs.getBase.getValid) { valid =>
-        withResource(lhs.getBase.getOffsets) { offsets =>
-          withResource(new ColumnView(DType.LIST, lhs.getBase.getRowCount,
-            java.util.Optional.of[java.lang.Long](lhs.getBase.getNullCount),
+    val mapCol = withResource(ColumnView.makeStructView(sanitizedLhsBase.getChildColumnView(0),
+      sanitizedRhsBase.getChildColumnView(0))) { structView =>
+      withResource(sanitizedLhsBase.getValid) { valid =>
+        withResource(sanitizedLhsBase.getOffsets) { offsets =>
+          withResource(new ColumnView(DType.LIST, sanitizedLhsBase.getRowCount,
+            java.util.Optional.of[java.lang.Long](sanitizedLhsBase.getNullCount),
             valid, offsets, Array(structView))) { retView =>
             retView.copyToColumnVector()
           }
         }
       }
     }
+
+    val result = mapKeyDedupPolicy match {
+      case "LAST_WIN" =>
+        val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
+        if (containsDuplicates) mapCol.dropListDuplicatesWithKeysValues else mapCol
+      case _ => mapCol
+    }
+
+    result
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
