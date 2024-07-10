@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector => CudfCV, DType, HostColumnVector, Table}
+import ai.rapids.cudf.{ColumnVector => CudfCV, HostColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import java.lang.reflect.Method
 import java.util.function.Consumer
