@@ -44,16 +44,16 @@ import org.apache.spark.util.MutableURLClassLoader
     3. a smaller fraction of classes that differ under one of the supported Spark versions
     com/nvidia/spark/SQLPlugin.class
     spark-shared/com/nvidia/spark/rapids/CastExprMeta.class
-    spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
-    spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
+    spark320/org/apache/spark/sql/rapids/aggregate/GpuLast.class
+    spark331/org/apache/spark/sql/rapids/aggregate/GpuLast.class
     Each shim can see a consistent parallel world without conflicts by referencing
     only one conflicting directory.
     E.g., Spark 3.2.0 Shim will use
     jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
     jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark320/
-    Spark 3.1.1 will use
+    Spark 3.3.1 will use
     jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark331/
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
