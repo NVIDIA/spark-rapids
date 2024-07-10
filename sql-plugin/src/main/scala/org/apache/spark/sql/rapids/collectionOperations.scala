@@ -1171,7 +1171,69 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
       valueContainsNull = right.dataType.asInstanceOf[ArrayType].containsNull)
   }
 
+  def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
+    withResource(lhs.getListOffsetsView) { lhsOffsets =>
+      withResource(rhs.getListOffsetsView) { rhsOffsets =>
+        lhsOffsets.equalTo(rhsOffsets).all.getBoolean
+      }
+    }
+  }
+
+  def nullSanitize(lhs: ColumnVector, rhs: ColumnVector) :
+  (ColumnVector, ColumnVector) = {
+    if(lhs.hasNulls || rhs.hasNulls) {
+      withResource(lhs.isNull) { lhsNulls =>
+        withResource(rhs.isNull) { rhsNulls =>
+          withResource(lhsNulls.or(rhsNulls)) { combinedNulls =>
+            withResource(GpuScalar.from(null, left.dataType)) { leftScalar =>
+              withResource(GpuScalar.from(null, right.dataType)) { rightScalar =>
+                val newLhs = combinedNulls.ifElse(leftScalar, lhs)
+                val newRhs = combinedNulls.ifElse(rightScalar, rhs)
+                (newLhs, newRhs)
+              }
+            }
+          }
+        }
+      }
+    }
+    else {
+      lhs.incRefCount()
+      rhs.incRefCount()
+      (lhs,rhs)
+    }
+  }
+
+  def containsKeyDuplicates(keysList: ColumnVector): Boolean = {
+    withResource(keysList.getChildColumnView(0)) { childView =>
+      withResource(keysList.dropListDuplicates) { newKeyList =>
+        withResource(newKeyList.getChildColumnView(0)) { newChildView =>
+          childView.getRowCount != keysList.getChildColumnView(0).getRowCount
+        }
+      }
+    }
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+
+    require(lhs.getRowCount == rhs.getRowCount,
+      "The key column and value column must have equal number of rows.")
+
+    val (sanitizedLhsBase, sanitizedRhsBase) = nullSanitize(lhs.getBase,rhs.getBase)
+
+    val nullKeysCount = withResource(sanitizedLhsBase.getChildColumnView(0)) { childView =>
+      childView.getNullCount
+    }
+
+    require(nullKeysCount == 0,
+      "[NULL_MAP_KEY] Cannot use null as map key.")
+
+    require(compareOffsets(sanitizedLhsBase, sanitizedRhsBase),
+      "The key array and value array of MapData must have the same length.")
+
+    require(containsKeyDuplicates(sanitizedLhsBase),
+      "[DUPLICATED_MAP_KEY] Duplicate map key was found.")
+
+    //To Do - "spark.sql.mapKeyDedupPolicy" to "LAST_WIN"
 
     withResource(ColumnView.makeStructView(lhs.getBase.getChildColumnView(0),
       rhs.getBase.getChildColumnView(0))) { structView =>
