@@ -1174,6 +1174,10 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
       valueContainsNull = right.dataType.asInstanceOf[ArrayType].containsNull)
   }
 
+  /**
+   * Compare top level offsets to ensure there are equal number of elements in
+   * keys array and values array for each row.
+   */
   def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
     val boolScalar = withResource(lhs.getListOffsetsView) { lhsOffsets =>
       withResource(rhs.getListOffsetsView) { rhsOffsets =>
@@ -1187,6 +1191,10 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     }
   }
 
+  /**
+   * Build new keys column and values column where a row is not NULL only if
+   * keys[row_id] and values[row_id] are not NULL.
+   */
   def nullSanitize(lhs: ColumnVector, rhs: ColumnVector) :
   (ColumnVector, ColumnVector) = {
     if(lhs.hasNulls || rhs.hasNulls) {
@@ -1195,6 +1203,10 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
           withResource(lhsNulls.or(rhsNulls)) { combinedNulls =>
             withResource(GpuScalar.from(null, left.dataType)) { leftScalar =>
               withResource(GpuScalar.from(null, right.dataType)) { rightScalar =>
+                //  lhs: [[1,2], NULL, [3]]
+                //  rhs: [NULL, [2,5], [6]]
+                //  newLhs: [NULL, NULL, [3]]
+                //  newRhs: [NULL, NULL, [6]]
                 val newLhs = combinedNulls.ifElse(leftScalar, lhs)
                 val newRhs = combinedNulls.ifElse(rightScalar, rhs)
                 (newLhs, newRhs)
@@ -1211,6 +1223,10 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     }
   }
 
+  /**
+   * Spark by default does not allow keys array to contain duplicate values
+   * Compare distinct key count before and after dropping duplicates per row
+   */
   def rowContainsDuplicates(keysList: ColumnVector): Boolean = {
     withResource(keysList.getChildColumnView(0)) { childView =>
       withResource(keysList.dropListDuplicates) { newKeyList =>
@@ -1226,14 +1242,9 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     require(lhs.getRowCount == rhs.getRowCount,
       "All columns must have the same number of rows")
 
+    // Set a row to NULL in both columns if it is NULL in either the keys
+    // column or the values column
     val (sanitizedLhsBase, sanitizedRhsBase) = nullSanitize(lhs.getBase,rhs.getBase)
-
-    val nullKeysCount = withResource(sanitizedLhsBase.getChildColumnView(0)) { childView =>
-      childView.getNullCount
-    }
-
-    require(nullKeysCount == 0,
-      "[NULL_MAP_KEY] Cannot use null as map key")
 
     if(mapKeyDedupPolicy == "EXCEPTION") {
       val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
@@ -1241,9 +1252,18 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
         "[DUPLICATED_MAP_KEY] Duplicate map key was found")
     }
 
+    // Ensure keys array and values array have same length
     require(compareOffsets(sanitizedLhsBase, sanitizedRhsBase),
       "The key array and value array of MapData must have the same length")
 
+    // Ensure keys array does not contain NULLs in any row
+    val nullKeysCount = withResource(sanitizedLhsBase.getChildColumnView(0)) { childView =>
+      childView.getNullCount
+    }
+    require(nullKeysCount == 0,
+      "[NULL_MAP_KEY] Cannot use null as map key")
+
+    // Create List<Struct<X,Y>> from List<X> and List<Y>
     val mapCol = withResource(ColumnView.makeStructView(sanitizedLhsBase.getChildColumnView(0),
       sanitizedRhsBase.getChildColumnView(0))) { structView =>
       withResource(sanitizedLhsBase.getValid) { valid =>
