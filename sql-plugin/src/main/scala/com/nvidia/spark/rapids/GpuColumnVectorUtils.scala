@@ -58,12 +58,9 @@ object GpuColumnVectorUtils {
   /**
    * Create column vector from scalars
    * @param scalars literals
-   * @param dataType only used by creating decimal column vector,
-   *                 need to distinct decimal32, decimal64, decimal128,
-   *                 should not infer from scalars
    * @return column vector for the specified scalars
    */
-  def createFromScalarList(scalars: Seq[GpuScalar], dataType: DataType): CudfCV = {
+  def createFromScalarList(scalars: Seq[GpuScalar]): CudfCV = {
     scalars.head.dataType match {
       case BooleanType =>
         val booleans = scalars.map(s => s.getValue.asInstanceOf[java.lang.Boolean])
@@ -96,7 +93,7 @@ object GpuColumnVectorUtils {
           }
         })
         CudfCV.fromUTF8Strings(utf8Bytes: _*)
-      case _: DecimalType =>
+      case dt: DecimalType =>
         val decimals = scalars.map(s => {
           val v = s.getValue
           if (v == null) {
@@ -105,7 +102,7 @@ object GpuColumnVectorUtils {
            v.asInstanceOf[Decimal].toJavaBigDecimal
           }
         })
-        fromDecimals(dataType.asInstanceOf[DecimalType], decimals: _*)
+        fromDecimals(dt, decimals: _*)
       case _ =>
         throw new UnsupportedOperationException(s"Creating column vector from a GpuScalar list" +
             s" is not supported for type ${scalars.head.dataType}.")

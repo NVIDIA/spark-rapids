@@ -305,9 +305,10 @@ _case_when_scalars = [
     ['CAST(1.1 AS FLOAT)',         'CAST(2.2 AS FLOAT)',         'CAST(3.3 AS FLOAT)',         'CAST(4.4 AS FLOAT)',         'CAST(5.5 AS FLOAT)'],
     ['CAST(1.1 AS DOUBLE)',        'CAST(2.2 AS DOUBLE)',        'CAST(3.3 AS DOUBLE)',        'CAST(4.4 AS DOUBLE)',        'CAST(5.5 AS DOUBLE)'],
     ["'str_value1'",               "'str_value2'",               "'str_value3'",               "'str_value4'",               "'str_else'"],
-    ['CAST(1.1 AS DECIMAL(7,3))',  'CAST(2.2 AS DECIMAL(7,3))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'],
-    ['CAST(1.1 AS DECIMAL(12,2))', 'CAST(2.2 AS DECIMAL(12,2))', 'CAST(3.3 AS DECIMAL(12,2))', 'CAST(4.4 AS DECIMAL(12,2))', 'CAST(5.5 AS DECIMAL(12,2))'],
-    ['CAST(1.1 AS DECIMAL(20,2))', 'CAST(2.2 AS DECIMAL(20,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(20,2))', 'CAST(5.5 AS DECIMAL(20,2))'],
+    ['null',  'CAST(2.2 AS DECIMAL(7,3))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'], # null and decimal(7)
+    ['null',  'CAST(2.2 AS DECIMAL(12,2))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'], # decimal(7) and decimal(12)
+    ['CAST(1.1 AS DECIMAL(12,2))', 'CAST(2.2 AS DECIMAL(12,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(12,2))', 'CAST(5.5 AS DECIMAL(12,2))'], # decimal(12) and decimal(20)
+    ['CAST(1.1 AS DECIMAL(20,2))', 'CAST(2.2 AS DECIMAL(20,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(20,2))', 'CAST(5.5 AS DECIMAL(20,2))'], # decimal(20)
 ]
 @pytest.mark.parametrize('case_when_scalars', _case_when_scalars, ids=idfn)
 def test_case_when_all_then_values_are_scalars(case_when_scalars):

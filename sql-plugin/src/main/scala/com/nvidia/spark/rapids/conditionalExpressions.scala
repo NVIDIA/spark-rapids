@@ -387,7 +387,7 @@ case class GpuCaseWhen(
               .asInstanceOf[GpuScalar])
           withResource(thenElseScalars) { _ =>
             // 2. generate a column to store all scalars
-            withResource(GpuColumnVectorUtils.createFromScalarList(thenElseScalars, dataType)) {
+            withResource(GpuColumnVectorUtils.createFromScalarList(thenElseScalars)) {
               scalarCol =>
                 val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
                   // 3. execute final select
