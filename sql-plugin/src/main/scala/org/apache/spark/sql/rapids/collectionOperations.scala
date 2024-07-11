@@ -1237,34 +1237,12 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-
-    require(lhs.getRowCount == rhs.getRowCount,
-      "All columns must have the same number of rows")
-
-    // Set a row to NULL in both columns if it is NULL in either the keys
-    // column or the values column
-    val (sanitizedLhsBase, sanitizedRhsBase) = nullSanitize(lhs.getBase,rhs.getBase)
-
-    if(mapKeyDedupPolicy == "EXCEPTION") {
-      val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
-      require(!containsDuplicates,
-        "[DUPLICATED_MAP_KEY] Duplicate map key was found")
-    }
-
-    // Ensure keys array and values array have same length
-    require(compareOffsets(sanitizedLhsBase, sanitizedRhsBase),
-      "The key array and value array of MapData must have the same length")
-
-    // Ensure keys array does not contain NULLs in any row
-    val nullKeysCount = withResource(sanitizedLhsBase.getChildColumnView(0)) { childView =>
-      childView.getNullCount
-    }
-    require(nullKeysCount == 0,
-      "[NULL_MAP_KEY] Cannot use null as map key")
-
-    // Create List<Struct<X,Y>> from List<X> and List<Y>
-    val mapCol = withResource(ColumnView.makeStructView(sanitizedLhsBase.getChildColumnView(0),
+  /**
+   * Create list< struct < X, Y > > from list< X > and List< Y >
+   */
+  def constructMapColumn(sanitizedLhsBase: ColumnVector, sanitizedRhsBase: ColumnVector)
+  : ColumnVector = {
+    withResource(ColumnView.makeStructView(sanitizedLhsBase.getChildColumnView(0),
       sanitizedRhsBase.getChildColumnView(0))) { structView =>
       withResource(sanitizedLhsBase.getValid) { valid =>
         withResource(sanitizedLhsBase.getOffsets) { offsets =>
@@ -1276,15 +1254,51 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
         }
       }
     }
+  }
 
-    val result = mapKeyDedupPolicy match {
-      case "LAST_WIN" =>
-        val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
-        if (containsDuplicates) mapCol.dropListDuplicatesWithKeysValues else mapCol
-      case _ => mapCol
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+
+    require(lhs.getRowCount == rhs.getRowCount,
+      "All columns must have the same number of rows")
+
+    // Set a row to NULL in both columns if it is NULL in either the keys
+    // column or the values column
+    val (sanitizedLhsBase, sanitizedRhsBase) = nullSanitize(lhs.getBase,rhs.getBase)
+
+    withResource(sanitizedLhsBase) { sanitizedLhsBase =>
+      withResource(sanitizedRhsBase) { sanitizedRhsBase =>
+
+        if(mapKeyDedupPolicy == "EXCEPTION") {
+          val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
+          require(!containsDuplicates,
+            "[DUPLICATED_MAP_KEY] Duplicate map key was found")
+        }
+
+        // Ensure keys array and values array have same length
+        require(compareOffsets(sanitizedLhsBase, sanitizedRhsBase),
+          "The key array and value array of MapData must have the same length")
+
+        // Ensure keys array does not contain NULLs in any row
+        val nullKeysCount = withResource(sanitizedLhsBase.getChildColumnView(0)) { childView =>
+          childView.getNullCount
+        }
+        require(nullKeysCount == 0,
+          "[NULL_MAP_KEY] Cannot use null as map key")
+
+        val mapCol = constructMapColumn(sanitizedLhsBase, sanitizedRhsBase)
+
+        val result = withResource(mapCol) { mapCol =>
+          mapKeyDedupPolicy match {
+            case "LAST_WIN" if rowContainsDuplicates(sanitizedLhsBase) =>
+                mapCol.dropListDuplicatesWithKeysValues
+            case _ =>
+              mapCol.incRefCount()
+          }
+        }
+        result
+      }
     }
 
-    result
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
@@ -1306,6 +1320,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
       }
     }
   }
+
 }
 
 case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinaryExpression {
