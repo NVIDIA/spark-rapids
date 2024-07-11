@@ -740,3 +740,31 @@ def test_flatten_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')
     )
+
+# No NULL keys are allowed
+data_gen = [IntegerGen(nullable=False), StringGen(nullable=False),
+            StructGen(nullable=False,children=[('a',IntegerGen())]), DateGen(nullable=False),
+            DoubleGen(nullable=False), TimestampGen(nullable=False)]
+
+@allow_non_gpu('CollectLimitExec')
+@pytest.mark.parametrize('data_gen', data_gen, ids=idfn)
+def test_map_from_arrays_types(data_gen):
+    # min_length and max_length is fixed because map_from_arrays expects same sized array for keys and values
+    # NULL rows are valid
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True, min_length=10, max_length=10)), ('b', ArrayGen(data_gen, nullable=True, min_length=10, max_length=10))], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(a, b)'),
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'}
+    )
+
+
+@pytest.mark.parametrize('query', ["map_from_arrays(array(2, 3), array('a', 'b')) AS map",
+                                   "map_from_arrays(NULL, array('a', 'b')) AS map",
+                                   "map_from_arrays(array('a', 'b'), NULL) AS map",
+                                   "map_from_arrays(NULL, NULL) AS map",
+                                   "map_from_arrays(array(), array()) AS map"], ids=idfn)
+def test_map_from_arrays_query(query):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql('SELECT {}'.format(query)))
