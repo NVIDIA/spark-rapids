@@ -1616,7 +1616,7 @@ case class GpuSubstringIndex(strExpr: Expression,
       count: GpuScalar): ColumnVector = {
 
     val strColumnView = str.getBase
-    val delimiter = delim.getValue
+    val delimiter = GpuScalar.from(delim, StringType)
     val cnt = count.getValue.asInstanceOf[Int]
     // Use withResource to manage the lifecycle of ColumnVector
     withResource(GpuSubstringIndexUtils.substringIndex(strColumnView, delimiter, cnt)) { result =>
