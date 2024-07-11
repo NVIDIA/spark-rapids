@@ -50,7 +50,7 @@ object GpuColumnVectorUtils {
       case FloatType => true
       case DoubleType => true
       case StringType => true
-      case DecimalType() => true
+      case _: DecimalType => true
       case _ => false
     }
   }
@@ -96,7 +96,7 @@ object GpuColumnVectorUtils {
           }
         })
         CudfCV.fromUTF8Strings(utf8Bytes: _*)
-      case DecimalType() =>
+      case _: DecimalType =>
         val decimals = scalars.map(s => {
           val v = s.getValue
           if (v == null) {
