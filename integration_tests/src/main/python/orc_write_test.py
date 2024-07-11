@@ -357,6 +357,9 @@ def test_orc_write_column_name_with_dots(spark_tmp_path):
 @ignore_order
 def test_orc_do_not_lowercase_columns(spark_tmp_path):
     data_path = spark_tmp_path + "/ORC_DATA"
+
+    # The wording of the `is not exists` error message in Spark 4.x is unfortunate, but accurate:
+    # https://github.com/apache/spark/blob/4501285a49e4c0429c9cf2c105f044e1c8a93d21/python/pyspark/errors/error-conditions.json#L487
     expected_error_message = "No StructField named acol" if is_before_spark_400() else \
                              "Key `acol` is not exists."
     assert_gpu_and_cpu_writes_are_equal_collect(

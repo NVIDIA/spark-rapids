@@ -57,7 +57,7 @@ def test_grouped_sliding_window(data_gen):
                                                "to overflow-related exceptions when in ANSI mode. "
                                                "Spark versions >= 3.3.0 do the same calculations via Mod. "
                                                "Running this test in ANSI mode on Spark < 3.3.0 will cause aggregation "
-                                               "operations like Product to fall back to GPU. " 
+                                               "operations like Product to fall back to CPU. " 
                                                "See https://github.com/NVIDIA/spark-rapids/issues/5114."))])
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, string_gen], ids=idfn)
 @ignore_order
