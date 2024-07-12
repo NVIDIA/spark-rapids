@@ -108,6 +108,7 @@ class GpuEquivalentExpressions {
 
   private def hasSideEffects(e: Expression): Boolean = e match {
     case e: GpuExpression => e.hasSideEffects
+    case _: AttributeReference => false // This is what we expect to see and it is okay
     case _ => true // Just assume that it does because we don't know
   }
 
