@@ -327,6 +327,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             val writeFutures = new mutable.Queue[Future[Unit]]
             val recordWriteTime: AtomicLong = new AtomicLong(0L)
             var waitTimeOnLimiterNs: Long = 0L
+            var batchSizeComputeTimeNs: Long = 0L
             val writeTimeStart: Long = System.nanoTime()
             try {
               while (timeTrackingIterator.hasNext) {
@@ -344,6 +345,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 } else {
                   // we close batches actively in the `records` iterator as we get the next batch
                   // this makes sure it is kept alive while a task is able to handle it.
+                  val sizeComputeStart = System.nanoTime()
                   val (cb, size) = value match {
                     case columnarBatch: ColumnarBatch =>
                       (SlicedGpuColumnVector.incRefCount(columnarBatch),
@@ -352,6 +354,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                       (null, 0L)
                   }
                   val waitOnLimiterStart = System.nanoTime()
+                  batchSizeComputeTimeNs += waitOnLimiterStart - sizeComputeStart
                   limiter.acquireOrBlock(size)
                   waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
                   writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
@@ -394,7 +397,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // writeTime is the amount of time it took to push bytes through the stream
             // minus the amount of time it took to get the batch from the upstream execs
             val writeTimeNs = (System.nanoTime() - writeTimeStart) -
-              timeTrackingIterator.iterateTimeNs - waitTimeOnLimiterNs
+              timeTrackingIterator.iterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
 
             val combineTimeStart = System.nanoTime()
             val pl = writePartitionedData(mapOutputWriter)
