@@ -2021,9 +2021,9 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.1.1, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.2.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.2.0, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark320.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly." +
       "When tested in a combined jar with other Shims, it's expected that the provided " +
       "implementation follows the same convention as existing Spark shims. If its class" +
@@ -2345,6 +2345,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       "[the LORE documentation](../dev/lore.md).")
     .stringConf
     .createOptional
+
+  val CASE_WHEN_FUSE =
+    conf("spark.rapids.sql.case_when.fuse")
+      .doc("If when branches is greater than 2 and all then/else values in case when are string " +
+        "scalar, fuse mode improves the performance. By default this is enabled.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -3170,6 +3178,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     .getOrElse(Map.empty)
 
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
+
+  lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
