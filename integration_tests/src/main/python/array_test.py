@@ -757,3 +757,42 @@ def test_map_from_arrays(data_gen):
             'map_from_arrays(a, b)'),
         conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'}
     )
+
+def test_map_from_arrays_dup_exception():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+
+    assert_gpu_and_cpu_error(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(1,1), a)').collect(),
+        conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+        error_message = "Duplicate map key")
+
+def test_map_from_arrays_last_win():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(1,1), a)'),
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'}
+    )
+
+def test_map_from_arrays_null_exception():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+
+    assert_gpu_and_cpu_error(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(NULL,1), a)').collect(),
+        conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+        error_message = "NULL_MAP_KEY")
+
+def test_map_from_arrays_length_exception():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+
+    assert_gpu_and_cpu_error(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(1), a)').collect(),
+        conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+        error_message = "The key array and value array of MapData must have the same length")
