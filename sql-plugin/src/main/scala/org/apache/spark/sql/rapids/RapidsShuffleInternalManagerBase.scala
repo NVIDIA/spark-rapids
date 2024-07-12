@@ -325,8 +325,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
             // we call write on every writer for every record in parallel
             val writeFutures = new mutable.Queue[Future[Unit]]
-            val writeTimeStart: Long = System.nanoTime()
             val recordWriteTime: AtomicLong = new AtomicLong(0L)
+            var waitTimeOnLimiterNs: Long = 0L
+            val writeTimeStart: Long = System.nanoTime()
             try {
               while (timeTrackingIterator.hasNext) {
                 // get the record
@@ -350,7 +351,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                     case _ =>
                       (null, 0L)
                   }
+                  val waitOnLimiterStart = System.nanoTime()
                   limiter.acquireOrBlock(size)
+                  waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
                   writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
                     withResource(cb) { _ =>
                       try {
@@ -391,7 +394,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // writeTime is the amount of time it took to push bytes through the stream
             // minus the amount of time it took to get the batch from the upstream execs
             val writeTimeNs = (System.nanoTime() - writeTimeStart) -
-              timeTrackingIterator.iterateTimeNs
+              timeTrackingIterator.iterateTimeNs - waitTimeOnLimiterNs
 
             val combineTimeStart = System.nanoTime()
             val pl = writePartitionedData(mapOutputWriter)
