@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, CaseWhen, Coalesce, Expression, If, LeafExpression, PlanExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, LeafExpression, PlanExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 
 /**
@@ -106,24 +106,41 @@ class GpuEquivalentExpressions {
     }
   }
 
+  private def hasSideEffects(e: Expression): Boolean = e match {
+    case e: GpuExpression => e.hasSideEffects
+    case _ => true // Just assume that it does because we don't know
+  }
+
   // There are some special expressions that we should not recurse into all of its children.
   //   1. CodegenFallback: it's children will not be used to generate code (call eval() instead)
-  //   2. If/GpuIf: common subexpressions will always be evaluated at the beginning, but the true
+  //   2. GpuIf: common subexpressions will always be evaluated at the beginning, but the true
   //          and false expressions in `If` may not get accessed, according to the predicate
   //          expression. We should only recurse into the predicate expression.
-  //   3. CaseWhen/GpuCaseWhen: like `If`, the children of `CaseWhen` only get accessed in a certain
+  //   3. GpuCaseWhen: like `If`, the children of `CaseWhen` only get accessed in a certain
   //                condition. We should only recurse into the first condition expression as it
   //                will always get accessed.
-  //   4. Coalesce/GpuCoalesce: it's also a conditional expression, we should only recurse into the
+  //   4. GpuCoalesce: it's also a conditional expression, we should only recurse into the
   //                first children, because others may not get accessed.
   private def childrenToRecurse(expr: Expression): Seq[Expression] = expr match {
     case _: CodegenFallback => Nil
-    case i: If => i.predicate :: Nil
-    case i: GpuIf => i.predicateExpr :: Nil
-    case c: CaseWhen => c.children.head :: Nil
-    case c: GpuCaseWhen => c.children.head :: Nil
-    case c: Coalesce => c.children.head :: Nil
-    case c: GpuCoalesce => c.children.head :: Nil
+    case i: GpuIf =>
+      if (hasSideEffects(i.trueExpr) || hasSideEffects(i.falseExpr)) {
+        i.predicateExpr :: Nil
+      } else {
+        i.children
+      }
+    case c: GpuCaseWhen =>
+      if (c.hasSideEffects) {
+        c.children.head :: Nil
+      } else {
+        c.children
+      }
+    case c: GpuCoalesce =>
+      if (c.children.exists(hasSideEffects)) {
+        c.children.head :: Nil
+      } else {
+        c.children
+      }
     case other => other.children
   }
 
@@ -131,54 +148,49 @@ class GpuEquivalentExpressions {
   // recursively add the common expressions shared between all of its children.
   private def commonChildrenToRecurse(expr: Expression): Seq[Seq[Expression]] = expr match {
     case _: CodegenFallback => Nil
-    case i: If => Seq(Seq(i.trueValue, i.falseValue))
-    case i: GpuIf => Seq(Seq(i.trueExpr, i.falseExpr))
-    case c: CaseWhen =>
-      // We look at subexpressions in conditions and values of `CaseWhen` separately. It is
-      // because a subexpression in conditions will be run no matter which condition is matched
-      // if it is shared among conditions, but it doesn't need to be shared in values. Similarly,
-      // a subexpression among values doesn't need to be in conditions because no matter which
-      // condition is true, it will be evaluated.
-      val conditions = if (c.branches.length > 1) {
-        c.branches.map(_._1)
-      } else {
-        // If there is only one branch, the first condition is already covered by
-        // `childrenToRecurse` and we should exclude it here.
-        Nil
-      }
-      // For an expression to be in all branch values of a CaseWhen statement, it must also be in
-      // the elseValue.
-      val values = if (c.elseValue.nonEmpty) {
-        c.branches.map(_._2) ++ c.elseValue
+    case i: GpuIf =>
+      if (hasSideEffects(i.trueExpr) || hasSideEffects(i.falseExpr)) {
+        Seq(Seq(i.trueExpr, i.falseExpr))
       } else {
         Nil
       }
-      Seq(conditions, values)
     case c: GpuCaseWhen =>
-      // We look at subexpressions in conditions and values of `CaseWhen` separately. It is
-      // because a subexpression in conditions will be run no matter which condition is matched
-      // if it is shared among conditions, but it doesn't need to be shared in values. Similarly,
-      // a subexpression among values doesn't need to be in conditions because no matter which
-      // condition is true, it will be evaluated.
-      val conditions = if (c.branches.length > 1) {
-        c.branches.map(_._1)
+      if (c.hasSideEffects) {
+        // We look at subexpressions in conditions and values of `CaseWhen` separately. It is
+        // because a subexpression in conditions will be run no matter which condition is matched
+        // if it is shared among conditions, but it doesn't need to be shared in values.
+        // Similarly,
+        // a subexpression among values doesn't need to be in conditions because no matter which
+        // condition is true, it will be evaluated.
+        val conditions = if (c.branches.length > 1) {
+          // We don't strip off the first condition expression because it is the only one
+          // that is guaranteed to be executed.
+          c.branches.map(_._1)
+        } else {
+          // If there is only one branch, the first condition is already covered by
+          // `childrenToRecurse` and we should exclude it here.
+          Nil
+        }
+        // For an expression to be in all branch values of a CaseWhen statement, it must also
+        // be in the elseValue, because the default else value is just a null literal
+        val values = if (c.elseValue.nonEmpty) {
+          c.branches.map(_._2) ++ c.elseValue
+        } else {
+          Nil
+        }
+        Seq(conditions, values)
       } else {
-        // If there is only one branch, the first condition is already covered by
-        // `childrenToRecurse` and we should exclude it here.
         Nil
       }
-      // For an expression to be in all branch values of a CaseWhen statement, it must also be in
-      // the elseValue.
-      val values = if (c.elseValue.nonEmpty) {
-        c.branches.map(_._2) ++ c.elseValue
-      } else {
-        Nil
-      }
-      Seq(conditions, values)
     // If there is only one child, the first child is already covered by
     // `childrenToRecurse` and we should exclude it here.
-    case c: Coalesce if c.children.length > 1 => Seq(c.children)
-    case c: GpuCoalesce if c.children.length > 1 => Seq(c.children)
+    case c: GpuCoalesce if c.children.length > 1 =>
+      if (c.children.exists(hasSideEffects)) {
+        // We cannot strip off the first child because it is the only one guaranteed to execute
+        Seq(c.children)
+      } else {
+        Nil
+      }
     case _ => Nil
   }
 
@@ -200,7 +212,7 @@ class GpuEquivalentExpressions {
 
     if (!skip && !addExprToMap(expr, map)) {
       childrenToRecurse(expr).foreach(addExprTree(_, map))
-      commonChildrenToRecurse(expr).filter(_.nonEmpty).foreach(addCommonExprs(_, map))
+      commonChildrenToRecurse(expr).filter(_.length > 1).foreach(addCommonExprs(_, map))
     }
   }
 
