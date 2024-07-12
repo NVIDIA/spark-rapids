@@ -746,7 +746,6 @@ data_gen = [IntegerGen(nullable=False), StringGen(nullable=False),
             StructGen(nullable=False,children=[('a',IntegerGen())]), DateGen(nullable=False),
             DoubleGen(nullable=False), TimestampGen(nullable=False)]
 
-@allow_non_gpu('CollectLimitExec')
 @pytest.mark.parametrize('data_gen', data_gen, ids=idfn)
 def test_map_from_arrays_types(data_gen):
     # min_length and max_length is fixed because map_from_arrays expects same sized array for keys and values
