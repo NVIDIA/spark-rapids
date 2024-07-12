@@ -407,6 +407,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last_value`, `last`|last aggregate operator|true|None|
 <a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|`max`|Max aggregate operator|true|None|
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|`min`|Min aggregate operator|true|None|
+<a name="sql.expression.MinBy"></a>spark.rapids.sql.expression.MinBy|`min_by`|MinBy aggregate operator. It may produce different results than CPU when multiple rows in a group have same minimum value in the ordering column and different associated values in the value column.|true|None|
 <a name="sql.expression.Percentile"></a>spark.rapids.sql.expression.Percentile|`percentile`|Aggregation computing exact percentile|true|None|
 <a name="sql.expression.PivotFirst"></a>spark.rapids.sql.expression.PivotFirst| |PivotFirst operator|true|None|
 <a name="sql.expression.StddevPop"></a>spark.rapids.sql.expression.StddevPop|`stddev_pop`|Aggregation computing population standard deviation|true|None|
