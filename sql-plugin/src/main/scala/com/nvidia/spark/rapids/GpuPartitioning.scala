@@ -22,6 +22,7 @@ import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuff
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -110,6 +111,23 @@ trait GpuPartitioning extends Partitioning {
     }
   }
 
+  private case class CloseableBufferSeq(bufs: Seq[DeviceMemoryBuffer]) extends AutoCloseable {
+    override def close(): Unit = bufs.safeClose()
+  }
+
+  private def splitBufsToMergeFn: CloseableBufferSeq => Seq[CloseableBufferSeq] = {
+    devBufs => {
+      closeOnExcept(devBufs) { _ =>
+        val numBufs = devBufs.bufs.length
+        if (numBufs <= 1) {
+          throw new GpuSplitAndRetryOOM(s"Cannot split a sequence of $numBufs device buffers")
+        }
+        val (head, tail) = devBufs.bufs.splitAt(numBufs / 2)
+        Seq(CloseableBufferSeq(head), CloseableBufferSeq(tail))
+      }
+    }
+  }
+
   /**
    * Move the small split batches from device to host in the following steps:
    *   1) Concatenate all the split device buffers into a single contiguous buffer,
@@ -118,43 +136,61 @@ trait GpuPartitioning extends Partitioning {
    * to avoid too many small data copying between device and host.
    */
   private def moveToHostAndClose(batches: Array[ColumnarBatch]): Array[ColumnarBatch] = {
-    // 1) Merge all the split device buffers and collect offsets and table metas
-    val (singleDevBuf, metas, offsets) = withResource(batches) { _ =>
-      val devBufs = new Array[DeviceMemoryBuffer](batches.length)
-      val metas = batches.zipWithIndex.map { case (cb, idx) =>
-        cb.column(0) match {
-          case packCol: GpuPackedTableColumn =>
-            devBufs(idx) = packCol.getTableBuffer
-            MetaUtils.buildTableMeta(0, packCol.getContiguousTable)
-          case compCol: GpuCompressedColumnVector =>
-            devBufs(idx) = compCol.getTableBuffer
-            compCol.getTableMeta
+    // 1) Merge all the split device buffers into one more more big ones,
+    // and collect offsets and table metas
+    val (devBufs, metas) = withResource(batches) { _ =>
+      closeOnExcept(new Array[DeviceMemoryBuffer](batches.length)) { devBufs =>
+        val metas = batches.zipWithIndex.map { case (cb, idx) =>
+          cb.column(0) match {
+            case packCol: GpuPackedTableColumn =>
+              packCol.getTableBuffer.incRefCount()
+              devBufs(idx) = packCol.getTableBuffer
+              MetaUtils.buildTableMeta(0, packCol.getContiguousTable)
+            case compCol: GpuCompressedColumnVector =>
+              compCol.getTableBuffer.incRefCount()
+              devBufs(idx) = compCol.getTableBuffer
+              compCol.getTableMeta
+          }
         }
-      }
-      val offsets = devBufs.scanLeft(0L)(_ + _.getLength)
-      closeOnExcept(DeviceMemoryBuffer.allocate(offsets.last)) { buf =>
-        devBufs.zipWithIndex.foreach { case (b, idx) =>
-          buf.copyFromDeviceBufferAsync(offsets(idx), b, 0, b.getLength,
-            Cuda.DEFAULT_STREAM)
-        }
-        Cuda.DEFAULT_STREAM.sync()
-        (buf, metas, offsets)
+        (devBufs, metas)
       }
     }
-    // 2) Move the single device buffer to host
-    val singleHostBuf = withResource(singleDevBuf) { _ =>
-      closeOnExcept(HostMemoryBuffer.allocate(singleDevBuf.getLength)) { buf =>
-        buf.copyFromDeviceBuffer(singleDevBuf)
-        buf
+    val it =
+      RmmRapidsRetryIterator.withRetry(CloseableBufferSeq(devBufs), splitBufsToMergeFn) {
+        attemptBufs =>
+          val bufs = attemptBufs.bufs
+          val offsets = bufs.scanLeft(0L)(_ + _.getLength)
+          closeOnExcept(DeviceMemoryBuffer.allocate(offsets.last)) { buf =>
+            bufs.zipWithIndex.foreach { case (b, idx) =>
+              buf.copyFromDeviceBufferAsync(offsets(idx), b, 0, b.getLength,
+                Cuda.DEFAULT_STREAM)
+            }
+            Cuda.DEFAULT_STREAM.sync()
+            (buf, offsets)
+          }
       }
-    }
-    // 3) Rebuild the split batches on host
-    withResource(singleHostBuf) { _ =>
-      metas.zipWithIndex.safeMap { case (meta, idx) =>
-        val start = offsets(idx)
-        val end = offsets(idx + 1)
-        PackedTableHostColumnVector.from(meta, singleHostBuf.slice(start, end - start))
+    // 2) Move the merged device buffers to host
+    closeOnExcept(new Array[HostMemoryBuffer](metas.length)) { hostBufs =>
+      var idx = 0
+      it.foreach { case (singleDevBuf, offsets) =>
+        val singleHostBuf = withResource(singleDevBuf) { _ =>
+          closeOnExcept(HostMemoryBuffer.allocate(singleDevBuf.getLength)) { buf =>
+            buf.copyFromDeviceBuffer(singleDevBuf)
+            buf
+          }
+        }
+        withResource(singleHostBuf) { _ =>
+          if (offsets.length > 1) {
+            offsets.sliding(2).foreach { case Seq(start, end) =>
+              hostBufs(idx) = singleHostBuf.slice(start, end - start)
+              idx += 1
+            }
+          }
+        }
       }
+      assert(idx == metas.length, s"Expect ${metas.length} buffers, but got $idx ones")
+      // 3) Rebuild the split batches on host
+      metas.zip(hostBufs).map { case (meta, buf) => PackedTableHostColumnVector.from(meta, buf) }
     }
   }
 
