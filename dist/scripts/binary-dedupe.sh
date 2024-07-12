@@ -131,14 +131,14 @@ mv "$SPARK_SHARED_DIR" parallel-world/
 # identical regardless of the Spark-version-specific jar.
 #
 # At this point the duplicate classes have not been removed from version-specific jar
-# locations such as parallel-world/spark312.
+# locations such as parallel-world/spark321.
 # For each unshimmed class file look for all of its copies inside /spark[34]* and
 # and count the number of distinct checksums. There are two representative cases
 # 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark34 list. These are classes
 #    carrying the shim classifier in their package name such as
-#    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are unique by construction,
-#    and will have zero copies in any non-spark312 shims. Although such classes are currently excluded from
-#    being copied to the /spark312 Parallel World we keep the algorithm below general without assuming this.
+#    com.nvidia.spark.rapids.spark321.RapidsShuffleManager. They are unique by construction,
+#    and will have zero copies in any non-spark321 shims. Although such classes are currently excluded from
+#    being copied to the /spark321 Parallel World we keep the algorithm below general without assuming this.
 #
 # 2) The class is contributed to the unshimmed location via unshimmed-common. These are classes that
 #    that have the same package and class name across all parallel worlds.
