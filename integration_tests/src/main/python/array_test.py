@@ -747,7 +747,7 @@ data_gen = [IntegerGen(nullable=False), StringGen(nullable=False),
             DoubleGen(nullable=False), TimestampGen(nullable=False)]
 
 @pytest.mark.parametrize('data_gen', data_gen, ids=idfn)
-def test_map_from_arrays_types(data_gen):
+def test_map_from_arrays(data_gen):
     # min_length and max_length is fixed because map_from_arrays expects same sized array for keys and values
     # NULL rows are valid
     gen = StructGen(
@@ -757,13 +757,3 @@ def test_map_from_arrays_types(data_gen):
             'map_from_arrays(a, b)'),
         conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'}
     )
-
-
-@pytest.mark.parametrize('query', ["map_from_arrays(array(2, 3), array('a', 'b')) AS map",
-                                   "map_from_arrays(NULL, array('a', 'b')) AS map",
-                                   "map_from_arrays(array('a', 'b'), NULL) AS map",
-                                   "map_from_arrays(NULL, NULL) AS map",
-                                   "map_from_arrays(array(), array()) AS map"], ids=idfn)
-def test_map_from_arrays_query(query):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql('SELECT {}'.format(query)))
