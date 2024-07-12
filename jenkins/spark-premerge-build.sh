@@ -91,8 +91,9 @@ mvn_verify() {
     jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-311}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
-    jar xf "$UDF_JAR" com/nvidia/spark/udf
-    rm -rf com/nvidia/shaded/ org/openucx/ spark-shared/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+    # TODO Should clean up unused and duplicated 'org/roaringbitmap' folder in the spark3xx shims, https://github.com/NVIDIA/spark-rapids/issues/11175
+    jar xf "$UDF_JAR" com/nvidia/spark/ud
+    rm -rf com/nvidia/shaded/ org/openucx/ spark${SPK_VER}/META-INF/versions/*/org/roaringbitmap/ spark-shared/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
     popd
 
     # Triggering here until we change the jenkins file
