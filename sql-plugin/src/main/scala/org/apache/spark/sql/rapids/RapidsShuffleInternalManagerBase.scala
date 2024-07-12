@@ -275,6 +275,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
+    // Iterating the `records` may involve some heavy computations.
+    // This iterator is used to track how much time we spend for such computations.
     class TimeTrackingIterator extends Iterator[Product2[K, V]] {
       var iterateTimeNs: Long = 0L
 
@@ -325,10 +327,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
             // we call write on every writer for every record in parallel
             val writeFutures = new mutable.Queue[Future[Unit]]
+            // Accumulated record write time as if they were sequential
             val recordWriteTime: AtomicLong = new AtomicLong(0L)
+            // Time spent waiting on the limiter
             var waitTimeOnLimiterNs: Long = 0L
+            // Time spent computing ColumnarBatch sizes
             var batchSizeComputeTimeNs: Long = 0L
-            val writeTimeStart: Long = System.nanoTime()
+            // Timestamp when the main processing begins
+            val processingStart: Long = System.nanoTime()
             try {
               while (timeTrackingIterator.hasNext) {
                 // get the record
@@ -394,9 +400,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               }
             }
 
-            // writeTime is the amount of time it took to push bytes through the stream
-            // minus the amount of time it took to get the batch from the upstream execs
-            val writeTimeNs = (System.nanoTime() - writeTimeStart) -
+            // writeTimeNs is an approximation of the amount of time we spent in
+            // DiskBlockObjectWriter.write, which involves serializing records and writing them
+            // on disk. As we use multiple threads for writing, writeTimeNs is
+            // estimated by 'the total amount of time it took to finish processing the entire logic
+            // above' minus 'the amount of time it took to do anything expensive other than the
+            // serialization and the write. The latter involves computations in upstream execs,
+            // ColumnarBatch size estimation, and the time blocked on the limiter.
+            val writeTimeNs = (System.nanoTime() - processingStart) -
               timeTrackingIterator.iterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
 
             val combineTimeStart = System.nanoTime()
