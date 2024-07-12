@@ -391,3 +391,78 @@ def test_aqe_join_with_dpp(spark_tmp_path):
         """)
 
     assert_gpu_and_cpu_are_equal_collect(run_test, conf=_adaptive_conf)
+
+# Verify that DPP and AQE can coexist in even some odd cases involving 2 tables with multiple columns
+@ignore_order(local=True)
+@allow_non_gpu(*aqe_join_with_dpp_fallback)
+def test_aqe_join_with_dpp_multi_columns(spark_tmp_path):
+    conf = copy_and_update(_adaptive_conf, {
+        "spark.rapids.sql.explain": "ALL",
+        "spark.rapids.sql.debug.logTransformations": "true"})
+
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def write_data(spark):
+        spark.range(100).selectExpr(
+            "concat('t_name_', id % 9) as t_name",
+            "concat('t_id_', id % 9) as t_id",
+            "concat('v_id_', id % 3) as v_id",
+            "concat('site_', id % 2) as site_id"
+            ).repartition(200).write.parquet(data_path + "/tests")
+        spark.range(2000).selectExpr(
+            "concat('t_id_', id % 9) as t_spec",
+            "concat('v_id_', id % 3) as v_spec",
+            "CAST(id as STRING) as extra_1",
+            "concat('LONG_SITE_NAME_', id % 2) as site_id",
+            "if (id % 2 == 0, '1990-01-01', '1990-01-02') as day"
+            ).write.partitionBy("site_id", "day").parquet(data_path + "/infoB")
+        spark.range(2000).selectExpr(
+            "CAST(id as STRING) as extra_1",
+            "concat('v_id_', id % 3) as v_id",
+            "CAST(id + 10 as STRING) as extra_3",
+            "if (id % 3 == 0, 'site_0', 'site_3') as site_id",
+            "if (id % 2 == 0, '1990-01-01', '1990-01-02') as day",
+            "concat('t_id_', id % 9) as t_id"
+            ).write.partitionBy("site_id", "day", "t_id").parquet(data_path + "/infoA")
+
+    with_cpu_session(write_data)
+
+    def run_test(spark):
+        spark.read.parquet(data_path + "/tests/").createOrReplaceTempView("tests")
+        spark.read.parquet(data_path + "/infoA/").createOrReplaceTempView("infoA")
+        spark.read.parquet(data_path + "/infoB/").createOrReplaceTempView("infoB")
+        return spark.sql("""
+        WITH tmp AS 
+        ( SELECT
+            extra_1,
+            v_id,
+            site_id,
+            day,
+            t_id
+          FROM infoA WHERE
+            day >= '1980-01-01' AND
+            extra_3 != 50
+        UNION ALL
+          SELECT
+            extra_1,
+            v_spec as v_id,
+            CASE
+              WHEN site_id = 'LONG_SITE_NAME_0' then 'site_0'
+              WHEN site_id = 'LONG_SITE_NAME_1' then 'site_1'
+              ELSE site_id
+            END AS site_id,
+            day,
+            t_spec as t_id
+            FROM infoB
+        )
+        SELECT
+        a.t_id,
+        b.t_name,
+        a.extra_1,
+        day
+        FROM tmp a
+        JOIN tests b ON a.t_id = b.t_id AND a.v_id = b.v_id AND a.site_id = b.site_id
+        and day = '1990-01-01'
+        and a.site_id IN ('site_0', 'site_1');
+        """)
+
+    assert_gpu_and_cpu_are_equal_collect(run_test, conf=conf)

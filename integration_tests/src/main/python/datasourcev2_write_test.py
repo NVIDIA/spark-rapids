@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_fallback_collect, assert_equal_with_local_sort
-from data_gen import gen_df, decimal_gens
+from data_gen import gen_df, decimal_gens, non_utc_allow
 from marks import *
 from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session, with_gpu_session
 from hive_parquet_write_test import _hive_bucket_gens, _hive_array_gens, _hive_struct_gens
@@ -30,6 +30,7 @@ _hive_write_conf = {
 @pytest.mark.skipif(not (is_hive_available() and is_spark_330_or_later()),
                     reason="Must have Hive on Spark 3.3+")
 @pytest.mark.parametrize('file_format', ['parquet', 'orc'])
+@allow_non_gpu(*non_utc_allow)
 def test_write_hive_bucketed_table(spark_tmp_table_factory, file_format):
     num_rows = 2048
 
