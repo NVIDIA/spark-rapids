@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,15 +67,15 @@ belongs to. Lines are sorted by the Spark `buildver` lexicographically.
 Each line is assumed to be a JSON to keep it extensible.
 
 /*** spark-rapids-shim-json-lines
-{"spark": "312"}
+{"spark": "320"}
 {"spark": "323"}
 spark-rapids-shim-json-lines ***/
 
 The canonical location of a source file shared by multiple shims is
 src/main/<top_buildver_in_the_comment>
 
-You can find all shim files for a particular shim, e.g. 312, easily by executing:
-git grep '{"spark": "312"}' '*.java' '*.scala'
+You can find all shim files for a particular shim, e.g. 320, easily by executing:
+git grep '{"spark": "320"}' '*.java' '*.scala'
 """
 
 import errno
