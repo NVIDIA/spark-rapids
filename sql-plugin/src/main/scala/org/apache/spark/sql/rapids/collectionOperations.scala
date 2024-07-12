@@ -1181,7 +1181,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
   def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
     val boolScalar = withResource(lhs.getListOffsetsView) { lhsOffsets =>
       withResource(rhs.getListOffsetsView) { rhsOffsets =>
-        withResource(lhsOffsets.equalTo(rhsOffsets)) { compareOffsets =>
+        withResource(lhsOffsets.equalToNullAware(rhsOffsets)) { compareOffsets =>
           compareOffsets.all
         }
       }
