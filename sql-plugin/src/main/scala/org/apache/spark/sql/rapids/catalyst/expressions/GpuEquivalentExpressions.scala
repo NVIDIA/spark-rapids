@@ -112,16 +112,16 @@ class GpuEquivalentExpressions {
     case _ => true // Just assume that it does because we don't know
   }
 
-  // There are some special expressions that we should not recurse into all of its children.
-  //   1. CodegenFallback: it's children will not be used to generate code (call eval() instead)
-  //   2. GpuIf: common subexpressions will always be evaluated at the beginning, but the true
-  //          and false expressions in `If` may not get accessed, according to the predicate
-  //          expression. We should only recurse into the predicate expression.
-  //   3. GpuCaseWhen: like `If`, the children of `CaseWhen` only get accessed in a certain
-  //                condition. We should only recurse into the first condition expression as it
-  //                will always get accessed.
-  //   4. GpuCoalesce: it's also a conditional expression, we should only recurse into the
-  //                first children, because others may not get accessed.
+  /**
+   * This gets the child expressions that should be looked at for deduplication.
+   * There are some special expressions that we should not recurse into all of its children.
+   * Really this comes down to conditionals with side effects. This is because a conditional
+   * on the CPU will not execute all of the paths and then pick the final answer out of the results.
+   * So if a conditional expression GpuIf, GpuCaseWhen, and GpuCoalesce show up we can only
+   * deduplicate expressions that are unconditionally executed. This is typically the first
+   * predicate, or the first expression for GpuCoalesce. We also skip CodegenFallback
+   * but we don't use it on the GPU so it is kind of unneeded.
+   */
   private def childrenToRecurse(expr: Expression): Seq[Expression] = expr match {
     case _: CodegenFallback => Nil
     case i: GpuIf =>
@@ -145,8 +145,23 @@ class GpuEquivalentExpressions {
     case other => other.children
   }
 
-  // For some special expressions we cannot just recurse into all of its children, but we can
-  // recursively add the common expressions shared between all of its children.
+  /**
+   * This gets child expressions that should be looked at for deduplication, but
+   * not in the same way as `childrenToRecurse` does. `childrenToRecurse` will
+   * deduplicate expressions no matter where they show up. But this will only
+   * deduplicate expressions if they appear in every possible path. For example
+   * if we have a `GpuIf(x > y, a + 5, 100 DIV a)` and we are in ANSI mode.
+   * in ANSI mode + can overflow and throw an exception so we cannot unconditionally
+   * execute a + 5. Also `100 DIV a` could throw an exception if `a` is 0. So we cannot
+   * unconditionally execute either of them until we know if x > y for each row.
+   * But if we have something like `GpuIf(x > y, a + 5, (a + 5) DIV y)` the `a + 5`
+   * will execute in all cases no matter that value of `x > y`. In those cases we can
+   * deduplicate them.
+   *
+   * This will return zero or more groups of expressions where we can only
+   * deduplicate an expression in that group if it is guaranteed to be executed in
+   * all cases.
+   */
   private def commonChildrenToRecurse(expr: Expression): Seq[Seq[Expression]] = expr match {
     case _: CodegenFallback => Nil
     case i: GpuIf =>
@@ -157,19 +172,22 @@ class GpuEquivalentExpressions {
       }
     case c: GpuCaseWhen =>
       if (c.hasSideEffects) {
-        // We look at subexpressions in conditions and values of `CaseWhen` separately. It is
-        // because a subexpression in conditions will be run no matter which condition is matched
-        // if it is shared among conditions, but it doesn't need to be shared in values.
-        // Similarly,
-        // a subexpression among values doesn't need to be in conditions because no matter which
-        // condition is true, it will be evaluated.
+        // For case-when predicates and values are checked separately
+        // This is because the first predicate is guaranteed to execute,
+        // but we are not guaranteed to have the first value run. Also
+        // it is not uncommon to do something like
+        // CASE
+        //   WHEN some.foo <= 100 THEN X
+        //   WHEN some.foo <= 200 THEN Y
+        //   ELSE Z
+        // END
+        // In this case we can deduplicate `some.foo`, even if it never appears
+        // in any value clauses
         val conditions = if (c.branches.length > 1) {
-          // We don't strip off the first condition expression because it is the only one
-          // that is guaranteed to be executed.
           c.branches.map(_._1)
         } else {
           // If there is only one branch, the first condition is already covered by
-          // `childrenToRecurse` and we should exclude it here.
+          // `childrenToRecurse` and we can ignore it
           Nil
         }
         // For an expression to be in all branch values of a CaseWhen statement, it must also
