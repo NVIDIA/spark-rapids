@@ -132,7 +132,7 @@
         <!-- Remove the explicily unshimmed files from the common directory -->
         <delete>
             <fileset dir="${project.build.directory}/parallel-world/spark-shared"
-                     includesfile="${spark.rapids.source.basedir}/${rapids.module}/unshimmed-common-from-spark311.txt"/>
+                     includesfile="${spark.rapids.source.basedir}/${rapids.module}/unshimmed-common-from-spark320.txt"/>
         </delete>
     </target>
     <target name="remove-dependencies-from-pom" depends="build-parallel-worlds">
