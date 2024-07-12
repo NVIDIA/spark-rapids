@@ -1540,7 +1540,7 @@ This will force full Scala code rebuild in downstream modules.
                 <version>3.5.0</version>
                 <executions>
                   <execution>
-                    <id>default-cli</id>
+                    <id>enforce-maven</id>
                     <goals>
                       <goal>enforce</goal>
                     </goals>
