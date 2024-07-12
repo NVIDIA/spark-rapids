@@ -2028,7 +2028,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue, conf.caseWhenFuseEnabled)
+          GpuCaseWhen(branches, elseValue, this.conf.caseWhenFuseEnabled)
         }
       }),
     expr[If](
