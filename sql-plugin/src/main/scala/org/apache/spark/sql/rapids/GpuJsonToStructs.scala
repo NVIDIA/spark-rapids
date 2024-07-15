@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, CudfException, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.MapUtils
@@ -181,11 +181,13 @@ case class GpuJsonToStructs(
             try {
               cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
             }catch{
-              case e: IllegalStateException =>
+              case e @ (_: IllegalStateException | _: CudfException) =>
                 logError("Rapids currently does not support all JSON to struct cases of " +
                   "from_json. Consider turning it off by setting " +
                   "spark.rapids.sql.expression.JsonToStructs=false")
                 throw new RuntimeException("Failed to parse JSON data using cuDF", e)
+              case e: CudfException =>
+
             }
 
           }
