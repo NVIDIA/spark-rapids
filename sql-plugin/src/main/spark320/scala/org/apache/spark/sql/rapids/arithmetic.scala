@@ -44,7 +44,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 
   override def dataType: DataType = left.dataType
   // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def nullable: Boolean = left.nullable || right.nullable
 }
