@@ -23,12 +23,13 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.MapUtils
 import org.apache.commons.text.StringEscapeUtils
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
-class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
+class JsonDeviceDataSource(combined: ColumnVector) extends DataSource{
   lazy val data: BaseDeviceMemoryBuffer = combined.getData
   lazy val totalSize: Long = data.getLength
   override def size(): Long = totalSize
@@ -71,7 +72,7 @@ case class GpuJsonToStructs(
     child: Expression,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
-        with NullIntolerant {
+        with NullIntolerant with Logging{
   import GpuJsonReadCommon._
 
   private lazy val emptyRowStr = constructEmptyRow(schema)
@@ -172,11 +173,21 @@ case class GpuJsonToStructs(
         // Step 1: verify and preprocess the data to clean it up and normalize a few things
         // Step 2: Concat the data into a single buffer
         val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
+
         withResource(isNullOrEmpty) { isNullOrEmpty =>
           // Step 3: setup a datasource
           val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
             // Step 4: Have cudf parse the JSON data
-            cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+            try {
+              cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+            }catch{
+              case e: IllegalStateException =>
+                logError("Rapids currently does not support all JSON to struct cases of " +
+                  "from_json. Consider turning it off by setting " +
+                  "spark.rapids.sql.expression.JsonToStructs=false")
+                throw new RuntimeException("Failed to parse JSON data using cuDF", e)
+            }
+
           }
 
           // process duplicated field names in input struct schema
