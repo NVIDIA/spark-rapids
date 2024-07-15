@@ -2878,10 +2878,7 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
           TypeSig.ARRAY.nested(TypeSig.all))),
-        (in, conf, p, r) => new BinaryExprMeta[MapFromArrays](in, conf, p, r) {
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuMapFromArrays(lhs, rhs)
-        }
+      GpuMapFromArraysMeta
     ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
