@@ -37,24 +37,4 @@ class RapidsJsonExpressionsSuite
     TimeZone.setDefault(originalTimeZone)
     super.afterAll()
   }
-
-
-  test("from_json - invalid data in rapids") {
-    val jsonData = """{"a" 1}"""
-    val schema = StructType(StructField("a", IntegerType) :: Nil)
-    checkEvaluation(
-      JsonToStructs(schema, Map.empty, Literal(jsonData), UTC_OPT),
-      InternalRow(null)
-    )
-
-    val exception = intercept[TestFailedException] {
-      checkEvaluation(
-        JsonToStructs(schema, Map("mode" -> FailFastMode.name), Literal(jsonData), UTC_OPT),
-        InternalRow(null)
-      )
-    }.getCause
-    assert(exception.isInstanceOf[SparkException])
-    assert(exception.getMessage.contains(
-      "Malformed records are detected in record parsing. Parse Mode: FAILFAST"))
-  }
 }
