@@ -151,31 +151,6 @@
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-20x</module>
             </modules>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>enforce-cloudera-jdk-version</id>
-                                <goals>
-                                    <goal>enforce</goal>
-                                </goals>
-                                <configuration>
-                                    <rules>
-                                        <requireJavaVersion>
-                                            <message>Only Java 8, 11 are supported for Cloudera! For details please
-                                                see https://github.com/NVIDIA/spark-rapids/issues/11112</message>
-                                            <version>(,17)</version>
-                                        </requireJavaVersion>
-                                    </rules>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <id>release322</id>
@@ -444,31 +419,6 @@
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
             </modules>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>enforce-cloudera-jdk-version</id>
-                                <goals>
-                                    <goal>enforce</goal>
-                                </goals>
-                                <configuration>
-                                    <rules>
-                                        <requireJavaVersion>
-                                            <message>Only Java 8, 11 are supported for Cloudera! For details please
-                                                see https://github.com/NVIDIA/spark-rapids/issues/11112</message>
-                                            <version>(,17)</version>
-                                        </requireJavaVersion>
-                                    </rules>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <id>release332cdh</id>
@@ -495,31 +445,6 @@
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
             </modules>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>enforce-cloudera-jdk-version</id>
-                                <goals>
-                                    <goal>enforce</goal>
-                                </goals>
-                                <configuration>
-                                    <rules>
-                                        <requireJavaVersion>
-                                            <message>Only Java 8, 11 are supported for Cloudera! For details please
-                                                see https://github.com/NVIDIA/spark-rapids/issues/11112</message>
-                                            <version>(,17)</version>
-                                        </requireJavaVersion>
-                                    </rules>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
