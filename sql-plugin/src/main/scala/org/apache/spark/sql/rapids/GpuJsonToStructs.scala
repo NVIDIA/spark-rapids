@@ -186,14 +186,10 @@ case class GpuJsonToStructs(
                   "from_json. Consider turning it off by setting " +
                   "spark.rapids.sql.expression.JsonToStructs=false")
                 throw new RuntimeException("Failed to parse JSON data using cuDF", e)
-              case e: CudfException =>
-
             }
-
           }
 
           // process duplicated field names in input struct schema
-
           withResource(table) { _ =>
             // Step 5: verify that the data looks correct
             if (table.getRowCount != numRows) {
