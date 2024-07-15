@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, NullPolicy, Scalar, ScanAggregation, ScanType, Table, UnaryOp}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CaseWhen
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -47,7 +48,7 @@ object GpuExpressionWithSideEffectUtils {
 
   /**
    * Used to shortcircuit predicates and filter conditions.
-   * 
+   *
    * @param nullsAsFalse when true, null values are considered false.
    * @param col the input being evaluated.
    * @return boolean. When nullsAsFalse is set, it returns True if none of the rows is true;
@@ -182,9 +183,9 @@ case class GpuIf(
     predicateExpr: Expression,
     trueExpr: Expression,
     falseExpr: Expression) extends GpuConditionalExpression {
-  
+
   import GpuExpressionWithSideEffectUtils._
-  
+
   @transient
   override lazy val inputTypesForMerging: Seq[DataType] = {
     Seq(trueExpr.dataType, falseExpr.dataType)
@@ -314,7 +315,9 @@ case class GpuIf(
 
 case class GpuCaseWhen(
     branches: Seq[(Expression, Expression)],
-    elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
+    elseValue: Option[Expression] = None,
+    caseWhenFuseEnabled: Boolean = true)
+    extends GpuConditionalExpression with Serializable {
 
   import GpuExpressionWithSideEffectUtils._
 
@@ -333,6 +336,10 @@ case class GpuCaseWhen(
     // Result is nullable if any of the branch is nullable, or if the else value is nullable
     branches.exists(_._2.nullable) || elseValue.forall(_.nullable)
   }
+
+  private lazy val useFusion = caseWhenFuseEnabled && branches.size > 2 &&
+    GpuColumnVectorUtils.isCaseWhenFusionSupportedType(inputTypesForMerging.head) &&
+    (branches.map(_._2) ++ elseValue).forall(_.isInstanceOf[GpuLiteral])
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (TypeCoercion.haveSameType(inputTypesForMerging)) {
@@ -359,15 +366,54 @@ case class GpuCaseWhen(
     if (branchesWithSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
-      // `elseRet` will be closed in `computeIfElse`.
-      val elseRet = elseValue
-        .map(_.columnarEvalAny(batch))
-        .getOrElse(GpuScalar(null, branches.last._2.dataType))
-      val any = branches.foldRight[Any](elseRet) {
-        case ((predicateExpr, trueExpr), falseRet) =>
-          computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+      if (useFusion) {
+        // when branches size > 2;
+        // return type is supported types: Boolean/Byte/Int/String/Decimal ...
+        // all the then and else expressions are Scalars.
+        // Avoid to use multiple `computeIfElse`s which will create multiple temp columns
+
+        // 1. select first true index from bool columns, if no true, index will be out of bound
+        // e.g.:
+        //  case when bool result column 0: true,  false, false
+        //  case when bool result column 1: false, true,  false
+        //  result is: [0, 1, 2]
+        val whenBoolCols = branches.safeMap(_._1.columnarEval(batch).getBase).toArray
+        val firstTrueIndex: ColumnVector = withResource(whenBoolCols) { _ =>
+          CaseWhen.selectFirstTrueIndex(whenBoolCols)
+        }
+
+        withResource(firstTrueIndex) { _ =>
+          val thenElseScalars = (branches.map(_._2) ++ elseValue).map(_.columnarEvalAny(batch)
+              .asInstanceOf[GpuScalar])
+          withResource(thenElseScalars) { _ =>
+            // 2. generate a column to store all scalars
+            withResource(GpuColumnVectorUtils.createFromScalarList(thenElseScalars)) {
+              scalarCol =>
+                val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
+                  // 3. execute final select
+                  // default gather OutOfBoundsPolicy is nullify,
+                  // If index is out of bound, return null
+                  withResource(oneColumnTable.gather(firstTrueIndex)) { resultTable =>
+                    resultTable.getColumn(0).incRefCount()
+                  }
+                }
+                // return final column vector
+                GpuColumnVector.from(finalRet, dataType)
+            }
+          }
+        }
+      } else {
+        // execute from tail to front recursively
+        // `elseRet` will be closed in `computeIfElse`.
+        val elseRet = elseValue
+          .map(_.columnarEvalAny(batch))
+          .getOrElse(GpuScalar(null, branches.last._2.dataType))
+        val any = branches.foldRight[Any](elseRet) {
+          case ((predicateExpr, trueExpr), falseRet) =>
+            computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+        }
+        GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
       }
-      GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
     }
   }
 
