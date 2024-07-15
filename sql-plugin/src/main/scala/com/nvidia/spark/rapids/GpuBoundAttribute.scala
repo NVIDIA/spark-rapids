@@ -141,7 +141,9 @@ object GpuBindReferences extends Logging {
       runTiered: Boolean): GpuTieredProject = {
 
     if (runTiered) {
-      val exprTiers = GpuEquivalentExpressions.getExprTiers(expressions)
+      // TODO put this under a config??? OR should be be for each expressions??
+      val replaced = GpuEquivalentExpressions.replaceMultiExpressions(expressions)
+      val exprTiers = GpuEquivalentExpressions.getExprTiers(replaced)
       val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
       // Update ExprTiers to include the columns that are pass through and drop unneeded columns
       val newExprTiers = exprTiers.zipWithIndex.map {
@@ -158,10 +160,11 @@ object GpuBindReferences extends Logging {
             exprTier
           }
       }
-      GpuTieredProject(newExprTiers.zip(inputTiers).map {
+      val tiered = newExprTiers.zip(inputTiers).map {
         case (es: Seq[Expression], is: AttributeSeq) =>
           es.map(GpuBindReferences.bindGpuReference(_, is)).toList
-      })
+      }
+      GpuTieredProject(tiered)
     } else {
       GpuTieredProject(Seq(GpuBindReferences.bindGpuReferences(expressions, input)))
     }
