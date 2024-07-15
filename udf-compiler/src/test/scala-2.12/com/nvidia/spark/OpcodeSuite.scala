@@ -72,7 +72,7 @@ class OpcodeSuite extends AnyFunSuite {
     val myudf: Boolean => Boolean = { x => !x }
     val u = makeUdf(myudf)
     val dataset = List(true, false, true, false).toDS().repartition(1)
-    val result = dataset.withColumn("new", u(Symbol("value")))
+    val result = dataset.withColumn("new", u('value))
     val equiv = dataset.withColumn("new", not(col("value")))
     checkEquiv(result, equiv)
   }
@@ -796,24 +796,16 @@ class OpcodeSuite extends AnyFunSuite {
 
   test("IFNONNULL opcode") {
     val myudf: (String, String) => String = (a,b) => {
-//      val (empty, nonempty) = if (a.isEmpty) {
-//      println("a is empty")
-//      (a, b)
-//      }
-//      else (b, a)
-      a match {
-        case null => a
-        case _ => b
+      if (null == a) {
+        a
+      } else {
+        b
       }
     }
     val u = makeUdf(myudf)
-    println(myudf("", "z"))
     val dataset = List(("","z")).toDF("x","y")
-    dataset.show()
     val result = dataset.withColumn("new", u(col("x"),col("y")))
-    result.show()
     val ref = dataset.withColumn("new", lit("z"))
-    ref.show()
     checkEquiv(result, ref)
   }
 
