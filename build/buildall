@@ -265,7 +265,7 @@ function build_single_shim() {
       -Dmaven.scaladoc.skip \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl tools -am > "$LOG_FILE" 2>&1 || {
-        [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -20 "$LOG_FILE" || true
+        [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -500 "$LOG_FILE" || true
         exit 255
       }
 }
@@ -274,8 +274,8 @@ export -f build_single_shim
 # Install all the versions for DIST_PROFILE
 
 # First build the aggregator module for all SPARK_SHIM_VERSIONS in parallel skipping expensive plugins that
-# - either deferred to 311 because the check is identical in all shim profiles such as scalastyle
-# - or deferred to 311 because we currently don't require it per shim such as scaladoc generation
+# - either deferred to 320 because the check is identical in all shim profiles such as scalastyle
+# - or deferred to 320 because we currently don't require it per shim such as scaladoc generation
 # - or there is a dedicated step to run against a particular shim jar such as unit tests, in
 #   the near future we will run unit tests against a combined multi-shim jar to catch classloading
 #   regressions even before pytest-based integration_tests
@@ -296,7 +296,7 @@ time (
   fi
   # This used to resume from dist. However, without including aggregator in the build
   # the build does not properly initialize spark.version property via buildver profiles
-  # in the root pom, and we get a missing spark311 dependency even for --profile=312,321
+  # in the root pom, and we get a missing spark320 dependency even for --profile=320,321
   # where the build does not require it. Moving it to aggregator resolves this issue with
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"

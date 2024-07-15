@@ -40,20 +40,20 @@ import org.apache.spark.util.MutableURLClassLoader
     "parallel worlds" in the JDK's com.sun.istack.internal.tools.ParallelWorldClassLoader parlance
     1. a few publicly documented classes in the conventional layout at the top
     2. a large fraction of classes whose bytecode is identical under all supported Spark versions
-       in spark3xx-common
+       in spark-shared
     3. a smaller fraction of classes that differ under one of the supported Spark versions
     com/nvidia/spark/SQLPlugin.class
-    spark3xx-common/com/nvidia/spark/rapids/CastExprMeta.class
-    spark311/org/apache/spark/sql/rapids/GpuUnaryMinus.class
-    spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
+    spark-shared/com/nvidia/spark/rapids/CastExprMeta.class
+    spark320/org/apache/spark/sql/rapids/aggregate/GpuLast.class
+    spark331/org/apache/spark/sql/rapids/aggregate/GpuLast.class
     Each shim can see a consistent parallel world without conflicts by referencing
     only one conflicting directory.
     E.g., Spark 3.2.0 Shim will use
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.0.jar!/spark320/
-    Spark 3.1.1 will use
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark320/
+    Spark 3.3.1 will use
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark331/
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
@@ -67,7 +67,7 @@ object ShimLoader extends Logging {
     new URL(rootUrlStr)
   }
 
-  private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
+  private val shimCommonURL = new URL(s"${shimRootURL.toString}spark-shared/")
   @volatile private var shimProviderClass: String = _
   @volatile private var shimProvider: SparkShimServiceProvider = _
   @volatile private var shimURL: URL = _

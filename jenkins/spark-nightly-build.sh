@@ -34,7 +34,7 @@ MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 
 
 DIST_PL="dist"
 function mvnEval {
-    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
+    $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease320 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
 }
 
 ART_ID=$(mvnEval project.artifactId)
@@ -176,7 +176,7 @@ distWithReducedPom "install"
 if [[ $SKIP_DEPLOY != 'true' ]]; then
     distWithReducedPom "deploy"
 
-    # this deploys selected submodules that is unconditionally built with Spark 3.1.1
+    # this deploys selected submodules that is unconditionally built with Spark 3.2.0
     $MVN -B deploy -pl $DEPLOY_SUBMODULES \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests \

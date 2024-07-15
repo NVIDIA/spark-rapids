@@ -83,8 +83,22 @@ abstract class BackendTestSettings {
   // or a description like "This simply can't work on GPU".
   // It should never be "unknown" or "need investigation"
   case class KNOWN_ISSUE(reason: String) extends ExcludeReason
+  case class ADJUST_UT(reason: String) extends ExcludeReason
   case class WONT_FIX_ISSUE(reason: String) extends ExcludeReason
 
+  protected def getJavaMajorVersion(): Int = {
+    val version = System.getProperty("java.version")
+    // Allow these formats:
+    // 1.8.0_72-ea
+    // 9-ea
+    // 9
+    // 11.0.1
+    val versionRegex = """(1\.)?(\d+)([._].+)?""".r
+    version match {
+      case versionRegex(_, major, _) => major.toInt
+      case _ => throw new IllegalStateException(s"Cannot parse java version: $version")
+    }
+  }
 
   final protected class SuiteSettings {
     private[utils] val inclusion: util.List[IncludeBase] = new util.ArrayList()
@@ -95,42 +109,54 @@ abstract class BackendTestSettings {
       inclusion.add(Include(testNames: _*))
       this
     }
-    def exclude(testNames: String, reason: ExcludeReason): SuiteSettings = {
-      exclusion.add(Exclude(testNames))
-      excludeReasons.add(reason)
+
+    def exclude(testNames: String, reason: ExcludeReason, condition: Boolean = true): 
+        SuiteSettings = {
+      if (condition) {
+        exclusion.add(Exclude(testNames))
+        excludeReasons.add(reason)
+      }
       this
     }
+
     def includeRapidsTest(testName: String*): SuiteSettings = {
       inclusion.add(IncludeRapidsTest(testName: _*))
       this
     }
+
     def excludeRapidsTest(testName: String, reason: ExcludeReason): SuiteSettings = {
       exclusion.add(ExcludeRapidsTest(testName))
       excludeReasons.add(reason)
       this
     }
+
     def includeByPrefix(prefixes: String*): SuiteSettings = {
       inclusion.add(IncludeByPrefix(prefixes: _*))
       this
     }
+
     def excludeByPrefix(prefixes: String, reason: ExcludeReason): SuiteSettings = {
       exclusion.add(ExcludeByPrefix(prefixes))
       excludeReasons.add(reason)
       this
     }
+
     def includeRapidsTestsByPrefix(prefixes: String*): SuiteSettings = {
       inclusion.add(IncludeRapidsTestByPrefix(prefixes: _*))
       this
     }
+
     def excludeRapidsTestsByPrefix(prefixes: String, reason: ExcludeReason): SuiteSettings = {
       exclusion.add(ExcludeRadpisTestByPrefix(prefixes))
       excludeReasons.add(reason)
       this
     }
+
     def includeAllRapidsTests(): SuiteSettings = {
       inclusion.add(IncludeByPrefix(RAPIDS_TEST))
       this
     }
+
     def excludeAllRapidsTests(reason: ExcludeReason): SuiteSettings = {
       exclusion.add(ExcludeByPrefix(RAPIDS_TEST))
       excludeReasons.add(reason)
@@ -141,25 +167,31 @@ abstract class BackendTestSettings {
   protected trait IncludeBase {
     def isIncluded(testName: String): Boolean
   }
+
   protected trait ExcludeBase {
     def isExcluded(testName: String): Boolean
   }
+
   private case class Include(testNames: String*) extends IncludeBase {
     val nameSet: Set[String] = Set(testNames: _*)
     override def isIncluded(testName: String): Boolean = nameSet.contains(testName)
   }
+
   private case class Exclude(testNames: String*) extends ExcludeBase {
     val nameSet: Set[String] = Set(testNames: _*)
     override def isExcluded(testName: String): Boolean = nameSet.contains(testName)
   }
+
   private case class IncludeRapidsTest(testNames: String*) extends IncludeBase {
     val nameSet: Set[String] = testNames.map(name => RAPIDS_TEST + name).toSet
     override def isIncluded(testName: String): Boolean = nameSet.contains(testName)
   }
+
   private case class ExcludeRapidsTest(testNames: String*) extends ExcludeBase {
     val nameSet: Set[String] = testNames.map(name => RAPIDS_TEST + name).toSet
     override def isExcluded(testName: String): Boolean = nameSet.contains(testName)
   }
+
   private case class IncludeByPrefix(prefixes: String*) extends IncludeBase {
     override def isIncluded(testName: String): Boolean = {
       if (prefixes.exists(prefix => testName.startsWith(prefix))) {
@@ -168,6 +200,7 @@ abstract class BackendTestSettings {
       false
     }
   }
+
   private case class ExcludeByPrefix(prefixes: String*) extends ExcludeBase {
     override def isExcluded(testName: String): Boolean = {
       if (prefixes.exists(prefix => testName.startsWith(prefix))) {
@@ -176,6 +209,7 @@ abstract class BackendTestSettings {
       false
     }
   }
+
   private case class IncludeRapidsTestByPrefix(prefixes: String*) extends IncludeBase {
     override def isIncluded(testName: String): Boolean = {
       if (prefixes.exists(prefix => testName.startsWith(RAPIDS_TEST + prefix))) {
@@ -184,6 +218,7 @@ abstract class BackendTestSettings {
       false
     }
   }
+
   private case class ExcludeRadpisTestByPrefix(prefixes: String*) extends ExcludeBase {
     override def isExcluded(testName: String): Boolean = {
       if (prefixes.exists(prefix => testName.startsWith(RAPIDS_TEST + prefix))) {

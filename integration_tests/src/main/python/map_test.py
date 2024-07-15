@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import *
 from conftest import is_not_utc
 from data_gen import *
 from conftest import is_databricks_runtime
-from marks import allow_non_gpu, ignore_order, datagen_overrides
+from marks import allow_non_gpu, datagen_overrides, disable_ansi_mode, ignore_order
 from spark_session import *
 from pyspark.sql.functions import create_map, col, lit, row_number
 from pyspark.sql.types import *
@@ -138,6 +138,7 @@ numeric_key_map_gens = [MapGen(key, value(), max_length=6)
                         for key in numeric_key_gens for value in get_map_value_gens()]
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
 def test_get_map_value_numeric_keys(data_gen):
     key_gen = data_gen._key_gen
@@ -151,6 +152,7 @@ def test_get_map_value_numeric_keys(data_gen):
             'a[999]'))
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_get_map_value_supported_keys(data_gen):
@@ -174,6 +176,7 @@ def test_get_map_value_fallback_keys(data_gen):
         cpu_fallback_class_name="GetMapValue")
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
 def test_basic_scalar_map_get_map_value(key_gen):
     def query_map_scalar(spark):
@@ -639,6 +642,8 @@ def test_map_element_at_ansi_null(data_gen):
                 'element_at(a, "NOT_FOUND")'),
             conf=ansi_enabled_conf)
 
+
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_values(data_gen):

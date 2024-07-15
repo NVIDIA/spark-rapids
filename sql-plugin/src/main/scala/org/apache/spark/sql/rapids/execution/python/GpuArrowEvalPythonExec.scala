@@ -362,15 +362,16 @@ case class GpuArrowEvalPythonExec(
 
   override def producedAttributes: AttributeSet = AttributeSet(resultAttrs)
 
-  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  private def collectFunctions(
+      udf: GpuPythonUDF): ((ChainedPythonFunctions, Long), Seq[Expression]) = {
     udf.children match {
       case Seq(u: GpuPythonUDF) =>
-        val (chained, children) = collectFunctions(u)
-        (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
+        val ((chained, _), children) = collectFunctions(u)
+        ((ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), udf.resultId.id), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
         assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
-        (ChainedPythonFunctions(Seq(udf.func)), udf.children)
+        ((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id), udf.children)
     }
   }
 

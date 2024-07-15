@@ -30,6 +30,7 @@ package org.apache.spark.sql.hive.rapids.shims
 import java.util.Locale
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
@@ -37,7 +38,7 @@ import org.apache.hadoop.hive.ql.ErrorMsg
 import org.apache.hadoop.hive.ql.plan.TableDesc
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.{AnalysisException, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -47,7 +48,8 @@ import org.apache.spark.sql.execution.command.CommandUtils
 import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
-import org.apache.spark.sql.hive.rapids.{GpuHiveTextFileFormat, GpuSaveAsHiveFile, RapidsHiveErrors}
+import org.apache.spark.sql.hive.rapids.{GpuHiveFileFormat, GpuSaveAsHiveFile, RapidsHiveErrors}
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
@@ -59,16 +61,17 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    // Only Hive delimited text writes are currently supported.
-    // Check whether that is the format currently in play.
-    fileFormat = GpuHiveTextFileFormat.tagGpuSupport(this)
+    fileFormat = GpuHiveFileFormat.tagGpuSupport(this)
   }
 
   override def convertToGpu(): GpuDataWritingCommand = {
+    val format = fileFormat.getOrElse(
+      throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
+
     GpuInsertIntoHiveTable(
       table = wrapped.table,
       partition = wrapped.partition,
-      fileFormat = this.fileFormat.get,
+      fileFormat = format,
       query = wrapped.query,
       overwrite = wrapped.overwrite,
       ifPartitionNotExists = wrapped.ifPartitionNotExists,
@@ -127,7 +130,7 @@ case class GpuInsertIntoHiveTable(
     }
 
     // un-cache this table.
-    CommandUtils.uncacheTableOrView(sparkSession, table.identifier.quotedString)
+    CommandUtilsShim.uncacheTableOrView(sparkSession, table.identifier)
     sparkSession.sessionState.catalog.refreshTable(table.identifier)
 
     CommandUtils.updateTableStats(sparkSession, table)
@@ -181,7 +184,7 @@ case class GpuInsertIntoHiveTable(
       // Report error if any static partition appears after a dynamic partition
       val isDynamic = partitionColumnNames.map(partitionSpec(_).isEmpty)
       if (isDynamic.init.zip(isDynamic.tail).contains((true, false))) {
-        throw new AnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
+        throw RapidsErrorUtils.dynamicPartitionParentError
       }
     }
 
@@ -196,6 +199,9 @@ case class GpuInsertIntoHiveTable(
       // column names in order to make `loadDynamicPartitions` work.
       attr.withName(name.toLowerCase(Locale.ROOT))
     }
+    val forceHiveHashForBucketing =
+      RapidsConf.FORCE_HIVE_HASH_FOR_BUCKETED_WRITE.get(sparkSession.sessionState.conf)
+
 
     val writtenParts = gpuSaveAsHiveFile(
       sparkSession = sparkSession,
@@ -203,7 +209,10 @@ case class GpuInsertIntoHiveTable(
       hadoopConf = hadoopConf,
       fileFormat = fileFormat,
       outputLocation = tmpLocation.toString,
-      partitionAttributes = partitionAttributes)
+      forceHiveHashForBucketing = forceHiveHashForBucketing,
+      partitionAttributes = partitionAttributes,
+      bucketSpec = table.bucketSpec,
+      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec))
 
     if (partition.nonEmpty) {
       if (numDynamicPartitions > 0) {
@@ -315,8 +324,10 @@ case class GpuInsertIntoHiveTable(
                 if (!fs.delete(path, true)) {
                   throw RapidsHiveErrors.cannotRemovePartitionDirError(path)
                 }
-                // Don't let Hive do overwrite operation since it is slower.
-                doHiveOverwrite = false
+                // Don't let Hive do overwrite operation since it is slower. But still give a
+                // chance to forcely override this for some customized cases when this
+                // operation is optimized.
+                doHiveOverwrite = hadoopConf.getBoolean("hive.movetask.enable.dir.move", false)
               }
             }
           }
