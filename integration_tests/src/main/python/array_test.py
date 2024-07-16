@@ -785,7 +785,7 @@ def test_map_from_arrays_null_exception():
         lambda spark: gen_df(spark, gen).selectExpr(
             'map_from_arrays(array(NULL,1), a)').collect(),
         conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
-        error_message = "NULL_MAP_KEY")
+        error_message = "null as map key")
 
 def test_map_from_arrays_length_exception():
     gen = StructGen(

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1178,7 +1178,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
    * Compare top level offsets to ensure there are equal number of elements in
    * keys array and values array for each row.
    */
-  def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
+  private def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
     val boolScalar = withResource(lhs.getListOffsetsView) { lhsOffsets =>
       withResource(rhs.getListOffsetsView) { rhsOffsets =>
         withResource(lhsOffsets.equalToNullAware(rhsOffsets)) { compareOffsets =>
@@ -1195,12 +1195,15 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
    * Build new keys column and values column where a row is not NULL only if
    * keys[row_id] and values[row_id] are not NULL.
    */
-  def nullSanitize(lhs: ColumnVector, rhs: ColumnVector) :
+  private def nullSanitize(lhs: ColumnVector, rhs: ColumnVector) :
   (ColumnVector, ColumnVector) = {
-    if(lhs.hasNulls || rhs.hasNulls) {
-      withResource(lhs.isNull) { lhsNulls =>
+    if (lhs.hasNulls || rhs.hasNulls) {
+      val combinedNulls = withResource(lhs.isNull) { lhsNulls =>
         withResource(rhs.isNull) { rhsNulls =>
-          withResource(lhsNulls.or(rhsNulls)) { combinedNulls =>
+          lhsNulls.or(rhsNulls)
+        }
+      }
+      withResource(combinedNulls) { combinedNulls =>
             withResource(GpuScalar.from(null, left.dataType)) { leftScalar =>
               withResource(GpuScalar.from(null, right.dataType)) { rightScalar =>
                 //  lhs: [[1,2], NULL, [3]]
@@ -1211,12 +1214,9 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
                 val newRhs = combinedNulls.ifElse(rightScalar, rhs)
                 (newLhs, newRhs)
               }
-            }
           }
         }
-      }
-    }
-    else {
+    } else {
       lhs.incRefCount()
       rhs.incRefCount()
       (lhs,rhs)
@@ -1227,7 +1227,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
    * Spark by default does not allow keys array to contain duplicate values
    * Compare distinct key count before and after dropping duplicates per row
    */
-  def rowContainsDuplicates(keysList: ColumnVector): Boolean = {
+  private def rowContainsDuplicates(keysList: ColumnVector): Boolean = {
     withResource(keysList.getChildColumnView(0)) { childView =>
       withResource(keysList.dropListDuplicates) { newKeyList =>
         withResource(newKeyList.getChildColumnView(0)) { newChildView =>
@@ -1240,7 +1240,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
   /**
    * Create list< struct < X, Y > > from list< X > and List< Y >
    */
-  def constructMapColumn(sanitizedLhsBase: ColumnVector, sanitizedRhsBase: ColumnVector)
+  private def constructMapColumn(sanitizedLhsBase: ColumnVector, sanitizedRhsBase: ColumnVector)
   : ColumnVector = {
     withResource(ColumnView.makeStructView(sanitizedLhsBase.getChildColumnView(0),
       sanitizedRhsBase.getChildColumnView(0))) { structView =>
