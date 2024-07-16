@@ -21,7 +21,7 @@ import scala.util.parsing.combinator.RegexParsers
 
 import ai.rapids.cudf.{ColumnVector, GetJsonObjectOptions, Scalar}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, ReallyAGpuExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.jni.JSONUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -202,19 +202,41 @@ case class GpuMultiGetJsonObject(json: Expression,
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    // TODO switch this over to a multi-get...
-    val columns = withResource(json.columnarEval(batch)) { input =>
-      jniInstructions.safeMap { optInsts =>
-        optInsts.map { insts =>
-          JSONUtils.getJsonObject(input.getBase, insts)
-        }.getOrElse {
-          withResource(GpuScalar.from(null, StringType)) { s =>
+    val nullIndexes = jniInstructions.zipWithIndex.filter {
+      case (None, _) => true
+      case _ => false
+    }.map(_._2)
+
+    val validPathsWithIndexes = jniInstructions.zipWithIndex.filter {
+      case (Some(_), _) => true
+      case _ => false
+    }.map {
+      case (Some(arr), idx) => (java.util.Arrays.asList(arr: _*), idx)
+      case _ => throw new IllegalStateException("Internal Error")
+    }
+
+    val validPaths = java.util.Arrays.asList(validPathsWithIndexes.map(_._1): _*)
+    val validPathColumns = withResource(json.columnarEval(batch)) { input =>
+      JSONUtils.getJsonObjectMultiplePaths(input.getBase, validPaths)
+    }
+    withResource(new Array[ColumnVector](paths.length)) { columns =>
+      withResource(validPathColumns) { _ =>
+        if (nullIndexes.nonEmpty) {
+          val nullCol = withResource(GpuScalar.from(null, StringType)) { s =>
             ColumnVector.fromScalar(s, batch.numRows())
           }
+          withResource(nullCol) { _ =>
+            nullIndexes.foreach { idx =>
+              columns(idx) = nullCol.incRefCount()
+            }
+          }
+        }
+
+        validPathsWithIndexes.map(_._2).zipWithIndex.foreach {
+          case (toIndex, fromIndex) =>
+            columns(toIndex) = validPathColumns(fromIndex).incRefCount()
         }
       }
-    }
-    withResource(columns) { _ =>
       GpuColumnVector.from(ColumnVector.makeStruct(batch.numRows(), columns: _*), dataType)
     }
   }
@@ -446,10 +468,9 @@ case class GpuGetJsonObject(
     }
   }
 
-  override def getCombiner(): GpuExpressionCombiner = {
-    // TODO should we cache this???
-    new GetJsonObjectCombiner(this)
-  }
+  private lazy val combiner = new GetJsonObjectCombiner(this)
+
+  override def getCombiner(): GpuExpressionCombiner = combiner
 }
 
 case class GpuGetJsonObjectLegacy(
