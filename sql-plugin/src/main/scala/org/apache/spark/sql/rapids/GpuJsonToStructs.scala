@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
-class JsonDeviceDataSource(combined: ColumnVector) extends DataSource{
+class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
   lazy val data: BaseDeviceMemoryBuffer = combined.getData
   lazy val totalSize: Long = data.getLength
   override def size(): Long = totalSize
@@ -72,7 +72,7 @@ case class GpuJsonToStructs(
     child: Expression,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
-        with NullIntolerant with Logging{
+        with NullIntolerant with Logging {
   import GpuJsonReadCommon._
 
   private lazy val emptyRowStr = constructEmptyRow(schema)
@@ -180,7 +180,7 @@ case class GpuJsonToStructs(
             // Step 4: Have cudf parse the JSON data
             try {
               cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
-            }catch{
+            } catch {
               case e @ (_: IllegalStateException | _: CudfException) =>
                 logError("Rapids currently does not support all JSON to struct cases of " +
                   "from_json. Consider turning it off by setting " +
