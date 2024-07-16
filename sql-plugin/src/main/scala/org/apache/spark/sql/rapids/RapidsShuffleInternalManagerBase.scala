@@ -274,29 +274,36 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
   val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
 
-  override def write(records: Iterator[Product2[K, V]]): Unit = {
-    // Iterating the `records` may involve some heavy computations.
-    // This iterator is used to track how much time we spend for such computations.
-    class TimeTrackingIterator extends Iterator[Product2[K, V]] {
-      var iterateTimeNs: Long = 0L
+  /**
+   * Simple wrapper that tracks the time spent iterating the given iterator.
+   */
+  class TimeTrackingIterator(delegate: Iterator[Product2[K, V]]) extends Iterator[Product2[K, V]] {
+    private var iterateTimeNs: Long = 0L
 
-      override def hasNext: Boolean = {
-        val start = System.nanoTime()
-        val ret = records.hasNext
-        iterateTimeNs += System.nanoTime() - start
-        ret
-      }
-
-      override def next(): Product2[K, V] = {
-        val start = System.nanoTime()
-        val ret = records.next
-        iterateTimeNs += System.nanoTime() - start
-        ret
-      }
+    override def hasNext: Boolean = {
+      val start = System.nanoTime()
+      val ret = delegate.hasNext
+      iterateTimeNs += System.nanoTime() - start
+      ret
     }
 
-    val timeTrackingIterator = new TimeTrackingIterator
+    override def next(): Product2[K, V] = {
+      val start = System.nanoTime()
+      val ret = delegate.next
+      iterateTimeNs += System.nanoTime() - start
+      ret
+    }
 
+    def getIterateTimeNs: Long = iterateTimeNs
+  }
+
+  override def write(records: Iterator[Product2[K, V]]): Unit = {
+    // Iterating the `records` may involve some heavy computations.
+    // TimeTrackingIterator is used to track how much time we spend for such computations.
+    write(new TimeTrackingIterator(records))
+  }
+
+  def write(records: TimeTrackingIterator): Unit = {
     withResource(new NvtxRange("ThreadedWriter.write", NvtxColor.RED)) { _ =>
       withResource(new NvtxRange("compute", NvtxColor.GREEN)) { _ =>
         val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
@@ -305,7 +312,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           numPartitions)
         try {
           var openTimeNs = 0L
-          val partLengths = if (!timeTrackingIterator.hasNext) {
+          val partLengths = if (!records.hasNext) {
             commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
           } else {
             // per reduce partition id
@@ -336,9 +343,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // Timestamp when the main processing begins
             val processingStart: Long = System.nanoTime()
             try {
-              while (timeTrackingIterator.hasNext) {
+              while (records.hasNext) {
                 // get the record
-                val record = timeTrackingIterator.next()
+                val record = records.next()
                 val key = record._1
                 val value = record._2
                 val reducePartitionId: Int = partitioner.getPartition(key)
@@ -408,7 +415,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // serialization and the write. The latter involves computations in upstream execs,
             // ColumnarBatch size estimation, and the time blocked on the limiter.
             val writeTimeNs = (System.nanoTime() - processingStart) -
-              timeTrackingIterator.iterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
+              records.getIterateTimeNs - batchSizeComputeTimeNs - waitTimeOnLimiterNs
 
             val combineTimeStart = System.nanoTime()
             val pl = writePartitionedData(mapOutputWriter)
