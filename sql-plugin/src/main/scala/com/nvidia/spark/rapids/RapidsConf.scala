@@ -995,6 +995,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_COMBINED_EXPR_PREFIX = "spark.rapids.sql.expression.combined."
+
+  val ENABLE_COMBINED_EXPRESSIONS = conf("spark.rapids.sql.combined.expressions.enabled")
+    .doc("For some expressions it can be much more efficient to combine multiple " +
+      "expressions together into a single kernel call. This enables or disables that " +
+      s"feature. Note that this requires that $ENABLE_TIERED_PROJECT is turned on or " +
+      "else there is no performance improvement. You can also disable this feature for " +
+      "expressions that support it. Each config is expression specific and starts with " +
+      s"$ENABLE_COMBINED_EXPR_PREFIX followed by the name of the GPU expression class " +
+      s"similar to what we do for enabling converting individual expressions to the GPU.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_RLIKE_REGEX_REWRITE = conf("spark.rapids.sql.rLikeRegexRewrite.enabled")
       .doc("Enable the optimization to rewrite rlike regex to contains in some cases.")
       .internal()
@@ -2811,6 +2825,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
+  lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression, SortOrder}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuEquivalentExpressions
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -138,11 +139,14 @@ object GpuBindReferences extends Logging {
   def bindGpuReferencesTiered[A <: Expression](
       expressions: Seq[A],
       input: AttributeSeq,
-      runTiered: Boolean): GpuTieredProject = {
+      conf: SQLConf): GpuTieredProject = {
 
-    if (runTiered) {
-      // TODO put this under a config??? OR should be be for each expressions??
-      val replaced = GpuEquivalentExpressions.replaceMultiExpressions(expressions)
+    if (RapidsConf.ENABLE_TIERED_PROJECT.get(conf)) {
+      val replaced = if (RapidsConf.ENABLE_COMBINED_EXPRESSIONS.get(conf)) {
+        GpuEquivalentExpressions.replaceMultiExpressions(expressions, conf)
+      } else {
+        expressions
+      }
       val exprTiers = GpuEquivalentExpressions.getExprTiers(replaced)
       val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
       // Update ExprTiers to include the columns that are pass through and drop unneeded columns
@@ -163,6 +167,22 @@ object GpuBindReferences extends Logging {
       val tiered = newExprTiers.zip(inputTiers).map {
         case (es: Seq[Expression], is: AttributeSeq) =>
           es.map(GpuBindReferences.bindGpuReference(_, is)).toList
+      }
+      logTrace {
+        "INPUT:\n" +
+          expressions.zipWithIndex.map {
+            case (expr, idx) =>
+              s"\t$idx:\t$expr"
+          }.mkString("\n") +
+          "\nOUTPUT:\n" +
+          tiered.zipWithIndex.map {
+            case (exprs, tier) =>
+              s"\tTIER $tier\n" +
+                exprs.zipWithIndex.map {
+                  case (expr, idx) =>
+                    s"\t\t$idx:\t$expr"
+                }.mkString("\n")
+          }.mkString("\n")
       }
       GpuTieredProject(tiered)
     } else {

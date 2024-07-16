@@ -45,6 +45,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types._
@@ -178,8 +179,8 @@ class AggHelper(
     groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
     forceMerge: Boolean,
-    isSorted: Boolean = false,
-    useTieredProject: Boolean = true) extends Serializable {
+    conf: SQLConf,
+    isSorted: Boolean = false) extends Serializable {
 
   private var doSortAgg = isSorted
 
@@ -261,11 +262,11 @@ class AggHelper(
     inputAttributes
   }
   val preStepBound = GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
-    preStepAttributes.toList, useTieredProject)
+    preStepAttributes.toList, conf)
 
   // a bound expression that is applied after the cuDF aggregate
   private val postStepBound = GpuBindReferences.bindGpuReferencesTiered(postStep.toList,
-    postStepAttr.toList, useTieredProject)
+    postStepAttr.toList, conf)
 
   /**
    * Apply the "pre" step: preMerge for merge, or pass-through in the update case
@@ -723,7 +724,7 @@ class GpuMergeAggregateIterator(
     modeInfo: AggregateModeInfo,
     metrics: GpuHashAggregateMetrics,
     configuredTargetBatchSize: Long,
-    useTieredProject: Boolean,
+    conf: SQLConf,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
     localInputRowsCount: LocalGpuMetric)
@@ -937,7 +938,7 @@ class GpuMergeAggregateIterator(
 
   private lazy val concatAndMergeHelper =
     new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
-      forceMerge = true, useTieredProject = useTieredProject)
+      forceMerge = true, conf = conf)
 
   /**
    * Concatenate batches together and perform a merge aggregation on the result. The input batches
@@ -1017,7 +1018,7 @@ class GpuMergeAggregateIterator(
 
       private val mergeSortedHelper =
         new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
-          forceMerge = true, isSorted = true, useTieredProject = useTieredProject)
+          forceMerge = true, conf, isSorted = true)
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
@@ -1265,7 +1266,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression])
     val gpuGroupingExpressions =
       groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression])
-    val useTiered = conf.isTieredProjectEnabled
 
     // Sorting before we do an aggregation helps if the size of the input data is
     // smaller than the size of the output data. But it is an aggregation how can
@@ -1291,7 +1291,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
         gpuChild.output, inputAggBufferAttributes)
       val preProcessAggHelper = new AggHelper(
         inputAttrs, gpuGroupingExpressions, gpuAggregateExpressions,
-        forceMerge = false, useTieredProject = useTiered)
+        forceMerge = false, conf = agg.conf)
 
       // We are going to estimate the growth by looking at the estimated size the output could
       // be compared to the estimated size of the input (both based off of the schemas).
@@ -1327,7 +1327,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
       gpuChild,
       conf.gpuTargetBatchSizeBytes,
-      useTiered,
       estimatedPreProcessGrowth,
       conf.forceSinglePassPartialSortAgg,
       allowSinglePassAgg,
@@ -1414,12 +1413,11 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
         childPlans.head.convertIfNeeded(),
         conf.gpuTargetBatchSizeBytes,
-        conf.isTieredProjectEnabled,
         // For now we are just going to go with the original hash aggregation
         1.0,
-        false,
-        false,
-        false,
+        forceSinglePassAgg = false,
+        allowSinglePassAgg = false,
+        allowNonFullyAggregatedOutput = false,
         1)
     } else {
       super.convertToGpu()
@@ -1782,7 +1780,6 @@ case class GpuHashAggregateExec(
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan,
     configuredTargetBatchSize: Long,
-    configuredTieredProjectEnabled: Boolean,
     estimatedPreProcessGrowth: Double,
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
@@ -1853,7 +1850,6 @@ case class GpuHashAggregateExec(
     val resultExprs = resultExpressions
     val modeInfo = AggregateModeInfo(uniqueModes)
     val targetBatchSize = configuredTargetBatchSize
-    val useTieredProject = configuredTieredProjectEnabled
 
     val rdd = child.executeColumnar()
 
@@ -1864,7 +1860,7 @@ case class GpuHashAggregateExec(
       expectedOrdering) && expectedOrdering.nonEmpty
     val localEstimatedPreProcessGrowth = estimatedPreProcessGrowth
 
-    val boundGroupExprs = GpuBindReferences.bindGpuReferencesTiered(groupingExprs, inputAttrs, true)
+    val boundGroupExprs = GpuBindReferences.bindGpuReferencesTiered(groupingExprs, inputAttrs, conf)
 
     rdd.mapPartitions { cbIter =>
       val postBoundReferences = GpuAggFinalPassIterator.setupReferences(groupingExprs,
@@ -1873,7 +1869,7 @@ case class GpuHashAggregateExec(
       new DynamicGpuPartialSortAggregateIterator(cbIter, inputAttrs, groupingExprs,
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
-        postBoundReferences, targetBatchSize, aggMetrics, useTieredProject,
+        postBoundReferences, targetBatchSize, aggMetrics, conf,
         localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio)
     }
   }
@@ -1990,7 +1986,7 @@ class DynamicGpuPartialSortAggregateIterator(
     postBoundReferences: BoundExpressionsModeAggregates,
     configuredTargetBatchSize: Long,
     metrics: GpuHashAggregateMetrics,
-    useTiered: Boolean,
+    conf: SQLConf,
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
@@ -2092,7 +2088,7 @@ class DynamicGpuPartialSortAggregateIterator(
       modeInfo,
       metrics,
       configuredTargetBatchSize,
-      useTiered,
+      conf,
       allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
       localInputRowsMetrics)
@@ -2104,7 +2100,7 @@ class DynamicGpuPartialSortAggregateIterator(
     if (aggIter.isEmpty) {
       val preProcessAggHelper = new AggHelper(
         inputAttrs, groupingExprs, aggregateExprs,
-        forceMerge = false, isSorted = true, useTieredProject = useTiered)
+        forceMerge = false, isSorted = true, conf = conf)
       val (inputIter, doSinglePassAgg) = if (allowSinglePassAgg) {
         if (forceSinglePassAgg || alreadySorted) {
           (cbIter, true)

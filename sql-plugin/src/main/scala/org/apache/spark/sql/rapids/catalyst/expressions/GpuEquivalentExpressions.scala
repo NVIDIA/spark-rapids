@@ -15,18 +15,19 @@
  */
 
 /* Note: This is derived from EquivalentExpressions in Apache Spark
- * with changes to adapt it for GPU.
+ * with a lot of changes to adapt it for GPU.
  */
 package org.apache.spark.sql.rapids.catalyst.expressions
 
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
+import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable, RapidsConf}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, LeafExpression, PlanExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * This class is used to compute equality of (sub)expression trees. Expressions can be added
@@ -378,7 +379,7 @@ object GpuEquivalentExpressions {
    * This takes a set of expressions and finds all multi-expressions that can be replaced
    * and replaces them.
    */
-  def replaceMultiExpressions(exprs: Seq[Expression]): Seq[Expression] = {
+  def replaceMultiExpressions(exprs: Seq[Expression], conf: SQLConf): Seq[Expression] = {
     // GpuEquivalentExpressions is really find all expressions that will execute
     // unconditionally, or at least it will be. This gives us the ability to
     // know that if we combine expressions into multi-expressions then we will
@@ -388,8 +389,17 @@ object GpuEquivalentExpressions {
     val equivalentExpressions = new GpuEquivalentExpressions
     exprs.foreach(equivalentExpressions.addExprTree(_))
     val combinableMap = mutable.HashMap.empty[GpuExpressionCombiner, GpuExpressionCombiner]
+    val enabled = mutable.HashMap.empty[Class[_], Boolean]
+    def isEnabled(clazz: Class[_]): Boolean = {
+      enabled.getOrElse(clazz, {
+        val confKey = RapidsConf.ENABLE_COMBINED_EXPR_PREFIX + clazz.getSimpleName
+        val isEnabled = conf.getConfString(confKey, "true").trim.toBoolean
+        enabled.put(clazz, isEnabled)
+        isEnabled
+      })
+    }
     equivalentExpressions.equivalenceMap.values.map(_.expr).foreach {
-      case e: GpuCombinable =>
+      case e: GpuCombinable if isEnabled(e.getClass) =>
         val key = e.getCombiner()
         combinableMap.get(key).map { c =>
           c.addExpression(e)
