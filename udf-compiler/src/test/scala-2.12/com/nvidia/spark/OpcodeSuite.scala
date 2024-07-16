@@ -796,7 +796,7 @@ class OpcodeSuite extends AnyFunSuite {
 
   test("IFNONNULL opcode") {
     val myudf: (String, String) => String = (a,b) => {
-      if (null==a) {
+      if (null == a) {
         a
       } else {
         b
