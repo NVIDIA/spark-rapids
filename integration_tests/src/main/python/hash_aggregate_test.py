@@ -1644,6 +1644,7 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
+@disable_ansi_mode  # ANSI mode is tested in test_hash_groupby_approx_percentile_long_single_ansi
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -1651,6 +1652,24 @@ def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', UniqueLongGen())], length=100),
         0.5, conf)
+
+
+@incompat
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@allow_non_gpu('ObjectHashAggregateExec')
+def test_hash_groupby_approx_percentile_long_single_ansi(aqe_enabled):
+    """
+    Tests approx_percentile with ANSI mode enabled.
+    Note: In ANSI mode, the test query exercises ObjectHashAggregateExec,
+          which falls back to CPU.
+    """
+    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
+    conf.update(ansi_enabled_conf)
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', UniqueLongGen())], length=100),
+        0.5, conf)
+
 
 @incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
@@ -1706,6 +1725,17 @@ def test_hash_groupby_approx_percentile_decimal32_single():
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(6, 2))]),
         0.05)
+
+
+@incompat
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec')
+def test_hash_groupby_approx_percentile_decimal_single_ansi():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(6, 2))]),
+        0.05, conf=ansi_enabled_conf)
+
 
 @incompat
 @ignore_order(local=True)
