@@ -15,22 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "400"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark400
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.SparkShimVersion
+import com.databricks.sql.transaction.tahoe.files.TahoeFileIndexWithStaticPartitions
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(4, 0, 0)
-  val VERSIONNAMES = Seq(s"$VERSION", s"$VERSION-SNAPSHOT", s"$VERSION-preview1")
-}
+import org.apache.spark.sql.execution.datasources.FilePartition
+import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
-
-  override def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+object StaticPartitionShims {
+  /** Get the static partitions associated with a relation, if any. */
+  def getStaticPartitions(relation: HadoopFsRelation): Option[Seq[FilePartition]] = {
+    relation.location match {
+      case t: TahoeFileIndexWithStaticPartitions => Some(t.getStaticPartitions)
+      case _ => None
+    }
   }
 }
