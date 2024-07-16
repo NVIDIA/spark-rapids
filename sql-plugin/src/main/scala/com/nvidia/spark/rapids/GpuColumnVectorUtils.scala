@@ -57,54 +57,55 @@ object GpuColumnVectorUtils {
 
   /**
    * Create column vector from scalars
-   * @param dt data type
-   * @param scalars literals, Boolean, Byte, ... from `GpuScalar.getValue`
+   * @param scalars literals
    * @return column vector for the specified scalars
    */
-  def createFromScalarList(dt: DataType, scalars: Seq[Any]): CudfCV = {
-    dt match {
+  def createFromScalarList(scalars: Seq[GpuScalar]): CudfCV = {
+    scalars.head.dataType match {
       case BooleanType =>
-        val booleans = scalars.map(s => s.asInstanceOf[java.lang.Boolean])
+        val booleans = scalars.map(s => s.getValue.asInstanceOf[java.lang.Boolean])
         CudfCV.fromBoxedBooleans(booleans: _*)
       case ByteType =>
-        val bytes = scalars.map(s => s.asInstanceOf[java.lang.Byte])
+        val bytes = scalars.map(s => s.getValue.asInstanceOf[java.lang.Byte])
         CudfCV.fromBoxedBytes(bytes: _*)
       case ShortType =>
-        val shorts = scalars.map(s => s.asInstanceOf[java.lang.Short])
+        val shorts = scalars.map(s => s.getValue.asInstanceOf[java.lang.Short])
         CudfCV.fromBoxedShorts(shorts: _*)
       case IntegerType =>
-        val ints = scalars.map(s => s.asInstanceOf[java.lang.Integer])
+        val ints = scalars.map(s => s.getValue.asInstanceOf[java.lang.Integer])
         CudfCV.fromBoxedInts(ints: _*)
       case LongType =>
-        val longs = scalars.map(s => s.asInstanceOf[java.lang.Long])
+        val longs = scalars.map(s => s.getValue.asInstanceOf[java.lang.Long])
         CudfCV.fromBoxedLongs(longs: _*)
       case FloatType =>
-        val floats = scalars.map(s => s.asInstanceOf[java.lang.Float])
+        val floats = scalars.map(s => s.getValue.asInstanceOf[java.lang.Float])
         CudfCV.fromBoxedFloats(floats: _*)
       case DoubleType =>
-        val doubles = scalars.map(s => s.asInstanceOf[java.lang.Double])
+        val doubles = scalars.map(s => s.getValue.asInstanceOf[java.lang.Double])
         CudfCV.fromBoxedDoubles(doubles: _*)
       case StringType =>
         val utf8Bytes = scalars.map(s => {
-          if (s == null) {
+          val v = s.getValue
+          if (v == null) {
             null
           } else {
-            s.asInstanceOf[UTF8String].getBytes
+            v.asInstanceOf[UTF8String].getBytes
           }
         })
         CudfCV.fromUTF8Strings(utf8Bytes: _*)
       case dt: DecimalType =>
         val decimals = scalars.map(s => {
-          if (s == null) {
+          val v = s.getValue
+          if (v == null) {
             null
           } else {
-           s.asInstanceOf[Decimal].toJavaBigDecimal
+           v.asInstanceOf[Decimal].toJavaBigDecimal
           }
         })
         fromDecimals(dt, decimals: _*)
       case _ =>
-        throw new UnsupportedOperationException(s"Creating column vector from a scalar list" +
-            s" is not supported for type dt.")
+        throw new UnsupportedOperationException(s"Creating column vector from a GpuScalar list" +
+            s" is not supported for type ${scalars.head.dataType}.")
     }
   }
 
