@@ -272,12 +272,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    */
   private var stopping = false
 
-  val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
+  private val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
 
   /**
    * Simple wrapper that tracks the time spent iterating the given iterator.
    */
-  class TimeTrackingIterator(delegate: Iterator[Product2[K, V]]) extends Iterator[Product2[K, V]] {
+  private class TimeTrackingIterator(delegate: Iterator[Product2[K, V]])
+    extends Iterator[Product2[K, V]] {
+
     private var iterateTimeNs: Long = 0L
 
     override def hasNext: Boolean = {
@@ -303,7 +305,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     write(new TimeTrackingIterator(records))
   }
 
-  def write(records: TimeTrackingIterator): Unit = {
+  private def write(records: TimeTrackingIterator): Unit = {
     withResource(new NvtxRange("ThreadedWriter.write", NvtxColor.RED)) { _ =>
       withResource(new NvtxRange("compute", NvtxColor.GREEN)) { _ =>
         val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
