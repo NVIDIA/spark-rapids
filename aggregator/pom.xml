@@ -37,6 +37,7 @@
         and they are auto-deduped using binary diff
         -->
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.shade.package.path>com/nvidia/shaded/spark</rapids.shade.package.path>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.shim.jar.test.phase>none</rapids.shim.jar.test.phase>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
@@ -86,10 +87,21 @@
                         </excludes>
                     </artifactSet>
                     <transformers>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <manifestEntries>
+                                <Multi-Release>true</Multi-Release>
+                            </manifestEntries>
+                        </transformer>
                         <transformer
                                 implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                     </transformers>
                     <relocations>
+                        <!-- relocate multi-release packages -->
+                        <relocation>
+                            <pattern>META-INF/versions/(\d+)/org/roaringbitmap</pattern>
+                            <shadedPattern>META-INF/versions/$1/${rapids.shade.package.path}/org/roaringbitmap</shadedPattern>
+                            <rawString>true</rawString>
+                        </relocation>
                         <relocation>
                             <pattern>com.google.flatbuffers</pattern>
                             <shadedPattern>${rapids.shade.package}.com.google.flatbuffers</shadedPattern>
