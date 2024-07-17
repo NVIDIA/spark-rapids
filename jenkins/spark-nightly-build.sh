@@ -19,6 +19,11 @@ set -ex
 
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
+    # Run scala2.13 build and test against JDK17
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
+
     cd scala2.13
     ln -sf ../jenkins jenkins
 fi
