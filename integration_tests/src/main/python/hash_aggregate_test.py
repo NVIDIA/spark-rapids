@@ -1279,7 +1279,7 @@ def test_generic_reductions(data_gen):
 basic_gen_no_floats = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_c', [short_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
 def test_hash_groupby_with_maxby_all_bipair_same(data_gen_c):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df2(spark, byte_gen, data_gen_c)

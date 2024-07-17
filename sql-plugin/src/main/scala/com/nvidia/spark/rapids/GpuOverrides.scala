@@ -2281,12 +2281,12 @@ object GpuOverrides extends Logging {
             + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
             TypeSig.orderable))
       ),
-      (minBy, conf, p, r) => new AggExprMeta[MaxBy](minBy, conf, p, r) {
+      (maxBy, conf, p, r) => new AggExprMeta[MaxBy](maxBy, conf, p, r) {
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
           // Only two children (value expression, ordering expression)
           require(childExprs.length == 2)
-          GpuMinBy(childExprs.head, childExprs.last)
+          GpuMaxBy(childExprs.head, childExprs.last)
         }
 
         // MinBy does not overflow, so it doesn't need the ANSI check
