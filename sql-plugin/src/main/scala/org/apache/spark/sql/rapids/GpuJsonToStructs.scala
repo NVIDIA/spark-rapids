@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.MapUtils
 import org.apache.commons.text.StringEscapeUtils
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
@@ -78,7 +77,7 @@ case class GpuJsonToStructs(
     child: Expression,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
-        with NullIntolerant with Logging {
+        with NullIntolerant {
   import GpuJsonReadCommon._
 
   private lazy val emptyRowStr = constructEmptyRow(schema)
