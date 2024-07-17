@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, CudfException, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.MapUtils
@@ -28,6 +28,12 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+
+/**
+ *  Exception thrown when cudf cannot parse the JSON data because some Json to Struct cases are not
+ *  currently supported.
+ */
+class JsonParsingException(s: String, cause: Throwable) extends RuntimeException(s, cause) {}
 
 class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
   lazy val data: BaseDeviceMemoryBuffer = combined.getData
@@ -181,8 +187,8 @@ case class GpuJsonToStructs(
             try {
               cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
             } catch {
-              case e : Exception =>
-                throw new IllegalArgumentException("Currently some Json to Struct cases " +
+              case e : RuntimeException =>
+                throw new JsonParsingException("Currently some Json to Struct cases " +
                   "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
                   "=false", e)
             }
