@@ -5,8 +5,6 @@ nav_order: 15
 ---
 Below are archived releases for RAPIDS Accelerator for Apache Spark.
 
-## Test Test
-
 ## Release v24.06.0
 ### Hardware Requirements:
 
