@@ -181,11 +181,10 @@ case class GpuJsonToStructs(
             try {
               cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
             } catch {
-              case e @ (_: IllegalStateException | _: CudfException) =>
-                logError("Rapids currently does not support all JSON to struct cases of " +
-                  "from_json. Consider turning it off by setting " +
-                  "spark.rapids.sql.expression.JsonToStructs=false")
-                throw new RuntimeException("Failed to parse JSON data using cuDF", e)
+              case e : Exception =>
+                throw new IllegalArgumentException("Currently some Json to Struct cases " +
+                  "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
+                  "=false", e)
             }
           }
 
