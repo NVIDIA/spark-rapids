@@ -178,7 +178,6 @@ case class GpuJsonToStructs(
         // Step 1: verify and preprocess the data to clean it up and normalize a few things
         // Step 2: Concat the data into a single buffer
         val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
-
         withResource(isNullOrEmpty) { isNullOrEmpty =>
           // Step 3: setup a datasource
           val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
