@@ -31,7 +31,7 @@ import java.util.{Date, UUID}
 
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.RapidsFileSourceMetaUtils
+import com.nvidia.spark.rapids.shims.{BucketingUtilsShim, RapidsFileSourceMetaUtils}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce._
@@ -42,7 +42,7 @@ import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
 import org.apache.spark.shuffle.FetchFailedException
-import org.apache.spark.sql.{AnalysisException, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, SortOrder}
@@ -51,6 +51,7 @@ import org.apache.spark.sql.connector.write.WriterCommitMessage
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFiles, GpuWriteFilesExec, GpuWriteFilesSpec, WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
+import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
@@ -61,7 +62,7 @@ object GpuFileFormatWriter extends Logging {
   private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
     schema.foreach { field =>
       if (!format.supportDataType(field.dataType)) {
-        throw new AnalysisException(
+        throw new RapidsAnalysisException(
           s"$format data source does not support ${field.dataType.catalogString} data type.")
       }
     }
@@ -98,6 +99,7 @@ object GpuFileFormatWriter extends Logging {
       options: Map[String, String],
       useStableSort: Boolean,
       concurrentWriterPartitionFlushSize: Long,
+      forceHiveHashForBucketing: Boolean = false,
       numStaticPartitionCols: Int = 0): Set[String] = {
     require(partitionColumns.size >= numStaticPartitionCols)
 
@@ -118,13 +120,8 @@ object GpuFileFormatWriter extends Logging {
       .map(RapidsFileSourceMetaUtils.cleanupFileSourceMetadataInformation))
     val dataColumns = finalOutputSpec.outputColumns.filterNot(partitionSet.contains)
 
-    val writerBucketSpec: Option[GpuWriterBucketSpec] = bucketSpec.map { spec =>
-      // TODO: Cannot support this until we:
-      // support Hive hash partitioning on the GPU
-      throw new UnsupportedOperationException("GPU hash partitioning for bucketed data is not "
-          + "compatible with the CPU version")
-    }
-
+    val writerBucketSpec = BucketingUtilsShim.getWriterBucketSpec(bucketSpec, dataColumns,
+      options, forceHiveHashForBucketing)
     val sortColumns = bucketSpec.toSeq.flatMap {
       spec => spec.sortColumnNames.map(c => dataColumns.find(_.name == c).get)
     }
@@ -418,8 +415,8 @@ object GpuFileFormatWriter extends Logging {
       } else {
         concurrentOutputWriterSpec match {
           case Some(spec) =>
-            new GpuDynamicPartitionDataConcurrentWriter(
-              description, taskAttemptContext, committer, spec, TaskContext.get())
+            new GpuDynamicPartitionDataConcurrentWriter(description, taskAttemptContext,
+              committer, spec)
           case _ =>
             new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
         }

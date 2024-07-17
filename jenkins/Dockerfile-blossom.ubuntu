@@ -21,7 +21,7 @@
 # Arguments:
 #       CUDA_VER=[11.X.Y,12.X.Y]
 #       UBUNTU_VER=[20.04,22.0.4]
-#       UCX_VER=1.16.0
+#       UCX_VER=1.17.0
 #       TARGETPLATFORM=[linux/amd64,linux/arm64]
 #       ARCH=[amd64,arm64]
 #       UCX_ARCH=[x86_64,aarch64]
@@ -29,7 +29,7 @@
 
 ARG CUDA_VER=11.8.0
 ARG UBUNTU_VER=20.04
-ARG UCX_VER=1.16.0
+ARG UCX_VER=1.17.0
 ARG TARGETPLATFORM=linux/amd64
 # multi-platform build with: docker buildx build --platform linux/arm64,linux/amd64 <ARGS> on either amd64 or arm64 host
 # check available official arm-based docker images at https://hub.docker.com/r/nvidia/cuda/tags (OS/ARCH)
@@ -40,7 +40,7 @@ ARG UCX_VER
 ARG ARCH=amd64
 ARG UCX_ARCH=x86_64
 
-# Install jdk-8, jdk-11, maven, docker image
+# Install jdk-8, jdk-11, jdk-17, maven, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync
 
@@ -48,7 +48,7 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk openjdk-11-jdk python3.9 python3.9-distutils python3-setuptools tzdata git zip unzip wget \
+    openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk python3.9 python3.9-distutils python3-setuptools tzdata git zip unzip wget \
     inetutils-ping expect wget libnuma1 libgomp1 locales
 
 # apt python3-pip would install pip for OS default python3 version only
@@ -61,7 +61,7 @@ RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-${ARCH}
 
 RUN ln -sfn /usr/bin/python3.9 /usr/bin/python
 RUN ln -sfn /usr/bin/python3.9 /usr/bin/python3
-RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order fastparquet==0.8.3
+RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order fastparquet==2024.5.0
 
 RUN UCX_CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f1` && \
     mkdir -p /tmp/ucx && \

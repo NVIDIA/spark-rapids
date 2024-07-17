@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package org.apache.spark.sql.rapids
 
 import java.io.IOException
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand, RapidsConf}
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.io.FileCommitProtocol
-import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession}
+import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTablePartition}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.getPartitionPathString
@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{AlterTableAddPartitionCommand, AlterTableDropPartitionCommand, CommandUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormatWriter, FileIndex, PartitioningUtils}
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
-import org.apache.spark.sql.rapids.shims.SchemaUtilsShims
+import org.apache.spark.sql.rapids.shims.{RapidsErrorUtils, SchemaUtilsShims}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInsertIntoHadoopFsRelationCommand(
@@ -121,7 +121,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
       val pathExists = fs.exists(qualifiedOutputPath)
       (mode, pathExists) match {
         case (SaveMode.ErrorIfExists, true) =>
-          throw new AnalysisException(s"path $qualifiedOutputPath already exists.")
+          throw RapidsErrorUtils.outputPathAlreadyExistsError(qualifiedOutputPath)
         case (SaveMode.Overwrite, true) =>
           if (ifPartitionNotExists && matchingPartitions.nonEmpty) {
             false
@@ -165,6 +165,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           }
         }
       }
+      val forceHiveHashForBucketing =
+        RapidsConf.FORCE_HIVE_HASH_FOR_BUCKETED_WRITE.get(sparkSession.sessionState.conf)
 
       val updatedPartitionPaths =
         GpuFileFormatWriter.write(
@@ -181,6 +183,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           options = options,
           useStableSort = useStableSort,
           concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize,
+          forceHiveHashForBucketing = forceHiveHashForBucketing,
           numStaticPartitionCols = staticPartitions.size)
 
 

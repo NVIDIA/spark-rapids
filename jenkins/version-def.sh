@@ -26,12 +26,13 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"24.06.0-SNAPSHOT"}
+
+CUDF_VER=${CUDF_VER:-"24.08.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
-PROJECT_VER=${PROJECT_VER:-"24.06.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"24.06.0-SNAPSHOT"}
-SPARK_VER=${SPARK_VER:-"3.1.1"}
+PROJECT_VER=${PROJECT_VER:-"24.08.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"24.08.0-SNAPSHOT"}
+SPARK_VER=${SPARK_VER:-"3.2.0"}
 SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -84,7 +85,7 @@ fi
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
-# *: shim versions to build, e.g., PHASE_TYPE="311 321"
+# *: shim versions to build, e.g., PHASE_TYPE="320 321"
 PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
     # SPARK_SHIM_VERSIONS will be used for nightly artifact build
@@ -124,6 +125,9 @@ SPARK_SHIM_VERSIONS_JDK11=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # jdk17 cases
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk17-test
 SPARK_SHIM_VERSIONS_JDK17=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# jdk17 scala213 cases
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk17-scala213-test
+SPARK_SHIM_VERSIONS_JDK17_SCALA213=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # databricks shims
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Pdatabricks
 SPARK_SHIM_VERSIONS_DATABRICKS=("${SPARK_SHIM_VERSIONS_ARR[@]}")

@@ -14,14 +14,18 @@ SortExec,8.0
 SubqueryBroadcastExec,3.0
 TakeOrderedAndProjectExec,3.0
 UnionExec,3.0
-CustomShuffleReaderExec,3.0
+AQEShuffleReadExec,3.0
 HashAggregateExec,4.5
 ObjectHashAggregateExec,3.0
 SortAggregateExec,3.0
 InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
 ExecutedCommandExec,3.0
+AppendDataExecV1,3.0
+AtomicCreateTableAsSelectExec,3.0
+AtomicReplaceTableAsSelectExec,3.0
 BatchScanExec,3.0
+OverwriteByExpressionExecV1,3.0
 BroadcastExchangeExec,3.0
 ShuffleExchangeExec,4.2
 BroadcastHashJoinExec,5.1
@@ -126,6 +130,7 @@ GreaterThan,4
 GreaterThanOrEqual,4
 Greatest,4
 HiveGenericUDF,4
+HiveHash,4
 HiveSimpleUDF,4
 Hour,4
 Hypot,4

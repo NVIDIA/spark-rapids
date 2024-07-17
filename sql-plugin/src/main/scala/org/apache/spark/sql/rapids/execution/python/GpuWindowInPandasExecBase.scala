@@ -235,16 +235,16 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
 
   protected val windowBoundTypeConf = "pandas_window_bound_types"
 
-  protected def collectFunctions(udf: GpuPythonFunction):
-  (ChainedPythonFunctions, Seq[Expression]) = {
+  protected def collectFunctions(
+      udf: GpuPythonFunction): ((ChainedPythonFunctions, Long), Seq[Expression]) = {
     udf.children match {
       case Seq(u: GpuPythonFunction) =>
-        val (chained, children) = collectFunctions(u)
-        (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
+        val ((chained, _), children) = collectFunctions(u)
+        ((ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), udf.resultId.id), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
         assert(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
-        (ChainedPythonFunctions(Seq(udf.func)), udf.children)
+        ((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id), udf.children)
     }
   }
 
@@ -396,7 +396,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
       }
     }.toArray
     val dataCVs = GpuColumnVector.extractColumns(batch)
-    new ColumnarBatch(boundsCVs ++ dataCVs.map(_.incRefCount()), numRows)
+    new ColumnarBatch((boundsCVs ++ dataCVs.map(_.incRefCount())).toArray, numRows)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

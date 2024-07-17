@@ -1073,7 +1073,7 @@ class GpuRLikeMeta(
             val originalPattern = str.toString
             val regexAst = new RegexParser(originalPattern).parse()
             if (conf.isRlikeRegexRewriteEnabled) {
-              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst.children())
+              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
             }
             val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
                 .getTranspiledAST(regexAst, None, None)
@@ -1097,6 +1097,7 @@ class GpuRLikeMeta(
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
         case _ => throw new IllegalStateException("Unexpected optimization type")
@@ -1124,6 +1125,33 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
+}
+
+case class GpuMultipleContains(input: Expression, searchList: Seq[String])
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def child: Expression = input
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    assert(searchList.length > 1)
+    val accInit = withResource(Scalar.fromString(searchList.head)) { searchScalar =>
+      input.getBase.stringContains(searchScalar)
+    }
+    searchList.tail.foldLeft(accInit) { (acc, search) =>
+      val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
+        input.getBase.stringContains(searchScalar)
+      }
+      withResource(acc) { _ =>
+        withResource(containsSearch) { _ =>
+          acc.or(containsSearch)
+        }
+      }
+    }
+  }
 }
 
 case class GpuLiteralRangePattern(left: Expression, right: Expression, 
@@ -2056,11 +2084,25 @@ class GpuConvMeta(
   override def tagExprForGpu(): Unit = {
     val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
     val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
+    val errorPostfix = "only literal 10 or 16 are supported for source and target radixes"
     (fromBaseLit, toBaseLit) match {
-      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
-        if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
+      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
+        def isBaseSupported(base: Any): Boolean = base == 10 || base == 16
+        if (!isBaseSupported(fromBaseVal) && !isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"both ${fromBaseVal} and ${toBaseVal} are not " +
+            s"a supported radix, ${errorPostfix}")
+        } else if (!isBaseSupported(fromBaseVal)) {
+          willNotWorkOnGpu(because = s"${fromBaseVal} is not a supported source radix, " +
+            s"${errorPostfix}")
+        } else if (!isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"${toBaseVal} is not a supported target radix, " +
+            s"${errorPostfix}")
+        }
       case _ =>
-        willNotWorkOnGpu(because = "only literal 10 or 16 for from_base and to_base are supported")
+        // This will never happen in production as the function signature enforces
+        // integer types for the bases, but nice to have an edge case handling.
+        willNotWorkOnGpu(because = "either source radix or target radix is not an integer " +
+          "literal, " + errorPostfix)
     }
   }
 

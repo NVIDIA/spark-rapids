@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -78,21 +78,22 @@ mvn_verify() {
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
     # things we care about
-    SPK_VER=${JACOCO_SPARK_VER:-"311"}
+    SPK_VER=${JACOCO_SPARK_VER:-"320"}
     mkdir -p target/jacoco_classes/
     FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
-    jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-311}/"
+    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-320}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
-    rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+    # TODO Should clean up unused and duplicated 'org/roaringbitmap' in the spark3xx shim folders, https://github.com/NVIDIA/spark-rapids/issues/11175
+    rm -rf com/nvidia/shaded/ org/openucx/ spark${SPK_VER}/META-INF/versions/*/org/roaringbitmap/ spark-shared/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
     popd
 
     # Triggering here until we change the jenkins file
@@ -162,7 +163,6 @@ ci_2() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
@@ -184,6 +184,11 @@ ci_2() {
 
 ci_scala213() {
     echo "Run premerge ci (Scala 2.13) testing..."
+    # Run scala2.13 build and test against JDK17
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
+
     cd scala2.13
     ln -sf ../jenkins jenkins
 
@@ -206,7 +211,6 @@ ci_scala213() {
     cd .. # Run integration tests in the project root dir to leverage test cases and resource files
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         ./integration_tests/run_pyspark_from_build.sh
@@ -219,7 +223,7 @@ ci_scala213() {
 }
 
 prepare_spark() {
-    spark_ver=${1:-'3.1.1'}
+    spark_ver=${1:-'3.2.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"

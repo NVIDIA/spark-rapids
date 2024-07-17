@@ -2026,6 +2026,7 @@ object RegexOptimizationType {
   case class Contains(literal: String) extends RegexOptimizationType
   case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
     extends RegexOptimizationType
+  case class MultipleContains(literals: Seq[String]) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
 
@@ -2034,7 +2035,7 @@ object RegexRewrite {
   @scala.annotation.tailrec
   private def removeBrackets(astLs: collection.Seq[RegexAST]): collection.Seq[RegexAST] = {
     astLs match {
-      case collection.Seq(RegexGroup(_, term, None)) => removeBrackets(term.children())
+      case collection.Seq(RegexGroup(_, RegexSequence(terms), None)) => removeBrackets(terms)
       case _ => astLs
     }
   }
@@ -2050,28 +2051,31 @@ object RegexRewrite {
       Option[(String, Int, Int, Int)] = {
     val haveLiteralPrefix = isLiteralString(astLs.dropRight(1))
     val endsWithRange = astLs.lastOption match {
-      case Some(RegexRepetition(
-          RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
-          quantifier)) => {
-        val (start, end) = (a, b) match {
-          case (RegexChar(start), RegexChar(end)) => (start, end)
-          case _ => return None
-        }
-        val length = quantifier match {
-          // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
-          // [a-b]{minLen} because the matching will return the result once it finds the 
-          // minimum match so y here is unnecessary.
-          case QuantifierVariableLength(minLen, _) => minLen
-          case QuantifierFixedLength(len) => len
-          case SimpleQuantifier(ch) => ch match {
-            case '*' | '?' => 0
-            case '+' => 1
+      case Some(ast) => removeBrackets(collection.Seq(ast)) match {
+        case collection.Seq(RegexRepetition(
+            RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
+            quantifier)) => {
+          val (start, end) = (a, b) match {
+            case (RegexChar(start), RegexChar(end)) => (start, end)
             case _ => return None
           }
-          case _ => return None
+          val length = quantifier match {
+            // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
+            // [a-b]{minLen} because the matching will return the result once it finds the 
+            // minimum match so y here is unnecessary.
+            case QuantifierVariableLength(minLen, _) => minLen
+            case QuantifierFixedLength(len) => len
+            case SimpleQuantifier(ch) => ch match {
+              case '*' | '?' => 0
+              case '+' => 1
+              case _ => return None
+            }
+            case _ => return None
+          }
+          // Convert start and end to code points
+          Some((length, start.toInt, end.toInt))
         }
-        // Convert start and end to code points
-        Some((length, start.toInt, end.toInt))
+        case _ => None
       }
       case _ => None
     }
@@ -2091,6 +2095,20 @@ object RegexRewrite {
     }
   }
 
+  private def getMultipleContainsLiterals(ast: RegexAST): Seq[String] = {
+    ast match {
+      case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
+      case RegexChoice(RegexSequence(parts), ls) if isLiteralString(parts) => {
+        getMultipleContainsLiterals(ls) match {
+          case Seq() => Seq.empty
+          case literals => RegexCharsToString(parts) +: literals
+        }
+      }
+      case RegexSequence(parts) if (isLiteralString(parts)) => Seq(RegexCharsToString(parts))
+      case _ => Seq.empty
+    }
+  }
+
   private def isWildcard(ast: RegexAST): Boolean = {
     ast match {
       case RegexRepetition(RegexChar('.'), SimpleQuantifier('*')) => true
@@ -2101,11 +2119,8 @@ object RegexRewrite {
   }
 
   private def stripLeadingWildcards(astLs: collection.Seq[RegexAST]): 
-      collection.Seq[RegexAST] = astLs match {
-    case (RegexChar('^') | RegexEscaped('A')) :: tail  =>
-      // if the pattern starts with ^ or \A, strip it too
-      tail.dropWhile(isWildcard)
-    case _ => astLs.dropWhile(isWildcard)
+      collection.Seq[RegexAST] = {
+    astLs.dropWhile(isWildcard)
   }
 
   private def stripTailingWildcards(astLs: collection.Seq[RegexAST]): 
@@ -2124,40 +2139,48 @@ object RegexRewrite {
    * Matches the given regex ast to a regex optimization type for regex rewrite
    * optimization.
    *
-   * @param ast unparsed children of the Abstract Syntax Tree parsed from a regex pattern.
+   * @param ast Abstract Syntax Tree parsed from a regex pattern.
    * @return The `RegexOptimizationType` for the given pattern.
    */
-  @scala.annotation.tailrec
-  def matchSimplePattern(ast: Seq[RegexAST]): RegexOptimizationType = {
-    ast match {
-      case (RegexChar('^') | RegexEscaped('A')) :: astTail =>
-        val noTrailingWildCards = stripTailingWildcards(astTail)
-        if (isLiteralString(noTrailingWildCards)) {
-          // ^literal.* => startsWith literal
-          RegexOptimizationType.StartsWith(RegexCharsToString(noTrailingWildCards))
-        } else {
-          val noWildCards = stripLeadingWildcards(noTrailingWildCards)
-          if (noWildCards.length == noTrailingWildCards.length) {
-            // TODO startsWith with PrefIxRange
-            RegexOptimizationType.NoOptimization
-          } else {
-            matchSimplePattern(astTail)
-          }
-        }
-      case astLs => {
-        val noStartsWithAst = stripTailingWildcards(stripLeadingWildcards(astLs))
-        val prefixRangeInfo = getPrefixRangePattern(noStartsWithAst)
-        if (prefixRangeInfo.isDefined) {
-          val (prefix, length, start, end) = prefixRangeInfo.get
-          // (literal[a-b]{x,y}) => prefix range pattern
-          RegexOptimizationType.PrefixRange(prefix, length, start, end)
-        } else if (isLiteralString(noStartsWithAst)) {
-          // literal.* or (literal).* => contains literal
-          RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
-        } else {
-          RegexOptimizationType.NoOptimization
-        }
+  def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
+    val astLs = ast match {
+      case RegexSequence(_) => ast.children()
+      case _ => Seq(ast)
+    }
+    val noTailingWildcards = stripTailingWildcards(astLs)
+    if (noTailingWildcards.headOption.exists(
+        ast => ast == RegexChar('^') || ast == RegexEscaped('A'))) {
+      val possibleLiteral = noTailingWildcards.drop(1)
+      if (isLiteralString(possibleLiteral)) {
+        return RegexOptimizationType.StartsWith(RegexCharsToString(possibleLiteral))
       }
     }
+
+    val noStartsWithAst = removeBrackets(stripLeadingWildcards(noTailingWildcards))
+
+    // Check if the pattern is a contains literal pattern
+    if (isLiteralString(noStartsWithAst)) {
+      // literal or .*(literal).* => contains literal
+      return RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
+    }
+
+    // Check if the pattern is a multiple contains literal pattern (e.g. "abc|def|ghi")
+    if (noStartsWithAst.length == 1) {
+      val containsLiterals = getMultipleContainsLiterals(noStartsWithAst.head)
+      if (!containsLiterals.isEmpty) {
+        return RegexOptimizationType.MultipleContains(containsLiterals)
+      }
+    }
+
+    // Check if the pattern is a prefix range pattern (e.g. "abc[a-z]{3}")
+    val prefixRangeInfo = getPrefixRangePattern(noStartsWithAst)
+    if (prefixRangeInfo.isDefined) {
+      val (prefix, length, start, end) = prefixRangeInfo.get
+      // (literal[a-b]{x,y}) => prefix range pattern
+      return RegexOptimizationType.PrefixRange(prefix, length, start, end)
+    }
+    
+    // return NoOptimization if the pattern is not a simple pattern and use cuDF
+    RegexOptimizationType.NoOptimization
   }
 }
