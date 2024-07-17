@@ -1608,10 +1608,6 @@ case class GpuSubstringIndex(strExpr: Expression,
 
   override def prettyName: String = "substring_index"
 
-  // This is a bit hacked up at the moment. We are going to use a regular expression to extract
-  // a single value. It only works if the delim is a single character. A full version of
-  // substring_index for the GPU has been requested at https://github.com/rapidsai/cudf/issues/5158
-  // spark-rapids plugin issue https://github.com/NVIDIA/spark-rapids/issues/8750
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
 
