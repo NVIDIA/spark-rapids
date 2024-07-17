@@ -1656,12 +1656,12 @@ def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
 
 @incompat
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@allow_non_gpu('ObjectHashAggregateExec')
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec')
 def test_hash_groupby_approx_percentile_long_single_ansi(aqe_enabled):
     """
     Tests approx_percentile with ANSI mode enabled.
-    Note: In ANSI mode, the test query exercises ObjectHashAggregateExec,
-          which falls back to CPU.
+    Note: In ANSI mode, the test query exercises ObjectHashAggregateExec and ShuffleExchangeExec,
+          which fall back to CPU.
     """
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     conf.update(ansi_enabled_conf)
