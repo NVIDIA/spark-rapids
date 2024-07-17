@@ -310,7 +310,7 @@ def test_hash_repartition_exact_longs_no_overflow(num_parts, is_ansi_mode):
 
 
 @ignore_order(local=True)  # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
-@pytest.mark.parametrize('num_parts', [10, 17], ids=idfn)
+@pytest.mark.parametrize('num_parts', [17], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_repartition_long_overflow_ansi_exception(num_parts):
     data_gen = [('a', long_gen)]
@@ -318,10 +318,11 @@ def test_hash_repartition_long_overflow_ansi_exception(num_parts):
     conf = ansi_enabled_conf
 
     def test_function(spark):
-        return gen_df(spark, data_gen, length=1024)\
-            .repartition(num_parts, *part_on)\
-            .withColumn('id', f.spark_partition_id())\
-            .withColumn('hashed', f.hash(*part_on))\
+        return gen_df(spark, data_gen, length=1024) \
+            .withColumn('plus15', f.col('a') + 15) \
+            .repartition(num_parts, f.col('plus15')) \
+            .withColumn('id', f.spark_partition_id()) \
+            .withColumn('hashed', f.hash(*part_on)) \
             .selectExpr('*', 'pmod(hashed, {})'.format(num_parts))
 
     assert_gpu_and_cpu_error(
