@@ -197,8 +197,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                               execPattern           : '**/target/jacoco.exec',
                                               classPattern          : 'target/jacoco_classes/',
                                               sourceInclusionPattern: '**/*.java,**/*.scala',
-                                              sourcePattern         : sourcePattern,
-                                              exclusionPattern      : '*/META-INF/versions/*',
+                                              sourcePattern         : sourcePattern
                                         ])
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
