@@ -57,7 +57,7 @@ RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     conda install -y -c conda-forge sre_yield && \
     conda clean -ay
 # install pytest plugins for xdist parallel run
-RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==0.8.3
+RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0
 
 # Set default java as 1.8.0
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
