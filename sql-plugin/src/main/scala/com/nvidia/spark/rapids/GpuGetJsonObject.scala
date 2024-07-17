@@ -191,12 +191,12 @@ class GpuGetJsonObjectMeta(
 case class GpuMultiGetJsonObject(json: Expression,
                                  paths: Seq[Option[List[PathInstruction]]],
                                  output: StructType)(targetBatchSize: Long,
-                                                     parallel: Int)
+                                                     parallel: Option[Int])
   extends GpuExpression with ShimExpression {
 
   override def otherCopyArgs: Seq[AnyRef] =
     targetBatchSize.asInstanceOf[java.lang.Long] ::
-      parallel.asInstanceOf[java.lang.Integer] ::
+      parallel ::
       Nil
 
   override def dataType: DataType = output
@@ -228,10 +228,16 @@ case class GpuMultiGetJsonObject(json: Expression,
       var validPathsIndex = 0
       withResource(json.columnarEval(batch)) { input =>
         // The get_json_object implementation will allocate an output that is as large
-        // as the input for each path being processed.  This can cause memory to grow
+        // as the input for each path being processed. This can cause memory to grow
         // by a lot. We want to avoid this, but still try to run as many in parallel
         // as we can
-        validPaths.grouped(parallel).foreach { validPathChunk =>
+        val p = parallel.getOrElse {
+          val inputSize = input.getBase.getDeviceMemorySize
+          // Our memory budget is 4x the target batch size. This is technically going
+          // to go over that, but in practice it is okay with the default settings
+          Math.max(Math.ceil((targetBatchSize * 4.0) / inputSize).toInt, 1)
+        }
+        validPaths.grouped(p).foreach { validPathChunk =>
           withResource(JSONUtils.getJsonObjectMultiplePaths(input.getBase,
             java.util.Arrays.asList(validPathChunk: _*))) { chunkedResult =>
             chunkedResult.foreach { cr =>
@@ -335,8 +341,10 @@ class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpres
         (StructField(fieldName(id), e.dataType, e.nullable), parsedPath)
     }
     val dt = StructType(fieldsNPaths.map(_._1))
-    val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(SQLConf.get)
-    val parallel = SQLConf.get.getConfString("spark.sql.test.multiget.parallel", "32").toInt
+    val conf = SQLConf.get
+    val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val tmp = conf.getConfString("spark.sql.test.multiget.parallel", null)
+    val parallel = Option(tmp).map(_.toInt)
     GpuMultiGetJsonObject(json, fieldsNPaths.map(_._2), dt)(targetBatchSize, parallel)
   }
 
