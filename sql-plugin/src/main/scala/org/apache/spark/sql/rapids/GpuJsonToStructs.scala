@@ -193,6 +193,7 @@ case class GpuJsonToStructs(
           }
 
           // process duplicated field names in input struct schema
+
           withResource(table) { _ =>
             // Step 5: verify that the data looks correct
             if (table.getRowCount != numRows) {
