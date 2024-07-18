@@ -48,6 +48,8 @@ Generated on 2024-07-18
 ### PRs
 |||
 |:---|:---|
+|[#11221](https://github.com/NVIDIA/spark-rapids/pull/11221)|Change cudf version back to 24.06.0-SNAPSHOT [skip ci]|
+|[#11217](https://github.com/NVIDIA/spark-rapids/pull/11217)|Update latest changelog [skip ci]|
 |[#11211](https://github.com/NVIDIA/spark-rapids/pull/11211)|Use fixed seed for test_from_json_struct_decimal|
 |[#11203](https://github.com/NVIDIA/spark-rapids/pull/11203)|Update version to 24.06.1-SNAPSHOT|
 |[#11205](https://github.com/NVIDIA/spark-rapids/pull/11205)|Update docs for 24.06.1 release [skip ci]|
