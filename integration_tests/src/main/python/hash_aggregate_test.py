@@ -302,6 +302,7 @@ _init_list_with_decimalbig = _init_list + [
 #Any smaller precision takes way too long to process on the CPU
 # or results in using too much memory on the GPU
 @nightly_gpu_mem_consuming_case
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('precision', [38, 37, 36, 35, 34, 33, 32, 31], ids=idfn)
 def test_hash_reduction_decimal_overflow_sum(precision):
     constant = '9' * precision
@@ -316,6 +317,8 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 @pytest.mark.parametrize('override_split_until_size', [None, 1], ids=idfn)
 @pytest.mark.parametrize('override_batch_size_bytes', [None, 1], ids=idfn)
@@ -339,6 +342,7 @@ def test_hash_grpby_list_min_max(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100).coalesce(1).groupby('a').agg(f.min('b'), f.max('b'))
     )
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_reduction_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
@@ -361,6 +365,7 @@ def test_computation_in_grpby_columns():
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
@@ -372,6 +377,7 @@ def test_hash_grpby_sum(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
@@ -393,6 +399,7 @@ def test_hash_reduction_sum(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [
     DecimalGen(precision=38, scale=0), DecimalGen(precision=38, scale=-10)], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
@@ -404,6 +411,7 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 
 @approximate_float
 @ignore_order
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list + [_grpkey_short_mid_decimals,
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_sum_full_decimals], ids=idfn)
@@ -437,8 +445,9 @@ def test_hash_avg_nulls_partial_only(data_gen):
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
-def test_intersectAll(data_gen):
+def test_intersect_all(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
 
@@ -468,9 +477,12 @@ _pivot_gens_with_decimals = _init_list + [
     _grpkey_small_decimals, _pivot_big_decimals, _grpkey_short_mid_decimals,
     _pivot_short_big_decimals, _grpkey_short_very_big_decimals,
     _grpkey_short_very_big_neg_scale_decimals]
+
+
 @approximate_float
 @ignore_order(local=True)
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
@@ -484,6 +496,7 @@ def test_hash_grpby_pivot(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10062')
@@ -498,6 +511,7 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_pivot(data_gen, conf):
@@ -508,11 +522,13 @@ def test_hash_reduction_pivot(data_gen, conf):
             .agg(f.sum('c')),
         conf=conf)
 
+
 @approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
         'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'NormalizeNaNAndZero')
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
 def test_hash_pivot_groupby_duplicates_fallback(data_gen):
     # PivotFirst will not work on the GPU when pivot_values has duplicates
@@ -705,6 +721,7 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
 
 
 @ignore_order(local=True)
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_reduction_collect_set(data_gen):
@@ -1095,6 +1112,7 @@ def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback()
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_mode_query(data_gen, conf):
@@ -1118,6 +1136,7 @@ def test_hash_multiple_mode_query(data_gen, conf):
 @ignore_order
 @incompat
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10234")
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
     ids=idfn)
@@ -1132,6 +1151,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @ignore_order
 @incompat
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10388")
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):
@@ -1155,6 +1175,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_query_max_with_multiple_distincts(data_gen, conf):
@@ -1182,6 +1203,7 @@ def test_hash_count_with_filter(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list + [_grpkey_short_mid_decimals, _grpkey_short_big_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_filters(data_gen, conf):
@@ -1449,10 +1471,12 @@ def subquery_create_temp_views(spark, expr):
     spark.sql(t2).createOrReplaceTempView("t2")
     return spark.sql(expr)
 
+
 # Adding these tests as they were added in SPARK-31620, and were shown to break in
 # SPARK-32031, but our GPU hash aggregate does not seem to exhibit the same failure.
 # The tests are being added more as a sanity check.
 # Adaptive is being turned on and off so we invoke re-optimization at the logical plan level.
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('adaptive', ["true", "false"])
 @pytest.mark.parametrize('expr', [
   "select sum(if(c > (select a from t1), d, 0)) as csum from t2",
@@ -1503,6 +1527,7 @@ def test_struct_groupby_count(key_data_gen):
     assert_gpu_and_cpu_are_equal_collect(group_by_count)
 
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('cast_struct_tostring', ['LEGACY', 'SPARK311+'])
 @pytest.mark.parametrize('key_data_gen', [
     StructGen([
@@ -1545,6 +1570,7 @@ def test_struct_count_distinct(key_data_gen):
     assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct)
 
 
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('cast_struct_tostring', ['LEGACY', 'SPARK311+'])
 @pytest.mark.parametrize('key_data_gen', [
     StructGen([
@@ -1567,6 +1593,8 @@ def test_struct_count_distinct_cast(cast_struct_tostring, key_data_gen):
         'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
     })
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 def test_reduction_nested_struct():
     def do_it(spark):
@@ -1574,6 +1602,8 @@ def test_reduction_nested_struct():
         return df.agg(f.sum(df.a.aa.aaa))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 def test_reduction_nested_array():
     def do_it(spark):
@@ -1581,7 +1611,9 @@ def test_reduction_nested_array():
         return df.agg(f.sum(df.a[1].aa))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+
 # The map here is a child not a top level, because we only support GetMapValue on String to String maps.
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 def test_reduction_nested_map():
     def do_it(spark):
@@ -1893,6 +1925,7 @@ def create_percentile_sql(func_name, percentiles, reduction):
 
 
 @ignore_order
+@disable_ansi_mode  # ANSI mode is tested in test_hash_grpby_avg_nulls_ansi
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg_nulls(data_gen, conf):
@@ -1917,6 +1950,7 @@ def test_hash_grpby_avg_nulls_ansi(data_gen, conf):
     )
 
 @ignore_order
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_avg_nulls(data_gen, conf):
