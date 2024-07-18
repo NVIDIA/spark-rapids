@@ -77,7 +77,9 @@ def test_split_positive_limit():
 
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
-    (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)
+    (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^'),
+    (mk_str_gen('([XYZ]{0,3}XYZ?){0,5}'), 'XYZ'),
+    (mk_str_gen('([DEF]{0,3}DELIM?){0,5}'), 'DELIM')], ids=idfn)
 def test_substring_index(data_gen,delim):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(
