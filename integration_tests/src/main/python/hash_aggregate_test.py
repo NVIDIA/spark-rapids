@@ -663,7 +663,9 @@ def test_hash_groupby_collect_list_of_maps(use_obj_hash_agg):
         doit,
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
 
+
 @ignore_order(local=True)
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_set(data_gen):
@@ -737,7 +739,9 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
+
 @ignore_order(local=True)
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_with_single_distinct(data_gen):
@@ -750,18 +754,15 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
                  f.countDistinct('c'),
                  f.count('c')))
 
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
-def test_hash_groupby_single_distinct_collect(data_gen):
-    # test distinct collect
+
+def hash_groupby_single_distinct_collect_impl(data_gen, conf):
     sql = """select a,
                     sort_array(collect_list(distinct b)),
                     sort_array(collect_set(distinct b))
             from tbl group by a"""
     assert_gpu_and_cpu_are_equal_sql(
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
-        table_name="tbl", sql=sql)
+        table_name="tbl", sql=sql, conf=conf)
 
     # test distinct collect with nonDistinct aggregations
     sql = """select a,
@@ -772,9 +773,36 @@ def test_hash_groupby_single_distinct_collect(data_gen):
             from tbl group by a"""
     assert_gpu_and_cpu_are_equal_sql(
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
-        table_name="tbl", sql=sql)
+        table_name="tbl", sql=sql, conf=conf)
+
 
 @ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_hash_groupby_single_distinct_collect(data_gen):
+    """
+    Tests distinct collect, with ANSI disabled.
+    The corresponding ANSI-enabled condition is tested in
+    test_hash_groupby_single_distinct_collect_ansi_enabled
+    """
+    ansi_disabled_conf = {'spark.sql.ansi.enabled': False}
+    hash_groupby_single_distinct_collect_impl(data_gen=data_gen, conf=ansi_disabled_conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [_gen_data_for_collect_op[0]], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec')
+def test_hash_groupby_single_distinct_collect_ansi_enabled(data_gen):
+    """
+    Tests distinct collect, with ANSI enabled.
+    Enabling ANSI mode causes the plan to include ObjectHashAggregateExec, which runs on CPU.
+    """
+    hash_groupby_single_distinct_collect_impl(data_gen=data_gen, conf=ansi_enabled_conf)
+
+
+@ignore_order(local=True)
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_with_multi_distinct(data_gen):
@@ -832,6 +860,7 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen,
         non_exist_classes=','.join(non_exist_clz),
         conf=conf)
 
+
 _replace_modes_single_distinct = [
     # Spark: CPU -> CPU -> GPU(PartialMerge) -> GPU(Partial)
     # Databricks runtime: CPU(Final and Complete) -> GPU(PartialMerge)
@@ -840,7 +869,10 @@ _replace_modes_single_distinct = [
     # Databricks runtime: GPU(Final&Complete) -> CPU(PartialMerge)
     'final|partialMerge&partial|final&complete',
 ]
+
+
 @ignore_order(local=True)
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
