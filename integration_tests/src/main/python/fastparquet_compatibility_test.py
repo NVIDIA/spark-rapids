@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,8 +29,6 @@ def fastparquet_unavailable():
         import fastparquet
         return False
     except ImportError:
-        return True
-    except ValueError: # TODO: remove when https://github.com/NVIDIA/spark-rapids/issues/11070 is fixed
         return True
 
 

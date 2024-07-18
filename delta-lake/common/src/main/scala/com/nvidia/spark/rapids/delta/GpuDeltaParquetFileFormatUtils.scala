@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids.delta
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar, Table}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuColumnVector
 import org.roaringbitmap.longlong.{PeekableLongIterator, Roaring64Bitmap}
 
 import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructField, StructType}
@@ -53,7 +53,9 @@ object GpuDeltaParquetFileFormatUtils {
       schema: StructType,
       delVector: Option[Roaring64Bitmap],
       input: Iterator[ColumnarBatch],
-      maxBatchSize: Int): Iterator[ColumnarBatch] = {
+      maxBatchSize: Int,
+      delVectorScatterTimeMetric: GpuMetric
+  ): Iterator[ColumnarBatch] = {
     val metadataRowIndexCol = schema.fieldNames.indexOf(METADATA_ROW_IDX_COL)
     val delRowIdx = schema.fieldNames.indexOf(METADATA_ROW_DEL_COL)
     if (metadataRowIndexCol == -1 && delRowIdx == -1) {
@@ -74,12 +76,21 @@ object GpuDeltaParquetFileFormatUtils {
           Some(delRowIdx)
         }
         val newBatch = addMetadataColumns(rowIdxCol, delRowIdx2, delVector,maxBatchSize,
-          rowIndex, batch)
+          rowIndex, batch, delVectorScatterTimeMetric)
         rowIndex += batch.numRows()
         newBatch
       }
     }
   }
+
+  private def createFalseTable(numRows: Int): Table = {
+    withResource(Scalar.fromBool(false)) { s =>
+      withResource(CudfColumnVector.fromScalar(s, numRows)) { c =>
+        new Table(c)
+      }
+    }
+  }
+
 
   private def addMetadataColumns(
       rowIdxPos: Option[Int],
@@ -87,7 +98,9 @@ object GpuDeltaParquetFileFormatUtils {
       delVec: Option[Roaring64Bitmap],
       maxBatchSize: Int,
       rowIdxStart: Long,
-      batch: ColumnarBatch): ColumnarBatch = {
+      batch: ColumnarBatch,
+      delVectorScatterTimeMetric: GpuMetric,
+  ): ColumnarBatch = {
     val rowIdxCol = rowIdxPos.map { _ =>
       withResource(Scalar.fromLong(rowIdxStart)) { start =>
         GpuColumnVector.from(CudfColumnVector.sequence(start, batch.numRows()),
@@ -98,30 +111,26 @@ object GpuDeltaParquetFileFormatUtils {
     closeOnExcept(rowIdxCol) { rowIdxCol =>
 
       val delVecCol = delVec.map { delVec =>
-        withResource(Scalar.fromBool(false)) { s =>
-          withResource(CudfColumnVector.fromScalar(s, batch.numRows())) { c =>
-            var table = new Table(c)
-            val posIter = new RoaringBitmapIterator(
-              delVec.getLongIteratorFrom(rowIdxStart),
-              rowIdxStart,
-              rowIdxStart + batch.numRows(),
-            ).grouped(Math.min(maxBatchSize, batch.numRows()))
-
-            for (posChunk <- posIter) {
-              withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
-                withResource(Scalar.fromBool(true)) { s =>
-                  table = withResource(table) { _ =>
+        delVectorScatterTimeMetric.ns {
+          val table = new RoaringBitmapIterator(
+            delVec.getLongIteratorFrom(rowIdxStart),
+            rowIdxStart,
+            rowIdxStart + batch.numRows())
+            .grouped(Math.min(maxBatchSize, batch.numRows()))
+            .foldLeft(createFalseTable(batch.numRows())){ (table, posChunk) =>
+              withResource(table) { _ =>
+                withResource(CudfColumnVector.fromLongs(posChunk: _*)) { poses =>
+                  withResource(Scalar.fromBool(true)) { s =>
                     Table.scatter(Array(s), poses, table)
                   }
                 }
               }
             }
 
-            withResource(table) { _ =>
-              GpuColumnVector.from(table.getColumn(0).incRefCount(),
-                METADATA_ROW_DEL_FIELD.dataType)
-            }
-          }
+              withResource(table) { _ =>
+                GpuColumnVector.from(table.getColumn(0).incRefCount(),
+                  METADATA_ROW_DEL_FIELD.dataType)
+              }
         }
       }
 

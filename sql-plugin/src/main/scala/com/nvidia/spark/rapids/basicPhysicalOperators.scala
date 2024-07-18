@@ -1281,6 +1281,8 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
       rdd.coalesce(numPartitions, shuffle = false)
     }
   }
+
+  override val coalesceAfter: Boolean = true
 }
 
 object GpuCoalesceExec {
