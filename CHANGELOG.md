@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-06-13
+Generated on 2024-07-18
 
 ## Release 24.06
 
@@ -48,6 +48,10 @@ Generated on 2024-06-13
 ### PRs
 |||
 |:---|:---|
+|[#11211](https://github.com/NVIDIA/spark-rapids/pull/11211)|Use fixed seed for test_from_json_struct_decimal|
+|[#11203](https://github.com/NVIDIA/spark-rapids/pull/11203)|Update version to 24.06.1-SNAPSHOT|
+|[#11205](https://github.com/NVIDIA/spark-rapids/pull/11205)|Update docs for 24.06.1 release [skip ci]|
+|[#11056](https://github.com/NVIDIA/spark-rapids/pull/11056)|Update latest changelog [skip ci]|
 |[#11052](https://github.com/NVIDIA/spark-rapids/pull/11052)|Add spark343 shim for scala2.13 dist jar|
 |[#10981](https://github.com/NVIDIA/spark-rapids/pull/10981)|Update latest changelog [skip ci]|
 |[#10984](https://github.com/NVIDIA/spark-rapids/pull/10984)|[DOC] Update docs for 24.06.0 release [skip ci]|
