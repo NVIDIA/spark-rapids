@@ -187,7 +187,18 @@ else
 
     mkdir -p "$TARGET_DIR"
 
-    RUN_DIR=${RUN_DIR-$(mktemp -p "$TARGET_DIR" -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}
+    while true; do
+      # to avoid hit spark bug https://issues.apache.org/jira/browse/SPARK-44242
+      # do not dry-run to provide a safe directory name
+      temp_rundir=$(mktemp -p "${TARGET_DIR}" -d "run_dir-$(date +%Y%m%d%H%M%S)-XXXX")
+      if [[ ! "${temp_rundir}" =~ [xX][mM][xXsS] ]]; then
+        echo "run_dir: ${temp_rundir}"
+        break
+      fi
+      echo "invalid ${temp_rundir}, regenerating..."
+    done
+
+    RUN_DIR=${RUN_DIR-"${temp_rundir}"}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
