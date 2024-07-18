@@ -923,11 +923,11 @@ trait GpuDecimalDivideBase extends GpuExpression {
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    if (useLongDivision) {
-      longDivide(batch)
-    } else {
+//    if (useLongDivision) {
+//      longDivide(batch)
+//    } else {
       regularDivide(batch)
-    }
+//    }
   }
 
   override def nullable: Boolean = true
