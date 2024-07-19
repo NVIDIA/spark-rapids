@@ -2028,7 +2028,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue, conf.caseWhenFuseEnabled)
+          GpuCaseWhen(branches, elseValue, this.conf.caseWhenFuseEnabled)
         }
       }),
     expr[If](
@@ -2862,6 +2862,23 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayRemove(lhs, rhs)
       }
+    ),
+    expr[MapFromArrays](
+      "Creates a new map from two arrays",
+      ExprChecks.binaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+        ("keys",
+          TypeSig.ARRAY.nested(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.all - TypeSig.MAP)),
+        ("values",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.all))),
+      GpuMapFromArraysMeta
     ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",

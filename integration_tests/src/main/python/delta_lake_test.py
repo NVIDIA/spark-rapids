@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -120,3 +120,22 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
         conf=confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
                                          conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
+                    reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
+def test_delta_name_column_mapping_no_field_ids(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_parquet_table(spark):
+        spark.range(10).coalesce(1).write.parquet(data_path)
+    def convert_and_setup_name_mapping(spark):
+        spark.sql(f"CONVERT TO DELTA parquet.`{data_path}`")
+        spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
+            "('delta.minReaderVersion' = '2', " +
+            "'delta.minWriterVersion' = '5', " +
+            "'delta.columnMapping.mode' = 'name')")
+    with_cpu_session(setup_parquet_table, {"spark.sql.parquet.fieldId.write.enabled": "false"})
+    with_cpu_session(convert_and_setup_name_mapping)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path))

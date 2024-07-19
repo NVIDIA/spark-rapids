@@ -38,8 +38,8 @@ AggregateInPandasExec,1.2
 ArrowEvalPythonExec,1.2
 FlatMapCoGroupsInPandasExec,3.0
 FlatMapGroupsInPandasExec,1.2
+MapInArrowExec,3.0
 MapInPandasExec,1.2
-PythonMapInArrowExec,3.0
 WindowInPandasExec,1.2
 WindowExec,3.0
 WindowGroupLimitExec,3.0
@@ -214,7 +214,6 @@ PythonUDAF,4
 PythonUDF,4
 Quarter,4
 RLike,4
-RaiseError,4
 Rand,4
 Rank,4
 RegExpExtract,4
