@@ -26,7 +26,7 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType,
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{CastStrings, GpuTimeZoneDB}
+import com.nvidia.spark.rapids.jni.{CastStrings, DecimalUtils, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 import org.apache.commons.text.StringEscapeUtils
 
@@ -695,49 +695,6 @@ object GpuCast {
       }
     }
   }
-
-  /**
-   * Detects outlier values of a column given with specific range, and replaces them with
-   * a inputted substitution value.
-   *
-   * @param values ColumnVector to be performed with range check
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
-   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
-   * @param inclusiveMin Whether the min value is included in the valid range or not
-   * @param inclusiveMax Whether the max value is included in the valid range or not
-   */
-//  private def replaceOutOfRangeValues(values: ColumnView,
-//      minValue: => Scalar,
-//      maxValue: => Scalar,
-//      replaceValue: => Scalar,
-//      inclusiveMin: Boolean,
-//      inclusiveMax: Boolean): ColumnVector = {
-//
-//    withResource(minValue) { minValue =>
-//      withResource(maxValue) { maxValue =>
-//        val minPredicate = if (inclusiveMin) {
-//          values.lessThan(minValue)
-//        } else {
-//          values.lessOrEqualTo(minValue)
-//        }
-//        withResource(minPredicate) { minPredicate =>
-//          val maxPredicate = if (inclusiveMax) {
-//            values.greaterThan(maxValue)
-//          } else {
-//            values.greaterOrEqualTo(maxValue)
-//          }
-//          withResource(maxPredicate) { maxPredicate =>
-//            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
-//              withResource(replaceValue) { nullScalar =>
-//                rangePredicate.ifElse(nullScalar, values)
-//              }
-//            }
-//          }
-//        }
-//      }
-//    }
-//  }
 
   def castToString(
       input: ColumnView,
@@ -1638,30 +1595,13 @@ object GpuCast {
       input: ColumnView,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
-
-      val targetType = DecimalUtil.createCudfDecimal(dt)
-
-      if (DType.DECIMAL128_MAX_PRECISION == dt.scale) {
-        if (ansiMode) {
-          val bound = math.pow(10, dt.precision - dt.scale)
-            assertValuesInRange[Double](input,
-              minValue = -bound,
-              maxValue = bound,
-              inclusiveMin = false,
-              inclusiveMax = false)
-        }
-        input.castTo(targetType)
-      } else {
-        val converted =
-          com.nvidia.spark.rapids.jni.DecimalUtils.floatingPointToDecimal(input, targetType,
-            dt.precision)
-        if (ansiMode && converted.hasInvalid) {
-//          converted.column.close()
-          throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
-        }
-        converted.column
-      }
-
+    val targetType = DecimalUtil.createCudfDecimal(dt)
+    val converted = DecimalUtils.floatingPointToDecimal(input, targetType, dt.precision)
+    if (ansiMode && converted.hasFailure) {
+      converted.result.close()
+      throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
+    }
+    converted.result
   }
 
   def fixDecimalBounds(input: ColumnView,
