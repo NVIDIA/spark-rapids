@@ -132,7 +132,7 @@ object GpuBindReferences extends Logging {
   /**
    * A helper function to bind given expressions to an input schema where the expressions are
    * to be processed on the GPU, and the result type indicates this.
-   * Some expressions that can be combined into a single expression call might be as well as
+   * Some expressions that can be combined into a single expression call as well as
    * common sub-expressions may be factored out where possible to reduce the runtime and memory.
    * All of these can be controlled by the configuration passed in.
    */

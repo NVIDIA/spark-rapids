@@ -215,12 +215,9 @@ case class GpuMultiGetJsonObject(json: Expression,
       case _ => false
     }.map(_._2)
 
-    val validPathsWithIndexes = jniInstructions.zipWithIndex.filter {
-      case (Some(_), _) => true
-      case _ => false
-    }.map {
-      case (Some(arr), idx) => (java.util.Arrays.asList(arr: _*), idx)
-      case _ => throw new IllegalStateException("Internal Error")
+    val validPathsWithIndexes = jniInstructions.zipWithIndex.flatMap {
+      case (Some(arr), idx) => Some((java.util.Arrays.asList(arr: _*), idx))
+      case _ => None
     }
 
     val validPaths = validPathsWithIndexes.map(_._1)
