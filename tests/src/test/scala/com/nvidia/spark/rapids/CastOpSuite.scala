@@ -967,7 +967,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     dataType: DataType,
     scale: Int,
     precision: Int = ai.rapids.cudf.DType.DECIMAL128_MAX_PRECISION,
-    floatEpsilon: Double = 1e-9,
+    floatEpsilon: Double = 1e-13,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,
