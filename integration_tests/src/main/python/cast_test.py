@@ -184,7 +184,7 @@ def test_cast_string_timestamp_fallback():
     decimal_gen_32bit,
     pytest.param(decimal_gen_32bit_neg_scale, marks=
         pytest.mark.skipif(is_dataproc_serverless_runtime(),
-                           reason="Dataproc Serverless does not support negative scale for Decimal cast")), 
+                           reason="Dataproc Serverless does not support negative scale for Decimal cast")),
     DecimalGen(precision=7, scale=7),
     decimal_gen_64bit, decimal_gen_128bit, DecimalGen(precision=30, scale=2),
     DecimalGen(precision=36, scale=5), DecimalGen(precision=38, scale=0),
@@ -265,7 +265,11 @@ def test_cast_long_to_decimal_overflow():
         lambda spark : unary_op_df(spark, long_gen).select(
             f.col('a').cast(DecimalType(18, -1))))
 
-@approximate_float
+
+_float_special_cases = [(float("inf"), 5.0), (float("-inf"), 5.0), (float("nan"), 5.0)]
+@pytest.mark.parametrize('data_gen', [FloatGen(special_cases=_float_special_cases),
+                                      DoubleGen(special_cases=_float_special_cases)],
+                         ids=idfn)
 @pytest.mark.parametrize('to_type', [
     DecimalType(7, 1),
     DecimalType(9, 9),
@@ -274,12 +278,11 @@ def test_cast_long_to_decimal_overflow():
     DecimalType(30, 3),
     DecimalType(5, -3),
     DecimalType(3, 0)], ids=idfn)
-def test_cast_float_to_decimal(to_type):
+def test_cast_floating_point_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, double_gen).select(
-            f.col('a'), f.col('a').cast(to_type).cast('double')),
-        conf = {'spark.rapids.sql.castFloatToDecimal.enabled': 'true',
-                'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a'), f.col('a').cast(to_type)),
+        conf={'spark.rapids.sql.castFloatToDecimal.enabled': 'true'})
 
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen]
