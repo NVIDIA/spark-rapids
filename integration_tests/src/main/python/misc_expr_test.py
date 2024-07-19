@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_400
 
 def test_mono_id():
     assert_gpu_and_cpu_are_equal_collect(
@@ -32,6 +33,10 @@ def test_part_id():
                 f.col('a'),
                 f.spark_partition_id()))
 
+
+@pytest.mark.skipif(condition=not is_before_spark_400(),
+                    reason="raise_error() not currently implemented for Spark 4.0. "
+                           "See https://github.com/NVIDIA/spark-rapids/issues/10107.")
 def test_raise_error():
     data_gen = ShortGen(nullable=False, min_val=0, max_val=20, special_cases=[])
     assert_gpu_and_cpu_are_equal_collect(
