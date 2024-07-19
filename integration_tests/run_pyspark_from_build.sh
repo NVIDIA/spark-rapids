@@ -196,6 +196,7 @@ else
         break
       fi
       echo "invalid ${temp_rundir}, regenerating..."
+      rmdir "$temp_rundir"
     done
 
     RUN_DIR=${RUN_DIR-"${temp_rundir}"}
