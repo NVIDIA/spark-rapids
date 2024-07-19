@@ -64,6 +64,8 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
         if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          SCALA_VER: '2.12'
         run: |
           . .github/workflows/mvn-verify-check/populate-daily-cache.sh
       - name: all shim versions
@@ -175,6 +177,8 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
         if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          SCALA_VER: '2.13'
         run: |
           . .github/workflows/mvn-verify-check/populate-daily-cache.sh
       - name: all 213 shim verions
