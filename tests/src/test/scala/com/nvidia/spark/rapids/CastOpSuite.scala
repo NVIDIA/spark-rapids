@@ -729,6 +729,32 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customDataGenerator = Option(genDoubles))
   }
 
+  test("cast float/double to decimal (borderline value rounding)") {
+    val genFloats_12_7: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(3527.61953125f))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 12, scale = 7,
+      customDataGenerator = Option(genFloats_12_7))
+
+    val genDoubles_12_7: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(3527.61953125))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 12, scale = 7,
+      customDataGenerator = Option(genDoubles_12_7))
+
+    val genFloats_3_1: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(9.95f))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 3, scale = 1,
+      customDataGenerator = Option(genFloats_3_1))
+
+    val genDoubles_3_1: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(9.95))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 3, scale = 1,
+      customDataGenerator = Option(genDoubles_3_1))
+  }
+
   test("cast decimal to decimal") {
     // fromScale == toScale
     testCastToDecimal(DataTypes.createDecimalType(18, 0),
