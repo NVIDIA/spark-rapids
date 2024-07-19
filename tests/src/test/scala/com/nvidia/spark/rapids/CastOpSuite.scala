@@ -306,7 +306,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row], 
+  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row],
       fromGpu: Array[Row]): Unit = {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
@@ -438,12 +438,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast float to string") {
-    testCastToString[Float](DataTypes.FloatType, comparisonFunc = 
+    testCastToString[Float](DataTypes.FloatType, comparisonFunc =
         Some(compareStringifiedFloats(true)))
   }
 
   test("cast double to string") {
-    testCastToString[Double](DataTypes.DoubleType, comparisonFunc = 
+    testCastToString[Double](DataTypes.DoubleType, comparisonFunc =
         Some(compareStringifiedFloats(false)))
   }
 
@@ -693,6 +693,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.FloatType, scale,
         customDataGenerator = Some(floatsIncludeNaNs))
+      assertThrows[Throwable] {
+        testCastToDecimal(DataTypes.FloatType, scale,
+          customDataGenerator = Some(floatsIncludeNaNs),
+          ansiEnabled = true)
+      }
     }
   }
 
@@ -710,6 +715,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.DoubleType, scale,
         customDataGenerator = Some(doublesIncludeNaNs))
+      assertThrows[Throwable] {
+        testCastToDecimal(DataTypes.DoubleType, scale,
+          customDataGenerator = Some(doublesIncludeNaNs),
+          ansiEnabled = true)
+      }
     }
   }
 
