@@ -272,13 +272,15 @@ case class GpuMultiGetJsonObject(json: Expression,
 }
 
 class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpressionCombiner {
-  private var id = 0
+  private var outputLocation = 0
+  /**
+   * A mapping between an expression and where in the output struct of
+   * the MultiGetJsonObject will the output be.
+   */
   private val toCombine = mutable.HashMap.empty[GpuExpressionEquals, Int]
   addExpression(exp)
 
-  override def toString: String = {
-    s"GetJsonObjCombiner $toCombine"
-  }
+  override def toString: String = s"GetJsonObjCombiner $toCombine"
 
   override def hashCode: Int = {
     // We already know that we are GetJsonObject, and what we can combine is based
@@ -296,11 +298,11 @@ class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpres
   }
 
   override def addExpression(e: Expression): Unit = {
-    val localId = id
-    id += 1
+    val localOutputLocation = outputLocation
+    outputLocation += 1
     val key = GpuExpressionEquals(e)
     if (!toCombine.contains(key)) {
-      toCombine.put(key, localId)
+      toCombine.put(key, localOutputLocation)
     }
   }
 
@@ -480,6 +482,7 @@ case class GpuGetJsonObject(
     }
   }
 
+  @transient
   private lazy val combiner = new GetJsonObjectCombiner(this)
 
   override def getCombiner(): GpuExpressionCombiner = combiner
