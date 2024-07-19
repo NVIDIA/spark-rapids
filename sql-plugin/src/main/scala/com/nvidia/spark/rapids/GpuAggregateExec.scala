@@ -172,7 +172,8 @@ object AggregateModeInfo {
  *                             the merge steps for each aggregate function
  * @param isSorted             if the batch is sorted this is set to true and is passed to cuDF
  *                             as an optimization hint
- * @param conf                 A configuration used to control TieredProject operations in an aggregation.
+ * @param conf                 A configuration used to control TieredProject operations in an
+ *                             aggregation.
  */
 class AggHelper(
     inputAttributes: Seq[Attribute],
