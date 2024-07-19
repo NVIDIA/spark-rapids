@@ -124,6 +124,8 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
+                    reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
 def test_delta_name_column_mapping_no_field_ids(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_parquet_table(spark):
