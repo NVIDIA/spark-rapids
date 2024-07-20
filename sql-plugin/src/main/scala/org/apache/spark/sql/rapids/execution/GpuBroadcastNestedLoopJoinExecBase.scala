@@ -537,7 +537,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
         // batch.
         val proj = GpuBindReferences.bindGpuReferencesTiered(
-          postBuildCondition, p.child.output, true)
+          postBuildCondition, p.child.output, conf)
         withResource(makeBuiltBatchInternal(relation, buildTime, buildDataSize)) {
           cb => proj.project(cb)
         }

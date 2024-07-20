@@ -15,18 +15,19 @@
  */
 
 /* Note: This is derived from EquivalentExpressions in Apache Spark
- * with changes to adapt it for GPU.
+ * with a lot of changes to adapt it for GPU.
  */
 package org.apache.spark.sql.rapids.catalyst.expressions
 
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
+import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable, RapidsConf}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, LeafExpression, PlanExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * This class is used to compute equality of (sub)expression trees. Expressions can be added
@@ -55,7 +56,7 @@ class GpuEquivalentExpressions {
           stats.useCount += 1
           true
         case _ =>
-          map.put(wrapper, GpuExpressionStats(expr)())
+          map.put(wrapper, new GpuExpressionStats(expr))
           false
       }
     } else {
@@ -374,6 +375,56 @@ object GpuEquivalentExpressions {
     }
   }
 
+  /**
+   * This takes a set of expressions and finds all multi-expressions that can be replaced
+   * and replaces them.
+   */
+  def replaceMultiExpressions(exprs: Seq[Expression], conf: SQLConf): Seq[Expression] = {
+    // GpuEquivalentExpressions is really find all expressions that will execute
+    // unconditionally, or at least it will be. This gives us the ability to
+    // know that if we combine expressions into multi-expressions then we will
+    // not accidentally cause side effects to happen that should have been hidden
+    // by a conditional expression. It also guarantees that the dedupe code
+    // will combine the multi-expressions so we don't run them multiple times.
+    val equivalentExpressions = new GpuEquivalentExpressions
+    exprs.foreach(equivalentExpressions.addExprTree(_))
+    val combinableMap = mutable.HashMap.empty[GpuExpressionCombiner, GpuExpressionCombiner]
+    val enabled = mutable.HashMap.empty[Class[_], Boolean]
+    def isEnabled(clazz: Class[_]): Boolean = {
+      enabled.getOrElse(clazz, {
+        val confKey = RapidsConf.ENABLE_COMBINED_EXPR_PREFIX + clazz.getSimpleName
+        val isEnabled = conf.getConfString(confKey, "true").trim.toBoolean
+        enabled.put(clazz, isEnabled)
+        isEnabled
+      })
+    }
+    equivalentExpressions.equivalenceMap.values.map(_.expr).foreach {
+      case e: GpuCombinable if isEnabled(e.getClass) =>
+        val key = e.getCombiner()
+        combinableMap.get(key).map { c =>
+          c.addExpression(e)
+        }.getOrElse {
+          combinableMap.put(key, key)
+        }
+      case _ => //Noop
+    }
+    val filtered = combinableMap.filter {
+      case (_, v) => v.useCount > 1
+    }
+
+    // We now have a set of values that should be replaced
+    if (filtered.isEmpty) {
+      exprs
+    } else {
+      exprs.map { expr =>
+        expr.transform {
+          case c: GpuCombinable if filtered.contains(c.getCombiner()) =>
+            filtered(c.getCombiner()).getReplacementExpression(c)
+        }
+      }
+    }
+  }
+
   def getExprTiers(expressions: Seq[Expression]): Seq[Seq[Expression]] = {
     // Get tiers of common expressions
     val expressionTiers = recurseCommonExpressions(expressions, Seq(expressions))
@@ -413,6 +464,45 @@ object GpuEquivalentExpressions {
   }
 }
 
+trait GpuExpressionCombiner {
+  /**
+   * Get a hash code that can be used to find other ExpressionCombiner instances
+   * that could be combined together.
+   */
+  def hashCode: Int
+
+  /**
+   * Check to see if this ExpressionCombiner could be combined with another one.
+   */
+  def equals(o: Any): Boolean
+
+  /**
+   * Add another expression to this combiner. Note that equals must have returned true
+   * already.
+   */
+  def addExpression(e: Expression): Unit
+
+  /**
+   * For a specific expression return a multi-expression that can be used to replace it.
+   * Note that deduplication of these will happen as a part of tiered project.
+   * @param e the expression to be replaced
+   * @return the replacement expression
+   */
+  def getReplacementExpression(e: Expression): Expression
+
+  /**
+   * Get the number of expressions that can be combined (excluding duplicates)
+   */
+  def useCount: Int
+}
+
+trait GpuCombinable extends GpuExpression {
+  /**
+   * Get a combiner that can be used to find candidates to combine
+   */
+  def getCombiner(): GpuExpressionCombiner
+}
+
 /**
  * Wrapper around an Expression that provides semantic equality.
  */
@@ -432,10 +522,11 @@ case class GpuExpressionEquals(e: Expression) {
  * Instead of appending to a mutable list/buffer of Expressions, just update the "flattened"
  * useCount in this wrapper in-place.
  */
-case class GpuExpressionStats(expr: Expression)(var useCount: Int = 1) {
+class GpuExpressionStats(val expr: Expression) {
+  var useCount: Int = 1
   // This is used to do a fast pre-check for child-parent relationship. For example, expr1 can
   // only be a parent of expr2 if expr1.height is larger than expr2.height.
-  lazy val height = getHeight(expr)
+  lazy val height: Int = getHeight(expr)
 
   private def getHeight(tree: Expression): Int = {
     tree.children.map(getHeight).reduceOption(_ max _).getOrElse(0) + 1
