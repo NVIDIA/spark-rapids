@@ -18,16 +18,14 @@ set -x
 max_retry=3; delay=30; i=1
 if [[ $SCALA_VER == '2.12' ]]; then
     pom='pom.xml'
-    buildver='noSnapshots'
 elif [[ $SCALA_VER == '2.13' ]]; then
     pom='scala2.13/pom.xml'
-    buildver='noSnapshotsScala213'
 fi
 while true; do
     {
         mvn $COMMON_MVN_FLAGS --file $pom help:evaluate -pl dist \
             -Dexpression=included_buildvers \
-            -DforceStdout -P$buildver -q | tr -d ',' | \
+            -DforceStdout -PnoSnapshots -q | tr -d ',' | \
             xargs -n 1 -I {} bash -c \
                 "mvn $COMMON_MVN_FLAGS --file $pom -Dbuildver={} de.qaware.maven:go-offline-maven-plugin:resolve-dependencies"
 
