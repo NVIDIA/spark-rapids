@@ -2028,7 +2028,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue)
+          GpuCaseWhen(branches, elseValue, this.conf.caseWhenFuseEnabled)
         }
       }),
     expr[If](
@@ -2862,6 +2862,23 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayRemove(lhs, rhs)
       }
+    ),
+    expr[MapFromArrays](
+      "Creates a new map from two arrays",
+      ExprChecks.binaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+        ("keys",
+          TypeSig.ARRAY.nested(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.all - TypeSig.MAP)),
+        ("values",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.all))),
+      GpuMapFromArraysMeta
     ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
@@ -4177,7 +4194,7 @@ object GpuOverrides extends Logging {
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
           condition.map(c => GpuFilterExec(c.convertToGpu(),
-            joinExec)(useTieredProject = this.conf.isTieredProjectEnabled)).getOrElse(joinExec)
+            joinExec)()).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](
@@ -4646,8 +4663,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
 
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        val found = f.relation.inputFiles.exists { name =>
-          checkDeltaFunc(name)
+        val found = StaticPartitionShims.getStaticPartitions(f.relation).map { parts =>
+          parts.exists { part =>
+            part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
+          }
+        }.getOrElse {
+          f.relation.inputFiles.exists { name =>
+            checkDeltaFunc(name)
+          }
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")

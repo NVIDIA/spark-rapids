@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
@@ -296,3 +296,86 @@ def test_conditional_with_side_effects_unary_minus(data_gen, ansi_enabled):
             'CASE WHEN a > -32768 THEN -a ELSE null END'),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
 
+_case_when_scalars = [
+    ['True', 'False', 'null', 'True', 'False'],
+    ['CAST(1 AS TINYINT)', 'CAST(2 AS TINYINT)', 'CAST(3 AS TINYINT)', 'CAST(4 AS TINYINT)', 'CAST(5 AS TINYINT)'],
+    ['CAST(1 AS SMALLINT)', 'CAST(2 AS SMALLINT)', 'CAST(3 AS SMALLINT)', 'CAST(4 AS SMALLINT)', 'CAST(5 AS SMALLINT)'],
+    ['1', '2', '3', '4', '5'],
+    ['CAST(1 AS BIGINT)',          'CAST(2 AS BIGINT)',          'CAST(3 AS BIGINT)',          'CAST(4 AS BIGINT)',          'CAST(5 AS BIGINT)'],
+    ['CAST(1.1 AS FLOAT)',         'CAST(2.2 AS FLOAT)',         'CAST(3.3 AS FLOAT)',         'CAST(4.4 AS FLOAT)',         'CAST(5.5 AS FLOAT)'],
+    ['CAST(1.1 AS DOUBLE)',        'CAST(2.2 AS DOUBLE)',        'CAST(3.3 AS DOUBLE)',        'CAST(4.4 AS DOUBLE)',        'CAST(5.5 AS DOUBLE)'],
+    ["'str_value1'",               "'str_value2'",               "'str_value3'",               "'str_value4'",               "'str_else'"],
+    ['null',  'CAST(2.2 AS DECIMAL(7,3))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'], # null and decimal(7)
+    ['null',  'CAST(2.2 AS DECIMAL(12,2))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'], # decimal(7) and decimal(12)
+    ['CAST(1.1 AS DECIMAL(12,2))', 'CAST(2.2 AS DECIMAL(12,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(12,2))', 'CAST(5.5 AS DECIMAL(12,2))'], # decimal(12) and decimal(20)
+    ['CAST(1.1 AS DECIMAL(20,2))', 'CAST(2.2 AS DECIMAL(20,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(20,2))', 'CAST(5.5 AS DECIMAL(20,2))'], # decimal(20)
+]
+@pytest.mark.parametrize('case_when_scalars', _case_when_scalars, ids=idfn)
+def test_case_when_all_then_values_are_scalars(case_when_scalars):
+    data_gen = [
+        ("a", boolean_gen),
+        ("b", boolean_gen),
+        ("c", boolean_gen),
+        ("d", boolean_gen),
+        ("e", boolean_gen)
+    ]
+    sql =  """
+            select case
+                when a then {}
+                when b then {}
+                when c then {}
+                when d then {}
+                else {}
+            end
+            from tab
+            """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen),
+        "tab",
+        sql.format(case_when_scalars[0], case_when_scalars[1], case_when_scalars[2], case_when_scalars[3], case_when_scalars[4]),
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+
+# test corner cases:
+#  - when exprs has nulls
+#  - else expr is null
+def test_case_when_all_then_values_are_scalars_with_nulls():
+    bool_rows = [(True, False, False, None),
+                 (False, True, True, None), # the second true will enable `when b then null` branch
+                 (False, False, None, None),
+                 (None, None, True, False),
+                 (False, False, False, False),
+                 (None, None, None, None)]
+    sql =  """
+            select case 
+                when a then 'aaa' 
+                when b then null
+                when c then 'ccc' 
+                when d then 'ddd' 
+                else {}
+            end
+            from tab
+            """
+    sql_without_else =  """
+            select case 
+                when a then cast(1.1 as decimal(7,2))
+                when b then null
+                when c then cast(3.3 as decimal(7,2))
+                when d then cast(4.4 as decimal(7,2))
+            end
+            from tab
+            """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql.format("'unknown'"),
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql.format("null"), # set else as null
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql_without_else,
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})

@@ -50,11 +50,11 @@ mvn verify
 
 After a successful build, the RAPIDS Accelerator jar will be in the `dist/target/` directory.
 This will build the plugin for a single version of Spark.  By default, this is Apache Spark
-3.1.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
-to Maven. For instance to build Spark 3.1.1 you would use:
+3.2.0. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
+to Maven. For instance to build Spark 3.2.0 you would use:
 
 ```shell script
-mvn -Dbuildver=311 verify
+mvn -Dbuildver=320 verify
 ```
 You can find all available build versions in the top level pom.xml file. If you are building
 for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
@@ -110,7 +110,7 @@ If you want to create a jar with multiple versions we have the following options
 3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
 4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
 5. Build for an arbitrary combination of comma-separated build versions using `-Dincluded_buildvers=<CSV list of build versions>`.
-   E.g., `-Dincluded_buildvers=312,330`
+   E.g., `-Dincluded_buildvers=320,330`
 
 You must first build each of the versions of Spark and then build one final time using the profile for the option you want.
 
@@ -118,9 +118,6 @@ You can also install some manually and build a combined jar. For instance to bui
 
 ```shell script
 mvn clean
-mvn -Dbuildver=311 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=312 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=313 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
@@ -150,9 +147,9 @@ There is a build script `build/buildall` that automates the local build process.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots` that includes all released (noSnapshots) and snapshots Spark versions except for Databricks
-- `minimumFeatureVersionMix` that currently includes 321cdh, 312, 320, 330 is recommended for catching incompatibilities already in the local development cycle
+- `minimumFeatureVersionMix` that currently includes 321cdh, 320, 330 is recommended for catching incompatibilities already in the local development cycle
 
-For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=311` for Spark 3.1.1.
+For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=320` for Spark 3.2.0.
 
 The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need for the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
 
@@ -201,7 +198,7 @@ NOTE: Build process does not require an ARM machine, so if you want to build the
 on X86 machine, please also add `-DskipTests` in commands.
 
 ```bash
-mvn clean verify -Dbuildver=311 -Parm64
+mvn clean verify -Dbuildver=320 -Parm64
 ```
 
 ### Iterative development during local testing
@@ -377,7 +374,7 @@ the symlink `.bloop` to point to the corresponding directory `.bloop-spark3XY`
 
 Example usage:
 ```Bash
-./build/buildall --generate-bloop --profile=311,330
+./build/buildall --generate-bloop --profile=320,330
 rm -vf .bloop
 ln -s .bloop-spark330 .bloop
 ```
@@ -414,7 +411,7 @@ Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscod
 either locally or into a Remote-SSH extension destination depending on your target environment.
 When your project folder is open in VS Code, it may prompt you to import Maven project.
 IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the Bloop projects
-generated with the default `311` profile. If you need to use a different profile, always rerun the
+generated with the default `320` profile. If you need to use a different profile, always rerun the
 command above manually. When regenerating projects it's recommended to proceed to Metals
 "Build commands" View, and click:
 1. "Restart build server"

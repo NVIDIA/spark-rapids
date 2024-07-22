@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuGreaterThan
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.types.{DoubleType, IntegerType}
@@ -68,14 +69,16 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
       GpuAlias(GpuRand(GpuLiteral(RAND_SEED)), "rand")())
 
     Seq(true, false).foreach { useTieredProject =>
+      val conf = new SQLConf()
+      conf.setConfString(RapidsConf.ENABLE_TIERED_PROJECT.key, useTieredProject.toString)
       // expression should be retryable
       val boundProjectRand = GpuBindReferences.bindGpuReferencesTiered(projectRand(),
-        batchAttrs, useTieredProject)
+        batchAttrs, conf)
       assert(boundProjectRand.areAllRetryable)
       // project with and without retry
       val batches = Seq(true, false).safeMap { forceRetry =>
         val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(
-          projectRand() ++ batchAttrs, batchAttrs, useTieredProject)
+          projectRand() ++ batchAttrs, batchAttrs, conf)
         assert(boundProjectList.areAllRetryable)
 
         val sb = closeOnExcept(buildBatch()) { cb =>
@@ -110,10 +113,12 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
         GpuLiteral.create(0.1d, DoubleType)))
 
     Seq(true, false).foreach { useTieredProject =>
+      val conf = new SQLConf()
+      conf.setConfString(RapidsConf.ENABLE_TIERED_PROJECT.key, useTieredProject.toString)
       // filter with and without retry
       val tables = Seq(true, false).safeMap { forceRetry =>
         val boundCondition = GpuBindReferences.bindGpuReferencesTiered(filterRand(),
-          batchAttrs, useTieredProject)
+          batchAttrs, conf)
         assert(boundCondition.areAllRetryable)
 
         val cb = buildBatch()

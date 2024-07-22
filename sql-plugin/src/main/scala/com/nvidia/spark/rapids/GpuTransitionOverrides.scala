@@ -27,7 +27,6 @@ import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
@@ -35,7 +34,7 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
@@ -213,13 +212,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
           // join but Spark will sometimes try and do this
           val keys = output.map { a => a.asInstanceOf[Expression] }
-          val (index, keyExprs) = b.mode match {
-            case HashedRelationBroadcastMode(keys, _) => (None, Some(keys))
-            case IdentityBroadcastMode => (Some(0), None)
-            case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
-          }
           SparkShimImpl.newBroadcastQueryStageExec(e,
-            GpuBroadcastToRowExec(keys, b.mode, e.plan)(index, keyExprs))
+            GpuBroadcastToRowExec(keys, b.mode, e.plan))
         case b: GpuBroadcastExchangeExec =>
           // This should never happen as AQE with a BroadcastQueryStageExec should
           // only show up on a reused exchange, but just in case we try to do the right
