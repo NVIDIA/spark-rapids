@@ -1610,14 +1610,12 @@ case class GpuSubstringIndex(strExpr: Expression,
 
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
-
-    val strColumnView = str.getBase
-    val delimiter = delim.getBase
-    val cnt = count.getValue.asInstanceOf[Int]
-    withResource(GpuSubstringIndexUtils.substringIndex(strColumnView, delimiter, cnt)) { result =>
-      result.incRefCount()
+    if(delim.isValid && count.isValid){
+      GpuSubstringIndexUtils.substringIndex(str.getBase,  delim.getBase,
+        count.getValue.asInstanceOf[Int])
+    }else{
+      GpuColumnVector.columnVectorFromNull(str.getRowCount.toInt, StringType)
     }
-
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
