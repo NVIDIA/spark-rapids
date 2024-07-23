@@ -1611,7 +1611,7 @@ case class GpuSubstringIndex(strExpr: Expression,
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
     if (delim.isValid && count.isValid) {
-      GpuSubstringIndexUtils.substringIndex(str.getBase,  delim.getBase,
+      GpuSubstringIndexUtils.substringIndex(str.getBase, delim.getBase,
           count.getValue.asInstanceOf[Int])
     } else {
       GpuColumnVector.columnVectorFromNull(str.getRowCount.toInt, StringType)
