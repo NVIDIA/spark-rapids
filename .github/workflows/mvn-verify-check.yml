@@ -149,7 +149,6 @@ jobs:
           }
           done
  
-  cache-dependencies-scala213:
     runs-on: ubuntu-latest
     outputs:
       scala213dailyCacheKey: ${{ steps.generateCacheKey.outputs.scala213dailyCacheKey }}
