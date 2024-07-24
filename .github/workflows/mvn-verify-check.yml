@@ -148,7 +148,7 @@ jobs:
             fi
           }
           done
- 
+
   cache-dependencies-scala213:
     runs-on: ubuntu-latest
     outputs:
@@ -201,7 +201,7 @@ jobs:
           jdkVersionArrBody=${jdkVersionArrBody:1}
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
           echo "jdkVersions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
-      
+
 
   package-tests-scala213:
     needs: cache-dependencies-scala213
@@ -304,12 +304,12 @@ jobs:
               exit 1
           fi
           # change to Scala 2.13 Directory
-          cd scala2.13 
+          cd scala2.13
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
             mvn verify \
-              -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
+              -P "individual,pre-merge,source-javadoc" -Dbuildver=${{ matrix.spark-version }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
