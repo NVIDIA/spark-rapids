@@ -64,29 +64,10 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
         if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          SCALA_VER: '2.12'
         run: |
-          set -x
-          max_retry=3; delay=30; i=1
-          while true; do
-            for pom in pom.xml 
-            do
-              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
-                -Dexpression=included_buildvers \
-                -DforceStdout -PnoSnapshots -q | tr -d ',' | \
-                  xargs -n 1 bash -c \
-                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
-
-              # compile base versions to cache scala compiler and compiler bridge
-              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
-                process-test-resources -pl sql-plugin-api -am
-            done && break || {
-            if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
-            else
-              echo "mvn command failed. Exit 1"; exit 1
-            fi
-          }
-          done
+          . .github/workflows/mvn-verify-check/populate-daily-cache.sh
       - name: all shim versions
         id: all212ShimVersionsStep
         run: |
@@ -167,16 +148,40 @@ jobs:
             fi
           }
           done
-
-  set-scala213-versions:
+ 
+  cache-dependencies-scala213:
     runs-on: ubuntu-latest
     outputs:
+      scala213dailyCacheKey: ${{ steps.generateCacheKey.outputs.scala213dailyCacheKey }}
       scala213Versions: ${{ steps.all213ShimVersionsStep.outputs.scala213Versions }}
       sparkJDK17Versions: ${{ steps.all213ShimVersionsStep.outputs.jdkVersions }}
     steps:
       - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
-
-      - id: all213ShimVersionsStep
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+      - name: Generate daily cache key
+        id: generateCacheKey
+        run: |
+          set -x
+          cacheKey="${{ runner.os }}-maven-scala213-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
+      - name: Cache local Maven repository
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ env.scala213dailyCacheKey }}
+          restore-keys: ${{ runner.os }}-maven-
+      - name: populate-daily-cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          SCALA_VER: '2.13'
+        run: |
+          . .github/workflows/mvn-verify-check/populate-daily-cache.sh
+      - name: all 213 shim verions
+        id: all213ShimVersionsStep
         run: |
           set -x
           SCALA_BINARY_VER=2.13
@@ -196,12 +201,13 @@ jobs:
           jdkVersionArrBody=${jdkVersionArrBody:1}
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
           echo "jdkVersions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
+      
 
   package-tests-scala213:
-    needs: set-scala213-versions
+    needs: cache-dependencies-scala213
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.set-scala213-versions.outputs.scala213Versions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies-scala213.outputs.scala213Versions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -213,6 +219,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 17
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies-scala213.outputs.scala213dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -252,10 +264,10 @@ jobs:
           done
 
   verify-213-modules:
-    needs: set-scala213-versions
+    needs: cache-dependencies-scala213
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJSON(needs.set-scala213-versions.outputs.sparkJDK17Versions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies-scala213.outputs.sparkJDK17Versions) }}
     steps:
       - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
 
@@ -264,6 +276,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 17
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies-scala213.outputs.scala213dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
