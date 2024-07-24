@@ -2983,8 +2983,7 @@ object GpuOverrides extends Logging {
       "substring_index operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
+          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
