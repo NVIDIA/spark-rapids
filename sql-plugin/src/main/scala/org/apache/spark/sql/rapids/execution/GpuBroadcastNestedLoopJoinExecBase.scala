@@ -558,6 +558,15 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     broadcastExchange.executeColumnarBroadcast[Any]()
   }
 
+  private def isUnconditionalJoin(condition: Option[GpuExpression]): Boolean = {
+    condition.forall {
+      case GpuLiteral(true, BooleanType) =>
+        // Spark can generate a degenerate conditional join when the join keys are constants
+        output.isEmpty
+      case _ => false
+    }
+  }
+
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // Determine which table will be first in the join and bind the references accordingly
     // so the AST column references match the appropriate table.
@@ -583,7 +592,9 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       if (useTrueCondition) Some(GpuLiteral(true)) else None
     }
 
-    if (joinCondition.isEmpty) {
+    // Sometimes Spark specifies a true condition for a row-count-only join.
+    // This can happen when the join keys are detected to be constant.
+    if (isUnconditionalJoin(joinCondition)) {
       doUnconditionalJoin(broadcastRelation)
     } else {
       doConditionalJoin(broadcastRelation, joinCondition, numFirstTableColumns)
