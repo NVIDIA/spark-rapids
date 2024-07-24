@@ -1045,7 +1045,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
             }
             fromCpu.map(r => Row(fetchFromRow(r))) -> fromGpu.map(r => Row(fetchFromRow(r)))
         }
-        compareResultsWithCount(sort = false, floatEpsilon, cpuResult, gpuResult)
+        compareResults(sort = false, floatEpsilon, cpuResult, gpuResult)
       } else {
         withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
       }

@@ -259,87 +259,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     }
   }
 
-  def compareWithCount(expected: Any, actual: Any, epsilon: Double = 0.0): (Boolean, Int) = {
-
-
-    def doublesAreEqualWithinPercentage(expected: Double, actual: Double): (String, Boolean) = {
-      if (!compare(expected, actual)) {
-        if (expected != 0) {
-          val v = Math.abs((expected - actual) / expected)
-          (s"\n\nABS($expected - $actual) / ABS($actual) == $v is not <= $epsilon ",  v <= epsilon)
-        } else {
-          val v = Math.abs(expected - actual)
-          (s"\n\nABS($expected - $actual) == $v is not <= $epsilon ",  v <= epsilon)
-        }
-      } else {
-        ("SUCCESS", true)
-      }
-    }
-    val equal = (expected, actual) match {
-      case (a: Float, b: Float) if a.isNaN && b.isNaN => true
-      case (a: Double, b: Double) if a.isNaN && b.isNaN => true
-      case (null, null) => true
-      case (null, _) => false
-      case (_, null) => false
-      case (a: Array[_], b: Array[_]) =>
-        a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
-      case (a: Map[_, _], b: Map[_, _]) =>
-        a.size == b.size && a.keys.forall { aKey =>
-          b.keys.find(bKey => compare(aKey, bKey))
-                .exists(bKey => compare(a(aKey), b(bKey), epsilon))
-        }
-      case (a: Iterable[_], b: Iterable[_]) =>
-        a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r, epsilon) }
-      case (a: Product, b: Product) =>
-        compare(a.productIterator.toSeq, b.productIterator.toSeq, epsilon)
-      case (a: Row, b: Row) =>
-        compare(a.toSeq, b.toSeq, epsilon)
-      // 0.0 == -0.0, turn float/double to bits before comparison, to distinguish 0.0 and -0.0.
-      case (a: Double, b: Double) if epsilon <= 0 =>
-        java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
-      case (a: Double, b: Double) if epsilon > 0 =>
-        val ret = doublesAreEqualWithinPercentage(a, b)
-        if (!ret._2) {
-          System.err.println(ret._1 + " (double)")
-        }
-        ret._2
-      case (a: Float, b: Float) if epsilon <= 0 =>
-        java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
-      case (a: Float, b: Float) if epsilon > 0 =>
-        val ret = doublesAreEqualWithinPercentage(a, b)
-        if (!ret._2) {
-          System.err.println(ret._1 + " (float)")
-        }
-        ret._2
-      case (a, b) => a == b
-    }
-
-    val count = if(equal) {
-      0
-    } else {
-      (expected, actual) match {
-        case (a: Array[_], b: Array[_]) =>
-          if (a.length != b.length) {
-            -1
-          } else {
-            var lcount = 0
-            for (i <- a.indices) {
-              if (!compare(a(i), b(i), epsilon)) {
-                lcount += 1
-              }
-            }
-            lcount
-          }
-
-
-        case _ => throw new IllegalArgumentException("Expected and actual are not array")
-      }
-
-    }
-
-    (equal, count)
-  }
-
   def executeFunOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
       fun: DataFrame => Unit,
       conf: SparkConf = new SparkConf(),
@@ -949,45 +868,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       if (!compare(fromCpu, fromGpu, floatEpsilon)) {
         fail(
           s"""
-             |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer,
-             |CPU: ${fromCpu.toSeq}
-
-             |GPU: ${fromGpu.toSeq}
-         """.
-            stripMargin)
-      }
-    }
-  }
-
-  def compareResultsWithCount(
-      sort: Boolean,
-      floatEpsilon:Double,
-      fromCpu: Array[Row],
-      fromGpu: Array[Row]): Unit = {
-    val relaxedFloatDisclaimer = if (floatEpsilon > 0) {
-      "(relaxed float comparison)"
-    } else {
-      ""
-    }
-    if (sort) {
-      val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
-      val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
-      if (!compare(cpu, gpu, floatEpsilon)) {
-        fail(
-          s"""
              |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
-             |CPU: ${cpu.seq}
-
-             |GPU: ${gpu.seq}
-         """.
-            stripMargin)
-      }
-    } else {
-      val (equal, count) = compareWithCount(fromCpu, fromGpu, floatEpsilon)
-      if (!equal) {
-        fail(
-          s"""
-             |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer, $count differences
              |CPU: ${fromCpu.toSeq}
 
              |GPU: ${fromGpu.toSeq}
