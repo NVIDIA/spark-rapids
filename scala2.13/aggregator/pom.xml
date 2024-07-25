@@ -44,7 +44,7 @@
         <rapids.default.jar.phase>initialize</rapids.default.jar.phase>
         <!-- Maven to register attached artifact , which we later replace -->
         <rapids.shim.jar.phase>initialize</rapids.shim.jar.phase>
-        <rapdis.source.jar.phase>none</rapdis.source.jar.phase>
+        <rapids.source.jar.phase>none</rapids.source.jar.phase>
     </properties>
     <dependencies>
         <dependency>
