@@ -563,6 +563,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       case GpuLiteral(true, BooleanType) =>
         // Spark can generate a degenerate conditional join when the join keys are constants
         output.isEmpty
+      case GpuAlias(e: GpuExpression, _) => isUnconditionalJoin(Some(e))
       case _ => false
     }
   }
