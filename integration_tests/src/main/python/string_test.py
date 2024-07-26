@@ -23,7 +23,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_before_spark_320
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_before_spark_320, is_before_spark_400
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -77,7 +77,9 @@ def test_split_positive_limit():
 
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
-    (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)
+    (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^'),
+    (mk_str_gen('([XYZ]{0,3}XYZ?){0,5}'), 'XYZ'),
+    (mk_str_gen('([DEF]{0,3}DELIM?){0,5}'), 'DELIM')], ids=idfn)
 def test_substring_index(data_gen,delim):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(
@@ -90,10 +92,15 @@ def test_substring_index(data_gen,delim):
 
 
 @allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(condition=not is_before_spark_400(),
+                    reason="Bug in Apache Spark 4.0 causes NumberFormatExceptions from substring_index(), "
+                           "if called with index==null. For further information, see: "
+                           "https://issues.apache.org/jira/browse/SPARK-48989.")
 @pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
 def test_unsupported_fallback_substring_index(data_gen):
     delim_gen = StringGen(pattern="_")
     num_gen = IntegerGen(min_val=0, max_val=10, special_cases=[])
+
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
             gen_df(spark, [("a", data_gen),
@@ -332,6 +339,9 @@ def test_unsupported_fallback_startswith():
     assert_gpu_did_fallback(f.col("a").startswith(f.col("a")))
 
 
+@pytest.mark.skipif(condition=not is_before_spark_400(),
+                    reason="endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0. "
+                           "See https://issues.apache.org/jira/browse/SPARK-48995.")
 def test_endswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(

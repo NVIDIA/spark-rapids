@@ -44,6 +44,7 @@
         <rapids.default.jar.phase>initialize</rapids.default.jar.phase>
         <!-- Maven to register attached artifact , which we later replace -->
         <rapids.shim.jar.phase>initialize</rapids.shim.jar.phase>
+        <rapids.source.jar.phase>none</rapids.source.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -263,26 +264,6 @@
     </build>
 
     <profiles>
-        <profile>
-            <id>source-javadoc</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-source-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>attach-source</id>
-                                <goals>
-                                    <goal>jar</goal>
-                                </goals>
-                                <phase>none</phase>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
         <profile>
             <id>release320</id>
             <activation>

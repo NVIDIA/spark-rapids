@@ -589,6 +589,7 @@
                         <executions>
                             <execution>
                                 <id>attach-source</id>
+                                <phase>${rapids.source.jar.phase}</phase>
                                 <goals>
                                     <goal>jar</goal>
                                 </goals>
@@ -887,6 +888,7 @@
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
         <nonfail.errors.quiet>false</nonfail.errors.quiet>
+        <rapids.source.jar.phase>package</rapids.source.jar.phase>
     </properties>
 
     <dependencyManagement>

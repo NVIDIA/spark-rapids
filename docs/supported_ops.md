@@ -16525,7 +16525,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>only a single character is allowed;<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
