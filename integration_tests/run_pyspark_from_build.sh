@@ -235,7 +235,7 @@ else
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
-    MB_PER_EXEC=${MB_PER_EXEC:-1024}
+    MB_PER_EXEC=${MB_PER_EXEC:-1536}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
 
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
@@ -267,6 +267,10 @@ else
     if [[ -n "${DRIVER_MEMORY}" ]]; then
         export PYSP_TEST_spark_driver_memory="${DRIVER_MEMORY}"
     fi
+
+    # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
+    EXECUTOR_MEMORY=${EXECUTOR_MEMORY:-"1536m"}
+    export PYSP_TEST_spark_executor_memory=${PYSP_TEST_spark_executor_memory:-"${EXECUTOR_MEMORY}"}
 
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
