@@ -263,14 +263,12 @@ else
     export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
 
+    # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
+    export PYSP_TEST_spark_driver_memory=${PYSP_TEST_spark_driver_memory:-"${MB_PER_EXEC}m"}
     # Set driver memory to speed up tests such as deltalake
     if [[ -n "${DRIVER_MEMORY}" ]]; then
         export PYSP_TEST_spark_driver_memory="${DRIVER_MEMORY}"
     fi
-
-    # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
-    EXECUTOR_MEMORY=${EXECUTOR_MEMORY:-"1536m"}
-    export PYSP_TEST_spark_executor_memory=${PYSP_TEST_spark_executor_memory:-"${EXECUTOR_MEMORY}"}
 
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
