@@ -108,7 +108,7 @@ if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
         ## Mutithreaded Shuffle test
-        TEST_PARALELL=2 rapids_shuffle_smoke_test
+        TEST_PARALLEL=2 rapids_shuffle_smoke_test
     fi
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
       # Pyarrow tests
