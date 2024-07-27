@@ -74,6 +74,7 @@ rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
 
     # using MULTITHREADED shuffle
+    TEST_PARALLEL=0 \
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
@@ -108,7 +109,7 @@ if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
         ## Mutithreaded Shuffle test
-        TEST_PARALLEL=2 rapids_shuffle_smoke_test
+        rapids_shuffle_smoke_test
     fi
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
       # Pyarrow tests
