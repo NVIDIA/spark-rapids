@@ -114,8 +114,8 @@ else
         #  - 1.5 GiB of GPU memory for the tests and 750 MiB for loading CUDF + CUDA.
         #    From profiling we saw that tests allocated under 200 MiB of GPU memory and
         #    1.5 GiB felt like it gave us plenty of room to grow.
-        #  - 5 GiB of host memory. In testing with a limited number of tasks (4) we saw
-        #    the amount of host memory not go above 3 GiB so 5 felt like a good number
+        #  - 7.5 GiB of host memory. In testing with a limited number of tasks (4) we saw
+        #    the amount of host memory not go above 5.5 GiB so 7.5 felt like a good number
         #    for future growth.
         #  - 1 CPU core
         # per Spark application. We reserve 2 GiB of GPU memory for general overhead also.
@@ -129,7 +129,7 @@ else
         # below where the processes are launched.
         GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
         CPU_CORES=`nproc`
-        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024 * 1536))}'`
+        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (7.5 * 1024 * 1024))}'`
         TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
         TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
 
