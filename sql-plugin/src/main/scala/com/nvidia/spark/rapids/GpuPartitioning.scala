@@ -127,9 +127,13 @@ trait GpuPartitioning extends Partitioning {
     val mightNeedToSplit = totalInputSize > GpuPartitioning.MaxCpuBatchSize
 
     val hostPartColumns = withResource(partitionColumns) { _ =>
-      withRetryNoSplit {
-        partitionColumns.safeMap(_.copyToHost())
+      val hostCols = withRetryNoSplit {
+        partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))
       }
+      closeOnExcept(hostCols) { _ =>
+        Cuda.DEFAULT_STREAM.sync()
+      }
+      hostCols
     }
     try {
       // Leaving the GPU for a while
