@@ -15,6 +15,7 @@
 set -ex
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+export SPARK_RAPIDS_DEFAULT_CONFIGS_PATH=${SCRIPTPATH}/target/spark-rapids-default-configs.json
 cd "$SCRIPTPATH"
 
 if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
