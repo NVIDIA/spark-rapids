@@ -130,10 +130,10 @@ trait GpuPartitioning extends Partitioning {
       val hostCols = withRetryNoSplit {
         partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))
       }
-      closeOnExcept(hostCols) { _ =>
-        Cuda.DEFAULT_STREAM.sync()
-      }
       hostCols
+    }
+    closeOnExcept(hostPartColumns) { _ =>
+      Cuda.DEFAULT_STREAM.sync()
     }
     try {
       // Leaving the GPU for a while
