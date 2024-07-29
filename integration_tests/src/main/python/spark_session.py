@@ -21,6 +21,7 @@ from pyspark.sql import DataFrame
 from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 from unittest.mock import patch
+import json
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -40,23 +41,9 @@ _orig_conf_keys = _orig_conf.keys()
 # These settings can be overridden by specific tests if necessary.
 # Many of these are redundant with default settings for the configs but are set here explicitly
 # to ensure any cluster settings do not interfere with tests that assume the defaults.
-_default_conf = {
-    'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
-    'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
-    'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
-    'spark.rapids.sql.castFloatToString.enabled': 'false',
-    'spark.rapids.sql.castStringToFloat.enabled': 'false',
-    'spark.rapids.sql.castStringToTimestamp.enabled': 'false',
-    'spark.rapids.sql.fast.sample': 'false',
-    'spark.rapids.sql.hasExtendedYearValues': 'true',
-    'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
-    'spark.rapids.sql.improvedFloatOps.enabled': 'false',
-    'spark.rapids.sql.incompatibleDateFormats.enabled': 'false',
-    'spark.rapids.sql.incompatibleOps.enabled': 'false',
-    'spark.rapids.sql.mode': 'executeongpu',
-    'spark.rapids.sql.variableFloatAgg.enabled': 'false',
-    'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-}
+conf_file_path = os.environ['SPARK_RAPIDS_DEFAULT_CONFIGS_PATH']
+with open(conf_file_path) as conf_file:
+    _default_conf = json.load(conf_file)
 
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
@@ -67,7 +54,10 @@ def _set_all_confs(conf):
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
-            _spark.conf.set(key, value)
+            if isinstance(value, str):
+                _spark.conf.set(key, value)
+            else:
+                _spark.conf.set(key, str(value))
 
 def reset_spark_session_conf():
     """Reset all of the configs for a given spark session."""

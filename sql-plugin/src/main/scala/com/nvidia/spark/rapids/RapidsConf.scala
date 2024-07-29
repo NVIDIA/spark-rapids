@@ -124,6 +124,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
+  def getDefault(): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -145,6 +146,10 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     } else {
       converter(tmp)
     }
+  }
+
+  override def getDefault(): T = {
+    defaultValue
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -180,6 +185,10 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
     } else {
       Some(rawConverter(tmp))
     }
+  }
+
+  override def getDefault(): Option[T] = {
+    None
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -2372,6 +2381,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     printSectionHeader(category)
     println("Name | SQL Function(s) | Description | Default Value | Notes")
     println("-----|-----------------|-------------|---------------|------")
+  }
+
+  /**
+   * Returns all spark-rapids configs with their default values.
+   * This function is used to dump default configs, so that they
+   * could be used by the integration test.
+   */
+  def getAllConfigsWithDefault: Map[String, Any] = {
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    allConfs.map(e => e.key -> e.getDefault).toMap
   }
 
   def help(asTable: Boolean = false): Unit = {
