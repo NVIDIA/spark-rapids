@@ -74,6 +74,7 @@ rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
 
     # using MULTITHREADED shuffle
+    TEST_PARALLEL=0 \
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \

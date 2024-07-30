@@ -114,8 +114,8 @@ else
         #  - 1.5 GiB of GPU memory for the tests and 750 MiB for loading CUDF + CUDA.
         #    From profiling we saw that tests allocated under 200 MiB of GPU memory and
         #    1.5 GiB felt like it gave us plenty of room to grow.
-        #  - 5 GiB of host memory. In testing with a limited number of tasks (4) we saw
-        #    the amount of host memory not go above 3 GiB so 5 felt like a good number
+        #  - 8 GiB of host memory. In testing with a limited number of tasks (4) we saw
+        #    the amount of host memory not go above 5.5 GiB so 8 felt like a good number
         #    for future growth.
         #  - 1 CPU core
         # per Spark application. We reserve 2 GiB of GPU memory for general overhead also.
@@ -129,7 +129,7 @@ else
         # below where the processes are launched.
         GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
         CPU_CORES=`nproc`
-        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024 * 1024))}'`
+        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (8 * 1024 * 1024))}'`
         TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
         TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
 
@@ -235,7 +235,7 @@ else
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
-    MB_PER_EXEC=${MB_PER_EXEC:-1024}
+    MB_PER_EXEC=${MB_PER_EXEC:-1536}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
 
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
@@ -263,6 +263,8 @@ else
     export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
 
+    # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
+    export PYSP_TEST_spark_driver_memory=${PYSP_TEST_spark_driver_memory:-"${MB_PER_EXEC}m"}
     # Set driver memory to speed up tests such as deltalake
     if [[ -n "${DRIVER_MEMORY}" ]]; then
         export PYSP_TEST_spark_driver_memory="${DRIVER_MEMORY}"
