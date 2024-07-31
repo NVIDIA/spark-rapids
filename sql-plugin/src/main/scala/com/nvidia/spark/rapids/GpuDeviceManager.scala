@@ -240,19 +240,27 @@ object GpuDeviceManager extends Logging {
         (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
       if (poolAllocation < minAllocation) {
         throw new IllegalArgumentException(s"The pool allocation of " +
-            s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
-            s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was less than " +
-            s"the minimum allocation of ${toMB(minAllocation)} (calculated from " +
-            s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
-            s"and ${toMB(info.total)} MB total memory)")
+            s"${toMB(poolAllocation)} MiB (gpu.free: ${toMB(info.free)}," +
+            s"${RapidsConf.RMM_ALLOC_FRACTION}: (=${conf.rmmAllocFraction}," +
+            s"${RapidsConf.RMM_ALLOC_RESERVE}: ${reserveAmount} => " +
+            s"(gpu.free - reserve) * allocFraction = ${toMB(poolAllocation)})" +
+            s"was less than allocation of ${toMB(minAllocation)} MiB (gpu.total: " +
+            s"${toMB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MIN_FRACTION}: " +
+            s"${conf.rmmAllocMinFraction} => gpu.total *" +
+            s"minAllocFraction = ${toMB(minAllocation)} MiB). Please ensure that the GPU has" +
+            s"enough free memory, or adjust configuration accordingly.")
       }
       if (maxAllocation < poolAllocation) {
         throw new IllegalArgumentException(s"The pool allocation of " +
-            s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
-            s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was more than " +
-            s"the maximum allocation of ${toMB(maxAllocation)} (calculated from " +
-            s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
-            s"and ${toMB(info.total)} MB total memory)")
+            s"${toMB(poolAllocation)} MiB (gpu.free: ${toMB(info.free)}," +
+            s"${RapidsConf.RMM_ALLOC_FRACTION}: (=${conf.rmmAllocFraction}," +
+            s"${RapidsConf.RMM_ALLOC_RESERVE}: ${reserveAmount} => " +
+            s"(gpu.free - reserve) * allocFraction = ${toMB(poolAllocation)})" +
+            s"was more than allocation of ${toMB(maxAllocation)} MiB (gpu.total: " +
+            s"${toMB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MAX_FRACTION}: " +
+            s"${conf.rmmAllocMaxFraction} => gpu.total *" +
+            s"maxAllocFraction = ${toMB(maxAllocation)} MiB). Please ensure that pool allocation" +
+            s"does not exceed maximum allocation and adjust configuration accordingly.")
       }
       if (reserveAmount >= maxAllocation) {
         throw new IllegalArgumentException(s"RMM reserve memory (${toMB(reserveAmount)} MB) " +
