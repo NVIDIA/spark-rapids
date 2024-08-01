@@ -57,7 +57,8 @@ object DumpDefaultConfigs {
             withResource(new DataOutputStream(bos)) { dos =>
               allConfs.foreach( { case (k, v) =>
                 val valStr = v match {
-                  case some: Some[_] => some.getOrElse("")
+                  case Some(optVal) => optVal.toString
+                  case None => ""
                   case _ =>
                     if (v == null) {
                       ""
