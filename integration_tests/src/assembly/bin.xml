@@ -50,6 +50,10 @@
             <source>${project.build.outputDirectory}/rapids4spark-version-info.properties</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
+        <file>
+            <source>${spark.rapids.source.basedir}/integration_tests/target/spark-rapids-default-configs.json</source>
+            <outputDirectory>integration_tests</outputDirectory>
+        </file>
     </files>
     <fileSets>
         <fileSet>
