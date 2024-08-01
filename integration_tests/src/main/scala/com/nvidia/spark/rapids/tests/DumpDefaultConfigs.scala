@@ -17,10 +17,13 @@
 package com.nvidia.spark.rapids.tests
 
 import java.io.{BufferedOutputStream, DataOutputStream, FileOutputStream}
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ShimReflectionUtils
+import org.json4s.DefaultFormats
+import org.json4s.jackson.Serialization.writePretty
 
 /**
  * Dump all spark-rapids configs with their defaults.
@@ -47,15 +50,12 @@ object DumpDefaultConfigs {
     val clazz = ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.RapidsConf")
     val m = clazz.getDeclaredMethod("getAllConfigsWithDefault")
     val allConfs: Map[String, Any] = m.invoke(null).asInstanceOf[Map[String, Any]]
-    val fos: FileOutputStream = new FileOutputStream(outputPath)
-    withResource(fos) { _ =>
-      val bos: BufferedOutputStream = new BufferedOutputStream(fos)
-      withResource(bos) { _ =>
+    withResource(new FileOutputStream(outputPath)) { fos =>
+      withResource(new BufferedOutputStream(fos)) { bos =>
         format match {
           case Format.PLAIN =>
-            val dos: DataOutputStream = new DataOutputStream(bos)
-            withResource(dos) { _ =>
-              allConfs.foreach({ case (k, v) =>
+            withResource(new DataOutputStream(bos)) { dos =>
+              allConfs.foreach( { case (k, v) =>
                 val valStr = v match {
                   case some: Some[_] => some.getOrElse("")
                   case _ =>
@@ -69,9 +69,6 @@ object DumpDefaultConfigs {
               })
             }
           case Format.JSON =>
-            import org.json4s.jackson.Serialization.writePretty
-            import org.json4s.DefaultFormats
-            import java.nio.charset.StandardCharsets
             implicit val formats = DefaultFormats
             bos.write(writePretty(allConfs).getBytes(StandardCharsets.UTF_8))
           case _ =>
