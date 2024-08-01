@@ -16,7 +16,7 @@ import os
 import calendar, time
 from datetime import date, datetime
 from contextlib import contextmanager, ExitStack
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf, is_per_test_ansi_mode_enabled
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf, is_per_test_ansi_mode_enabled, get_default_configs_path
 from pyspark.sql import DataFrame
 from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
@@ -41,8 +41,7 @@ _orig_conf_keys = _orig_conf.keys()
 # These settings can be overridden by specific tests if necessary.
 # Many of these are redundant with default settings for the configs but are set here explicitly
 # to ensure any cluster settings do not interfere with tests that assume the defaults.
-conf_file_path = os.environ['SPARK_RAPIDS_DEFAULT_CONFIGS_PATH']
-with open(conf_file_path) as conf_file:
+with open(get_default_configs_path()) as conf_file:
     _default_conf = json.load(conf_file)
 
 def _set_all_confs(conf):
