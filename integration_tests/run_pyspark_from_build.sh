@@ -15,7 +15,6 @@
 set -ex
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-export SPARK_RAPIDS_DEFAULT_CONFIGS_PATH=${SCRIPTPATH}/target/spark-rapids-default-configs.json
 cd "$SCRIPTPATH"
 
 if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
@@ -233,6 +232,7 @@ else
           "$TEST_ARGS"
           $RUN_TEST_PARAMS
           --junitxml=TEST-pytest-`date +%s%N`.xml
+          --default_configs_path="${SCRIPTPATH}/target/spark-rapids-default-configs.json"
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
