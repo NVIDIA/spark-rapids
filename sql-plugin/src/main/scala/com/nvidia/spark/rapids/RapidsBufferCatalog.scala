@@ -65,7 +65,7 @@ class RapidsBufferCatalog(
   extends AutoCloseable with Logging {
 
   /** Map of buffer IDs to buffers sorted by storage tier */
-  private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
+  val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
 
   /** Map of buffer IDs to buffer handles in insertion order */
   private[this] val bufferIdToHandles =
@@ -737,10 +737,10 @@ class RapidsBufferCatalog(
 object RapidsBufferCatalog extends Logging {
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 
-  private var deviceStorage: RapidsDeviceMemoryStore = _
-  private var hostStorage: RapidsHostMemoryStore = _
+  var deviceStorage: RapidsDeviceMemoryStore = _
+  var hostStorage: RapidsHostMemoryStore = _
   private var diskBlockManager: RapidsDiskBlockManager = _
-  private var diskStorage: RapidsDiskStore = _
+  var diskStorage: RapidsDiskStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
   private var _shouldUnspill: Boolean = _
   private var _singleton: RapidsBufferCatalog = null

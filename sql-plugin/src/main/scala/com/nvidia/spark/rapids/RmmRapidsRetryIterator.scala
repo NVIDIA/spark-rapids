@@ -669,6 +669,7 @@ object RmmRapidsRetryIterator extends Logging {
    */
   def splitSpillableInHalfByRows: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
     (spillable: SpillableColumnarBatch) => {
+      logWarning("in splitSpillableInHalfByRows!!!!")
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {

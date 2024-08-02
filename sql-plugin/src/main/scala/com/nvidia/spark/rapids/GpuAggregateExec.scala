@@ -938,6 +938,8 @@ class GpuMergeAggregateIterator(
             }
           })
         } else {
+          println(s"agg batches size: ${aggregatedBatches.size}," +
+            s" total size: ${aggregatedBatches.map(_.sizeInBytes).sum}")
           // fallback to sort agg, this is the third pass agg
           aggFallbackAlgorithm match {
             case AggFallbackAlgorithm.REPARTITION =>
@@ -957,6 +959,14 @@ class GpuMergeAggregateIterator(
       } else {
         // this will be the last batch
         hasReductionOnlyBatch = false
+
+        log.warn(s"SingleBatch StageID: ${TaskContext.get().stageId()}," +
+          s"TaskID: ${TaskContext.get().taskAttemptId()}," +
+          s"PartitionID: ${TaskContext.get().partitionId()} " +
+          s"returned ${aggregatedBatches.map(_.numRows()).sum} rows," +
+          s"aggregated ${aggregatedBatches.map(_.numRows()).sum} rows from " +
+          s"${aggregatedBatches.size} input batches, origin row: ${localInputRowsCount.value}")
+
         withResource(aggregatedBatches.remove(0)) { spillableBatch =>
           spillableBatch.getColumnarBatch()
         }
@@ -1033,18 +1043,27 @@ class GpuMergeAggregateIterator(
 
       def split(): ListBuffer[AggregatePartition] = {
         withResource(new NvtxWithMetrics("agg repartition", NvtxColor.CYAN, repartitionTime)) { _ =>
+          val totalSize = batches.map(_.sizeInBytes).sum
           if (seed >= hashSeed + 100) {
             throw new IllegalStateException("repartitioned too many times, please " +
               "consider disabling repartition-based fallback for aggregation")
+          } else {
+            log.warn(s"Repartitioning aggregated batches for aggregation with seed $seed " +
+              s"and total size $totalSize bytes")
           }
-          val totalSize = batches.map(_.sizeInBytes).sum
           val newSeed = seed + 7
           val iter = cbIteratorStealingFromBuffer(batches)
           withResource(new GpuBatchSubPartitioner(
             iter, hashKeys, computeNumPartitions(totalSize), newSeed, "aggRepartition")) {
             partitioner =>
               closeOnExcept(ListBuffer.empty[AggregatePartition]) { partitions =>
+                println("xxxx")
                 preparePartitions(newSeed, partitioner, partitions)
+                println("yyyy")
+                println(s"split stats: inputbatchessize: ${Utils.bytesToString(totalSize)}" +
+                  s"partitions: ${partitions.size}, " +
+                  s"cbs: ${partitions.flatMap(_.batches).size}" +
+                  s"bytes: ${Utils.bytesToString(partitions.map(_.totalSize()).sum)}")
                 partitions
               }
           }
@@ -1068,14 +1087,17 @@ class GpuMergeAggregateIterator(
       }
 
       private[this] def computeNumPartitions(totalSize: Long): Int = {
-        Math.floorDiv(totalSize, targetMergeBatchSize).toInt + 1
+        2 * (Math.floorDiv(totalSize, targetMergeBatchSize).toInt + 1)
       }
     }
 
     private val hashSeed = 100
     private val aggPartitions = ListBuffer.empty[AggregatePartition]
     private val deferredAggPartitions = ListBuffer.empty[AggregatePartition]
+    private val myInputBatches = inputBatches.size
+    private val myInputRows = inputBatches.map(_.numRows()).sum
     deferredAggPartitions += AggregatePartition.apply(inputBatches, hashSeed)
+    private var myReturnedRows = 0
 
     override def hasNext: Boolean = aggPartitions.nonEmpty || deferredAggPartitions.nonEmpty
 
@@ -1108,12 +1130,19 @@ class GpuMergeAggregateIterator(
                   s"${headPartition.batches.size} batches. Before merge, there were " +
                   s"$batchSizeBeforeMerge batches.")
           }
-          headPartition.batches.head.getColumnarBatch()
+          val x = headPartition.batches.head.getColumnarBatch()
+          myReturnedRows += x.numRows()
+          x
         }
       }
     }
 
     override def close(): Unit = {
+      log.warn(s"StageID: ${TaskContext.get().stageId()}," +
+        s"TaskID: ${TaskContext.get().taskAttemptId()}," +
+        s"PartitionID: ${TaskContext.get().partitionId()} returned $myReturnedRows rows," +
+        s"aggregated $myInputRows rows from $myInputBatches input batches, origin rows:" +
+        s" ${localInputRowsCount.value}")
       aggPartitions.foreach(_.safeClose())
       deferredAggPartitions.foreach(_.safeClose())
     }
@@ -1148,6 +1177,13 @@ class GpuMergeAggregateIterator(
     logInfo(s"Falling back to sort-based aggregation with ${aggregatedBatches.size} batches")
     metrics.numTasksFallBacked += 1
     val aggregatedBatchIter = cbIteratorStealingFromBuffer(aggregatedBatches)
+
+
+    log.warn(s"StageID: ${TaskContext.get().stageId()}," +
+      s"TaskID: ${TaskContext.get().taskAttemptId()}," +
+      s"PartitionID: ${TaskContext.get().partitionId()} returned 000 rows," +
+      s"aggregated ${aggregatedBatches.map(_.numRows())} rows from " +
+      s"${aggregatedBatches.size} input batches, original rows: ${localInputRowsCount.value}")
 
     if (isReductionOnly) {
       // Normally this should never happen because `tryMergeAggregatedBatches` should have done

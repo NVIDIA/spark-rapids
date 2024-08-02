@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import org.apache.spark.TaskContext
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -436,6 +437,7 @@ case class GpuOutOfCoreSortIterator(
     closeOnExcept(pendingObs) { _ =>
       sortedSp.foreach { sp =>
         sortedSize += sp.sizeInBytes
+        println(s"TaskId: ${TaskContext.get().taskAttemptId()} , sortedSize add: " + sp.numRows())
         sorted.add(sp)
       }
     }
@@ -452,6 +454,8 @@ case class GpuOutOfCoreSortIterator(
         onFirstPassSplit()
         splitAfterSort(attempt)
       }
+      println(s"TaskID: ${TaskContext.get().taskAttemptId()} , " +
+        s"splitOneSortedBatch return pieces ${ret._2.size}")
       saveSplitResult(ret)
     }
   }
@@ -603,6 +607,8 @@ case class GpuOutOfCoreSortIterator(
             sorted.add(scb)
           } else {
             firstPassReadBatches(scb)
+            println(s"TaskID: ${TaskContext.get().taskAttemptId()} " +
+              s"after first pass read, total num of batches: ${pending.size()}")
           }
         }
       }

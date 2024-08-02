@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Comparator
+import java.util.{Comparator, Locale}
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import scala.collection.mutable
@@ -48,6 +48,21 @@ case class BufferSpill(spillBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer
 
 case class BufferUnspill(spillBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
     extends SpillAction
+
+object Utils {
+  private[this] val siByteSizes =
+    Array(1L << 60, 1L << 50, 1L << 40, 1L << 30, 1L << 20, 1L << 10, 1)
+  private[this] val siByteSuffixes =
+    Array("EiB", "PiB", "TiB", "GiB", "MiB", "KiB", "B")
+  /**
+   * Convert a quantity in bytes to a human-readable string such as "4.0 MiB".
+   */
+  def bytesToString(size: Long): String = {
+    var i = 0
+    while (i < siByteSizes.length - 1 && size < 2 * siByteSizes(i)) i += 1
+    "%.1f %s".formatLocal(Locale.US, size.toDouble / siByteSizes(i), siByteSuffixes(i))
+  }
+}
 
 /**
  * Base class for all buffer store types.
@@ -106,6 +121,22 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           totalBytesSpillable -= obj.memoryUsedBytes
         }
       }
+    }
+
+    def stats(): Unit = {
+      import scala.collection.JavaConverters._
+      logWarning(s"BufferStore $name: total=${Utils.bytesToString(totalBytesStored)}, " +
+        s"spillable=${Utils.bytesToString(totalBytesSpillable)}, " +
+        s"numBuffers=${buffers.size()}, " +
+        s"numSpillable=${spillable.size}, " +
+        s"numSpilling=${spilling.size}, " +
+        s"smallBuffers=" +
+        s"${buffers.values().asScala.filter(_.memoryUsedBytes < 1024 * 1024).toSeq.size}, " +
+        s"largeBuffers=" +
+        s"${buffers.values().asScala.filter(_.memoryUsedBytes >= 1024 * 1024).
+          map(x => Utils.bytesToString(x.memoryUsedBytes) + "@@" +
+            (x.getSpillPriority - (Long.MaxValue - 1000)))}"
+      )
     }
 
     def freeAll(): Unit = {
@@ -183,6 +214,9 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
   private[this] val buffers = new BufferTracker
 
+  def stats(): Unit = {
+    buffers.stats()
+  }
   /** A store that can be used for spilling. */
   var spillStore: RapidsBufferStore = _
 
@@ -286,11 +320,27 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       logWarning(s"Targeting a ${name} size of $targetTotalSize. " +
           s"Current total ${currentSize}. " +
           s"Current spillable ${currentSpillableSize}")
+      RapidsBufferCatalog.deviceStorage.stats()
+      RapidsBufferCatalog.hostStorage.stats()
+      RapidsBufferCatalog.diskStorage.stats()
       val bufferSpills = new mutable.ArrayBuffer[BufferSpill]()
       withResource(new NvtxRange(s"${name} sync spill", NvtxColor.ORANGE)) { _ =>
         logWarning(s"${name} store spilling to reduce usage from " +
           s"${currentSize} total (${currentSpillableSize} spillable) " +
           s"to $targetTotalSize bytes")
+
+        val totalSize = RapidsBufferCatalog.deviceStorage.currentSize +
+          RapidsBufferCatalog.hostStorage.currentSize +
+          RapidsBufferCatalog.diskStorage.currentSize
+        import scala.collection.JavaConverters._
+        val totalUniqSize = RapidsBufferCatalog.singleton.bufferMap.values().asScala.
+          map(_.head).map(_.memoryUsedBytes).sum
+        logWarning("Current total size: " + Utils.bytesToString(totalSize) +
+          s", uniqSize: ${totalUniqSize} details: " +
+          "device: " + Utils.bytesToString(RapidsBufferCatalog.deviceStorage.currentSize) +
+          " host: " + Utils.bytesToString(RapidsBufferCatalog.hostStorage.currentSize) +
+          " disk: " + Utils.bytesToString(RapidsBufferCatalog.diskStorage.currentSize) + ". " +
+          " requested: " + Utils.bytesToString(currentSize - targetTotalSize))
 
         // If the store has 0 spillable bytes left, it has exhausted.
         try {

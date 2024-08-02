@@ -196,6 +196,10 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       .set(RapidsConf.SQL_ENABLED.key, "true")
       .set(RapidsConf.TEST_CONF.key, "true")
       .set(RapidsConf.EXPLAIN.key, "ALL")
+      .set("spark.rapids.sql.metrics.level", "DEBUG")
+      .set("spark.sql.shuffle.partitions", "2")
+      .set("spark.rapids.sql.agg.singlePassPartialSortEnabled", "false")
+      .set("spark.rapids.sql.agg.fallbackAlgorithm222", "repartition")
     withSparkSession(c, f)
   }
 

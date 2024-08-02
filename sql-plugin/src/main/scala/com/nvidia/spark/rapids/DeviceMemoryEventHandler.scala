@@ -151,6 +151,7 @@ class DeviceMemoryEventHandler(
       } else {
         val targetSize = Math.max(storeSpillableSize - allocSize, 0)
         logDebug(s"Targeting device store size of $targetSize bytes")
+//        store.stats()
         val maybeAmountSpilled = catalog.synchronousSpill(store, targetSize, Cuda.DEFAULT_STREAM)
         maybeAmountSpilled.foreach { amountSpilled =>
           logInfo(s"Spilled $amountSpilled bytes from the device store")
