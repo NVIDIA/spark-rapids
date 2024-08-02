@@ -15,15 +15,19 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileOutputStream}
+import java.io.{BufferedOutputStream, DataOutputStream, File, FileOutputStream}
+import java.nio.charset.StandardCharsets
 import java.util
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable.{HashMap, ListBuffer}
+import java.util.Locale
 
 import ai.rapids.cudf.Cuda
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
+import org.json4s.DefaultFormats
+import org.json4s.jackson.Serialization.writePretty
+import scala.collection.JavaConverters._
+import scala.collection.mutable.{HashMap, ListBuffer}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -2394,6 +2398,42 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     allConfs.map(e => e.key -> e.getDefault).toMap
   }
 
+  object Format extends Enumeration {
+    type Format = Value
+    val PLAIN, JSON = Value
+  }
+
+  def dumpAllConfigsWithDefault(format: Format.Value, outputPath: String): Unit = {
+    val allConfs: Map[String, Any] = RapidsConf.getAllConfigsWithDefault
+    withResource(new FileOutputStream(outputPath)) { fos =>
+      withResource(new BufferedOutputStream(fos)) { bos =>
+        format match {
+          case Format.PLAIN =>
+            withResource(new DataOutputStream(bos)) { dos =>
+              allConfs.foreach( { case (k, v) =>
+                val valStr = v match {
+                  case Some(optVal) => optVal.toString
+                  case None => ""
+                  case _ =>
+                    if (v == null) {
+                      ""
+                    } else {
+                      v.toString
+                    }
+                }
+                dos.writeUTF(s"'${k}': '${valStr}',")
+              })
+            }
+          case Format.JSON =>
+            implicit val formats = DefaultFormats
+            bos.write(writePretty(allConfs).getBytes(StandardCharsets.UTF_8))
+          case _ =>
+            System.err.println(s"Unknown format: ${format}")
+        }
+      }
+    }
+  }
+
   def help(asTable: Boolean = false): Unit = {
     helpCommon(asTable)
     helpAdvanced(asTable)
@@ -2528,19 +2568,48 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
   }
   def main(args: Array[String]): Unit = {
-    // Include the configs in PythonConfEntries
-    com.nvidia.spark.rapids.python.PythonConfEntries.init()
-    val configs = new FileOutputStream(new File(args(0)))
-    Console.withOut(configs) {
-      Console.withErr(configs) {
-        RapidsConf.helpCommon(true)
-      }
+    if (args.length < 1) {
+      System.err.println(s"Usage: ${this.getClass.getCanonicalName} {command} <argument> ...")
+      System.exit(1)
     }
-    val advanced = new FileOutputStream(new File(args(1)))
-    Console.withOut(advanced) {
-      Console.withErr(advanced) {
-        RapidsConf.helpAdvanced(true)
-      }
+
+    val command = args(0)
+
+    command match {
+      case "help" =>
+        if (args.length < 3) {
+          System.err.println(s"Usage: ${this.getClass.getCanonicalName} ${command}" +
+            s" {common_configs_path} {advanced_configs_path}")
+          System.exit(1)
+        }
+
+        // Include the configs in PythonConfEntries
+        com.nvidia.spark.rapids.python.PythonConfEntries.init()
+        val configs = new FileOutputStream(new File(args(1)))
+        Console.withOut(configs) {
+          Console.withErr(configs) {
+            RapidsConf.helpCommon(true)
+          }
+        }
+        val advanced = new FileOutputStream(new File(args(2)))
+        Console.withOut(advanced) {
+          Console.withErr(advanced) {
+            RapidsConf.helpAdvanced(true)
+          }
+        }
+      case "dump-default-configs" =>
+        if (args.length < 3) {
+          System.err.println(s"Usage: ${this.getClass.getCanonicalName} ${command}" +
+            s" {format} {output_path}")
+          System.exit(1)
+        }
+
+        val format: RapidsConf.Format.Value =
+          RapidsConf.Format.withName(args(1).toUpperCase(Locale.US))
+        val outputPath = args(2)
+
+        println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
+        RapidsConf.dumpAllConfigsWithDefault(format, outputPath)
     }
   }
 }
