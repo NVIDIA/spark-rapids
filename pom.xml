@@ -789,34 +789,6 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
-        <noSnapshot.buildvers>
-            320,
-            321,
-            321cdh,
-            322,
-            323,
-            324,
-            330,
-            331,
-            332,
-            333,
-            334,
-            330cdh,
-            332cdh,
-            340,
-            341,
-            342,
-            343,
-            350,
-            351
-        </noSnapshot.buildvers>
-        <snapshot.buildvers>
-        </snapshot.buildvers>
-        <databricks.buildvers>
-            330db,
-            332db,
-            341db
-        </databricks.buildvers>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
           Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
@@ -853,22 +825,6 @@
             ${snapshot.buildvers},
             ${databricks.buildvers}
         </all.buildvers>
-        <noSnapshotScala213.buildvers>
-            330,
-            331,
-            332,
-            333,
-            334,
-            340,
-            341,
-            342,
-            343,
-            350,
-            351
-        </noSnapshotScala213.buildvers>
-        <snapshotScala213.buildvers>
-            400
-        </snapshotScala213.buildvers>
         <allScala213.buildvers>
             ${noSnapshotScala213.buildvers},
             ${snapshotScala213.buildvers}
@@ -1824,6 +1780,64 @@ This will force full Scala code rebuild in downstream modules.
                                 <include>com.nvidia.spark.*</include>
                                 <include>org.apache.spark.sql.rapids.*</include>
                             </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>set-included-buildvers</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <exportAntProperties>true</exportAntProperties>
+                            <target name="set-included_buildvers">
+                                <script language="jython">
+import subprocess
+import os
+<!-- #if scala-2.12 -->
+pom = ""
+<!-- #endif scala-2.12 -->
+<!-- #if scala-2.13 --><!--
+pom = "-f scala2.13"
+--><!-- #endif scala-2.13 -->
+
+# Define the Bash command
+bash_command = """
+export TEMP=$(mvn help:all-profiles -pl . {pom}| sort | uniq | awk "/release[0-9]/ {{print substr(\$3, 8)}}");
+TEMP=$(echo -n $TEMP)
+[[ -n $TEMP ]] || {{ echo -e "Error setting databricks versions"; }};
+&lt;&lt;&lt; $TEMP read -r -a SPARK_SHIM_VERSIONS_ARR;
+SNAPSHOTS=();
+NO_SNAPSHOTS=()
+for ver in ${{SPARK_SHIM_VERSIONS_ARR[@]}}; do
+    TEST=$(mvn -B help:evaluate -q -pl dist {pom} -Dexpression=spark.version -Dbuildver="$ver" -DforceStdout)
+    if [[ "$TEST" != *"-SNAPSHOT" ]]; then
+        NO_SNAPSHOTS+=(" $ver")
+    else
+        SNAPSHOTS+=(" $ver")
+    fi
+done
+echo "${{SNAPSHOTS[@]}} | ${{NO_SNAPSHOTS[@]}} | ${{SPARK_SHIM_VERSIONS_ARR[@]}}"
+""".format(pom=pom)
+
+try:
+# Run the command
+    output = subprocess.check_output(bash_command, shell=True, executable="/bin/bash", stderr=subprocess.STDOUT)
+    result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
+
+    db_release=list(filter(lambda x: x.endswith("db"), result_strings[2]))
+    project.setProperty("databricks.buildvers", str(db_release).strip("[]").replace("'", "").replace(",", ""))
+    project.setProperty("snapshots.buildvers", str(result_strings[0]).strip("[]").replace("'", "").replace(",", ""))
+    project.setProperty("noSnapshots.buildvers", str(result_strings[1]).strip("[]").replace("'", "").replace(",", ""))
+except subprocess.CalledProcessError as e:
+    print("Error:", e.output)
+                                </script>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
