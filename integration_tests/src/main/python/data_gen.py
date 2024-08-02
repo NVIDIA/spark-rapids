@@ -15,6 +15,7 @@
 import copy
 from datetime import date, datetime, timedelta, timezone
 from decimal import *
+from enum import Enum
 import math
 from pyspark.context import SparkContext
 from pyspark.sql import Row
@@ -744,8 +745,8 @@ class MapGen(DataGen):
 
 class NullGen(DataGen):
     """Generate NullType values"""
-    def __init__(self):
-        super().__init__(NullType(), nullable=True)
+    def __init__(self, dt = NullType()):
+        super().__init__(dt, nullable=True)
 
     def start(self, rand):
         def make_null():
@@ -1043,6 +1044,19 @@ def gen_scalars_for_sql(data_gen, count, seed=None, force_no_nulls=False):
         return ('null' for i in range(0, count))
     spark_type = data_gen.data_type
     return (_convert_to_sql(spark_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+
+class EmptyStringType(Enum):
+    ALL_NULL = 1
+    ALL_EMPTY = 2
+    MIXED = 3
+
+def mk_empty_str_gen(empty_type):
+    if (empty_type == EmptyStringType.ALL_NULL):
+        return NullGen(StringType())
+    elif (empty_type == EmptyStringType.ALL_EMPTY):
+        return StringGen("", nullable=False)
+    else:
+        return StringGen("", nullable=True)
 
 byte_gen = ByteGen()
 short_gen = ShortGen()
