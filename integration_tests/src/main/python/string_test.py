@@ -30,10 +30,7 @@ _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
-@pytest.mark.parametrize('empty_type', [
-    EmptyStringType.ALL_NULL,
-    EmptyStringType.ALL_EMPTY,
-    EmptyStringType.MIXED])
+@pytest.mark.parametrize('empty_type', all_empty_string_types)
 @pytest.mark.parametrize('num_splits', ['-1', '0', '1', '2'])
 def test_split_input_all_empty(empty_type, num_splits):
     data_gen = mk_empty_str_gen(empty_type)

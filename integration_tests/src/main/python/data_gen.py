@@ -1050,13 +1050,16 @@ class EmptyStringType(Enum):
     ALL_EMPTY = 2
     MIXED = 3
 
+all_empty_string_types = EmptyStringType.__members__.values()
+
+empty_string_gens_map = {
+  EmptyStringType.ALL_NULL : lambda: NullGen(StringType()),
+  EmptyStringType.ALL_EMPTY : lambda: StringGen("", nullable=False),
+  EmptyStringType.MIXED : lambda: StringGen("", nullable=True)
+}
+
 def mk_empty_str_gen(empty_type):
-    if (empty_type == EmptyStringType.ALL_NULL):
-        return NullGen(StringType())
-    elif (empty_type == EmptyStringType.ALL_EMPTY):
-        return StringGen("", nullable=False)
-    else:
-        return StringGen("", nullable=True)
+    return empty_string_gens_map[empty_type]()
 
 byte_gen = ByteGen()
 short_gen = ShortGen()
