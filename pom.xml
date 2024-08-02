@@ -90,12 +90,11 @@
         <module>jdk-profiles</module>
     </modules>
     <profiles>
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release320</id>
             <activation>
-                <!-- #if scala-2.12 -->
                 <activeByDefault>true</activeByDefault>
-                <!-- #endif scala-2.12 -->
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -111,6 +110,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release321</id>
             <activation>
@@ -129,6 +130,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release321cdh</id>
             <activation>
@@ -143,8 +146,10 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- #endif scala-2.12 -->
                 <!-- Keeping the scala plugin version 4.3.0 for details
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
+                <!-- #if scala-2.12 -->
                 <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
@@ -152,6 +157,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release322</id>
             <activation>
@@ -170,6 +177,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release323</id>
             <activation>
@@ -188,6 +197,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release324</id>
             <activation>
@@ -206,6 +217,7 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
         <profile>
             <id>release330</id>
             <activation>
