@@ -1829,11 +1829,18 @@ try:
 # Run the command
     output = subprocess.check_output(bash_command, shell=True, executable="/bin/bash", stderr=subprocess.STDOUT)
     result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
-
-    db_release=list(filter(lambda x: x.endswith("db"), result_strings[2]))
+    snapshots = result_strings[0]
+    no_snapshots = result_strings[1]
+<!-- #if scala-2.13 --><!--
+    no_snapshots = filter(lambda x: not x.endswith("cdh"), no_snapshots)
+--><!-- #endif scala-2.13 -->
+    db_release = filter(lambda x: x.endswith("db"), no_snapshots)
+    no_snapshots = filter(lambda x: not x.endswith("db"), no_snapshots)
+    snap_and_no_snap = no_snapshots + snapshots
     project.setProperty("databricks.buildvers", str(db_release).strip("[]").replace("'", "").replace(",", ""))
-    project.setProperty("snapshots.buildvers", str(result_strings[0]).strip("[]").replace("'", "").replace(",", ""))
-    project.setProperty("noSnapshots.buildvers", str(result_strings[1]).strip("[]").replace("'", "").replace(",", ""))
+    project.setProperty("snapshots.buildvers", str(snapshots).strip("[]").replace("'", "").replace(",", ""))
+    project.setProperty("noSnapshots.buildvers", str(no_snapshots).strip("[]").replace("'", "").replace(",", ""))
+    project.setProperty("snapAndNoSnap.buildvers", str(snap_and_no_snap).strip("[]").replace("'", "").replace(",", ""))
 except subprocess.CalledProcessError as e:
     print("Error:", e.output)
                                 </script>
