@@ -79,42 +79,6 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>clean-previously-populated-config-file</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>rm</executable>
-                            <arguments>
-                                <argument>-f</argument>
-                                <argument>${spark.rapids.source.basedir}/${rapids.module}/target/spark-rapids-default-configs.json</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>populate-default-configs-for-testing</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>java</goal>
-                        </goals>
-                        <configuration>
-                            <includeProjectDependencies>true</includeProjectDependencies>
-                            <mainClass>com.nvidia.spark.rapids.tests.DumpDefaultConfigs</mainClass>
-                            <classpathScope>provided</classpathScope>
-                            <arguments>
-                                <argument>json</argument>
-                                <argument>${spark.rapids.source.basedir}/${rapids.module}/target/spark-rapids-default-configs.json</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.6.0</version>
                 <configuration>
