@@ -43,17 +43,17 @@ The plugin is tested on the following architectures:
 		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
 		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
 		Apache Spark 3.5.0, 3.5.1
-        Apache Spark 4.0.0
+		Apache Spark 4.0.0
 	
 	Supported Databricks runtime versions for Azure and AWS:
 		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
 		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
 		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
-        Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
 	
 	Supported Dataproc versions (Debian/Ubuntu/Rocky):
 		GCP Dataproc 2.1
-        GCP Dataproc 2.2
+		GCP Dataproc 2.2
 	
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
