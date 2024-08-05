@@ -220,29 +220,19 @@ case class GpuMultiGetJsonObject(json: Expression,
       case _ => None
     }
 
+    var validPathsIndex = 0
     val validPaths = validPathsWithIndexes.map(_._1)
     withResource(new Array[ColumnVector](validPaths.length)) { validPathColumns =>
-      var validPathsIndex = 0
       withResource(json.columnarEval(batch)) { input =>
-        // The get_json_object implementation will allocate an output that is as large
-        // as the input for each path being processed. This can cause memory to grow
-        // by a lot. We want to avoid this, but still try to run as many in parallel
-        // as we can
-        val p = parallel.getOrElse {
-          val inputSize = input.getBase.getDeviceMemorySize
-          // Our memory budget is 4x the target batch size. This is technically going
-          // to go over that, but in practice it is okay with the default settings
-          Math.max(Math.ceil((targetBatchSize * 4.0) / inputSize).toInt, 1)
-        }
-        validPaths.grouped(p).foreach { validPathChunk =>
-          withResource(JSONUtils.getJsonObjectMultiplePaths(input.getBase,
-            java.util.Arrays.asList(validPathChunk: _*))) { chunkedResult =>
-            chunkedResult.foreach { cr =>
-              validPathColumns(validPathsIndex) = cr.incRefCount()
-              validPathsIndex += 1
-            }
+        withResource(JSONUtils.getJsonObjectMultiplePaths(input.getBase,
+          java.util.Arrays.asList(validPaths: _*), 4 * targetBatchSize,
+          parallel.getOrElse(-1))) { chunkedResult =>
+          chunkedResult.foreach { cr =>
+            validPathColumns(validPathsIndex) = cr.incRefCount()
+            validPathsIndex += 1
           }
         }
+
         withResource(new Array[ColumnVector](paths.length)) { columns =>
           if (nullIndexes.nonEmpty) {
             val nullCol = withResource(GpuScalar.from(null, StringType)) { s =>
