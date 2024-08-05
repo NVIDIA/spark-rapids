@@ -186,6 +186,13 @@ def test_make_array(data_gen):
                 'array(b, a, null, {}, {})'.format(s1, s2),
                 'array(array(b, a, null, {}, {}), array(a), array(null))'.format(s1, s2)))
 
+@pytest.mark.parametrize('empty_type', all_empty_string_types)
+def test_make_array_empty_input(empty_type):
+    data_gen = mk_empty_str_gen(empty_type)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'array(a)',
+                'array(a, b)'))
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array_unique(data_gen):
