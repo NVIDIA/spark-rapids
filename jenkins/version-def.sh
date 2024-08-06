@@ -59,31 +59,43 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
 }
 
 function set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES() {
-   versionStr=$(mvn -B -q -pl . $2 -Dexpression="$1" -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@set-included-buildvers help:evaluate)
+   versionStr=$(mvn -B -q -pl . $2 -Dbuild_vers=$1 -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@get-buildvers)
    SPARK_SHIM_VERSIONS_STR=$(echo -n $versionStr)
    <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
 
 if [[ $SCALA_BINARY_VER == "2.13" ]]; then
+    # Create release properties file
+    mvn -B -q -pl . -f scala2.13 -DforceStdout antrun:run@create-release-properties
+
     # Psnapshots: snapshots + noSnapshots
     set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapAndNoSnap.buildvers" "-f scala2.13"
     SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}
     # PnoSnapshots: noSnapshots only
     set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "noSnapshots.buildvers" "-f scala2.13"
     SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    echo ${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}
     # PsnapshotOnly : snapshots only
     set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers" "-f scala2.13"
     SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}
 else
+    # Create release properties file
+    mvn -B -q -pl . -DforceStdout antrun:run@create-release-properties
+
     # Psnapshots: snapshots + noSnapshots
     set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapAndNoSnap.buildvers"
     SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}
     # PnoSnapshots: noSnapshots only
     set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "noSnapshots.buildvers"
     SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    echo ${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}
     # PsnapshotOnly : snapshots only
     set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers"
     SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}
 fi
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
@@ -135,5 +147,6 @@ SPARK_SHIM_VERSIONS_JDK17_SCALA213=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # databricks shims
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "databricks.buildvers"
 SPARK_SHIM_VERSIONS_DATABRICKS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+echo ${SPARK_SHIM_VERSIONS_DATABRICKS[@]}
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

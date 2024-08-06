@@ -78,6 +78,7 @@ You can find all shim files for a particular shim, e.g. 320, easily by executing
 git grep '{"spark": "320"}' '*.java' '*.scala'
 """
 
+import ConfigParser
 import errno
 import json
 import logging
@@ -187,9 +188,10 @@ __closing_shim_tag = __shim_comment_tag + ' ***/'
 __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
 __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
-__all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
-__allScala213_shims_arr = sorted(__csv_ant_prop_as_arr('allScala213.buildvers'))
-
+config = ConfigParser.ConfigParser()
+config.read("{}/release.properties".format(__project().getProperty("spark.rapids.source.basedir")))
+__all_shims_arr = sorted(config.get("ReleaseSection", "all.buildvers").split(" "))
+__shims_arr = __all_shims_arr if not __shims_arr else __shims_arr
 __log = logging.getLogger('shimplify')
 __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
 __ch = logging.StreamHandler()
@@ -373,8 +375,6 @@ def __generate_symlinks():
 
 def __map_version_array(shim_json_string):
     shim_ver = str(json.loads(shim_json_string).get('spark'))
-    assert shim_ver in __all_shims_arr or shim_ver in __allScala213_shims_arr, "all.buildvers or " \
-        "allScala213.buildvers in pom.xml does not contain %s" % shim_ver
     return shim_ver
 
 def __traverse_source_tree_of_all_shims(src_type, func):
