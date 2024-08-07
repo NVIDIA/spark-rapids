@@ -2398,42 +2398,6 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     allConfs.map(e => e.key -> e.getDefault).toMap
   }
 
-  object Format extends Enumeration {
-    type Format = Value
-    val PLAIN, JSON = Value
-  }
-
-  def dumpAllConfigsWithDefault(format: Format.Value, outputPath: String): Unit = {
-    val allConfs: Map[String, Any] = RapidsConf.getAllConfigsWithDefault
-    withResource(new FileOutputStream(outputPath)) { fos =>
-      withResource(new BufferedOutputStream(fos)) { bos =>
-        format match {
-          case Format.PLAIN =>
-            withResource(new DataOutputStream(bos)) { dos =>
-              allConfs.foreach( { case (k, v) =>
-                val valStr = v match {
-                  case Some(optVal) => optVal.toString
-                  case None => ""
-                  case _ =>
-                    if (v == null) {
-                      ""
-                    } else {
-                      v.toString
-                    }
-                }
-                dos.writeUTF(s"'${k}': '${valStr}',")
-              })
-            }
-          case Format.JSON =>
-            implicit val formats = DefaultFormats
-            bos.write(writePretty(allConfs).getBytes(StandardCharsets.UTF_8))
-          case _ =>
-            System.err.println(s"Unknown format: ${format}")
-        }
-      }
-    }
-  }
-
   def help(asTable: Boolean = false): Unit = {
     helpCommon(asTable)
     helpAdvanced(asTable)

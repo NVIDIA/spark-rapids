@@ -51,8 +51,7 @@
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
-            <!--This should point to the proper `dist` directory for the scala version being used-->
-            <source>${project.basedir}/../dist/target/spark-rapids-default-configs.json</source>
+            <source>${project.build.directory}/spark-rapids-default-configs.json</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
     </files>

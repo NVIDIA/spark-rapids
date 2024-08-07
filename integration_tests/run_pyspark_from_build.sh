@@ -233,7 +233,7 @@ else
           "$TEST_ARGS"
           $RUN_TEST_PARAMS
           --junitxml=TEST-pytest-`date +%s%N`.xml
-          --default_configs_path="${DEFAULT_CONFIGS_PATH}"
+          --default_configs_path="${TARGET_DIR}/spark-rapids-default-configs.json"
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
