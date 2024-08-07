@@ -24,7 +24,7 @@ import org.apache.commons.lang3.reflect.MethodUtils
  */
 object DumpDefaultConfigs {
   def main(args: Array[String]): Unit = {
-    if (args.length < 2) {
+    if (args.length != 2) {
       System.err.println(s"Usage: ${this.getClass.getCanonicalName} {format} {output_path}")
       System.exit(1)
     }

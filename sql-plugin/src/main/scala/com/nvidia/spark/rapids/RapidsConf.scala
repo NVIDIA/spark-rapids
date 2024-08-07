@@ -2531,7 +2531,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
   }
   def main(args: Array[String]): Unit = {
-    if (args.length < 2) {
+    if (args.length != 2) {
       System.err.println(s"Usage: ${this.getClass.getCanonicalName}" +
         s" {common_configs_path} {advanced_configs_path}")
       System.exit(1)
