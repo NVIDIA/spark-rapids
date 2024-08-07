@@ -530,7 +530,7 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313() or is_spark_330() or is_spark_330cdh(), reason="NaN equality is only handled in Spark 3.1.3+ and SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
+@pytest.mark.skipif(is_spark_330() or is_spark_330cdh(), reason="SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -570,7 +570,6 @@ def test_array_intersect_spark330(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
-@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_intersect_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -590,7 +589,6 @@ def test_array_intersect_before_spark313(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_union(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -610,7 +608,6 @@ def test_array_union(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
-@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_union_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -630,7 +627,6 @@ def test_array_union_before_spark313(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_except(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -650,7 +646,6 @@ def test_array_except(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
-@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_except_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -670,7 +665,6 @@ def test_array_except_before_spark313(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_arrays_overlap(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -691,7 +685,6 @@ def test_arrays_overlap(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
-@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_arrays_overlap_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
