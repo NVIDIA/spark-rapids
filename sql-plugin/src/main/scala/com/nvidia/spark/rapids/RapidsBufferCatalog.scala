@@ -611,7 +611,14 @@ class RapidsBufferCatalog(
       } else {
         // this thread wins the race and should spill
         spillCount += 1
-        Some(store.synchronousSpill(targetTotalSize, this, stream))
+        val start = System.nanoTime()
+        val x = Some(store.synchronousSpill(targetTotalSize, this, stream))
+        val end = System.nanoTime()
+        logWarning(s"Spill to next tier from  ${store.tier} " +
+          s"size=${x.get} t:${end - start} " +
+          s"bandwidth=${x.get / (end -start)} } B/nano")
+
+        x
       }
     }
   }

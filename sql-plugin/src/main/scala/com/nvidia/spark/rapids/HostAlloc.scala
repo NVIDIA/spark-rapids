@@ -143,10 +143,16 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       val targetSize = Math.max(storeSpillableSize - allocSize, 0)
       logDebug(s"Targeting host store size of $targetSize bytes")
       // We could not make it work so try and spill enough to make it work
+      val start = System.nanoTime()
       val maybeAmountSpilled =
         RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
+      val end = System.nanoTime()
       maybeAmountSpilled.foreach { amountSpilled =>
         logInfo(s"Spilled $amountSpilled bytes from the host store")
+
+        logWarning(s"Spill to disk " +
+          s"size=$amountSpilled t:${end - start} " +
+          s"bandwidth=${amountSpilled / (end -start)} } B/nano")
       }
       true
     }

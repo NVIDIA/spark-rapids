@@ -1011,7 +1011,7 @@ class GpuMergeAggregateIterator(
       override def hasNext: Boolean = input.nonEmpty
 
       override def next(): ColumnarBatch = {
-        withResource(input.remove(0)) { spillable =>
+        withResource(input.remove(input.size -1 )) { spillable =>
           spillable.getColumnarBatch()
         }
       }

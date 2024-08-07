@@ -97,9 +97,14 @@ class RapidsHostMemoryStore(
         // to spill is larger than our limit
         false
       } else {
+        val start = System.nanoTime()
         val amountSpilled = synchronousSpill(targetTotalSize, catalog, stream)
+        val end = System.nanoTime()
         if (amountSpilled != 0) {
           logDebug(s"Spilled $amountSpilled bytes from ${name} to make room for ${buffer.id}")
+          logWarning(s"Spill to disk " +
+            s"size=$amountSpilled t:${end - start} " +
+            s"bandwidth=${amountSpilled / (end -start)} } B/nano")
           TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
         }
         // if after spill we can fit the new buffer, return true
@@ -138,6 +143,7 @@ class RapidsHostMemoryStore(
               val spillNs = GpuTaskMetrics.get.spillToHostTime {
                 var hostOffset = 0L
                 val start = System.nanoTime()
+                var bytes = 0L
                 while (otherBufferIterator.hasNext) {
                   val otherBuffer = otherBufferIterator.next()
                   withResource(otherBuffer) { _ =>
@@ -146,13 +152,17 @@ class RapidsHostMemoryStore(
                         hostBuffer.copyFromMemoryBufferAsync(
                           hostOffset, devBuffer, 0, otherBuffer.getLength, stream)
                         hostOffset += otherBuffer.getLength
+                        bytes += otherBuffer.getLength
                       case _ =>
                         throw new IllegalStateException("copying from buffer without device memory")
                     }
                   }
                 }
                 stream.sync()
-                System.nanoTime() - start
+                val t = System.nanoTime() - start
+                logWarning(s"Spill to host " +
+                  s"size=$bytes t:$t bandwidth=${bytes.toDouble / t } B/nano")
+                t
               }
               val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
               val bw = (szMB.toDouble / (spillNs.toDouble / 1000000000.0)).toLong
