@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,11 +86,12 @@ object GpuPythonHelper extends Logging {
   }
 
   // Called in each task at the executor side
-  def injectGpuInfo(funcs: Seq[ChainedPythonFunctions], isPythonOnGpuEnabled: Boolean): Unit = {
+  def injectGpuInfo(funcs: Seq[(ChainedPythonFunctions, Long)],
+      isPythonOnGpuEnabled: Boolean): Unit = {
     // Insert GPU related env(s) into `envVars` for all the PythonFunction(s).
     // Yes `PythonRunner` will only use the first one, but just make sure it will
     // take effect no matter the order changes or not.
-    funcs.foreach(_.funcs.foreach { pyF =>
+    funcs.foreach(_._1.funcs.foreach { pyF =>
       pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
       pyF.envVars.put("RAPIDS_PYTHON_ENABLED", isPythonOnGpuEnabled.toString)
       pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)

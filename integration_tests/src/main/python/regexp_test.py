@@ -454,6 +454,7 @@ def test_rlike_rewrite_optimization():
                 'rlike(a, "(.*)(abb)(.*)")',
                 'rlike(a, "^(abb)(.*)")',
                 'rlike(a, "^abb")',
+                'rlike(a, "^.*(aaa)")',
                 'rlike(a, "\\\\A(abb)(.*)")',
                 'rlike(a, "\\\\Aabb")',
                 'rlike(a, "^(abb)\\\\Z")',
@@ -466,7 +467,14 @@ def test_rlike_rewrite_optimization():
                 'rlike(a, "ab[a-c]{3}")',
                 'rlike(a, "a[a-c]{1,3}")',
                 'rlike(a, "a[a-c]{1,}")',
-                'rlike(a, "a[a-c]+")'),
+                'rlike(a, "a[a-c]+")',
+                'rlike(a, "(ab)([a-c]{1})")',
+                'rlike(a, "(ab[a-c]{1})")',
+                'rlike(a, "(aaa|bbb|ccc)")',
+                'rlike(a, ".*.*(aaa|bbb).*.*")',
+                'rlike(a, "^.*(aaa|bbb|ccc)")',
+                'rlike(a, "aaa|bbb")',
+                'rlike(a, "aaa|(bbb|ccc)")'),
         conf=_regexp_conf)
 
 def test_regexp_replace_character_set_negated():

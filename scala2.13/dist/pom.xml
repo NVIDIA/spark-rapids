@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
-        <version>24.06.1</version>
+        <version>24.08.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>24.06.1</version>
+    <version>24.08.0-SNAPSHOT</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -46,6 +46,7 @@
         <dist.jar.pom.url>jar:file:${dist.jar.name}!/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml</dist.jar.pom.url>
         <rapids.default.jar.phase>none</rapids.default.jar.phase>
         <rapids.jni.unpack.skip>false</rapids.jni.unpack.skip>
+        <rapids.source.jar.phase>none</rapids.source.jar.phase>
     </properties>
     <profiles>
         <profile>
@@ -111,6 +112,14 @@
             </properties>
         </profile>
         <profile>
+            <id>jdk17-scala213-test</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk17.scala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>jdk17-test</id>
             <properties>
                 <included_buildvers>
@@ -145,7 +154,6 @@
             <id>minimumFeatureVersionMix</id>
             <properties>
                 <included_buildvers>
-                    312,
                     320,
                     321cdh,
                     330,
@@ -389,7 +397,7 @@ self.log("... OK")
                             <target>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <equals arg1="spark311" arg2="${spark.version.classifier}"/>
+                                    <equals arg1="spark320" arg2="${spark.version.classifier}"/>
                                     <ac:then>
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>

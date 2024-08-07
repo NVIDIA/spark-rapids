@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -1123,7 +1123,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (!needTimeZoneCheck) return
 
     // Level 2 check
-    if (!isTimeZoneSupported) return checkUTCTimezone(this)
+    if (!isTimeZoneSupported) return checkUTCTimezone(this, getZoneId())
 
     // Level 3 check
     val zoneId = getZoneId()
@@ -1203,8 +1203,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
    *
    * @param meta to check whether it's UTC
    */
-  def checkUTCTimezone(meta: RapidsMeta[_, _, _]): Unit = {
-    if (!GpuOverrides.isUTCTimezone()) {
+  def checkUTCTimezone(meta: RapidsMeta[_, _, _], zoneId: ZoneId): Unit = {
+    if (!GpuOverrides.isUTCTimezone(zoneId)) {
       meta.willNotWorkOnGpu(
         TimeZoneDB.nonUTCTimezoneNotSupportedStr(meta.wrapped.getClass.toString))
     }
@@ -1324,9 +1324,36 @@ abstract class ExprMeta[INPUT <: Expression](
 }
 
 /**
+ * Base class for metadata around `RuntimeReplaceableExpression`. We will never
+ * get a RuntimeReplaceableExpression as it will be converted to the actual Expression
+ * by the time we get it. We need to have this here as some Expressions e.g. UnaryPositive
+ * don't extend UnaryExpression.
+ */
+abstract class RuntimeReplaceableUnaryExprMeta[INPUT <: RuntimeReplaceable](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends UnaryExprMetaBase[INPUT](expr, conf, parent, rule)
+
+/** Base metadata class for RuntimeReplaceable expressions that support conversion to AST as well */
+abstract class RuntimeReplaceableUnaryAstExprMeta[INPUT <: RuntimeReplaceable](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends RuntimeReplaceableUnaryExprMeta[INPUT](expr, conf, parent, rule)
+
+/**
  * Base class for metadata around `UnaryExpression`.
  */
 abstract class UnaryExprMeta[INPUT <: UnaryExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends UnaryExprMetaBase[INPUT](expr, conf, parent, rule)
+
+protected abstract class UnaryExprMetaBase[INPUT <: Expression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],

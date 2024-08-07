@@ -18,7 +18,8 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
-from spark_session import is_databricks113_or_later, is_databricks_runtime
+from spark_init_internal import spark_version
+from spark_session import is_before_spark_400, is_databricks113_or_later, is_databricks_runtime
 
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -126,6 +127,9 @@ def test_get_json_object_normalize_non_string_output():
             f.get_json_object('jsonStr', '$')),
             conf={'spark.rapids.sql.expression.GetJsonObject': 'true'})
 
+
+@pytest.mark.skipif(condition=not is_before_spark_400(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11130")
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"?":"QUESTION"}']]

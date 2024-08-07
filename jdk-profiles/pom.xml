@@ -22,26 +22,54 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent_2.12</artifactId>
-        <version>24.06.1</version>
+        <version>24.08.0-SNAPSHOT</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
     <packaging>pom</packaging>
     <description>Shim JDK Profiles</description>
-    <version>24.06.1</version>
+    <version>24.08.0-SNAPSHOT</version>
     <profiles>
         <profile>
-            <id>jdk9plus</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.source>${java.specification.version}</maven.compiler.source>
-                <maven.compiler.release>${maven.compiler.source}</maven.compiler.release>
-                <maven.compiler.target>${maven.compiler.source}</maven.compiler.target>
-            </properties>
+            <id>jdk8</id>
             <activation>
+                <jdk>8</jdk>
+            </activation>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>net.alchim31.maven</groupId>
+                            <artifactId>scala-maven-plugin</artifactId>
+                            <version>${scala.plugin.version}</version>
+                            <configuration>
+                                <target>${java.major.version}</target>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+        <profile>
+            <id>jdk9plus</id>
+             <activation>
                 <!-- activate for all java versions after 9 -->
                 <jdk>[9,)</jdk>
             </activation>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>net.alchim31.maven</groupId>
+                            <artifactId>scala-maven-plugin</artifactId>
+                            <version>${scala.plugin.version}</version>
+                            <configuration>
+                                <release>${java.major.version}</release>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
         </profile>
     </profiles>
 </project>

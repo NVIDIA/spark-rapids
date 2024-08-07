@@ -14,10 +14,10 @@
 
 import pytest
 from _pytest.mark.structures import ParameterSet
-from pyspark.sql.functions import array_contains, broadcast, col
+from pyspark.sql.functions import array_contains, broadcast, col, lit
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime, is_emr_runtime, is_not_utc
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from conftest import is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime
@@ -163,6 +163,14 @@ def test_empty_broadcast_hash_join(join_type):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(right.hint("broadcast"), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.adaptive.enabled': 'true'})
+
+@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_hash_join_constant_keys(join_type):
+    def do_join(spark):
+        left = spark.range(10).withColumn("s", lit(1))
+        right = spark.range(10000).withColumn("r_s", lit(1))
+        return left.join(right.hint("broadcast"), left.s == right.r_s, join_type)
+    assert_gpu_and_cpu_row_counts_equal(do_join, conf={'spark.sql.adaptive.enabled': 'true'})
 
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -1109,7 +1117,7 @@ def test_bloom_filter_join_with_merge_all_null_filters(spark_tmp_path):
 
 
 @ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "FilterExec", "BroadcastHashJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec")
+@allow_non_gpu("ProjectExec", "FilterExec", "BroadcastHashJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec", "BatchScanExec")
 @pytest.mark.parametrize("disable_build", [True, False])
 def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, disable_build):
     data_path_parquet = spark_tmp_path + "/parquet"
@@ -1145,7 +1153,7 @@ def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, disable_b
 
 
 @ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "BroadcastNestedLoopJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec")
+@allow_non_gpu("ProjectExec", "BroadcastNestedLoopJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec", "BatchScanExec")
 @pytest.mark.parametrize("disable_build", [True, False])
 def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable_build):
     data_path_parquet = spark_tmp_path + "/parquet"

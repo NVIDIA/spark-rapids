@@ -8,7 +8,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
-Apache Spark such as 3.1.x, 3.2.x, 3.3.0 and a number of vendor releases that contain
+Apache Spark such as 3.2.x, 3.3.x, 3.4.x, 3.5.x and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally
 incompatible between each other, at both source code level and even more often
 at the binary level. The role of the Shim layer is to hide these issues from the
@@ -68,17 +68,17 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 Spark 3.0.2's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes
@@ -143,7 +143,7 @@ This has two pre-requisites:
 
 1. The .class file with the bytecode is bitwise-identical among the currently
 supported Spark versions. To verify this you can inspect the dist jar and check
-if the class file is under `spark3xx-common` jar entry. If this is not the case then
+if the class file is under `spark-shared` jar entry. If this is not the case then
 code should be refactored until all discrepancies are shimmed away.
 1. The transitive closure of the classes compile-time-referenced by `A` should
 have the property above.
@@ -159,7 +159,7 @@ to build against the lowest and highest versions of the supported Spark version
 range. As of the time of this writing:
 
 ```bash
-./build/buildall --parallel=4  --profile=311,330 --module=dist
+./build/buildall --parallel=4  --profile=320,351 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
@@ -181,28 +181,28 @@ mv org com ai public/
 and you will see the dependencies of `public` classes. By design `public` classes
 should have only edges only to other `public` classes in the dist jar.
 
-Execute `jdeps` against `public`, `spark3xx-common` and an *exactly one* parallel
+Execute `jdeps` against `public`, `spark-shared` and an *exactly one* parallel
 world such as `spark330`
 
 ```bash
 ${JAVA_HOME}/bin/jdeps -v \
   -dotoutput /tmp/jdeps330 \
   -regex '(com|org)\..*\.rapids\..*' \
-  public spark3xx-common spark330
+  public spark-shared spark330
 ```
 
 This will produce three DOT files for each "archive" with directed edges for
 a class in the archive to a class either in this or another archive.
 
-Looking at an output file, e.g. `/tmp/jdeps330/spark3xx-common.dot`,
+Looking at an output file, e.g. `/tmp/jdeps330/spark-shared.dot`,
 unfortunately you see that jdeps does not label the source class node but labels
 the target class node of an edge. Thus the graph is incorrect as it breaks paths
 if a node has both incoming and outgoing edges.
 
 ```bash
-$ grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
+$ grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark-shared.dot
    "com.nvidia.spark.rapids.GpuFilterExec$"           -> "com.nvidia.spark.rapids.GpuFilterExec (spark330)";
-   "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark3xx-common)";
+   "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark-shared)";
 ```
 
 So first create and `cd` to some other directory `/tmp/jdep330.processed` to massage
@@ -214,8 +214,8 @@ that the source nodes are guaranteed to be from the `<archive>`.
 ```bash
 sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
   /tmp/jdeps330/public.dot > public.dot
-sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
-  /tmp/jdeps330/spark3xx-common.dot > spark3xx-common.dot
+sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark-shared)"\2/' \
+  /tmp/jdeps330/spark-shared.dot > spark-shared.dot
 sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
   /tmp/jdeps330/spark330.dot > spark330.dot
 ```
@@ -224,7 +224,7 @@ Next you need to union edges of all three graphs into a single graph to be able
 to analyze cross-archive paths.
 
 ```bash
-cat public.dot spark3xx-common.dot spark330.dot | \
+cat public.dot spark-shared.dot spark330.dot | \
   tr '\n' '\r' | \
   sed 's/}\rdigraph "[^"]*" {\r//g' | \
   tr '\r' '\n' > merged.dot
@@ -245,7 +245,7 @@ GpuTypeColumnVector needs refactoring prior externalization as of the time
 of this writing:
 
 ```bash
-$ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
+$ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark-shared)" merged.dot | \
   grep '\[dist=' | grep '(spark330)'
         "org.apache.spark.sql.rapids.GpuFileSourceScanExec (spark330)"  [dist=5.000,
         "com.nvidia.spark.rapids.GpuExec (spark330)"    [dist=3.000,
@@ -255,9 +255,9 @@ $ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" mer
 RegexReplace could be externalized safely:
 
 ```bash
-$ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"  merged.dot | grep '\[dist='
-        "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"    [dist=0.000];
-        "org.apache.spark.sql.rapids.RegexReplace$ (spark3xx-common)"   [dist=1.000,
+$ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark-shared)"  merged.dot | grep '\[dist='
+        "org.apache.spark.sql.rapids.RegexReplace (spark-shared)"    [dist=0.000];
+        "org.apache.spark.sql.rapids.RegexReplace$ (spark-shared)"   [dist=1.000,
 ```
 
 because it is self-contained.

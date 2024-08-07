@@ -27,7 +27,6 @@ import org.apache.commons.lang3.reflect.MethodUtils
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -40,25 +39,26 @@ import org.apache.spark.util.MutableURLClassLoader
     "parallel worlds" in the JDK's com.sun.istack.internal.tools.ParallelWorldClassLoader parlance
     1. a few publicly documented classes in the conventional layout at the top
     2. a large fraction of classes whose bytecode is identical under all supported Spark versions
-       in spark3xx-common
+       in spark-shared
     3. a smaller fraction of classes that differ under one of the supported Spark versions
     com/nvidia/spark/SQLPlugin.class
-    spark3xx-common/com/nvidia/spark/rapids/CastExprMeta.class
-    spark311/org/apache/spark/sql/rapids/GpuUnaryMinus.class
-    spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
+    spark-shared/com/nvidia/spark/rapids/CastExprMeta.class
+    spark320/org/apache/spark/sql/rapids/aggregate/GpuLast.class
+    spark331/org/apache/spark/sql/rapids/aggregate/GpuLast.class
     Each shim can see a consistent parallel world without conflicts by referencing
     only one conflicting directory.
     E.g., Spark 3.2.0 Shim will use
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark320/
-    Spark 3.1.1 will use
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-24.06.1.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark320/
+    Spark 3.3.1 will use
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
+    jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark331/
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
-object ShimLoader extends Logging {
-  logDebug(s"ShimLoader object instance: $this loaded by ${getClass.getClassLoader}")
+object ShimLoader {
+  val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
+  log.debug(s"ShimLoader object instance: $this loaded by ${getClass.getClassLoader}")
   private val shimRootURL = {
     val thisClassFile = getClass.getName.replace(".", "/") + ".class"
     val url = getClass.getClassLoader.getResource(thisClassFile)
@@ -67,7 +67,7 @@ object ShimLoader extends Logging {
     new URL(rootUrlStr)
   }
 
-  private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
+  private val shimCommonURL = new URL(s"${shimRootURL.toString}spark-shared/")
   @volatile private var shimProviderClass: String = _
   @volatile private var shimProvider: SparkShimServiceProvider = _
   @volatile private var shimURL: URL = _
@@ -124,11 +124,11 @@ object ShimLoader extends Logging {
     // brute-force call addURL using reflection
     classLoader match {
       case nullClassLoader if nullClassLoader == null =>
-        logInfo("findURLClassLoader failed to locate a mutable classloader")
+        log.info("findURLClassLoader failed to locate a mutable classloader")
         None
       case urlCl: java.net.URLClassLoader =>
         // fast path
-        logInfo(s"findURLClassLoader found a URLClassLoader $urlCl")
+        log.info(s"findURLClassLoader found a URLClassLoader $urlCl")
         Option(urlCl)
       case replCl if replCl.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" ||
           replCl.getClass.getName == "org.apache.spark.executor.ExecutorClassLoader" =>
@@ -137,20 +137,21 @@ object ShimLoader extends Logging {
         // https://issues.apache.org/jira/browse/SPARK-18646
         val parentLoader = MethodUtils.invokeMethod(replCl, true, "parentLoader")
           .asInstanceOf[ClassLoader]
-        logInfo(s"findURLClassLoader found $replCl, trying parentLoader=$parentLoader")
+        log.info(s"findURLClassLoader found $replCl, trying parentLoader=$parentLoader")
         findURLClassLoader(parentLoader)
       case urlAddable: ClassLoader if null != MethodUtils.getMatchingMethod(
         urlAddable.getClass, "addURL", classOf[java.net.URL]) =>
         // slow defensive path
-        logInfo(s"findURLClassLoader found a urLAddable classloader $urlAddable")
+        log.info(s"findURLClassLoader found a urLAddable classloader $urlAddable")
         Option(urlAddable)
       case root if root.getParent == null || root.getParent == root =>
-        logInfo(s"findURLClassLoader hit the Boostrap classloader $root, " +
+        log.info(s"findURLClassLoader hit the Boostrap classloader $root, " +
           s"failed to find a mutable classloader!")
         None
       case cl =>
         val parentClassLoader = cl.getParent
-        logInfo(s"findURLClassLoader found an immutable $cl, trying parent=$parentClassLoader")
+        log.info(s"findURLClassLoader found an immutable $cl" +
+          s", trying parent=$parentClassLoader")
         findURLClassLoader(parentClassLoader)
     }
   }
@@ -159,15 +160,15 @@ object ShimLoader extends Logging {
     findURLClassLoader(UnshimmedTrampolineUtil.sparkClassLoader).foreach { urlAddable =>
       urlsForSparkClassLoader.foreach { url =>
         if (!conventionalSingleShimJarDetected) {
-          logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
+          log.info(s"Updating spark classloader $urlAddable with the URLs: " +
             urlsForSparkClassLoader.mkString(", "))
           MethodUtils.invokeMethod(urlAddable, true, "addURL", url)
-          logInfo(s"Spark classLoader $urlAddable updated successfully")
+          log.info(s"Spark classLoader $urlAddable updated successfully")
           urlAddable match {
             case urlCl: java.net.URLClassLoader =>
               if (!urlCl.getURLs.contains(shimCommonURL)) {
                 // infeasible, defensive diagnostics
-                logWarning(s"Didn't find expected URL $shimCommonURL in the spark " +
+                log.warn(s"Didn't find expected URL $shimCommonURL in the spark " +
                   s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
                   s"parent classloader ${urlCl.getParent}")
               }
@@ -188,7 +189,7 @@ object ShimLoader extends Logging {
       if (tmpClassLoader == null) {
         tmpClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
           getClass.getClassLoader)
-        logWarning("Found an unexpected context classloader " +
+        log.warn("Found an unexpected context classloader " +
           s"${Thread.currentThread().getContextClassLoader}. We will try to recover from this, " +
           "but it may cause class loading problems.")
       }
@@ -202,9 +203,9 @@ object ShimLoader extends Logging {
 
   private def detectShimProvider(): String = {
     val sparkVersion = getSparkVersion
-    logInfo(s"Loading shim for Spark version: $sparkVersion")
-    logInfo("Complete Spark build info: " + sparkBuildInfo.mkString(", "))
-    logInfo("Scala version: " + util.Properties.versionString)
+    log.info(s"Loading shim for Spark version: $sparkVersion")
+    log.info("Complete Spark build info: " + sparkBuildInfo.mkString(", "))
+    log.info("Scala version: " + util.Properties.versionString)
 
     val thisClassLoader = getClass.getClassLoader
 
@@ -225,7 +226,7 @@ object ShimLoader extends Logging {
     val shimServiceProviderOverrideClassName = Option(SparkEnv.get) // Spark-less RapidsConf.help
       .flatMap(_.conf.getOption("spark.rapids.shims-provider-override"))
     shimServiceProviderOverrideClassName.foreach { shimProviderClass =>
-      logWarning(s"Overriding Spark shims provider to $shimProviderClass. " +
+      log.warn(s"Overriding Spark shims provider to $shimProviderClass. " +
         "This may be an untested configuration!")
     }
 
@@ -252,7 +253,7 @@ object ShimLoader extends Logging {
           val ret = thisClassLoader.loadClass(shimServiceProviderStr)
           if (numShimServiceProviders == 1) {
             conventionalSingleShimJarDetected = true
-            logInfo("Conventional shim jar layout for a single Spark verision detected")
+            log.info("Conventional shim jar layout for a single Spark verision detected")
           }
           ret
         }.getOrElse(shimClassLoader.loadClass(shimServiceProviderStr))
@@ -262,7 +263,7 @@ object ShimLoader extends Logging {
         )
       } catch {
         case cnf: ClassNotFoundException =>
-          logDebug(cnf + ": Could not load the provider, likely a dev build", cnf)
+          log.debug(cnf + ": Could not load the provider, likely a dev build", cnf)
           None
       }
     }.partition { case (inst, _) =>

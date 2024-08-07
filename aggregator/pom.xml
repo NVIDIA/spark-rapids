@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
-        <version>24.06.1</version>
+        <version>24.08.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>24.06.1</version>
+    <version>24.08.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>aggregator</rapids.module>
@@ -37,12 +37,14 @@
         and they are auto-deduped using binary diff
         -->
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.shade.package.path>com/nvidia/shaded/spark</rapids.shade.package.path>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.shim.jar.test.phase>none</rapids.shim.jar.test.phase>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.default.jar.phase>initialize</rapids.default.jar.phase>
         <!-- Maven to register attached artifact , which we later replace -->
         <rapids.shim.jar.phase>initialize</rapids.shim.jar.phase>
+        <rapids.source.jar.phase>none</rapids.source.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -86,13 +88,28 @@
                         </excludes>
                     </artifactSet>
                     <transformers>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <manifestEntries>
+                                <Multi-Release>true</Multi-Release>
+                            </manifestEntries>
+                        </transformer>
                         <transformer
                                 implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                     </transformers>
                     <relocations>
+                        <!-- relocate multi-release packages -->
+                        <relocation>
+                            <pattern>META-INF/versions/(\d+)/org/roaringbitmap</pattern>
+                            <shadedPattern>META-INF/versions/$1/${rapids.shade.package.path}/org/roaringbitmap</shadedPattern>
+                            <rawString>true</rawString>
+                        </relocation>
                         <relocation>
                             <pattern>com.google.flatbuffers</pattern>
                             <shadedPattern>${rapids.shade.package}.com.google.flatbuffers</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>org.roaringbitmap</pattern>
+                            <shadedPattern>${rapids.shade.package}.org.roaringbitmap</shadedPattern>
                         </relocation>
                     </relocations>
                     <filters>
@@ -248,79 +265,11 @@
 
     <profiles>
         <profile>
-            <id>release311</id>
+            <id>release320</id>
             <activation>
                 <!-- #if scala-2.12 -->
                 <activeByDefault>true</activeByDefault>
                 <!-- #endif scala-2.12 -->
-                <property>
-                    <name>buildver</name>
-                    <value>311</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release312</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release313</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>313</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release314</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>314</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release320</id>
-            <activation>
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -779,5 +728,24 @@
                 </dependency>
             </dependencies>
         </profile>
+        <!-- #if scala-2.13 --><!--
+        <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        --><!-- #endif scala-2.13 -->
     </profiles>
 </project>

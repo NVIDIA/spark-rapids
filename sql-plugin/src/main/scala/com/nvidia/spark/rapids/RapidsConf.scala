@@ -23,6 +23,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
+import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -744,6 +745,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
+    .doc("Whether the profiler should capture async CUDA allocation and free events")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val PROFILE_DRIVER_POLL_MILLIS = conf("spark.rapids.profile.driverPollMillis")
     .doc("Interval in milliseconds the executors will poll for job and stage completion when " +
       "stage-level profiling is used.")
@@ -771,7 +778,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("Buffer size to use when writing profile records.")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(1024 * 1024)
+    .createWithDefault(8 * 1024 * 1024)
 
   // ENABLE/DISABLE PROCESSING
 
@@ -987,6 +994,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .booleanConf
       .createWithDefault(true)
+
+  val ENABLE_COMBINED_EXPR_PREFIX = "spark.rapids.sql.expression.combined."
+
+  val ENABLE_COMBINED_EXPRESSIONS = conf("spark.rapids.sql.combined.expressions.enabled")
+    .doc("For some expressions it can be much more efficient to combine multiple " +
+      "expressions together into a single kernel call. This enables or disables that " +
+      s"feature. Note that this requires that $ENABLE_TIERED_PROJECT is turned on or " +
+      "else there is no performance improvement. You can also disable this feature for " +
+      "expressions that support it. Each config is expression specific and starts with " +
+      s"$ENABLE_COMBINED_EXPR_PREFIX followed by the name of the GPU expression class " +
+      s"similar to what we do for enabling converting individual expressions to the GPU.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
 
   val ENABLE_RLIKE_REGEX_REWRITE = conf("spark.rapids.sql.rLikeRegexRewrite.enabled")
       .doc("Enable the optimization to rewrite rlike regex to contains in some cases.")
@@ -1509,6 +1530,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val SKIP_AGG_PASS_REDUCTION_RATIO = conf("spark.rapids.sql.agg.skipAggPassReductionRatio")
+    .doc("In non-final aggregation stages, if the previous pass has a row reduction ratio " +
+        "greater than this value, the next aggregation pass will be skipped." +
+        "Setting this to 1 essentially disables this feature.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
+    .createWithDefault(1.0)
+
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
     .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
@@ -1837,6 +1866,15 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(64 * 1024)
 
+  val FORCE_HIVE_HASH_FOR_BUCKETED_WRITE =
+    conf("spark.rapids.sql.format.write.forceHiveHashForBucketing")
+      .doc("Hive write commands before Spark 330 use Murmur3Hash for bucketed write. " +
+        "When enabled, HiveHash will be always used for this instead of Murmur3. This is " +
+        "used to align with some customized Spark binaries before 330.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
@@ -1997,9 +2035,9 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.1.1, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.2.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.2.0, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark320.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly." +
       "When tested in a combined jar with other Shims, it's expected that the provided " +
       "implementation follows the same convention as existing Spark shims. If its class" +
@@ -2274,6 +2312,62 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(1024)
 
+  val DELTA_LOW_SHUFFLE_MERGE_SCATTER_DEL_VECTOR_BATCH_SIZE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletion.scatter.max.size")
+      .doc("Option to set max batch size when scattering deletion vector")
+      .internal()
+      .integerConf
+      .createWithDefault(32 * 1024)
+
+  val DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold")
+      .doc("Currently we need to broadcast deletion vector to all executors to perform low " +
+        "shuffle merge. When we detect the deletion vector broadcast size is larger than this " +
+        "value, we will fallback to normal shuffle merge.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(20 * 1024 * 1024)
+
+  val ENABLE_DELTA_LOW_SHUFFLE_MERGE =
+    conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
+    .doc("Option to turn on the low shuffle merge for Delta Lake. Currently there are some " +
+      "limitations for this feature: " +
+      "1. We only support Databricks Runtime 13.3 and Deltalake 2.4. " +
+      s"2. The file scan mode must be set to ${RapidsReaderType.PERFILE} " +
+      "3. The deletion vector size must be smaller than " +
+      s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} ")
+    .booleanConf
+    .createWithDefault(false)
+
+  val TAG_LORE_ID_ENABLED = conf("spark.rapids.sql.lore.tag.enabled")
+    .doc("Enable add a LORE id to each gpu plan node")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val LORE_DUMP_IDS = conf("spark.rapids.sql.lore.idsToDump")
+    .doc("Specify the LORE ids of operators to dump. The format is a comma separated list of " +
+      "LORE ids. For example: \"1[0]\" will dump partition 0 of input of gpu operator " +
+      "with lore id 1. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md). If this is not set, no data will be dumped.")
+    .stringConf
+    .createOptional
+
+  val LORE_DUMP_PATH = conf("spark.rapids.sql.lore.dumpPath")
+    .doc(s"The path to dump the LORE nodes' input data. This must be set if ${LORE_DUMP_IDS.key} " +
+      "has been set. The data of each LORE node will be dumped to a subfolder with name " +
+      "'loreId-<LORE id>' under this path. For more details, please refer to " +
+      "[the LORE documentation](../dev/lore.md).")
+    .stringConf
+    .createOptional
+
+  val CASE_WHEN_FUSE =
+    conf("spark.rapids.sql.case_when.fuse")
+      .doc("If when branches is greater than 2 and all then/else values in case when are string " +
+        "scalar, fuse mode improves the performance. By default this is enabled.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2309,7 +2403,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.06.1-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.08.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2473,6 +2567,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val profileStages: Option[String] = get(PROFILE_STAGES)
 
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
+
+  lazy val profileAsyncAllocCapture: Boolean = get(PROFILE_ASYNC_ALLOC_CAPTURE)
 
   lazy val profileCompression: String = get(PROFILE_COMPRESSION)
 
@@ -2729,6 +2825,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
+  lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
 
@@ -3043,6 +3141,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
+  lazy val skipAggPassReductionRatio: Double = get(SKIP_AGG_PASS_REDUCTION_RATIO)
+
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val maxRegExpStateMemory: Long =  {
@@ -3060,6 +3160,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
+
+  lazy val isForceHiveHashForBucketedWrite: Boolean = get(FORCE_HIVE_HASH_FOR_BUCKETED_WRITE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 
@@ -3082,6 +3184,18 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSavePath: Option[String] = get(TEST_GET_JSON_OBJECT_SAVE_PATH)
 
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
+
+  lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
+
+  lazy val loreDumpIds: Map[LoreId, OutputLoreId] = get(LORE_DUMP_IDS)
+    .map(OutputLoreId.parse)
+    .getOrElse(Map.empty)
+
+  lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
+
+  lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

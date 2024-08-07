@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>24.06.1</version>
+    <version>24.08.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -91,68 +91,11 @@
     </modules>
     <profiles>
         <profile>
-            <id>release311</id>
+            <id>release320</id>
             <activation>
                 <!-- #if scala-2.12 -->
                 <activeByDefault>true</activeByDefault>
                 <!-- #endif scala-2.12 -->
-                <property>
-                    <name>buildver</name>
-                    <value>311</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>311</buildver>
-                <spark.version>${spark311.version}</spark.version>
-                <spark.test.version>${spark311.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-stub</module>
-                <module>api_validation</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release312</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>312</buildver>
-                <spark.version>${spark312.version}</spark.version>
-                <spark.test.version>${spark312.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-stub</module>
-                <module>api_validation</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release313</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>313</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>313</buildver>
-                <spark.version>${spark313.version}</spark.version>
-                <spark.test.version>${spark313.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-stub</module>
-                <module>api_validation</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release320</id>
-            <activation>
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -200,6 +143,9 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- Keeping the scala plugin version 4.3.0 for details
+                check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
+                <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -463,6 +409,9 @@
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- Keeping the scala plugin version 4.3.0 for details
+                check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
+                <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -486,6 +435,9 @@
                 <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- Keeping the scala plugin version 4.3.0 for details
+                check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
+                <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -505,8 +457,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark330db</spark.version.classifier>
                 <spark.version>${spark330db.version}</spark.version>
                 <spark.test.version>${spark330db.version}</spark.test.version>
@@ -531,8 +481,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark332db</spark.version.classifier>
                 <spark.version>${spark332db.version}</spark.version>
                 <spark.test.version>${spark332db.version}</spark.test.version>
@@ -556,8 +504,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark341db</spark.version.classifier>
                 <spark.version>${spark341db.version}</spark.version>
                 <spark.test.version>${spark341db.version}</spark.test.version>
@@ -611,6 +557,28 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <!-- #if scala-2.13 --><!--
+        <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>400</buildver>
+                <spark.version>${spark400.version}</spark.version>
+                <spark.test.version>${spark400.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        --><!-- #endif scala-2.13 -->
         <profile>
             <id>source-javadoc</id>
             <build>
@@ -618,12 +586,12 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
-                        <version>3.0.0</version>
                         <executions>
                             <execution>
                                 <id>attach-source</id>
+                                <phase>${rapids.source.jar.phase}</phase>
                                 <goals>
-                                    <goal>jar-no-fork</goal>
+                                    <goal>jar</goal>
                                 </goals>
                             </execution>
                         </executions>
@@ -642,7 +610,7 @@
             <id>scala-2.13</id>
             <properties>
                 <scala.binary.version>2.13</scala.binary.version>
-                <scala.version>2.13.8</scala.version>
+                <scala.version>2.13.14</scala.version>
             </properties>
         </profile>
         <profile>
@@ -709,18 +677,17 @@
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
-        <buildver>311</buildver>
+        <buildver>320</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
-        <spark.version>${spark311.version}</spark.version>
+        <spark.version>${spark320.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>24.06.0</spark-rapids-jni.version>
-        <spark-rapids-private.version>24.06.0</spark-rapids-private.version>
+        <spark-rapids-jni.version>24.08.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>24.08.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -733,6 +700,7 @@
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
         <ucx.baseVersion>1.16.0</ucx.baseVersion>
+        <roaringbitmap.version>1.0.6</roaringbitmap.version>
         <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
         <ucx.version>${ucx.baseVersion}</ucx.version>
         <rapids.compressed.artifact>true</rapids.compressed.artifact>
@@ -757,9 +725,6 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark311.version>3.1.1</spark311.version>
-        <spark312.version>3.1.2</spark312.version>
-        <spark313.version>3.1.3</spark313.version>
         <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
         <spark321cdh.version>3.2.1.3.2.7171000.0-3</spark321cdh.version>
@@ -782,8 +747,10 @@
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
+        <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
-        <scala.plugin.version>4.3.0</scala.plugin.version>
+        <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
+        <scala.plugin.version>4.9.1</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
         <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
@@ -811,9 +778,6 @@
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <noSnapshot.buildvers>
-            311,
-            312,
-            313,
             320,
             321,
             321cdh,
@@ -842,8 +806,8 @@
             341db
         </databricks.buildvers>
         <!--
-          Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
-          Base shim version (311 currently) should be covered in default mvn verify command of premerge script,
+          Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
+          Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
           so base shim version is removed from the premergeUT list.
           Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
         -->
@@ -862,20 +826,20 @@
             340
         </premergeScala213.buildvers>
         <jdk11.buildvers>
-            312,
             321,
             331,
             340
         </jdk11.buildvers>
         <jdk17.buildvers>
-            330
         </jdk17.buildvers>
+        <jdk17.scala213.buildvers>
+            330,
+            400
+        </jdk17.scala213.buildvers>
         <all.buildvers>
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
-            ${databricks.buildvers},
-            <!-- 400 is not buildable yet. We are only declaring it as a known shim here -->
-            400
+            ${databricks.buildvers}
         </all.buildvers>
         <noSnapshotScala213.buildvers>
             330,
@@ -891,9 +855,10 @@
             351
         </noSnapshotScala213.buildvers>
         <snapshotScala213.buildvers>
+            400
         </snapshotScala213.buildvers>
         <allScala213.buildvers>
-            ${noSnapshotScala213.buildvers}
+            ${noSnapshotScala213.buildvers},
             ${snapshotScala213.buildvers}
         </allScala213.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
@@ -923,6 +888,7 @@
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
         <nonfail.errors.quiet>false</nonfail.errors.quiet>
+        <rapids.source.jar.phase>package</rapids.source.jar.phase>
     </properties>
 
     <dependencyManagement>
@@ -1017,6 +983,15 @@
                 <scope>provided</scope>
             </dependency>
             <dependency>
+                <!-- For shade, spark 3.2 and earlier uses an older version(0.9.0), which doesn't
+                 contain the required api we use.
+                 -->
+                <groupId>org.roaringbitmap</groupId>
+                <artifactId>RoaringBitmap</artifactId>
+                <version>${roaringbitmap.version}</version>
+                <scope>compile</scope>
+            </dependency>
+            <dependency>
               <groupId>org.scalatest</groupId>
               <artifactId>scalatest_${scala.binary.version}</artifactId>
               <version>3.2.16</version>
@@ -1094,6 +1069,11 @@
         <directory>${project.basedir}/target/${target.classifier}</directory>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
@@ -1229,13 +1209,19 @@ This will force full Scala code rebuild in downstream modules.
                         <groupId>net.sourceforge.pmd</groupId>
                         <artifactId>pmd-dist</artifactId>
                         <version>6.55.0</version>
+                        <exclusions>
+                            <exclusion>
+                                <groupId>org.apache.commons</groupId>
+                                <artifactId>commons-lang3</artifactId>
+                            </exclusion>
+                        </exclusions>
                     </dependency>
                 </dependencies>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-shade-plugin</artifactId>
-                  <version>3.3.0</version>
+                  <version>3.6.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -1482,7 +1468,7 @@ This will force full Scala code rebuild in downstream modules.
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.5.0</version>
                 <executions>
                   <execution>
                     <id>enforce-maven</id>
@@ -1495,15 +1481,26 @@ This will force full Scala code rebuild in downstream modules.
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <!-- #if scala-2.12 -->
                         <requireJavaVersion>
                             <message>Only Java 8, 11, and 17 are supported!</message>
                             <version>[1.8,1.9),[11,12),[17,18)</version>
                         </requireJavaVersion>
+                        <requireProperty>
+                          <property>buildver</property>
+                          <regex>^(?!400).*$</regex>
+                          <regexMessage>Spark 4.0.0 is only supported for Scala 2.13</regexMessage>
+                        </requireProperty>
+                        <!-- #endif scala-2.12 -->
                         <!-- #if scala-2.13 --><!--
+                        <requireJavaVersion>
+                            <message>Build for Scala 2.13 is only available with Java 17+</message>
+                            <version>[17,)</version>
+                        </requireJavaVersion>
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
                             <property>buildver</property>
-                            <regex>[3-9][3-9][0-9]</regex>
+                            <regex>(?:[3-9][3-9]|[4-9][0-9])[0-9]</regex>
                         </requireProperty>
                         --><!-- #endif scala-2.13 -->
                       </rules>
