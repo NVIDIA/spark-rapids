@@ -388,23 +388,6 @@ self.log("... OK")
                         </configuration>
                     </execution>
                     <execution>
-                        <id>populate_default_configs_for_testing</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
-                                    <arg value="dump-default-configs"/>
-                                    <arg value="json"/>
-                                    <arg value="${project.build.directory}/spark-rapids-default-configs.json"/>
-                                </java>
-                            </target>
-                        </configuration>
-                    </execution>
-                    <execution>
                         <id>update_config_docs</id>
                         <phase>verify</phase>
                         <goals>
@@ -417,7 +400,6 @@ self.log("... OK")
                                     <equals arg1="spark320" arg2="${spark.version.classifier}"/>
                                     <ac:then>
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
-                                            <arg value="help"/>
                                             <arg value="${project.basedir}/../docs/configs.md"/>
                                             <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
                                         </java>

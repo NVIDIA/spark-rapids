@@ -89,37 +89,26 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>clean-previously-populated-config-file</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>rm</executable>
-                            <arguments>
-                                <argument>-f</argument>
-                                <argument>${spark.rapids.source.basedir}/${rapids.module}/target/spark-rapids-default-configs.json</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                    <execution>
                         <id>populate-default-configs-for-testing</id>
-                        <phase>package</phase>
+                        <phase>generate-test-resources</phase>
                         <goals>
-                            <goal>java</goal>
+                            <goal>run</goal>
                         </goals>
                         <configuration>
-                            <includeProjectDependencies>true</includeProjectDependencies>
-                            <mainClass>com.nvidia.spark.rapids.tests.DumpDefaultConfigs</mainClass>
-                            <classpathScope>provided</classpathScope>
-                            <arguments>
-                                <argument>json</argument>
-                                <argument>${spark.rapids.source.basedir}/${rapids.module}/target/spark-rapids-default-configs.json</argument>
-                            </arguments>
+                            <target>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <java classname="com.nvidia.spark.rapids.tests.DumpDefaultConfigs"
+                                    failonerror="true"
+                                    classpathref="maven.compile.classpath"
+                                    fork="true">
+                                    <arg value="json"/>
+                                    <arg value="${project.build.directory}/spark-rapids-default-configs.json"/>
+                                </java>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
