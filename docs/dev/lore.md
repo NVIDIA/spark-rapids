@@ -69,6 +69,6 @@ directory. A typical directory hierarchy would look like this:
 
 # Limitations
 
-1. Currently, LORE will fail to tag lore id when user try to use rdd of `DataFrame` directly.
-2. Not all operators are supported by LORE. For example, shuffle related operator, non leaf operator 
-   are not supported.
+1. Currently, the LORE id is missed when the RDD of a `DataFrame` is used directly.
+2. Not all operators are supported by LORE. For example, shuffle related operator (e.g. 
+   `GpuShuffleExchangeExec`), leaf operator (e.g. `GpuFileSourceScanExec`) are not supported.
