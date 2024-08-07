@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-08-06
+Generated on 2024-08-07
 
 ## Release 24.08
 
@@ -90,6 +90,9 @@ Generated on 2024-08-06
 ### PRs
 |||
 |:---|:---|
+|[#11292](https://github.com/NVIDIA/spark-rapids/pull/11292)|Add work around for string split with empty input.|
+|[#11278](https://github.com/NVIDIA/spark-rapids/pull/11278)|Fix formatting of advanced configs doc|
+|[#10917](https://github.com/NVIDIA/spark-rapids/pull/10917)|Adopt changes from JNI for casting from float to decimal|
 |[#11269](https://github.com/NVIDIA/spark-rapids/pull/11269)|Revert "upgrade ucx to 1.17.0"|
 |[#11260](https://github.com/NVIDIA/spark-rapids/pull/11260)|Mitigate intermittent test_buckets and shuffle_smoke_test OOM issue|
 |[#11268](https://github.com/NVIDIA/spark-rapids/pull/11268)|Fix degenerate conditional nested loop join detection|
@@ -149,10 +152,13 @@ Generated on 2024-08-06
 |[#11048](https://github.com/NVIDIA/spark-rapids/pull/11048)|Fixed array_tests for Spark 4.0.0|
 |[#11049](https://github.com/NVIDIA/spark-rapids/pull/11049)|Fix some cast_tests for Spark 4.0.0|
 |[#11066](https://github.com/NVIDIA/spark-rapids/pull/11066)|Replaced spark3xx-common references to spark-shared|
+|[#11083](https://github.com/NVIDIA/spark-rapids/pull/11083)|Exclude a case based on JDK version in Spark UT|
 |[#10997](https://github.com/NVIDIA/spark-rapids/pull/10997)|Fix some test issues in Spark UT and keep RapidsTestSettings update-to-date|
+|[#11073](https://github.com/NVIDIA/spark-rapids/pull/11073)|Disable ANSI mode for window function tests|
 |[#11076](https://github.com/NVIDIA/spark-rapids/pull/11076)|Improve the diagnostics for 'conv' fallback explain|
 |[#11092](https://github.com/NVIDIA/spark-rapids/pull/11092)|Add GpuBucketingUtils shim to Spark 4.0.0|
 |[#11062](https://github.com/NVIDIA/spark-rapids/pull/11062)|fix duplicate counted metrics like op time for GpuCoalesceBatches|
+|[#11044](https://github.com/NVIDIA/spark-rapids/pull/11044)|Fixed Failing tests in arithmetic_ops_tests for Spark 4.0.0|
 |[#11086](https://github.com/NVIDIA/spark-rapids/pull/11086)|upgrade blossom-ci actions version [skip ci]|
 |[#10957](https://github.com/NVIDIA/spark-rapids/pull/10957)|Support bucketing write for GPU|
 |[#10979](https://github.com/NVIDIA/spark-rapids/pull/10979)|[FEA] Introduce low shuffle merge.|
@@ -173,7 +179,9 @@ Generated on 2024-08-06
 |[#11032](https://github.com/NVIDIA/spark-rapids/pull/11032)|Fix a hive write test failure for Spark 350|
 |[#10998](https://github.com/NVIDIA/spark-rapids/pull/10998)|Improve log to print more lines in build [skip ci]|
 |[#10992](https://github.com/NVIDIA/spark-rapids/pull/10992)|Addressing the Named Parameter change in Spark 4.0.0|
+|[#10943](https://github.com/NVIDIA/spark-rapids/pull/10943)|Fix Spark UT issues in RapidsDataFrameAggregateSuite|
 |[#10963](https://github.com/NVIDIA/spark-rapids/pull/10963)|Add rapids configs to enable GPU running in Spark UT|
+|[#10978](https://github.com/NVIDIA/spark-rapids/pull/10978)|More compilation fixes for Spark 4.0.0|
 |[#10953](https://github.com/NVIDIA/spark-rapids/pull/10953)|Speed up the integration tests by running them in parallel on the Databricks cluster|
 |[#10958](https://github.com/NVIDIA/spark-rapids/pull/10958)|Fix a hive write test failure|
 |[#10970](https://github.com/NVIDIA/spark-rapids/pull/10970)|Move Support for `RaiseError` to a Shim Excluding Spark 4.0.0|
@@ -186,9 +194,11 @@ Generated on 2024-08-06
 |[#10912](https://github.com/NVIDIA/spark-rapids/pull/10912)|GpuInsertIntoHiveTable supports parquet format|
 |[#10863](https://github.com/NVIDIA/spark-rapids/pull/10863)|[Spark 4.0] Account for `CommandUtils.uncacheTableOrView` signature change.|
 |[#10944](https://github.com/NVIDIA/spark-rapids/pull/10944)|Added Shim for BatchScanExec to Support Spark 4.0|
+|[#10946](https://github.com/NVIDIA/spark-rapids/pull/10946)|Unarchive Spark test jar for spark.read(ability)|
 |[#10945](https://github.com/NVIDIA/spark-rapids/pull/10945)|Add Support for Multiple Filtering Keys for Subquery Broadcast|
 |[#10871](https://github.com/NVIDIA/spark-rapids/pull/10871)|Add classloader diagnostics to initShuffleManager error message|
 |[#10933](https://github.com/NVIDIA/spark-rapids/pull/10933)|Fixed Databricks build|
+|[#10929](https://github.com/NVIDIA/spark-rapids/pull/10929)|Append new authorized user to blossom-ci whitelist [skip ci]|
 
 ## Release 24.06
 
