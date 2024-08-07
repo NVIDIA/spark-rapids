@@ -51,7 +51,7 @@
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
-            <source>${project.build.outputDirectory}/spark-rapids-default-configs.json</source>
+            <source>${project.build.directory}/spark-rapids-default-configs.json</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
     </files>

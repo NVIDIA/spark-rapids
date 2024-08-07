@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids.tests
 
-import org.apache.commons.lang3.reflect.MethodUtils
-
 import com.nvidia.spark.rapids.ShimReflectionUtils
+import org.apache.commons.lang3.reflect.MethodUtils
 
 /**
  * Dump all spark-rapids configs with their defaults.

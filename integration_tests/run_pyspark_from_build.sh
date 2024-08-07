@@ -223,7 +223,7 @@ else
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
-    DEFAULT_CONFIGS_PATH="${TARGET_DIR}"/../../dist/target/spark-rapids-default-configs.json
+    DEFAULT_CONFIGS_PATH=${DEFAULT_CONFIGS_PATH:-${TARGET_DIR}/spark-rapids-default-configs.json}
     TEST_COMMON_OPTS=(-v
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
@@ -233,7 +233,7 @@ else
           "$TEST_ARGS"
           $RUN_TEST_PARAMS
           --junitxml=TEST-pytest-`date +%s%N`.xml
-          --default_configs_path="${TARGET_DIR}/spark-rapids-default-configs.json"
+          --default_configs_path="${DEFAULT_CONFIGS_PATH}"
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}

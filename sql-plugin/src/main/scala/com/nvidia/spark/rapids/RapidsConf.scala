@@ -21,7 +21,6 @@ import java.util
 import java.util.Locale
 
 import ai.rapids.cudf.Cuda
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 import org.json4s.DefaultFormats
@@ -2532,48 +2531,25 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
   }
   def main(args: Array[String]): Unit = {
-    if (args.length < 1) {
-      System.err.println(s"Usage: ${this.getClass.getCanonicalName} {command} <argument> ...")
+    if (args.length < 2) {
+      System.err.println(s"Usage: ${this.getClass.getCanonicalName}" +
+        s" {common_configs_path} {advanced_configs_path}")
       System.exit(1)
     }
 
-    val command = args(0)
-
-    command match {
-      case "help" =>
-        if (args.length < 3) {
-          System.err.println(s"Usage: ${this.getClass.getCanonicalName} ${command}" +
-            s" {common_configs_path} {advanced_configs_path}")
-          System.exit(1)
-        }
-
-        // Include the configs in PythonConfEntries
-        com.nvidia.spark.rapids.python.PythonConfEntries.init()
-        val configs = new FileOutputStream(new File(args(1)))
-        Console.withOut(configs) {
-          Console.withErr(configs) {
-            RapidsConf.helpCommon(true)
-          }
-        }
-        val advanced = new FileOutputStream(new File(args(2)))
-        Console.withOut(advanced) {
-          Console.withErr(advanced) {
-            RapidsConf.helpAdvanced(true)
-          }
-        }
-      case "dump-default-configs" =>
-        if (args.length < 3) {
-          System.err.println(s"Usage: ${this.getClass.getCanonicalName} ${command}" +
-            s" {format} {output_path}")
-          System.exit(1)
-        }
-
-        val format: RapidsConf.Format.Value =
-          RapidsConf.Format.withName(args(1).toUpperCase(Locale.US))
-        val outputPath = args(2)
-
-        println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
-        RapidsConf.dumpAllConfigsWithDefault(format, outputPath)
+    // Include the configs in PythonConfEntries
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
+    val configs = new FileOutputStream(new File(args(0)))
+    Console.withOut(configs) {
+      Console.withErr(configs) {
+        RapidsConf.helpCommon(true)
+      }
+    }
+    val advanced = new FileOutputStream(new File(args(1)))
+    Console.withOut(advanced) {
+      Console.withErr(advanced) {
+        RapidsConf.helpAdvanced(true)
+      }
     }
   }
 
@@ -2585,17 +2561,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   def dumpConfigsWithDefault(args: Array[String]): Unit = {
     import com.nvidia.spark.rapids.Arm._
 
-    val format = Format.withName(args(0).toUpperCase(java.util.Locale.US))
+    val format = Format.withName(args(0).toUpperCase(Locale.US))
     val outputPath = args(1)
 
     println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
 
     val allConfs = getAllConfigsWithDefault
-    withResource(new java.io.FileOutputStream(outputPath)) { fos =>
-      withResource(new java.io.BufferedOutputStream(fos)) { bos =>
+    withResource(new FileOutputStream(outputPath)) { fos =>
+      withResource(new BufferedOutputStream(fos)) { bos =>
         format match {
           case Format.PLAIN =>
-            withResource(new java.io.DataOutputStream(bos)) { dos =>
+            withResource(new DataOutputStream(bos)) { dos =>
               allConfs.foreach( { case (k, v) =>
                 val valStr = v match {
                   case Some(optVal) => optVal.toString
@@ -2611,9 +2587,9 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
               })
             }
           case Format.JSON =>
-            implicit val formats = org.json4s.DefaultFormats
-            bos.write(org.json4s.jackson.Serialization.writePretty(allConfs)
-              .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            implicit val formats = DefaultFormats
+            bos.write(writePretty(allConfs)
+              .getBytes(StandardCharsets.UTF_8))
           case _ =>
             System.err.println(s"Unknown format: ${format}")
         }

@@ -106,16 +106,9 @@
                                     classpathref="maven.compile.classpath"
                                     fork="true">
                                     <arg value="json"/>
-                                    <arg value="${project.build.outputDirectory}/spark-rapids-default-configs.json"/>
+                                    <arg value="${project.build.directory}/spark-rapids-default-configs.json"/>
                                 </java>
                             </target>
-                            <!--                            <includeProjectDependencies>true</includeProjectDependencies>-->
-<!--                            <mainClass>com.nvidia.spark.rapids.tests.DumpDefaultConfigs</mainClass>-->
-<!--                            <classpathScope>provided</classpathScope>-->
-<!--                            <arguments>-->
-<!--                                <argument>json</argument>-->
-<!--                                <argument>${spark.rapids.source.basedir}/${rapids.module}/target/spark-rapids-default-configs.json</argument>-->
-<!--                            </arguments>-->
                         </configuration>
                     </execution>
                 </executions>
