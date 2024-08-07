@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import org.apache.spark.sql.vectorized.ColumnVector
 
 object GpuColumnVectorUtils {
   lazy val extractHostColumnsMethod: Method = ShimLoader.loadGpuColumnVector()
-    .getDeclaredMethod("extractHostColumns", classOf[Table], classOf[Array[DataType]])
+      .getDeclaredMethod("extractHostColumns", classOf[Table], classOf[Array[DataType]])
 
   /**
    * Extract the columns from a table and convert them to RapidsHostColumnVector.
@@ -37,5 +37,4 @@ object GpuColumnVectorUtils {
     val columnVectors = extractHostColumnsMethod.invoke(null, table, colType)
     columnVectors.asInstanceOf[Array[ColumnVector]]
   }
-
 }

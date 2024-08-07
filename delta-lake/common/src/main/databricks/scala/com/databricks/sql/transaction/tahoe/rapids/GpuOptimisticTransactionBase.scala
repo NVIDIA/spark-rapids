@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -100,7 +100,7 @@ abstract class GpuOptimisticTransactionBase
         GpuAlias(GpuEmpty2Null(p), p.name)()
       case attr => attr
     }
-    if (needConvert) GpuProjectExec(projectList.toList, plan)() else plan
+    if (needConvert) GpuProjectExec(projectList.toList, plan) else plan
   }
 
   /**

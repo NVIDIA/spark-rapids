@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@ import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableColumn
 
+import org.apache.spark.sql.catalyst.expressions.{Expression, MapFromArrays}
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuMapFromArrays
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.DataType
 
@@ -173,4 +175,13 @@ object GpuMapUtils {
         "the key inserted at last takes precedence.")
   }
 
+}
+
+case class GpuMapFromArraysMeta(expr: MapFromArrays,
+                                override val conf: RapidsConf,
+                                override val parent: Option[RapidsMeta[_, _, _]],
+                                rule: DataFromReplacementRule)
+  extends BinaryExprMeta[MapFromArrays](expr, conf, parent, rule) {
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+    GpuMapFromArrays(lhs, rhs)
 }

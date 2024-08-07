@@ -35,6 +35,7 @@ import ai.rapids.cudf.NvtxColor;
 import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Table;
 import com.nvidia.spark.rapids.jni.RowConversion;
+import com.nvidia.spark.rapids.shims.CudfUnsafeRow;
 
 import org.apache.spark.TaskContext;
 import org.apache.spark.sql.catalyst.InternalRow;

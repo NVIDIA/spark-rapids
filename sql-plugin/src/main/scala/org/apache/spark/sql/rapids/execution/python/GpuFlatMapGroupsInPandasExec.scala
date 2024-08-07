@@ -98,7 +98,7 @@ case class GpuFlatMapGroupsInPandasExec(
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
     Seq(groupingAttributes.map(SortOrder(_, Ascending)))
 
-  private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
+  private val udf = func.asInstanceOf[GpuPythonUDF]
 
   // One batch as input to keep the integrity for each group
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
@@ -111,7 +111,7 @@ case class GpuFlatMapGroupsInPandasExec(
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+    val chainedFunc = Seq((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id))
     val localOutput = output
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.

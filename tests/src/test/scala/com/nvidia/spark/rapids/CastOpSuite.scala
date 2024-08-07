@@ -306,7 +306,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row], 
+  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row],
       fromGpu: Array[Row]): Unit = {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
@@ -438,12 +438,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast float to string") {
-    testCastToString[Float](DataTypes.FloatType, comparisonFunc = 
+    testCastToString[Float](DataTypes.FloatType, comparisonFunc =
         Some(compareStringifiedFloats(true)))
   }
 
   test("cast double to string") {
-    testCastToString[Double](DataTypes.DoubleType, comparisonFunc = 
+    testCastToString[Double](DataTypes.DoubleType, comparisonFunc =
         Some(compareStringifiedFloats(false)))
   }
 
@@ -693,6 +693,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.FloatType, scale,
         customDataGenerator = Some(floatsIncludeNaNs))
+      assertThrows[Throwable] {
+        testCastToDecimal(DataTypes.FloatType, scale,
+          customDataGenerator = Some(floatsIncludeNaNs),
+          ansiEnabled = true)
+      }
     }
   }
 
@@ -710,6 +715,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.DoubleType, scale,
         customDataGenerator = Some(doublesIncludeNaNs))
+      assertThrows[Throwable] {
+        testCastToDecimal(DataTypes.DoubleType, scale,
+          customDataGenerator = Some(doublesIncludeNaNs),
+          ansiEnabled = true)
+      }
     }
   }
 
@@ -727,6 +737,32 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
     testCastToDecimal(DataTypes.DoubleType, precision = 9, scale = 6,
       customDataGenerator = Option(genDoubles))
+  }
+
+  test("cast float/double to decimal (borderline value rounding)") {
+    val genFloats_12_7: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(3527.61953125f))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 12, scale = 7,
+      customDataGenerator = Option(genFloats_12_7))
+
+    val genDoubles_12_7: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(3527.61953125))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 12, scale = 7,
+      customDataGenerator = Option(genDoubles_12_7))
+
+    val genFloats_3_1: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(9.95f))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 3, scale = 1,
+      customDataGenerator = Option(genFloats_3_1))
+
+    val genDoubles_3_1: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(9.95))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 3, scale = 1,
+      customDataGenerator = Option(genDoubles_3_1))
   }
 
   test("cast decimal to decimal") {
@@ -967,7 +1003,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     dataType: DataType,
     scale: Int,
     precision: Int = ai.rapids.cudf.DType.DECIMAL128_MAX_PRECISION,
-    floatEpsilon: Double = 1e-9,
+    floatEpsilon: Double = 1e-14,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,

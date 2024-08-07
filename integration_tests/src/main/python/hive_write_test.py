@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -119,39 +119,21 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
             spark_tmp_table_factory.get(), opts_string, storage, data_table)),
         fallback_class)
 
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-@pytest.mark.skipif(not (is_hive_available() and is_spark_33X() and not is_databricks122_or_later()),
+@ignore_order
+@pytest.mark.skipif(not (is_hive_available() and is_spark_330_or_later() and not is_databricks122_or_later()),
                     reason="Requires Hive and Spark 3.3.X to write bucketed Hive tables")
-@pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
-def test_optimized_hive_bucketed_fallback_33X(gens, storage, spark_tmp_table_factory):
+def test_optimized_hive_ctas_bucketed_table(storage, spark_tmp_table_factory):
     in_table = spark_tmp_table_factory.get()
-    with_cpu_session(lambda spark: three_col_df(spark, int_gen, int_gen, int_gen).createOrReplaceTempView(in_table))
-    assert_gpu_fallback_collect(
-        lambda spark: spark.sql(
-            """CREATE TABLE {} STORED AS {}
-            CLUSTERED BY (b) INTO 3 BUCKETS
-            AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)),
-        "DataWritingCommandExec")
-
-# Since Spark 3.4.0, the internal "SortExec" will be pulled out by default
-# from the FileFormatWriter. Then it is visible in the planning stage.
-@allow_non_gpu("DataWritingCommandExec", "SortExec", "WriteFilesExec")
-@pytest.mark.skipif(not (is_hive_available() and (is_spark_340_or_later() or is_databricks122_or_later())),
-                    reason="Requires Hive and Spark 3.4+ to write bucketed Hive tables with SortExec pulled out")
-@pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
-@pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
-@pytest.mark.parametrize("planned_write", [True, False], ids=idfn)
-def test_optimized_hive_bucketed_fallback(gens, storage, planned_write, spark_tmp_table_factory):
-    in_table = spark_tmp_table_factory.get()
-    with_cpu_session(lambda spark: three_col_df(spark, int_gen, int_gen, int_gen).createOrReplaceTempView(in_table))
-    assert_gpu_fallback_collect(
-        lambda spark: spark.sql(
-            """CREATE TABLE {} STORED AS {}
-            CLUSTERED BY (b) INTO 3 BUCKETS
-            AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)),
-        "ExecutedCommandExec",
-        {"spark.sql.optimizer.plannedWrite.enabled": planned_write})
+    # Supported types of Hive hash are all checked in datasourcev2_write_test, so here just
+    # verify the basic functionality by only the int_gen.
+    with_cpu_session(lambda spark: three_col_df(
+        spark, int_gen, int_gen, int_gen).createOrReplaceTempView(in_table))
+    assert_gpu_and_cpu_sql_writes_are_equal_collect(
+        spark_tmp_table_factory,
+        lambda spark, out_table: """CREATE TABLE {} STORED AS {}
+            CLUSTERED BY (b) INTO 3 BUCKETS AS SELECT * FROM {}""".format(
+            out_table, storage, in_table))
 
 def test_hive_copy_ints_to_long(spark_tmp_table_factory):
     do_hive_copy(spark_tmp_table_factory, int_gen, "INT", "BIGINT")

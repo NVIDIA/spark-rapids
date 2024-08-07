@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,8 @@ object Delta24xProvider extends DeltaIOProvider {
 
   override def getReadFileFormat(format: FileFormat): FileFormat = {
     val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
-    GpuDelta24xParquetFileFormat(cpuFormat.metadata, cpuFormat.isSplittable)
+    GpuDelta24xParquetFileFormat(cpuFormat.metadata, cpuFormat.isSplittable,
+      cpuFormat.disablePushDowns, cpuFormat.broadcastDvMap)
   }
 
   override def convertToGpu(

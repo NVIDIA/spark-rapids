@@ -15,8 +15,8 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-import pyspark.sql.functions as f
-from marks import ignore_order
+from marks import disable_ansi_mode, ignore_order
+from pyspark.sql import functions as f
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Many Spark versions have issues sorting large decimals,
@@ -38,6 +38,10 @@ pre_pro_sqls = [
     "select count(b), count(c) from pre_pro group by cube((a+b), if((a+b)>100, c, null))",
     "select count(b), count(c) from pre_pro group by rollup((a+b), if((a+b)>100, c, null))"]
 
+
+@disable_ansi_mode  # Cannot run in ANSI mode until COUNT aggregation is supported.
+                    # See https://github.com/NVIDIA/spark-rapids/issues/5114
+                    # Additionally, this test should protect against overflow on (a+b).
 @ignore_order(local=True)
 @pytest.mark.parametrize('sql', pre_pro_sqls, ids=["distinct_agg", "cube", "rollup"])
 def test_expand_pre_project(sql):

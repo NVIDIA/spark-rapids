@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.rapids.GpuMurmur3Hash
+import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuPmod}
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -59,6 +59,10 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
       sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
     }
   }
+
+  def partitionIdExpression: GpuExpression = GpuPmod(
+    GpuMurmur3Hash(expressions, GpuHashPartitioningBase.DEFAULT_HASH_SEED),
+    GpuLiteral(numPartitions))
 }
 
 object GpuHashPartitioningBase {

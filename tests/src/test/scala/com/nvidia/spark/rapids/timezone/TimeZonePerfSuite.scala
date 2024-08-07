@@ -35,7 +35,7 @@ import org.apache.spark.sql.types._
  * Usage:
  *
  *   argLine="-DTZs=Asia/Shanghai,Japan -DenableTimeZonePerf=true" \
- *   mvn test -Dbuildver=311 -DwildcardSuites=com.nvidia.spark.rapids.timezone.TimeZonePerfSuite
+ *   mvn test -Dbuildver=320 -DwildcardSuites=com.nvidia.spark.rapids.timezone.TimeZonePerfSuite
  * Note:
  *   Generate a Parquet file with 6 columns:
  *     - c_ts: timestamp column

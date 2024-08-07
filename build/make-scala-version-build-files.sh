@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ set -e
 
 VALID_VERSIONS=( 2.13 )
 declare -A DEFAULT_SPARK
-DEFAULT_SPARK[2.12]="spark311"
+DEFAULT_SPARK[2.12]="spark320"
 DEFAULT_SPARK[2.13]="spark330"
 
 usage() {

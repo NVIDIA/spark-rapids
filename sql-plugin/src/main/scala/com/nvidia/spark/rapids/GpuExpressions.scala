@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -182,7 +182,7 @@ trait GpuExpression extends Expression {
    * If this returns true then tiered project will stop looking to combine expressions when
    * this is seen.
    */
-  def disableTieredProjectCombine: Boolean = hasSideEffects
+  def disableTieredProjectCombine: Boolean = false
 
   /**
    * Whether an expression itself is non-deterministic when its "deterministic" is false,

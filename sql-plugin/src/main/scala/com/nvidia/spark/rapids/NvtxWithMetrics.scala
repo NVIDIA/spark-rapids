@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,26 +32,32 @@ object NvtxWithMetrics {
  *  by the amount of time spent in the range
  */
 class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
-    extends NvtxRange(name, color) {
+  extends NvtxRange(name, color) {
 
+  val needTracks = metrics.map(_.tryActivateTimer())
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
-    metrics.foreach { metric =>
-      metric += time
+    metrics.toSeq.zip(needTracks).foreach { pair =>
+      if (pair._2) {
+        pair._1.deactivateTimer(time)
+      }
     }
     super.close()
   }
 }
 
 class MetricRange(val metrics: GpuMetric*) extends AutoCloseable {
+  val needTracks = metrics.map(_.tryActivateTimer())
   private val start = System.nanoTime()
 
   override def close(): Unit = {
     val time = System.nanoTime() - start
-    metrics.foreach { metric =>
-      metric += time
+    metrics.toSeq.zip(needTracks).foreach { pair =>
+      if (pair._2) {
+        pair._1.deactivateTimer(time)
+      }
     }
   }
 }

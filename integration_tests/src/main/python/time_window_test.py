@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ from marks import ignore_order, allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 from pyspark.sql.window import Window
+from spark_session import is_before_spark_330
 
 # do it over a day so we have more chance of overlapping values
 _restricted_start = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -43,14 +44,35 @@ def test_grouped_tumbling_window(data_gen):
 def test_grouped_sliding_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, row_gen).groupBy(f.window('ts', '5 hour', '1 hour')).agg(f.max("data").alias("max_data")))
+            lambda spark: gen_df(spark, row_gen).groupBy(f.window('ts', '5 hour', '1 hour')).agg(f.max("data").alias("max_data")))
 
-@pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
+
+@pytest.mark.parametrize('is_ansi_enabled',
+                         [False,
+                          pytest.param(True,
+                                       marks=pytest.mark.skipif(
+                                        condition=is_before_spark_330(),
+                                        reason="Prior to Spark 3.3.0, time interval calculations included "
+                                               "multiplication/division. This makes interval operations susceptible "
+                                               "to overflow-related exceptions when in ANSI mode. "
+                                               "Spark versions >= 3.3.0 do the same calculations via Mod. "
+                                               "Running this test in ANSI mode on Spark < 3.3.0 will cause aggregation "
+                                               "operations like Product to fall back to CPU. " 
+                                               "See https://github.com/NVIDIA/spark-rapids/issues/5114."))])
+@pytest.mark.parametrize('data_gen', [byte_gen, long_gen, string_gen], ids=idfn)
 @ignore_order
-def test_grouped_sliding_window_array(data_gen):
-    row_gen = StructGen([['ts', _restricted_ts_gen],['data', ArrayGen(data_gen)]], nullable=False)
+def test_grouped_sliding_window_array(data_gen, is_ansi_enabled):
+    """
+    When in ANSI mode, only valid indices are used.
+    Tests for accessing arrays with invalid indices are done in array_test.py.
+    """
+    array_gen = ArrayGen(data_gen, min_length=4 if is_ansi_enabled else 0)
+    conf = {'spark.sql.ansi.enabled': is_ansi_enabled}
+    row_gen = StructGen([['ts', _restricted_ts_gen], ['data', array_gen]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, row_gen).groupBy(f.window('ts', '5 hour', '1 hour')).agg(f.max(f.col("data")[3]).alias("max_data")))
+            lambda spark: gen_df(spark, row_gen).groupBy(f.window('ts', '5 hour', '1 hour')).agg(f.max(f.col("data")[3]).alias("max_data")),
+            conf=conf)
+
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order

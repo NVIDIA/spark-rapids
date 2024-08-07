@@ -15,6 +15,7 @@
 import copy
 from datetime import date, datetime, timedelta, timezone
 from decimal import *
+from enum import Enum
 import math
 from pyspark.context import SparkContext
 from pyspark.sql import Row
@@ -159,7 +160,8 @@ class ConvertGen(DataGen):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+        return (super()._cache_repr() + '(' + self._child_gen._cache_repr() +
+                ',' + str(self._func.__code__) + ')' )
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -667,7 +669,10 @@ class ArrayGen(DataGen):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+        return (super()._cache_repr() + '(' + self._child_gen._cache_repr() +
+                ',' + str(self._min_length) + ',' + str(self._max_length) + ',' +
+                str(self.all_null) + ',' + str(self.convert_to_tuple) + ')')
+
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -701,7 +706,8 @@ class MapGen(DataGen):
         return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
+        return (super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() +
+                ',' + str(self._min_length) + ',' + str(self._max_length) + ')')
 
     def start(self, rand):
         self._key_gen.start(rand)
@@ -739,8 +745,8 @@ class MapGen(DataGen):
 
 class NullGen(DataGen):
     """Generate NullType values"""
-    def __init__(self):
-        super().__init__(NullType(), nullable=True)
+    def __init__(self, dt = NullType()):
+        super().__init__(dt, nullable=True)
 
     def start(self, rand):
         def make_null():
@@ -769,12 +775,13 @@ class DayTimeIntervalGen(DataGen):
         self._min_micros = (math.floor(min_value.total_seconds()) * 1000000) + min_value.microseconds
         self._max_micros = (math.floor(max_value.total_seconds()) * 1000000) + max_value.microseconds
         fields = ["day", "hour", "minute", "second"]
-        start_index = fields.index(start_field)
-        end_index = fields.index(end_field)
-        if start_index > end_index:
+        self._start_index = fields.index(start_field)
+        self._end_index = fields.index(end_field)
+        if self._start_index > self._end_index:
             raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field index should <= end '
                                'field index'.format(start_field, end_field, fields))
-        super().__init__(DayTimeIntervalType(start_index, end_index), nullable=nullable, special_cases=special_cases)
+        super().__init__(DayTimeIntervalType(self._start_index, self._end_index), nullable=nullable,
+                         special_cases=special_cases)
 
     def _gen_random(self, rand):
         micros = rand.randint(self._min_micros, self._max_micros)
@@ -784,7 +791,8 @@ class DayTimeIntervalGen(DataGen):
         return timedelta(microseconds=micros)
     
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + ')'
+        return (super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) +
+                ',' + str(self._start_index) + ',' + str(self._end_index) + ')')
 
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
@@ -1037,6 +1045,22 @@ def gen_scalars_for_sql(data_gen, count, seed=None, force_no_nulls=False):
     spark_type = data_gen.data_type
     return (_convert_to_sql(spark_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
+class EmptyStringType(Enum):
+    ALL_NULL = 1
+    ALL_EMPTY = 2
+    MIXED = 3
+
+all_empty_string_types = EmptyStringType.__members__.values()
+
+empty_string_gens_map = {
+  EmptyStringType.ALL_NULL : lambda: NullGen(StringType()),
+  EmptyStringType.ALL_EMPTY : lambda: StringGen("", nullable=False),
+  EmptyStringType.MIXED : lambda: StringGen("", nullable=True)
+}
+
+def mk_empty_str_gen(empty_type):
+    return empty_string_gens_map[empty_type]()
+
 byte_gen = ByteGen()
 short_gen = ShortGen()
 int_gen = IntegerGen()
@@ -1157,6 +1181,7 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
+ansi_disabled_conf = {'spark.sql.ansi.enabled': 'false'}
 legacy_interval_enabled_conf = {'spark.sql.legacy.interval.enabled': 'true'}
 
 def copy_and_update(conf, *more_confs):

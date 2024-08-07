@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 /**
  * Note that the name is prefixed with "Shimmed" such that wildcard rules
- * under unshimmed-common-from-spark311.txt don't get confused and pick this class to be
+ * under unshimmed-common-from-spark320.txt don't get confused and pick this class to be
  * un-shimmed.
  */
 class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallbackBase {

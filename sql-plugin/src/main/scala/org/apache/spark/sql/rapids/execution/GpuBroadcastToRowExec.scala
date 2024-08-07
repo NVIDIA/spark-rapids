@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
@@ -46,10 +45,8 @@ import org.apache.spark.util.ThreadUtils
 case class GpuBroadcastToRowExec(
   buildKeys: Seq[Expression],
   broadcastMode: BroadcastMode,
-  child: SparkPlan)(index: Option[Int], modeKeys: Option[Seq[Expression]])
+  child: SparkPlan)
   extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec with Logging {
-
-  override def otherCopyArgs: Seq[AnyRef] = index :: modeKeys :: Nil
 
   @transient
   private val timeout: Long = conf.broadcastTimeout
@@ -79,37 +76,21 @@ case class GpuBroadcastToRowExec(
 
   override def doCanonicalize(): SparkPlan = {
     val keys = buildKeys.map(k => QueryPlan.normalizeExpressions(k, child.output))
-    GpuBroadcastToRowExec(keys, broadcastMode, child.canonicalized)(index, modeKeys)
+    GpuBroadcastToRowExec(keys, broadcastMode, child.canonicalized)
   }
-
 
   private def projectSerializedBatch(
       serBatch: SerializeConcatHostBuffersDeserializeBatch): Any = {
     val beforeCollect = System.nanoTime()
 
-    // Creates projection to extract target fields from Row, as what Spark does.
-    // Note that unlike Spark, the GPU broadcast data has not applied the key expressions from
-    // the HashedRelation, so that is applied here if necessary to ensure the proper values
-    // are being extracted. The CPU already has the key projections applied in the broadcast
-    // data and thus does not have similar logic here.
-    val broadcastModeProject = modeKeys.map { keyExprs =>
-      UnsafeProjection.create(keyExprs)
-    }
-
     // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
     // projection. We should NOT run any device operation on the driver node.
     val result = withResource(serBatch.hostBatch) { hostBatch =>
+      val projection = UnsafeProjection.create((0 until hostBatch.numCols()).map { idx =>
+        BoundReference(idx, hostBatch.column(idx).dataType, nullable = true)
+      }.toSeq)
       hostBatch.rowIterator().asScala.map { row =>
-        val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
-        broadcastMode match {
-          case HashedRelationBroadcastMode(_, _) =>
-            broadcastRow.copy()
-          case _ =>
-            val idx = index.get
-            val rowProject = UnsafeProjection.create(
-              BoundReference(idx, buildKeys(idx).dataType, buildKeys(idx).nullable))
-            rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
-        }
+        projection(row).copy().asInstanceOf[InternalRow]
       }.toArray // force evaluation so we don't close hostBatch too soon
     }
 

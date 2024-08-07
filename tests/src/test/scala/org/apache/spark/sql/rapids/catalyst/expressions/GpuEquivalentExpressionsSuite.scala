@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,8 +59,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     assert(equivalence.getAllExprStates().head.useCount == 3)
     assert(equivalence.getAllExprStates().head.expr eq oneA)
 
-    val add1 = GpuAdd(oneA, oneB, false)
-    val add2 = GpuAdd(oneA, oneB, false)
+    val add1 = GpuAdd(oneA, oneB, failOnError = false)
+    val add2 = GpuAdd(oneA, oneB, failOnError = false)
 
     equivalence.addExpr(add1)
     equivalence.addExpr(add2)
@@ -75,8 +75,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     val oneA = AttributeReference("oneA", IntegerType)()
     val oneB = AttributeReference("oneB", IntegerType)()
 
-    val add1 = GpuAdd(oneA, oneB, false)
-    val add2 = GpuAdd(oneA, oneB, false)
+    val add1 = GpuAdd(oneA, oneB, failOnError = false)
+    val add2 = GpuAdd(oneA, oneB, failOnError = false)
 
     val initialExprs = Seq(add1, add2)
     val inputAttrs = AttributeSeq(Seq(oneA, oneB))
@@ -90,9 +90,9 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     val one = GpuLiteral(1)
     val two = GpuLiteral(2)
 
-    val add = GpuAdd(one, two, false)
-    val abs = GpuAbs(add, false)
-    val add2 = GpuAdd(add, add, false)
+    val add = GpuAdd(one, two, failOnError = false)
+    val abs = GpuAbs(add, failOnError = false)
+    val add2 = GpuAdd(add, add, failOnError = false)
 
     var equivalence = new GpuEquivalentExpressions
     equivalence.addExprTree(add)
@@ -109,10 +109,10 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     //   sqrt( (one * two) * (one * two) )
     //   (one * two) + sqrt( (one * two) * (one * two) )
     equivalence = new GpuEquivalentExpressions
-    val mul = GpuMultiply(one, two)
-    val mul2 = GpuMultiply(mul, mul)
+    val mul = GpuMultiply(one, two, failOnError = false)
+    val mul2 = GpuMultiply(mul, mul, failOnError = false)
     val sqrt = GpuSqrt(mul2)
-    val sum = GpuAdd(mul2, sqrt, false)
+    val sum = GpuAdd(mul2, sqrt, failOnError = false)
     equivalence.addExprTree(mul)
     equivalence.addExprTree(mul2)
     equivalence.addExprTree(sqrt)
@@ -134,10 +134,10 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     //   (one * two) + sqrt( (one * two) * (one * two) )
     val one = AttributeReference("one", DoubleType)()
     val two = AttributeReference("two", DoubleType)()
-    val mul = GpuMultiply(one, two)
-    val mul2 = GpuMultiply(mul, mul)
+    val mul = GpuMultiply(one, two, failOnError = false)
+    val mul2 = GpuMultiply(mul, mul, failOnError = false)
     val sqrt = GpuSqrt(mul2)
-    val sum = GpuAdd(mul2, sqrt, false)
+    val sum = GpuAdd(mul2, sqrt, failOnError = false)
 
     // (one * two), (one * two) * (one * two) and sqrt( (one * two) * (one * two) ) are all subs
     val initialExprs = Seq(mul, mul2, sqrt, sum)
@@ -164,9 +164,9 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     val two = AttributeReference("two", IntegerType)()
     val three = AttributeReference("three", IntegerType)()
     val four = AttributeReference("four", IntegerType)()
-    val add1 = GpuAdd(one, two, false)
-    val add2 = GpuAdd(add1, three, false)
-    val add3 = GpuAdd(add2, four, false)
+    val add1 = GpuAdd(one, two, failOnError = false)
+    val add2 = GpuAdd(add1, three, failOnError = false)
+    val add3 = GpuAdd(add2, four, failOnError = false)
 
     // (one + two), ((one + two) + three) are both subs
     val initialExprs = Seq(add1, add2, add3)
@@ -178,7 +178,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
   }
 
   test("Gpu Expression equivalence - non deterministic") {
-    val sum = GpuAdd(GpuMonotonicallyIncreasingID(), GpuMonotonicallyIncreasingID(), false)
+    val sum = GpuAdd(GpuMonotonicallyIncreasingID(),
+      GpuMonotonicallyIncreasingID(), failOnError = false)
     val equivalence = new GpuEquivalentExpressions
     equivalence.addExpr(sum)
     equivalence.addExpr(sum)
@@ -186,7 +187,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
   }
 
   test("Get Expression Tiers - non deterministic") {
-    val sum = GpuAdd(GpuMonotonicallyIncreasingID(), GpuMonotonicallyIncreasingID(), false)
+    val sum = GpuAdd(GpuMonotonicallyIncreasingID(),
+      GpuMonotonicallyIncreasingID(), failOnError = false)
     val initialExprs = Seq(sum)
     val inputAttrs = AttributeSeq(Seq.empty)
     validateExpressionTiers(initialExprs, inputAttrs,
@@ -195,8 +197,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
       Seq.empty) // No modified expressions
   }
 
-  test("Children of conditional expressions: GpuIf") {
-    val add = GpuAdd(GpuLiteral(1), GpuLiteral(2), false)
+  test("Children of conditional expressions: GpuIf with side effects") {
+    val add = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = true)
     val condition = GpuGreaterThan(add, GpuLiteral(3))
 
     val ifExpr1 = GpuIf(condition, add, add)
@@ -212,8 +214,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     assert(equivalence1.getAllExprStates().filter(_.useCount == 1).exists(_.expr eq condition))
 
     // Repeated `add` is only in one branch, so we don't count it.
-    val ifExpr2 = GpuIf(condition, GpuAdd(GpuLiteral(1), GpuLiteral(3), false),
-      GpuAdd(add, add, false))
+    val ifExpr2 = GpuIf(condition, GpuAdd(GpuLiteral(1), GpuLiteral(3), failOnError = true),
+      GpuAdd(add, add, failOnError = true))
     val equivalence2 = new GpuEquivalentExpressions
     equivalence2.addExprTree(ifExpr2)
 
@@ -235,11 +237,55 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     assert(equivalence3.getAllExprStates().filter(_.useCount == 1).exists(_.expr eq ifExpr3))
   }
 
-  test("Get Expression Tiers GpuIf") {
+
+  test("Children of conditional expressions: GpuIf no side effects") {
+    val add = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = false)
+    val condition = GpuGreaterThan(add, GpuLiteral(3))
+
+    val ifExpr1 = GpuIf(condition, add, add)
+    val equivalence1 = new GpuEquivalentExpressions
+    equivalence1.addExprTree(ifExpr1)
+
+    // `add` is in both two branches of `If` and predicate.
+    assert(equivalence1.getAllExprStates().count(_.useCount == 3) == 1)
+    assert(equivalence1.getAllExprStates().filter(_.useCount == 3).head.expr eq add)
+    // one-time expressions: only ifExpr and its predicate expression
+    assert(equivalence1.getAllExprStates().count(_.useCount == 1) == 2)
+    assert(equivalence1.getAllExprStates().filter(_.useCount == 1).exists(_.expr eq ifExpr1))
+    assert(equivalence1.getAllExprStates().filter(_.useCount == 1).exists(_.expr eq condition))
+
+    // Repeated `add` is only in one branch, so we don't count it.
+    val ifExpr2 = GpuIf(condition, GpuAdd(GpuLiteral(1), GpuLiteral(3), failOnError = false),
+      GpuAdd(add, add, failOnError = false))
+    val equivalence2 = new GpuEquivalentExpressions
+    equivalence2.addExprTree(ifExpr2)
+
+    assert(equivalence2.getAllExprStates(1).length == 1)
+    assert(equivalence2.getAllExprStates().count(_.useCount == 1) == 4)
+
+    val ifExpr3 = GpuIf(condition, ifExpr1, ifExpr1)
+    val equivalence3 = new GpuEquivalentExpressions
+    equivalence3.addExprTree(ifExpr3)
+
+    // add: 3
+    assert(equivalence3.getAllExprStates().count(_.useCount == 3) == 1)
+    assert(equivalence3.getAllExprStates().filter(_.useCount == 3).exists(_.expr eq add))
+
+    // `ifExpr1`: 2, `condition`: 2
+    assert(equivalence3.getAllExprStates().count(_.useCount == 2) == 2)
+    assert(equivalence3.getAllExprStates().filter(_.useCount == 2).exists(_.expr eq condition))
+    assert(equivalence3.getAllExprStates().filter(_.useCount == 2).exists(_.expr eq ifExpr1))
+
+    // `ifExpr3`
+    assert(equivalence3.getAllExprStates().count(_.useCount == 1) == 1)
+    assert(equivalence3.getAllExprStates().filter(_.useCount == 1).exists(_.expr eq ifExpr3))
+  }
+
+  test("Get Expression Tiers GpuIf no side effects") {
     val one = AttributeReference("one", IntegerType)()
     val two = AttributeReference("two", IntegerType)()
     val three = AttributeReference("three", IntegerType)()
-    val add = GpuAdd(one, two, false)
+    val add = GpuAdd(one, two, failOnError = false)
     val condition = GpuGreaterThan(add, three)
     // if ((one + two) > three) then (one + two) else (one + two)
     // `add` is in both branches of `If` and predicate.
@@ -253,8 +299,48 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
 
     // if ((one + two) > three) then (one + three) else ((one + two) + (one + two))
     // Repeated `add` is only in one branch, so we don't count it.
-    val ifExpr2 = GpuIf(condition, GpuAdd(one, three, false),
-      GpuAdd(add, add, false))
+    val ifExpr2 = GpuIf(condition, GpuAdd(one, three, failOnError = false),
+      GpuAdd(add, add, failOnError = false))
+    val initialExprs2 = Seq(ifExpr2)
+    val inputAttrs2 = AttributeSeq(Seq(one, two, three))
+    validateExpressionTiers(initialExprs2, inputAttrs2,
+      Seq(add), // subexpressions
+      Seq.empty, // Should be unchanged
+      Seq(ifExpr2)) // modified expressions
+
+    // if ((one + two) > three)
+    //   if ((one + two) > three) then (one + two) else (one + two)
+    // else
+    //   if ((one + two) > three) then (one + two) else (one + two)
+    val ifExpr3 = GpuIf(condition, ifExpr1, ifExpr1)
+    val initialExprs3 = Seq(ifExpr3)
+    val inputAttrs3 = AttributeSeq(Seq(one, two, three))
+    validateExpressionTiers(initialExprs3, inputAttrs3,
+      Seq(add, condition), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(condition, ifExpr1, ifExpr3)) // modified expressions
+  }
+
+  test("Get Expression Tiers GpuIf has side effects") {
+    val one = AttributeReference("one", IntegerType)()
+    val two = AttributeReference("two", IntegerType)()
+    val three = AttributeReference("three", IntegerType)()
+    val add = GpuAdd(one, two, failOnError = true)
+    val condition = GpuGreaterThan(add, three)
+    // if ((one + two) > three) then (one + two) else (one + two)
+    // `add` is in both branches of `If` and predicate.
+    val ifExpr1 = GpuIf(condition, add, add)
+    val initialExprs = Seq(ifExpr1)
+    val inputAttrs = AttributeSeq(Seq(one, two, three))
+    validateExpressionTiers(initialExprs, inputAttrs,
+      Seq(add), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(ifExpr1)) // modified expressions
+
+    // if ((one + two) > three) then (one + three) else ((one + two) + (one + two))
+    // Repeated `add` is only in one branch, so we don't count it.
+    val ifExpr2 = GpuIf(condition, GpuAdd(one, three, failOnError = true),
+      GpuAdd(add, add, failOnError = true))
     val initialExprs2 = Seq(ifExpr2)
     val inputAttrs2 = AttributeSeq(Seq(one, two, three))
     validateExpressionTiers(initialExprs2, inputAttrs2,
@@ -275,9 +361,50 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
       Seq(condition, ifExpr1, ifExpr3)) // modified expressions
   }
 
-  test("Children of conditional expressions: GpuCaseWhen") {
-    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), false)
-    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), false)
+  test("Children of conditional expressions: GpuCaseWhen no side effects") {
+    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = false)
+    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), failOnError = false)
+    val conditions1 = (GpuGreaterThan(add2, GpuLiteral(3)), add1) ::
+      (GpuGreaterThan(add2, GpuLiteral(4)), add1) ::
+      (GpuGreaterThan(add2, GpuLiteral(5)), add1) :: Nil
+
+    val caseWhenExpr1 = GpuCaseWhen(conditions1, None)
+    val equivalence1 = new GpuEquivalentExpressions
+    equivalence1.addExprTree(caseWhenExpr1)
+
+    // `add2` is repeatedly in all conditions.
+    assert(equivalence1.getAllExprStates().count(_.useCount == 3) == 2)
+    assert(equivalence1.getAllExprStates().filter(_.useCount == 3).exists(_.expr eq add2))
+    assert(equivalence1.getAllExprStates().filter(_.useCount == 3).exists(_.expr eq add1))
+
+    val conditions2 = (GpuGreaterThan(add1, GpuLiteral(3)), add1) ::
+      (GpuGreaterThan(add2, GpuLiteral(4)), add1) ::
+      (GpuGreaterThan(add2, GpuLiteral(5)), add1) :: Nil
+
+    val caseWhenExpr2 = GpuCaseWhen(conditions2, Some(add1))
+    val equivalence2 = new GpuEquivalentExpressions
+    equivalence2.addExprTree(caseWhenExpr2)
+
+    assert(equivalence2.getAllExprStates().count(_.useCount == 2) == 1)
+    assert(equivalence2.getAllExprStates().filter(_.useCount == 2).head.expr eq add2)
+    assert(equivalence2.getAllExprStates().count(_.useCount == 5) == 1)
+    assert(equivalence2.getAllExprStates().filter(_.useCount == 5).head.expr eq add1)
+
+    val conditions3 = (GpuGreaterThan(add1, GpuLiteral(3)), add2) ::
+      (GpuGreaterThan(add2, GpuLiteral(4)), add1) ::
+      (GpuGreaterThan(add2, GpuLiteral(5)), add1) :: Nil
+
+    val caseWhenExpr3 = GpuCaseWhen(conditions3, None)
+    val equivalence3 = new GpuEquivalentExpressions
+    equivalence3.addExprTree(caseWhenExpr3)
+    assert(equivalence3.getAllExprStates().count(_.useCount == 3) == 2)
+    assert(equivalence3.getAllExprStates().filter(_.useCount == 3).exists(_.expr eq add2))
+    assert(equivalence3.getAllExprStates().filter(_.useCount == 3).exists(_.expr eq add1))
+  }
+
+  test("Children of conditional expressions: GpuCaseWhen with side effects") {
+    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = true)
+    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), failOnError = true)
     val conditions1 = (GpuGreaterThan(add2, GpuLiteral(3)), add1) ::
       (GpuGreaterThan(add2, GpuLiteral(4)), add1) ::
       (GpuGreaterThan(add2, GpuLiteral(5)), add1) :: Nil
@@ -313,15 +440,60 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     assert(equivalence3.getAllExprStates().count(_.useCount == 2) == 0)
   }
 
-  test("Get Expression Tiers - GpuCaseWhen") {
+  test("Get Expression Tiers - GpuCaseWhen no side effects") {
     val one = AttributeReference("one", IntegerType)()
     val two = AttributeReference("two", IntegerType)()
     val three = AttributeReference("three", IntegerType)()
     val four = AttributeReference("four", IntegerType)()
     val five = AttributeReference("five", IntegerType)()
 
-    val add1 = GpuAdd(one, two, false)
-    val add2 = GpuAdd(two, three, false)
+    val add1 = GpuAdd(one, two, failOnError = false)
+    val add2 = GpuAdd(two, three, failOnError = false)
+    val cond1 = GpuGreaterThan(add2, three)
+    val cond2 = GpuGreaterThan(add2, four)
+    val cond3 = GpuGreaterThan(add2, five)
+    val cond4 = GpuGreaterThan(add1, three)
+    val conditions1 = (cond1, add1) :: (cond2, add1) :: (cond3, add1) :: Nil
+    val caseWhenExpr1 = GpuCaseWhen(conditions1, None)
+    val inputAttrs1 = AttributeSeq(Seq(one, two, three, four, five))
+    val initialExprs1 = Seq(caseWhenExpr1)
+    // `add2` is repeatedly in all conditions.
+    validateExpressionTiers(initialExprs1, inputAttrs1,
+      Seq(add2), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(cond1, cond2, cond3, caseWhenExpr1)) // modified expressions
+
+    val conditions2 = (cond4, add1) :: (cond2, add1) :: (cond3, add1) :: Nil
+    val caseWhenExpr2 = GpuCaseWhen(conditions2, Some(add1))
+    val inputAttrs2 = AttributeSeq(Seq(one, two, three, four, five))
+    val initialExprs2 = Seq(caseWhenExpr2)
+    // `add1` is repeatedly in all branch values, and first predicate.
+    validateExpressionTiers(initialExprs2, inputAttrs2,
+      Seq(add1), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(caseWhenExpr2)) // modified expressions
+
+    // Negative case. `add1` or `add2` is not commonly used in all predicates/branch values.
+    val conditions3 = (cond4, add2) :: (cond2, add1) :: (cond3, add1) :: Nil
+    val caseWhenExpr3 = GpuCaseWhen(conditions3, None)
+    val inputAttrs3 = AttributeSeq(Seq(one, two, three, four, five))
+    val initialExprs3 = Seq(caseWhenExpr3)
+    // `add1` is repeatedly in all branch values, and first predicate.
+    validateExpressionTiers(initialExprs3, inputAttrs3,
+      Seq(add1), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(caseWhenExpr3)) // modified expressions
+  }
+
+  test("Get Expression Tiers - GpuCaseWhen with side effects") {
+    val one = AttributeReference("one", IntegerType)()
+    val two = AttributeReference("two", IntegerType)()
+    val three = AttributeReference("three", IntegerType)()
+    val four = AttributeReference("four", IntegerType)()
+    val five = AttributeReference("five", IntegerType)()
+
+    val add1 = GpuAdd(one, two, failOnError = true)
+    val add2 = GpuAdd(two, three, failOnError = true)
     val cond1 = GpuGreaterThan(add2, three)
     val cond2 = GpuGreaterThan(add2, four)
     val cond3 = GpuGreaterThan(add2, five)
@@ -358,12 +530,40 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
       Seq.empty) // modified expressions
   }
 
-  test("Children of conditional expressions: GpuCoalesce") {
-    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), false)
-    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), false)
+  test("Children of conditional expressions: GpuCoalesce no side effects") {
+    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = false)
+    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), failOnError = false)
     val conditions1 = GpuGreaterThan(add2, GpuLiteral(3)) ::
         GpuGreaterThan(add2, GpuLiteral(4)) ::
         GpuGreaterThan(add2, GpuLiteral(5)) :: Nil
+
+    val coalesceExpr1 = GpuCoalesce(conditions1)
+    val equivalence1 = new GpuEquivalentExpressions
+    equivalence1.addExprTree(coalesceExpr1)
+
+    // `add2` is repeatedly in all conditions.
+    assert(equivalence1.getAllExprStates().count(_.useCount == 3) == 1)
+    assert(equivalence1.getAllExprStates().filter(_.useCount == 3).head.expr eq add2)
+
+    // Negative case. `add1` and `add2` both are not used in all branches.
+    val conditions2 = GpuGreaterThan(add1, GpuLiteral(3)) ::
+        GpuGreaterThan(add2, GpuLiteral(4)) ::
+        GpuGreaterThan(add2, GpuLiteral(5)) :: Nil
+
+    val coalesceExpr2 = GpuCoalesce(conditions2)
+    val equivalence2 = new GpuEquivalentExpressions
+    equivalence2.addExprTree(coalesceExpr2)
+
+    assert(equivalence2.getAllExprStates().count(_.useCount == 2) == 1)
+    assert(equivalence2.getAllExprStates().filter(_.useCount == 2).head.expr eq add2)
+  }
+
+  test("Children of conditional expressions: GpuCoalesce with side effects") {
+    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = true)
+    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), failOnError = true)
+    val conditions1 = GpuGreaterThan(add2, GpuLiteral(3)) ::
+      GpuGreaterThan(add2, GpuLiteral(4)) ::
+      GpuGreaterThan(add2, GpuLiteral(5)) :: Nil
 
     val coalesceExpr1 = GpuCoalesce(conditions1)
     val equivalence1 = new GpuEquivalentExpressions
@@ -375,8 +575,8 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
 
     // Negative case. `add1` and `add2` both are not used in all branches.
     val conditions2 = GpuGreaterThan(add1, GpuLiteral(3)) ::
-        GpuGreaterThan(add2, GpuLiteral(4)) ::
-        GpuGreaterThan(add2, GpuLiteral(5)) :: Nil
+      GpuGreaterThan(add2, GpuLiteral(4)) ::
+      GpuGreaterThan(add2, GpuLiteral(5)) :: Nil
 
     val coalesceExpr2 = GpuCoalesce(conditions2)
     val equivalence2 = new GpuEquivalentExpressions
@@ -385,15 +585,50 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     assert(equivalence2.getAllExprStates().count(_.useCount == 2) == 0)
   }
 
-  test("Get Expression Tiers: GpuCoalesce") {
+  test("Get Expression Tiers: GpuCoalesce no side effects") {
     val one = AttributeReference("one", IntegerType)()
     val two = AttributeReference("two", IntegerType)()
     val three = AttributeReference("three", IntegerType)()
     val four = AttributeReference("four", IntegerType)()
     val five = AttributeReference("five", IntegerType)()
 
-    val add1 = GpuAdd(one, two, false)
-    val add2 = GpuAdd(two, three, false)
+    val add1 = GpuAdd(one, two, failOnError = false)
+    val add2 = GpuAdd(two, three, failOnError = false)
+    val cond1 = GpuGreaterThan(add2, three)
+    val cond2 = GpuGreaterThan(add2, four)
+    val cond3 = GpuGreaterThan(add2, five)
+    val cond4 = GpuGreaterThan(add1, three)
+
+    val conditions1 = cond1 :: cond2 :: cond3 :: Nil
+    val coalesceExpr1 = GpuCoalesce(conditions1)
+    val inputAttrs1 = AttributeSeq(Seq(one, two, three, four, five))
+    val initialExprs1 = Seq(coalesceExpr1)
+    // `add2` is repeatedly in many conditions.
+    validateExpressionTiers(initialExprs1, inputAttrs1,
+      Seq(add2), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(cond1, cond2, cond3, coalesceExpr1)) // modified expressions
+
+    val conditions2 = cond4 :: cond2 :: cond3 :: Nil
+    val coalesceExpr2 = GpuCoalesce(conditions2)
+    val inputAttrs2 = AttributeSeq(Seq(one, two, three, four, five))
+    val initialExprs2 = Seq(coalesceExpr2)
+    // Negative case. `add1` and `add2` both are not used in all branches.
+    validateExpressionTiers(initialExprs2, inputAttrs2,
+      Seq(add2), // subexpressions
+      Seq.empty,  // Should be unchanged
+      Seq(cond2, cond3, cond4, coalesceExpr2)) // modified expressions
+  }
+
+  test("Get Expression Tiers: GpuCoalesce with side effects") {
+    val one = AttributeReference("one", IntegerType)()
+    val two = AttributeReference("two", IntegerType)()
+    val three = AttributeReference("three", IntegerType)()
+    val four = AttributeReference("four", IntegerType)()
+    val five = AttributeReference("five", IntegerType)()
+
+    val add1 = GpuAdd(one, two, failOnError = true)
+    val add2 = GpuAdd(two, three, failOnError = true)
     val cond1 = GpuGreaterThan(add2, three)
     val cond2 = GpuGreaterThan(add2, four)
     val cond3 = GpuGreaterThan(add2, five)
@@ -421,13 +656,14 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
   }
 
   test("SPARK-35410: SubExpr elimination should not include redundant child exprs " +
-    "for conditional expressions") {
-    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), false)
-    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), false)
-    val add3 = GpuAdd(add1, add2, false)
+    "for conditional expressions (with side effects)") {
+    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = true)
+    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), failOnError = true)
+    val add3 = GpuAdd(add1, add2, failOnError = true)
     val condition = (GpuGreaterThan(add3, GpuLiteral(3)), add3) :: Nil
 
-    val caseWhenExpr = GpuCaseWhen(condition, Some(GpuAdd(add3, GpuLiteral(1), false)))
+    val caseWhenExpr = GpuCaseWhen(condition,
+      Some(GpuAdd(add3, GpuLiteral(1), failOnError = true)))
     val equivalence = new GpuEquivalentExpressions
     equivalence.addExprTree(caseWhenExpr)
 
@@ -443,10 +679,10 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     val two = AttributeReference("two", IntegerType)()
     val three = AttributeReference("three", IntegerType)()
 
-    val add1 = GpuAdd(one, two, false)
-    val add2 = GpuAdd(two, three, false)
-    val add3 = GpuAdd(add1, add2, false)
-    val add4 = GpuAdd(add3, one, false)
+    val add1 = GpuAdd(one, two, failOnError = false)
+    val add2 = GpuAdd(two, three, failOnError = false)
+    val add3 = GpuAdd(add1, add2, failOnError = false)
+    val add4 = GpuAdd(add3, one, failOnError = false)
     val condition = (GpuGreaterThan(add3, three), add3) :: Nil
     val caseWhenExpr = GpuCaseWhen(condition, Some(add4))
     val inputAttrs = AttributeSeq(Seq(one, two, three))
@@ -458,45 +694,45 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
   }
 
   test("SPARK-35439: Children subexpr should come first than parent subexpr") {
-    val add = GpuAdd(GpuLiteral(1), GpuLiteral(2), false)
+    val add = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = false)
 
     val equivalence1 = new GpuEquivalentExpressions
 
     equivalence1.addExprTree(add)
     assert(equivalence1.getAllExprStates().head.expr eq add)
 
-    equivalence1.addExprTree(GpuAdd(GpuLiteral(3), add, false))
+    equivalence1.addExprTree(GpuAdd(GpuLiteral(3), add, failOnError = false))
     assert(equivalence1.getAllExprStates().map(_.useCount) === Seq(2, 1))
     assert(equivalence1.getAllExprStates().map(_.expr) ===
-        Seq(add, GpuAdd(GpuLiteral(3), add, false)))
+        Seq(add, GpuAdd(GpuLiteral(3), add, failOnError = false)))
 
-    equivalence1.addExprTree(GpuAdd(GpuLiteral(3), add, false))
+    equivalence1.addExprTree(GpuAdd(GpuLiteral(3), add, failOnError = false))
     assert(equivalence1.getAllExprStates().map(_.useCount) === Seq(2, 2))
     assert(equivalence1.getAllExprStates().map(_.expr) ===
-        Seq(add, GpuAdd(GpuLiteral(3), add, false)))
+        Seq(add, GpuAdd(GpuLiteral(3), add, failOnError = false)))
 
     val equivalence2 = new GpuEquivalentExpressions
 
-    equivalence2.addExprTree(GpuAdd(GpuLiteral(3), add, false))
+    equivalence2.addExprTree(GpuAdd(GpuLiteral(3), add, failOnError = false))
     assert(equivalence2.getAllExprStates().map(_.useCount) === Seq(1, 1))
     assert(equivalence2.getAllExprStates().map(_.expr) ===
-        Seq(add, GpuAdd(GpuLiteral(3), add, false)))
+        Seq(add, GpuAdd(GpuLiteral(3), add, failOnError = false)))
 
     equivalence2.addExprTree(add)
     assert(equivalence2.getAllExprStates().map(_.useCount) === Seq(2, 1))
     assert(equivalence2.getAllExprStates().map(_.expr) ===
-        Seq(add, GpuAdd(GpuLiteral(3), add, false)))
+        Seq(add, GpuAdd(GpuLiteral(3), add, failOnError = false)))
 
-    equivalence2.addExprTree(GpuAdd(GpuLiteral(3), add, false))
+    equivalence2.addExprTree(GpuAdd(GpuLiteral(3), add, failOnError = false))
     assert(equivalence2.getAllExprStates().map(_.useCount) === Seq(2, 2))
     assert(equivalence2.getAllExprStates().map(_.expr) ===
-        Seq(add, GpuAdd(GpuLiteral(3), add, false)))
+        Seq(add, GpuAdd(GpuLiteral(3), add, failOnError = false)))
   }
 
   test("SPARK-35499: Subexpressions should only be extracted from CaseWhen "
-      + "values with an elseValue") {
-    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), false)
-    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), false)
+      + "values with an elseValue (with side effects)") {
+    val add1 = GpuAdd(GpuLiteral(1), GpuLiteral(2), failOnError = true)
+    val add2 = GpuAdd(GpuLiteral(2), GpuLiteral(3), failOnError = true)
     val conditions = (GpuGreaterThan(add1, GpuLiteral(3)), add1) ::
       (GpuGreaterThan(add2, GpuLiteral(4)), add1) ::
       (GpuGreaterThan(add2, GpuLiteral(5)), add1) :: Nil
@@ -510,15 +746,15 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
   }
 
   test("Get Expression Tiers - SPARK-35499: Subexpressions should only be extracted " +
-      "from CaseWhen values with an elseValue") {
+      "from CaseWhen values with an elseValue if there are side effects") {
     val one = AttributeReference("one", IntegerType)()
     val two = AttributeReference("two", IntegerType)()
     val three = AttributeReference("three", IntegerType)()
     val four = AttributeReference("four", IntegerType)()
     val five = AttributeReference("five", IntegerType)()
 
-    val add1 = GpuAdd(one, two, false)
-    val add2 = GpuAdd(two, three, false)
+    val add1 = GpuAdd(one, two, failOnError = true)
+    val add2 = GpuAdd(two, three, failOnError = true)
     val cond1 = GpuGreaterThan(add1, three)
     val cond2 = GpuGreaterThan(add2, four)
     val cond3 = GpuGreaterThan(add2, five)
@@ -544,10 +780,10 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
       GpuCast(quantity, DecimalType(10, 0)), price, DecimalType(18,2))
     val nullCheck = GpuIsNull(product)
     val castProduct = GpuCast(product, DecimalType(28,2))
-    val extract0 = GpuExtractChunk32(castProduct, 0, true)
-    val extract1 = GpuExtractChunk32(castProduct, 1, true)
-    val extract2 = GpuExtractChunk32(castProduct, 2, true)
-    val extract3 = GpuExtractChunk32(castProduct, 3, true)
+    val extract0 = GpuExtractChunk32(castProduct, 0, replaceNullsWithZero = true)
+    val extract1 = GpuExtractChunk32(castProduct, 1, replaceNullsWithZero = true)
+    val extract2 = GpuExtractChunk32(castProduct, 2, replaceNullsWithZero = true)
+    val extract3 = GpuExtractChunk32(castProduct, 3, replaceNullsWithZero = true)
     val initialExprs = Seq(customer, extract0, extract1, extract2, extract3, nullCheck)
     val exprTiers = GpuEquivalentExpressions.getExprTiers(initialExprs)
     validateExprTiers(exprTiers, initialExprs,
@@ -565,7 +801,7 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
     val soldDate: AttributeReference = AttributeReference("sold date", IntegerType)()
     val inputAttrs = AttributeSeq(Seq(group, smType, webName, shipDate, soldDate))
 
-    val dateDiff = GpuSubtract(shipDate, soldDate, false)
+    val dateDiff = GpuSubtract(shipDate, soldDate, failOnError = false)
     val caseWhen1 =
       GpuCaseWhen(
         Seq((GpuLessThanOrEqual(dateDiff, GpuLiteral(30)), GpuLiteral(1))), Some(GpuLiteral(0)))
@@ -673,7 +909,7 @@ class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
    *   updated - expressions from the original list that should be updated
    */
   private def validateExpressionTiers(initialExprs: Seq[Expression], inputAttrs: AttributeSeq,
-      subExprs: Seq[Expression], unChanged: Seq[Expression], updated: Seq[Expression]) = {
+      subExprs: Seq[Expression], unChanged: Seq[Expression], updated: Seq[Expression]): Unit = {
     val exprTiers = GpuEquivalentExpressions.getExprTiers(initialExprs)
     validateExprTiers(exprTiers, initialExprs, subExprs, unChanged, updated)
     validateInputTiers(exprTiers, inputAttrs)

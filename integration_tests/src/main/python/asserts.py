@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -100,6 +100,10 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
         assert False, "Found unexpected type {} at {}".format(t, path)
+
+def assert_equal_with_local_sort(cpu, gpu):
+    _sort_locally(cpu, gpu)
+    assert_equal(cpu, gpu)
 
 def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""

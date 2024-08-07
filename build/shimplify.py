@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,15 +67,15 @@ belongs to. Lines are sorted by the Spark `buildver` lexicographically.
 Each line is assumed to be a JSON to keep it extensible.
 
 /*** spark-rapids-shim-json-lines
-{"spark": "312"}
+{"spark": "320"}
 {"spark": "323"}
 spark-rapids-shim-json-lines ***/
 
 The canonical location of a source file shared by multiple shims is
 src/main/<top_buildver_in_the_comment>
 
-You can find all shim files for a particular shim, e.g. 312, easily by executing:
-git grep '{"spark": "312"}' '*.java' '*.scala'
+You can find all shim files for a particular shim, e.g. 320, easily by executing:
+git grep '{"spark": "320"}' '*.java' '*.scala'
 """
 
 import errno
@@ -188,6 +188,7 @@ __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
 __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
 __all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
+__allScala213_shims_arr = sorted(__csv_ant_prop_as_arr('allScala213.buildvers'))
 
 __log = logging.getLogger('shimplify')
 __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
@@ -372,7 +373,8 @@ def __generate_symlinks():
 
 def __map_version_array(shim_json_string):
     shim_ver = str(json.loads(shim_json_string).get('spark'))
-    assert shim_ver in __all_shims_arr, "all.buildvers in pom.xml does not contain %s" % shim_ver
+    assert shim_ver in __all_shims_arr or shim_ver in __allScala213_shims_arr, "all.buildvers or " \
+        "allScala213.buildvers in pom.xml does not contain %s" % shim_ver
     return shim_ver
 
 def __traverse_source_tree_of_all_shims(src_type, func):

@@ -56,7 +56,8 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     super.beforeAll()
     initializeSession()
     _spark.sparkContext.setLogLevel("WARN")
-    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    // Spark use "America/Los_Angeles" as default timezone in tests
+    TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
   }
 
   override def afterAll(): Unit = {
@@ -102,14 +103,36 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", warehouse)
-        // TODO: remove hard coded UTC https://github.com/NVIDIA/spark-rapids/issues/10874
-        .config("spark.sql.session.timeZone","UTC")
         .config("spark.rapids.sql.explain", "ALL")
         .config("spark.rapids.sql.test.isFoldableNonLitAllowed", "true")
         // uncomment below config to run `strict mode`, where fallback to CPU is treated as fail
         // .config("spark.rapids.sql.test.enabled", "true")
         // .config("spark.rapids.sql.test.allowedNonGpu",
         // "SerializeFromObjectExec,DeserializeToObjectExec,ExternalRDDScanExec")
+        .config("spark.rapids.sql.castStringToTimestamp.enabled", "true")
+        .config("spark.rapids.sql.csv.read.decimal.enabled", "true")
+        .config("spark.rapids.sql.format.avro.enabled", "true")
+        .config("spark.rapids.sql.format.avro.read.enabled", "true")
+        .config("spark.rapids.sql.format.hive.text.write.enabled", "true")
+        .config("spark.rapids.sql.format.json.enabled", "true")
+        .config("spark.rapids.sql.format.json.read.enabled", "true")
+        .config("spark.rapids.sql.incompatibleDateFormats.enabled", "true")
+        .config("spark.rapids.sql.python.gpu.enabled", "true")
+        .config("spark.rapids.sql.rowBasedUDF.enabled", "true")
+        .config("spark.rapids.sql.window.collectList.enabled", "true")
+        .config("spark.rapids.sql.window.collectSet.enabled", "true")
+        .config("spark.rapids.sql.window.range.byte.enabled", "true")
+        .config("spark.rapids.sql.window.range.short.enabled", "true")
+        .config("spark.rapids.sql.expression.Ascii", "true")
+        .config("spark.rapids.sql.expression.Conv", "true")
+        .config("spark.rapids.sql.expression.GetJsonObject", "true")
+        .config("spark.rapids.sql.expression.JsonToStructs", "true")
+        .config("spark.rapids.sql.expression.JsonTuple", "true")
+        .config("spark.rapids.sql.expression.StructsToJson", "true")
+        .config("spark.rapids.sql.exec.CollectLimitExec", "true")
+        .config("spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec", "true")
+        .config("spark.rapids.sql.exec.WindowInPandasExec", "true")
+        .config("spark.rapids.sql.hasExtendedYearValues", "false")
         .appName("rapids spark plugin running Vanilla Spark UT")
 
       _spark = sparkBuilder

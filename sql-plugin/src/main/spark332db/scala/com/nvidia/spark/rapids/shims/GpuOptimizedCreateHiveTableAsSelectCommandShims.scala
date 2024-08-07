@@ -197,9 +197,10 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
       willNotWorkOnGpu("partitioned writes are not supported")
     }
 
-    if (tableDesc.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
-    }
+    val outputColumns =
+      DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
+    BucketingUtilsShim.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns,
+      conf.isForceHiveHashForBucketedWrite)
 
     val serde = tableDesc.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)
     if (serde.contains("parquet")) {

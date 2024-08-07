@@ -1458,7 +1458,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       -9223183700000000000L
     ).toDF("longs")
   }
-  
+
   def datesPostEpochDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(

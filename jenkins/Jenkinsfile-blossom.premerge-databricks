@@ -46,10 +46,13 @@ pipeline {
     }
 
     parameters {
-        string(name: 'REF', defaultValue: '',
+        // Put a default value for REF to avoid error when running the pipeline manually
+        string(name: 'REF', defaultValue: 'main',
             description: 'Merged commit of specific PR')
         string(name: 'GITHUB_DATA', defaultValue: '',
             description: 'Json-formatted github data from upstream blossom-ci')
+        choice(name: 'TEST_MODE', choices: ['CI_PART1', 'CI_PART2'],
+            description: 'Separate integration tests into 2 parts, and run each part in parallell')
     }
 
     environment {
@@ -177,7 +180,7 @@ void databricksBuild() {
                 container('cpu') {
                     try {
                         withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                            def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
+                            def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID  -e TEST_MODE=$TEST_MODE" +
                                 " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
                             if (params.SPARK_CONF) {
                                 TEST_PARAMS += " -f ${params.SPARK_CONF}"

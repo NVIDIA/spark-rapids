@@ -19,12 +19,67 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.DataFrameAggregateSuite
+import org.apache.spark.sql.{DataFrameAggregateSuite, Row}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
+import org.apache.spark.sql.types._
 
 class RapidsDataFrameAggregateSuite extends DataFrameAggregateSuite with RapidsSQLTestsTrait {
-  // example to show how to replace the logic of an excluded test case in Vanilla Spark
-  testRapids("collect functions" ) {  // "collect functions" was excluded at RapidsTestSettings
-    // println("...")
+  import testImplicits._
+
+  testRapids("collect functions") {
+    val df = Seq((1, 2), (2, 2), (3, 4)).toDF("a", "b")
+    checkAnswer(
+      df.select(sort_array(collect_list($"a")), sort_array(collect_list($"b"))),
+      Seq(Row(Seq(1, 2, 3), Seq(2, 2, 4)))
+    )
+    checkAnswer(
+      df.select(sort_array(collect_set($"a")), sort_array(collect_set($"b"))),
+      Seq(Row(Seq(1, 2, 3), Seq(2, 4)))
+    )
+
+    checkDataset(
+      df.select(sort_array(collect_set($"a")).as("aSet")).as[Set[Int]],
+      Set(1, 2, 3))
+    checkDataset(
+      df.select(sort_array(collect_set($"b")).as("bSet")).as[Set[Int]],
+      Set(2, 4))
+    checkDataset(
+      df.select(sort_array(collect_set($"a")), sort_array(collect_set($"b")))
+        .as[(Set[Int], Set[Int])], Seq(Set(1, 2, 3) -> Set(2, 4)): _*)
+  }
+
+  testRapids("collect functions structs") {
+    val df = Seq((1, 2, 2), (2, 2, 2), (3, 4, 1))
+      .toDF("a", "x", "y")
+      .select($"a", struct($"x", $"y").as("b"))
+    checkAnswer(
+      df.select(sort_array(collect_list($"a")), sort_array(collect_list($"b"))),
+      Seq(Row(Seq(1, 2, 3), Seq(Row(2, 2), Row(2, 2), Row(4, 1))))
+    )
+    checkAnswer(
+      df.select(sort_array(collect_set($"a")), sort_array(collect_set($"b"))),
+      Seq(Row(Seq(1, 2, 3), Seq(Row(2, 2), Row(4, 1))))
+    )
+  }
+
+  testRapids("SPARK-17641: collect functions should not collect null values") {
+    val df = Seq(("1", 2), (null, 2), ("1", 4)).toDF("a", "b")
+    checkAnswer(
+      df.select(sort_array(collect_list($"a")), sort_array(collect_list($"b"))),
+      Seq(Row(Seq("1", "1"), Seq(2, 2, 4)))
+    )
+    checkAnswer(
+      df.select(sort_array(collect_set($"a")), sort_array(collect_set($"b"))),
+      Seq(Row(Seq("1"), Seq(2, 4)))
+    )
+  }
+
+  testRapids("collect functions should be able to cast to array type with no null values") {
+    val df = Seq(1, 2).toDF("a")
+    checkAnswer(df.select(sort_array(collect_list("a")) cast ArrayType(IntegerType, false)),
+      Seq(Row(Seq(1, 2))))
+    checkAnswer(df.select(sort_array(collect_set("a")) cast ArrayType(FloatType, false)),
+      Seq(Row(Seq(1.0, 2.0))))
   }
 }

@@ -173,7 +173,7 @@ class RapidsShuffleIterator(
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)
 
     (local ++ remote).foreach {
-      case (blockManagerId: BlockManagerId, blockIds: Seq[(BlockId, Long, Int)]) => {
+      case (blockManagerId: BlockManagerId, blockIds: collection.Seq[(BlockId, Long, Int)]) => {
         val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
           blockIds.map { case (blockId, _, mapIndex) =>
             /**
@@ -193,7 +193,7 @@ class RapidsShuffleIterator(
                 throw new IllegalArgumentException(
                   s"${blockId.getClass} $blockId is not currently supported")
             }
-          }
+          }.toSeq
 
         val client = try {
           transport.makeClient(blockManagerId)

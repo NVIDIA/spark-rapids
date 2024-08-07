@@ -1049,3 +1049,27 @@ def test_delta_write_column_name_mapping(spark_tmp_path, mapping):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=confs)
+
+# Hash aggregate can be used in a metadata query for compaction which completely falls back
+compaction_allow = "HashAggregateExec"
+if is_databricks_runtime():
+    # compaction can fallback due to unsupported WriteIntoDeltaCommand
+    # tracked by https://github.com/NVIDIA/spark-rapids/issues/11169
+    compaction_allow += "," + delta_write_fallback_allow
+@allow_non_gpu(compaction_allow, *delta_meta_allow)
+@delta_lake
+@ignore_order
+def test_delta_compaction(spark_tmp_path):
+    from delta.tables import DeltaTable
+    def do_write(spark,  path):
+        spark.range(1000).write.mode("append").format("delta").save(path)
+        DeltaTable.forPath(spark, path).optimize().executeCompaction()
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs = _delta_confs
+    with_cpu_session(
+        lambda spark: _create_cpu_gpu_tables(spark, data_path, "id bigint"), conf=confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_write,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)

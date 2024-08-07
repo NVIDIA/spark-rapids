@@ -22,15 +22,17 @@ import java.util.{Locale, Optional}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -1073,7 +1075,7 @@ class GpuRLikeMeta(
             val originalPattern = str.toString
             val regexAst = new RegexParser(originalPattern).parse()
             if (conf.isRlikeRegexRewriteEnabled) {
-              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst.children())
+              rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
             }
             val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
                 .getTranspiledAST(regexAst, None, None)
@@ -1097,6 +1099,7 @@ class GpuRLikeMeta(
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
         case _ => throw new IllegalStateException("Unexpected optimization type")
@@ -1124,6 +1127,33 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
+}
+
+case class GpuMultipleContains(input: Expression, searchList: Seq[String])
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def child: Expression = input
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    assert(searchList.length > 1)
+    val accInit = withResource(Scalar.fromString(searchList.head)) { searchScalar =>
+      input.getBase.stringContains(searchScalar)
+    }
+    searchList.tail.foldLeft(accInit) { (acc, search) =>
+      val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
+        input.getBase.stringContains(searchScalar)
+      }
+      withResource(acc) { _ =>
+        withResource(containsSearch) { _ =>
+          acc.or(containsSearch)
+        }
+      }
+    }
+  }
 }
 
 case class GpuLiteralRangePattern(left: Expression, right: Expression, 
@@ -1556,63 +1586,16 @@ class SubstringIndexMeta(
     override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
-  private var regexp: String = _
 
-  override def tagExprForGpu(): Unit = {
-    val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
-    if (delim == null || delim.length != 1) {
-      willNotWorkOnGpu("only a single character deliminator is supported")
-    }
-
-    val count = GpuOverrides.extractLit(expr.countExpr)
-    if (canThisBeReplaced) {
-      val c = count.get.value.asInstanceOf[Integer]
-      this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
-    }
-  }
 
   override def convertToGpu(
       column: Expression,
       delim: Expression,
-      count: Expression): GpuExpression = GpuSubstringIndex(column, this.regexp, delim, count)
+      count: Expression): GpuExpression = GpuSubstringIndex(column, delim, count)
 }
 
-object GpuSubstringIndex {
-  def makeExtractRe(delim: String, count: Integer): String = {
-    if (delim.length != 1) {
-      throw new IllegalStateException("NOT SUPPORTED")
-    }
-    val quotedDelim = CudfRegexp.cudfQuote(delim.charAt(0))
-    val notDelim = CudfRegexp.notCharSet(delim.charAt(0))
-    // substring_index has a deliminator and a count.  If the count is positive then
-    // you get back a substring from 0 until the Nth deliminator is found
-    // If the count is negative it goes in reverse
-    if (count == 0) {
-      // Count is zero so return a null regexp as a special case
-      null
-    } else if (count == 1) {
-      // If the count is 1 we want to match everything from the beginning of the string until we
-      // find the first occurrence of the deliminator or the end of the string
-      "\\A(" + notDelim + "*)"
-    } else if (count > 0) {
-      // If the count is > 1 we first match 0 up to count - 1 occurrences of the patten
-      // `not the deliminator 0 or more times followed by the deliminator`
-      // After that we go back to matching everything until we find the deliminator or the end of
-      // the string
-      "\\A((?:" + notDelim + "*" + quotedDelim + "){0," + (count - 1) + "}" + notDelim + "*)"
-    } else if (count == -1) {
-      // A -1 looks like 1 but we start looking at the end of the string
-      "(" + notDelim + "*)\\Z"
-    } else { //count < 0
-      // All others look like a positive count, but again we are matching starting at the end of
-      // the string instead of the beginning
-      "((?:" + notDelim + "*" + quotedDelim + "){0," + ((-count) - 1) + "}" + notDelim + "*)\\Z"
-    }
-  }
-}
 
 case class GpuSubstringIndex(strExpr: Expression,
-    regexp: String,
     ignoredDelimExpr: Expression,
     ignoredCountExpr: Expression)
   extends GpuTernaryExpressionArgsAnyScalarScalar with ImplicitCastInputTypes {
@@ -1626,22 +1609,13 @@ case class GpuSubstringIndex(strExpr: Expression,
 
   override def prettyName: String = "substring_index"
 
-  // This is a bit hacked up at the moment. We are going to use a regular expression to extract
-  // a single value. It only works if the delim is a single character. A full version of
-  // substring_index for the GPU has been requested at https://github.com/rapidsai/cudf/issues/5158
-  // spark-rapids plugin issue https://github.com/NVIDIA/spark-rapids/issues/8750
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
-    if (regexp == null) {
-      withResource(str.getBase.isNull) { isNull =>
-        withResource(Scalar.fromString("")) { emptyString =>
-          isNull.ifElse(str.getBase, emptyString)
-        }
-      }
+    if (delim.isValid && count.isValid) {
+      GpuSubstringIndexUtils.substringIndex(str.getBase, delim.getBase,
+          count.getValue.asInstanceOf[Int])
     } else {
-      withResource(str.getBase.extractRe(new RegexProgram(regexp))) { table: Table =>
-        table.getColumn(0).incRefCount()
-      }
+      GpuColumnVector.columnVectorFromNull(str.getRowCount.toInt, StringType)
     }
   }
 
@@ -1818,6 +1792,22 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
+    // TODO when https://github.com/rapidsai/cudf/issues/16453 is fixed remove this workaround
+    withResource(str.getBase.getData) { data =>
+      if (data == null || data.getLength <= 0) {
+        // An empty data for a string means that all of the inputs are either null or an empty
+        // string. CUDF will return null for all of these, but we should only do that for a
+        // null input. For all of the others it should be an empty string.
+        withResource(GpuScalar.from(null, dataType)) { nullArray =>
+          withResource(GpuScalar.from(
+            new GenericArrayData(Array(UTF8String.EMPTY_UTF8)), dataType)) { emptyStringArray =>
+            withResource(str.getBase.isNull) { retNull =>
+              return retNull.ifElse(nullArray, emptyStringArray)
+            }
+          }
+        }
+      }
+    }
     limit.getValue.asInstanceOf[Int] match {
       case 0 =>
         // Same as splitting as many times as possible
@@ -1829,11 +1819,10 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
       case 1 =>
         // Short circuit GPU and just return a list containing the original input string
         withResource(str.getBase.isNull) { isNull =>
-          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) {
-            nullStringList =>
-              withResource(ColumnVector.makeList(str.getBase)) { list =>
-                  isNull.ifElse(nullStringList, list)
-              }
+          withResource(GpuScalar.from(null, dataType)) { nullStringList =>
+            withResource(ColumnVector.makeList(str.getBase)) { list =>
+              isNull.ifElse(nullStringList, list)
+            }
           }
         }
       case n =>
@@ -2056,11 +2045,25 @@ class GpuConvMeta(
   override def tagExprForGpu(): Unit = {
     val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
     val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
+    val errorPostfix = "only literal 10 or 16 are supported for source and target radixes"
     (fromBaseLit, toBaseLit) match {
-      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
-        if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
+      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
+        def isBaseSupported(base: Any): Boolean = base == 10 || base == 16
+        if (!isBaseSupported(fromBaseVal) && !isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"both ${fromBaseVal} and ${toBaseVal} are not " +
+            s"a supported radix, ${errorPostfix}")
+        } else if (!isBaseSupported(fromBaseVal)) {
+          willNotWorkOnGpu(because = s"${fromBaseVal} is not a supported source radix, " +
+            s"${errorPostfix}")
+        } else if (!isBaseSupported(toBaseVal)) {
+          willNotWorkOnGpu(because = s"${toBaseVal} is not a supported target radix, " +
+            s"${errorPostfix}")
+        }
       case _ =>
-        willNotWorkOnGpu(because = "only literal 10 or 16 for from_base and to_base are supported")
+        // This will never happen in production as the function signature enforces
+        // integer types for the bases, but nice to have an edge case handling.
+        willNotWorkOnGpu(because = "either source radix or target radix is not an integer " +
+          "literal, " + errorPostfix)
     }
   }
 

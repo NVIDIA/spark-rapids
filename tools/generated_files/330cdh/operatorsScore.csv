@@ -135,6 +135,7 @@ GreaterThan,4
 GreaterThanOrEqual,4
 Greatest,4
 HiveGenericUDF,4
+HiveHash,4
 HiveSimpleUDF,4
 Hour,4
 Hypot,4
@@ -175,6 +176,7 @@ MakeDecimal,4
 MapConcat,4
 MapEntries,4
 MapFilter,4
+MapFromArrays,4
 MapKeys,4
 MapValues,4
 Max,4

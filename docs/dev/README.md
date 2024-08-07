@@ -271,9 +271,9 @@ is not currently [able to support](https://github.com/jacoco/jacoco/issues/965) 
 setup. So if you want to generate a coverage report you need to do it manually.  Coverage is
 collected by default so first run the tests, and then generate the report, this should be run
 from the root project directory. It will print out the URL of the report at the end. Besides,
-coverage report only covers test with Spark 311 by default as [jacoco](https://www.jacoco.org/jacoco/trunk/doc/)
+coverage report only covers test with Spark 320 by default as [jacoco](https://www.jacoco.org/jacoco/trunk/doc/)
 can't support combined jars. If you're testing with different Spark version, please change it
-via environment variable `JACOCO_SPARK_VER` before generate coverage report, e.g, `export JACOCO_SPARK_VER=311`.
+via environment variable `JACOCO_SPARK_VER` before generate coverage report, e.g, `export JACOCO_SPARK_VER=320`.
 
 ```bash
 mvn clean verify

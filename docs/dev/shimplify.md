@@ -28,7 +28,7 @@ time of this writing) have a new set of special sibling directories
 `src/(main|test)/spark${buildver}`.
 
 Previous `src/(main|test)/${buildver}` and
-version-range-with-exceptions directories such as `src/main/311until340-non330db` are deprecated and
+version-range-with-exceptions directories such as `src/main/320until340-non330db` are deprecated and
 are being removed as a result of the conversion to the new structure.
 
 `shimplify` changes the way the source code is shared among shims by using an explicit
@@ -37,7 +37,7 @@ in a source-code level comment instead of the shared directories.
 
 ```scala
 /*** spark-rapids-shim-json-lines
-{"spark": "312"}
+{"spark": "320"}
 {"spark": "323"}
 spark-rapids-shim-json-lines ***/
 ```
@@ -155,7 +155,7 @@ It is not expected to be really necessary but it is possible to convert a subset
 
 * Either by adding -Dshimplify.shims=buildver1,buildver2,... to the commands above
 * Or by specifying a list of directories you would like to delete to have a simpler directory
--Dshimplify.dirs=311until340-non330db,320until330-noncdh
+-Dshimplify.dirs=320until340-non330db,320until330-noncdh
 
 The latter is just a minor twist on the former. Instead of having an explicit list of shims, it
 first computes the list of all `buildver` values using provided directories. After this *all* the
@@ -202,15 +202,15 @@ work on resolving potential compilation failures manually.
 
 ## Deleting a Shim
 
-Every Spark build is de-supported eventually. To drop a build say 311 you can run
+Every Spark build is de-supported eventually. To drop a build say 320 you can run
 
 ```bash
 mvn generate-sources -Dshimplify=true -Dshimplify.move=true \
-    -Dshimplify.remove.shim=311
+    -Dshimplify.remove.shim=320
 ```
 
-This command will remove the comment line `{"spark": "311"}` from all source files contributing to
-the 311 shim. If a file belongs exclusively to 311 it will be removed.
+This command will remove the comment line `{"spark": "320"}` from all source files contributing to
+the 320 shim. If a file belongs exclusively to 320 it will be removed.
 
 After adding or deleting shims you should sanity-check the diff in the local git repo and
 run the integration tests above.

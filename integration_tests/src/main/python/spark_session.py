@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import os
 import calendar, time
 from datetime import date, datetime
 from contextlib import contextmanager, ExitStack
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf, is_per_test_ansi_mode_enabled
 from pyspark.sql import DataFrame
 from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
@@ -41,7 +41,6 @@ _orig_conf_keys = _orig_conf.keys()
 # Many of these are redundant with default settings for the configs but are set here explicitly
 # to ensure any cluster settings do not interfere with tests that assume the defaults.
 _default_conf = {
-    'spark.ansi.enabled': 'false',
     'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
     'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
@@ -127,6 +126,9 @@ def with_spark_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
     _add_job_description(conf)
+    # Only set the ansi conf if not set by the test explicitly by setting the value in the dict
+    if "spark.sql.ansi.enabled" not in conf and is_per_test_ansi_mode_enabled() is not None:
+        conf["spark.sql.ansi.enabled"] = is_per_test_ansi_mode_enabled()
     _set_all_confs(conf)
     ret = func(_spark)
     _check_for_proper_return_values(ret)
@@ -205,6 +207,9 @@ def is_before_spark_350():
 def is_before_spark_351():
     return spark_version() < "3.5.1"
 
+def is_before_spark_400():
+    return spark_version() < "4.0.0"
+
 def is_spark_320_or_later():
     return spark_version() >= "3.2.0"
 
@@ -219,6 +224,9 @@ def is_spark_341():
 
 def is_spark_350_or_later():
     return spark_version() >= "3.5.0"
+
+def is_spark_351_or_later():
+    return spark_version() >= "3.5.1"
 
 def is_spark_330():
     return spark_version() == "3.3.0"

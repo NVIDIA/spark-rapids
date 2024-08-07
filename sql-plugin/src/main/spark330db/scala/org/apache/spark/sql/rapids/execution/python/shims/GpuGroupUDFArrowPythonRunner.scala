@@ -30,7 +30,6 @@ import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
-import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonWriter, GpuPythonRunnerCommon}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -50,7 +49,7 @@ import org.apache.spark.util.Utils
  *     more data being sent.
  */
 class GpuGroupUDFArrowPythonRunner(
-    funcs: Seq[ChainedPythonFunctions],
+    funcs: Seq[(ChainedPythonFunctions, Long)],
     evalType: Int,
     argOffsets: Array[Array[Int]],
     pythonInSchema: StructType,
@@ -59,8 +58,8 @@ class GpuGroupUDFArrowPythonRunner(
     maxBatchSize: Long,
     override val pythonOutSchema: StructType,
     jobArtifactUUID: Option[String] = None)
-  extends GpuBasePythonRunner[ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID)
-    with GpuArrowPythonOutput with GpuPythonRunnerCommon {
+  extends GpuBasePythonRunner[ColumnarBatch](funcs.map(_._1), evalType, argOffsets,
+    jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -72,7 +71,7 @@ class GpuGroupUDFArrowPythonRunner(
 
       val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, maxBatchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {
-          PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
+          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets)
         }
       }
 

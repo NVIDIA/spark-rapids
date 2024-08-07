@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package org.apache.spark.sql.hive.rapids
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.Literal
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 
 object RapidsHiveErrors {
@@ -53,8 +53,7 @@ object RapidsHiveErrors {
   }
 
   def cannotResolveAttributeError(name: String, outputStr: String): Throwable = {
-    new AnalysisException(
-      s"Unable to resolve $name given [$outputStr]")
+    throw RapidsErrorUtils.cannotResolveAttributeError(name, outputStr)
   }
 
   def writePartitionExceedConfigSizeWhenDynamicPartitionError(

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExpressionWithRandomSeed}
+import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -52,7 +52,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   @transient protected lazy val seed: Long = child match {
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
     case GpuLiteral(s, LongType) => s.asInstanceOf[Long]
-    case _ => throw new AnalysisException(
+    case _ => throw new RapidsAnalysisException(
       s"Input argument to $prettyName must be an integer, long or null literal.")
   }
 

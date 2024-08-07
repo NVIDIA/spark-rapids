@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,11 +104,22 @@ object GpuShuffleEnv extends Logging {
   // this forces the initialization when we know we are ready in the driver and executor.
   //
   def initShuffleManager(): Unit = {
-    SparkEnv.get.shuffleManager match {
+    val shuffleManager = SparkEnv.get.shuffleManager
+    shuffleManager match {
       case rapidsShuffleManager: RapidsShuffleManagerLike =>
         rapidsShuffleManager.initialize
       case _ =>
-        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
+        val rsmLoaderViaShuffleManager = shuffleManager.getClass.getSuperclass.getInterfaces
+          .collectFirst {
+            case c if c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
+          }
+        val rsmLoaderDirect = classOf[RapidsShuffleManagerLike].getClassLoader
+ 
+        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager " +
+          s"${shuffleManager}! Expected: an instance of RapidsShuffleManagerLike loaded by " +
+          s"${rsmLoaderDirect}. Actual: ${shuffleManager} tagged with RapidsShuffleManagerLike " +
+          s"loaded by: ${rsmLoaderViaShuffleManager}"
+        )
     }
   }
 

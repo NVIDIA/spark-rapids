@@ -31,10 +31,6 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 class RapidsJsonSuite
   extends JsonSuite with RapidsSQLTestsBaseTrait with RapidsJsonConfTrait {
-  /** Returns full path to the given file in the resource folder */
-  override protected def testFile(fileName: String): String = {
-    getWorkspaceFilePath("sql", "core", "src", "test", "resources").toString + "/" + fileName
-  }
 }
 
 class RapidsJsonV1Suite extends RapidsJsonSuite with RapidsSQLTestsBaseTrait {
