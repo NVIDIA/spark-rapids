@@ -2576,6 +2576,50 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         RapidsConf.dumpAllConfigsWithDefault(format, outputPath)
     }
   }
+
+  object Format extends Enumeration {
+    type Format = Value
+    val PLAIN, JSON = Value
+  }
+
+  def dumpConfigsWithDefault(args: Array[String]): Unit = {
+    import com.nvidia.spark.rapids.Arm._
+
+    val format = Format.withName(args(0).toUpperCase(java.util.Locale.US))
+    val outputPath = args(1)
+
+    println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
+
+    val allConfs = getAllConfigsWithDefault
+    withResource(new java.io.FileOutputStream(outputPath)) { fos =>
+      withResource(new java.io.BufferedOutputStream(fos)) { bos =>
+        format match {
+          case Format.PLAIN =>
+            withResource(new java.io.DataOutputStream(bos)) { dos =>
+              allConfs.foreach( { case (k, v) =>
+                val valStr = v match {
+                  case Some(optVal) => optVal.toString
+                  case None => ""
+                  case _ =>
+                    if (v == null) {
+                      ""
+                    } else {
+                      v.toString
+                    }
+                }
+                dos.writeUTF(s"'${k}': '${valStr}',")
+              })
+            }
+          case Format.JSON =>
+            implicit val formats = org.json4s.DefaultFormats
+            bos.write(org.json4s.jackson.Serialization.writePretty(allConfs)
+              .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+          case _ =>
+            System.err.println(s"Unknown format: ${format}")
+        }
+      }
+    }
+  }
 }
 
 class RapidsConf(conf: Map[String, String]) extends Logging {

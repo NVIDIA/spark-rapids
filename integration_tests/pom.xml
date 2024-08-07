@@ -94,16 +94,19 @@
                 <executions>
                     <execution>
                         <id>populate-default-configs-for-testing</id>
-                        <phase>package</phase>
+                        <phase>generate-test-resources</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
                         <configuration>
                             <target>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                <java classname="com.nvidia.spark.rapids.tests.DumpDefaultConfigs" failonerror="true" fork="false">
+                                <java classname="com.nvidia.spark.rapids.tests.DumpDefaultConfigs"
+                                    failonerror="true"
+                                    classpathref="maven.compile.classpath"
+                                    fork="true">
                                     <arg value="json"/>
-                                    <arg value="${spark.rapids.source.basedir}/${rapids.module}/target/spark-rapids-default-configs.json"/>
+                                    <arg value="${project.build.outputDirectory}/spark-rapids-default-configs.json"/>
                                 </java>
                             </target>
                             <!--                            <includeProjectDependencies>true</includeProjectDependencies>-->
