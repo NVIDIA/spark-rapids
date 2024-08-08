@@ -865,15 +865,16 @@ object RapidsBufferCatalog extends Logging {
   }
 
   private def closeImpl(): Unit = synchronized {
-    val memoryEventHandlerCloser: AutoCloseable = () =>
-      if (memoryEventHandler != null) {
-        // Workaround for shutdown ordering problems where device buffers allocated
-        // with this handler are being freed after the handler is destroyed
-        //Rmm.clearEventHandler()
-        memoryEventHandler = null
-      }
+    Seq(_singleton, deviceStorage, hostStorage, diskStorage).safeClose()
 
-    Seq(_singleton, memoryEventHandlerCloser, deviceStorage, hostStorage, diskStorage).safeClose()
+    _singleton = null
+    // Workaround for shutdown ordering problems where device buffers allocated
+    // with this handler are being freed after the handler is destroyed
+    //Rmm.clearEventHandler()
+    memoryEventHandler = null
+    deviceStorage = null
+    hostStorage = null
+    diskStorage = null
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
