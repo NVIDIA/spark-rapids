@@ -17,6 +17,10 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.util.concurrent.CountDownLatch
+
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration.DurationInt
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -318,6 +322,125 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     verify(buffer).free()
     verify(buffer2).free()
     verify(buffer3).free()
+  }
+
+  test("concurrently acquiring buffer and registering new buffer with the same ID") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val hostBuffer = mockBuffer(bufferId, tier = HOST)
+    val deviceBuffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(hostBuffer)
+    val handle = catalog.makeNewHandle(bufferId, -1)
+
+    val ec = ExecutionContext.global
+    val latch = new CountDownLatch(1)
+
+    val future: Future[_] = Future {
+      latch.countDown()
+      catalog.registerNewBuffer(deviceBuffer)
+    }(ec)
+
+    latch.await()
+    // Let's wait for a little more, so that the future is likely executed first.
+    Thread.sleep(100)
+    val acquired = catalog.acquireBuffer(handle)
+    Await.ready(future, 1.second)
+    assertResult(StorageTier.DEVICE)(acquired.storageTier)
+  }
+
+  test("concurrently setting spill priority and acquiring buffer") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val deviceBuffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(deviceBuffer)
+    val handle = catalog.makeNewHandle(bufferId, -1)
+
+    val ec = ExecutionContext.global
+    val latch = new CountDownLatch(1)
+    val priority: Long = 54321
+
+    val future: Future[_] = Future {
+      latch.countDown()
+      deviceBuffer.setSpillPriority(priority) // some random priority
+    }(ec)
+
+    latch.await()
+    // Let's wait for a little more, so that the future is likely executed first.
+    Thread.sleep(500)
+    val acquired = catalog.acquireBuffer(handle)
+    Await.ready(future, 1.second)
+    assertResult(priority)(acquired.getSpillPriority)
+  }
+
+  test("currently acquiring buffer with tier and removing it") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val deviceBuffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(deviceBuffer)
+    val handle = catalog.makeNewHandle(bufferId, -1)
+
+    val ec = ExecutionContext.global
+    val latch = new CountDownLatch(1)
+
+    val future: Future[_] = Future {
+      latch.countDown()
+      catalog.removeBufferTier(bufferId, StorageTier.DEVICE)
+    }(ec)
+
+    latch.await()
+    // Let's wait for a little more, so that the future is likely executed first.
+    Thread.sleep(500)
+    val caught = intercept[NoSuchElementException]{
+      catalog.acquireBuffer(handle)
+    }
+    Await.ready(future, 1.second)
+    assert(caught.getMessage == s"Cannot locate buffers associated with ID: ${bufferId}")
+  }
+
+  test("currently updating tier and getting spill state") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val deviceBuffer = mockBuffer(bufferId, tier = DEVICE)
+    val hostBuffer = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(deviceBuffer)
+
+    val ec = ExecutionContext.global
+    val latch = new CountDownLatch(1)
+
+    val future: Future[_] = Future {
+      latch.countDown()
+      catalog.updateTiers(BufferSpill(deviceBuffer, Some(hostBuffer)))
+    }(ec)
+
+    latch.await()
+    // Let's wait for a little more, so that the future is likely executed first.
+    Thread.sleep(500)
+    val isSpilled: Boolean = catalog.isBufferSpilled(bufferId, StorageTier.DEVICE)
+    Await.ready(future, 1.second)
+    assert(isSpilled)
+  }
+
+  test("currently updating tier and getting buffer meta") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val deviceBuffer = mockBuffer(bufferId, tier = DEVICE)
+    val hostBuffer = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(deviceBuffer)
+
+    val ec = ExecutionContext.global
+    val latch = new CountDownLatch(1)
+
+    val future: Future[_] = Future {
+      latch.countDown()
+      catalog.updateTiers(BufferSpill(deviceBuffer, Some(hostBuffer)))
+    }(ec)
+
+    latch.await()
+    // Let's wait for a little more, so that the future is likely executed first.
+    Thread.sleep(500)
+    val meta = catalog.getBufferMeta(bufferId)
+    Await.ready(future, 1.second)
+    assertResult(hostBuffer.meta)(meta)
   }
 
   private def mockBuffer(

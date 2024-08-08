@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
+import javax.annotation.concurrent.GuardedBy
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -64,10 +65,22 @@ class RapidsBufferCatalog(
     hostStorage: RapidsHostMemoryStore = RapidsBufferCatalog.hostStorage)
   extends AutoCloseable with Logging {
 
-  /** Map of buffer IDs to buffers sorted by storage tier */
+  /**
+   * Map of buffer IDs to buffers sorted by storage tier.
+   *
+   * Every access to this map itself, the values in the map (`Seq[RapidsBuffer]`),
+   * and the buffers in the values must be synchronized by this map.
+   */
+  @GuardedBy("this")
   private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
 
-  /** Map of buffer IDs to buffer handles in insertion order */
+  /**
+   * Map of buffer IDs to buffer handles in insertion order
+   *
+   * Every access to this map itself, the values in the map (`Seq[RapidsBufferHandleImpl]`),
+   * and the buffers in the values must be synchronized by this map.
+   */
+  @GuardedBy("this")
   private[this] val bufferIdToHandles =
     new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBufferHandleImpl]]()
 
@@ -446,11 +459,17 @@ class RapidsBufferCatalog(
    */
   private def updateUnderlyingRapidsBuffer(handle: RapidsBufferHandle): Unit = {
     withResource(acquireBuffer(handle)) { buffer =>
-      val handles = bufferIdToHandles.get(buffer.id)
-      val maxPriority = handles.map(_.getSpillPriority).max
-      // update the priority of the underlying RapidsBuffer to be the
-      // maximum priority for all handles associated with it
-      buffer.setSpillPriority(maxPriority)
+      bufferIdToHandles.compute(buffer.id, (_, handles) => {
+        if (handles == null) {
+          throw new NoSuchElementException(
+            s"Cannot locate buffers associated with ID: ${buffer.id}")
+        }
+        val maxPriority = handles.map(_.getSpillPriority).max
+        // update the priority of the underlying RapidsBuffer to be the
+        // maximum priority for all handles associated with it
+        buffer.setSpillPriority(maxPriority)
+        handles
+      })
     }
   }
 
@@ -464,17 +483,21 @@ class RapidsBufferCatalog(
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer = {
     val id = handle.id
     def lookupAndReturn: Option[RapidsBuffer] = {
-      val buffers = bufferMap.get(id)
-      if (buffers == null || buffers.isEmpty) {
-        throw new NoSuchElementException(
-          s"Cannot locate buffers associated with ID: $id")
-      }
-      val buffer = buffers.head
-      if (buffer.addReference()) {
-        Some(buffer)
-      } else {
-        None
-      }
+      var buffer: Option[RapidsBuffer] = None
+      bufferMap.compute(id, (_, v) => {
+        if (v == null || v.isEmpty) {
+          throw new NoSuchElementException(
+            s"Cannot locate buffers associated with ID: $id")
+        }
+        val head = v.head
+        if (head.addReference()) {
+          buffer = Some(head)
+        } else {
+          buffer = None
+        }
+        v
+      })
+      buffer
     }
 
     // fast path
@@ -522,15 +545,18 @@ class RapidsBufferCatalog(
    * @return buffer that has been acquired, None if not found
    */
   def acquireBuffer(id: RapidsBufferId, tier: StorageTier): Option[RapidsBuffer] = {
-    val buffers = bufferMap.get(id)
-    if (buffers != null) {
-      buffers.find(_.storageTier == tier).foreach(buffer =>
-        if (buffer.addReference()) {
-          return Some(buffer)
-        }
-      )
-    }
-    None
+    var acquired: Option[RapidsBuffer] = None
+    bufferMap.compute(id, (_, buffers) => {
+      if (buffers != null) {
+        buffers.find(_.storageTier == tier).foreach(buffer =>
+          if (buffer.addReference()) {
+            acquired = Some(buffer)
+          }
+        )
+      }
+      buffers
+    })
+    acquired
   }
 
   /**
@@ -543,17 +569,25 @@ class RapidsBufferCatalog(
    * @return true if the buffer is stored in multiple tiers
    */
   def isBufferSpilled(id: RapidsBufferId, tier: StorageTier): Boolean = {
-    val buffers = bufferMap.get(id)
-    buffers != null && buffers.exists(_.storageTier > tier)
+    var isSpilled: Boolean = false
+    bufferMap.compute(id, (_, buffers) => {
+      isSpilled = buffers != null && buffers.exists(_.storageTier > tier)
+      buffers
+    })
+    isSpilled
   }
 
   /** Get the table metadata corresponding to a buffer ID. */
   def getBufferMeta(id: RapidsBufferId): TableMeta = {
-    val buffers = bufferMap.get(id)
-    if (buffers == null || buffers.isEmpty) {
-      throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
-    }
-    buffers.head.meta
+    var meta: TableMeta = null
+    bufferMap.compute(id, (_, buffers) => {
+      if (buffers == null || buffers.isEmpty) {
+        throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
+      }
+      meta = buffers.head.meta
+      buffers
+    })
+    meta
   }
 
   /**
@@ -723,7 +757,7 @@ class RapidsBufferCatalog(
     }
   }
 
-  /** Return the number of buffers currently in the catalog. */
+  /** Return the number of unique buffer IDs currently in the catalog. */
   def numBuffers: Int = bufferMap.size()
 
   override def close(): Unit = {
