@@ -341,8 +341,8 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     }(ec)
 
     latch.await()
-    // Let's wait for a little more, so that the future is likely executed first.
-    Thread.sleep(100)
+    // Let's wait for a little more, so that registerNewBuffer is likely executed first.
+    Thread.sleep(300)
     val acquired = catalog.acquireBuffer(handle)
     Await.ready(future, 1.second)
     assertResult(StorageTier.DEVICE)(acquired.storageTier)
@@ -365,8 +365,8 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     }(ec)
 
     latch.await()
-    // Let's wait for a little more, so that the future is likely executed first.
-    Thread.sleep(500)
+    // Let's wait for a little more, so that setSpillPriority is likely executed first.
+    Thread.sleep(300)
     val acquired = catalog.acquireBuffer(handle)
     Await.ready(future, 1.second)
     assertResult(priority)(acquired.getSpillPriority)
@@ -388,8 +388,8 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     }(ec)
 
     latch.await()
-    // Let's wait for a little more, so that the future is likely executed first.
-    Thread.sleep(500)
+    // Let's wait for a little more, so that removeBufferTier is likely executed first.
+    Thread.sleep(300)
     val caught = intercept[NoSuchElementException]{
       catalog.acquireBuffer(handle)
     }
@@ -413,8 +413,8 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     }(ec)
 
     latch.await()
-    // Let's wait for a little more, so that the future is likely executed first.
-    Thread.sleep(500)
+    // Let's wait for a little more, so that updateTiers is likely executed first.
+    Thread.sleep(300)
     val isSpilled: Boolean = catalog.isBufferSpilled(bufferId, StorageTier.DEVICE)
     Await.ready(future, 1.second)
     assert(isSpilled)
@@ -436,8 +436,8 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     }(ec)
 
     latch.await()
-    // Let's wait for a little more, so that the future is likely executed first.
-    Thread.sleep(500)
+    // Let's wait for a little more, so that updateTiers is likely executed first.
+    Thread.sleep(300)
     val meta = catalog.getBufferMeta(bufferId)
     Await.ready(future, 1.second)
     assertResult(hostBuffer.meta)(meta)
