@@ -92,14 +92,8 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
-  versionStr=$(mvn -B -q -pl . $2 -Dexpression=$1 -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@get-buildvers)
+  versionStr=$(mvn -B -q -pl . $2 -Doverwrite_properties=true -Dexpression=$1 -DforceStdout antrun:run@get-buildvers)
   echo -n $versionStr
-}
-
-function createReleaseProperties() {
-  # Create Scala release properties file
-  echo "Collecting Spark versions involved..."
-  mvn -B -q -pl . $1 -DforceStdout antrun:run@create-release-properties
 }
 
 FINAL_OP="package"
@@ -170,9 +164,6 @@ done
 
 if [[ "$DIST_PROFILE" == *Scala213 ]]; then
   SCALA213=1
-  createReleaseProperties "-f scala2.13"
-else
-  createReleaseProperties
 fi
 
 # include options to mvn command
@@ -187,6 +178,7 @@ fi
 
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
+echo "Collecting Spark versions..."
 case $DIST_PROFILE in
 
   snapshotsScala213)
@@ -194,7 +186,7 @@ case $DIST_PROFILE in
     ;;
 
   noSnapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "noSnapshots.buildvers" "-f scala2.13"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots.buildvers" "-f scala2.13"))
     ;;
 
   snapshots?(WithDatabricks))
@@ -202,7 +194,7 @@ case $DIST_PROFILE in
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "noSnapshots.buildvers"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots.buildvers"))
     ;;
 
   minimumFeatureVersionMix)
