@@ -35,4 +35,3 @@ scalastyle-output.xml
 scalastyle.txt
 target/
 cufile.log
-release.properties

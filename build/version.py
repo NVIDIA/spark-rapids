@@ -12,15 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import subprocess
+import logging
 import os
+import subprocess
+
+__log = logging.getLogger("release-version")
+__log.setLevel(logging.INFO)
 
 pom = attributes.get("pom")
 scala_version = "2.12" if pom == "" else "2.13"
 overwrite_properties = attributes.get("overwrite_properties")
 expression = attributes.get("expression")
+release_properties = project.getProperty("spark.rapids.releases")
 
-if (overwrite_properties == "true" or not os.path.exists("release.properties")):
+if (overwrite_properties == "true" or not os.path.exists(release_properties)):
+    __log.info("Writing properties at {}...".format(release_properties))
     # Define the Bash command
     bash_command = """
     export TEMP=$(mvn help:all-profiles -pl . {pom}| sort | uniq | awk "/([^-])release[0-9]/ {{print substr(\$3, 8)}}");
@@ -52,7 +58,7 @@ if (overwrite_properties == "true" or not os.path.exists("release.properties")):
         no_snapshots = filter(lambda x: not x.endswith("db"), no_snapshots)
         snap_and_no_snap = no_snapshots + snapshots
         all = snap_and_no_snap + db_release
-        f = open("release.properties", "w")
+        f = open(release_properties, "w")
         release_dict={}
         release_dict["databricks.buildvers"]=" ".join(db_release)
         release_dict["snapshots.buildvers"]=" ".join(snapshots)
@@ -68,18 +74,18 @@ if (overwrite_properties == "true" or not os.path.exists("release.properties")):
                 raise Exception("Illegal scala_version")
             for key in release_dict.keys():
             	f.write("{}={}\n".format(key,release_dict[key]))
-
+            __log.info("Finished writing properties file at {}".format(release_properties))
             if (expression):
                 print(release_dict[expression])
         finally:
             f.close()
     except subprocess.CalledProcessError as e:
-        print("Error:", e.output)
+        __log.error("Error:", e.output)
 
 else:
     import ConfigParser
     config = ConfigParser.ConfigParser()
-    config.read("release.properties")
+    config.read(release_properties)
     if (scala_version == "2.12"):
         print(config.get("Scala212ReleaseSection", expression))
     elif (scala_version == "2.13"):

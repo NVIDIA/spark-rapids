@@ -189,7 +189,7 @@ __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
 __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
 config = ConfigParser.ConfigParser()
-config.read("{}/release.properties".format(__project().getProperty("spark.rapids.source.basedir")))
+config.read("{}/{}".format(__ant_proj_prop("spark.rapids.source.basedir"), __ant_proj_prop("spark.rapids.releases")))
 section_header = "Scala212ReleaseSection" if (__ant_attr("pom") == "") else "Scala213ReleaseSection"
 __all_shims_arr = sorted(config.get(section_header, "all.buildvers").split(" "))
 __shims_arr = __all_shims_arr if not __shims_arr else __shims_arr

@@ -686,6 +686,7 @@
     </profiles>
 
     <properties>
+        <spark.rapids.releases>target/release.properties</spark.rapids.releases>
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
