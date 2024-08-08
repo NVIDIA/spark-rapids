@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,19 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, NullPolicy, Scalar, ScanAggregation, ScanType, Table, UnaryOp}
+import java.util.function.Consumer
+
+import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CaseWhen
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
-import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 object GpuExpressionWithSideEffectUtils {
 
@@ -47,7 +51,7 @@ object GpuExpressionWithSideEffectUtils {
 
   /**
    * Used to shortcircuit predicates and filter conditions.
-   * 
+   *
    * @param nullsAsFalse when true, null values are considered false.
    * @param col the input being evaluated.
    * @return boolean. When nullsAsFalse is set, it returns True if none of the rows is true;
@@ -182,9 +186,9 @@ case class GpuIf(
     predicateExpr: Expression,
     trueExpr: Expression,
     falseExpr: Expression) extends GpuConditionalExpression {
-  
+
   import GpuExpressionWithSideEffectUtils._
-  
+
   @transient
   override lazy val inputTypesForMerging: Seq[DataType] = {
     Seq(trueExpr.dataType, falseExpr.dataType)
@@ -314,7 +318,9 @@ case class GpuIf(
 
 case class GpuCaseWhen(
     branches: Seq[(Expression, Expression)],
-    elseValue: Option[Expression] = None) extends GpuConditionalExpression with Serializable {
+    elseValue: Option[Expression] = None,
+    caseWhenFuseEnabled: Boolean = true)
+    extends GpuConditionalExpression with Serializable {
 
   import GpuExpressionWithSideEffectUtils._
 
@@ -333,6 +339,10 @@ case class GpuCaseWhen(
     // Result is nullable if any of the branch is nullable, or if the else value is nullable
     branches.exists(_._2.nullable) || elseValue.forall(_.nullable)
   }
+
+  private lazy val useFusion = caseWhenFuseEnabled && branches.size > 2 &&
+    isCaseWhenFusionSupportedType(inputTypesForMerging.head) &&
+    (branches.map(_._2) ++ elseValue).forall(_.isInstanceOf[GpuLiteral])
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (TypeCoercion.haveSameType(inputTypesForMerging)) {
@@ -359,15 +369,54 @@ case class GpuCaseWhen(
     if (branchesWithSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
-      // `elseRet` will be closed in `computeIfElse`.
-      val elseRet = elseValue
-        .map(_.columnarEvalAny(batch))
-        .getOrElse(GpuScalar(null, branches.last._2.dataType))
-      val any = branches.foldRight[Any](elseRet) {
-        case ((predicateExpr, trueExpr), falseRet) =>
-          computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+      if (useFusion) {
+        // when branches size > 2;
+        // return type is supported types: Boolean/Byte/Int/String/Decimal ...
+        // all the then and else expressions are Scalars.
+        // Avoid to use multiple `computeIfElse`s which will create multiple temp columns
+
+        // 1. select first true index from bool columns, if no true, index will be out of bound
+        // e.g.:
+        //  case when bool result column 0: true,  false, false
+        //  case when bool result column 1: false, true,  false
+        //  result is: [0, 1, 2]
+        val whenBoolCols = branches.safeMap(_._1.columnarEval(batch).getBase).toArray
+        val firstTrueIndex: ColumnVector = withResource(whenBoolCols) { _ =>
+          CaseWhen.selectFirstTrueIndex(whenBoolCols)
+        }
+
+        withResource(firstTrueIndex) { _ =>
+          val thenElseScalars = (branches.map(_._2) ++ elseValue).map(_.columnarEvalAny(batch)
+              .asInstanceOf[GpuScalar])
+          withResource(thenElseScalars) { _ =>
+            // 2. generate a column to store all scalars
+            withResource(createFromScalarList(thenElseScalars)) {
+              scalarCol =>
+                val finalRet = withResource(new Table(scalarCol)) { oneColumnTable =>
+                  // 3. execute final select
+                  // default gather OutOfBoundsPolicy is nullify,
+                  // If index is out of bound, return null
+                  withResource(oneColumnTable.gather(firstTrueIndex)) { resultTable =>
+                    resultTable.getColumn(0).incRefCount()
+                  }
+                }
+                // return final column vector
+                GpuColumnVector.from(finalRet, dataType)
+            }
+          }
+        }
+      } else {
+        // execute from tail to front recursively
+        // `elseRet` will be closed in `computeIfElse`.
+        val elseRet = elseValue
+          .map(_.columnarEvalAny(batch))
+          .getOrElse(GpuScalar(null, branches.last._2.dataType))
+        val any = branches.foldRight[Any](elseRet) {
+          case ((predicateExpr, trueExpr), falseRet) =>
+            computeIfElse(batch, predicateExpr, trueExpr, falseRet)
+        }
+        GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
       }
-      GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
     }
   }
 
@@ -538,5 +587,99 @@ case class GpuCaseWhen(
     val cases = branches.map { case (c, v) => s" WHEN ${c.sql} THEN ${v.sql}" }.mkString
     val elseCase = elseValue.map(" ELSE " + _.sql).getOrElse("")
     "CASE" + cases + elseCase + " END"
+  }
+
+  private def isCaseWhenFusionSupportedType(dataType: DataType): Boolean = {
+    dataType match {
+      case BooleanType => true
+      case ByteType => true
+      case ShortType => true
+      case IntegerType => true
+      case LongType => true
+      case FloatType => true
+      case DoubleType => true
+      case StringType => true
+      case _: DecimalType => true
+      case _ => false
+    }
+  }
+
+  /**
+   * Create column vector from scalars
+   *
+   * @param scalars literals
+   * @return column vector for the specified scalars
+   */
+  private def createFromScalarList(scalars: Seq[GpuScalar]): ColumnVector = {
+    scalars.head.dataType match {
+      case BooleanType =>
+        val booleans = scalars.map(s => s.getValue.asInstanceOf[java.lang.Boolean])
+        ColumnVector.fromBoxedBooleans(booleans: _*)
+      case ByteType =>
+        val bytes = scalars.map(s => s.getValue.asInstanceOf[java.lang.Byte])
+        ColumnVector.fromBoxedBytes(bytes: _*)
+      case ShortType =>
+        val shorts = scalars.map(s => s.getValue.asInstanceOf[java.lang.Short])
+        ColumnVector.fromBoxedShorts(shorts: _*)
+      case IntegerType =>
+        val ints = scalars.map(s => s.getValue.asInstanceOf[java.lang.Integer])
+        ColumnVector.fromBoxedInts(ints: _*)
+      case LongType =>
+        val longs = scalars.map(s => s.getValue.asInstanceOf[java.lang.Long])
+        ColumnVector.fromBoxedLongs(longs: _*)
+      case FloatType =>
+        val floats = scalars.map(s => s.getValue.asInstanceOf[java.lang.Float])
+        ColumnVector.fromBoxedFloats(floats: _*)
+      case DoubleType =>
+        val doubles = scalars.map(s => s.getValue.asInstanceOf[java.lang.Double])
+        ColumnVector.fromBoxedDoubles(doubles: _*)
+      case StringType =>
+        val utf8Bytes = scalars.map(s => {
+          val v = s.getValue
+          if (v == null) {
+            null
+          } else {
+            v.asInstanceOf[UTF8String].getBytes
+          }
+        })
+        ColumnVector.fromUTF8Strings(utf8Bytes: _*)
+      case dt: DecimalType =>
+        val decimals = scalars.map(s => {
+          val v = s.getValue
+          if (v == null) {
+            null
+          } else {
+            v.asInstanceOf[Decimal].toJavaBigDecimal
+          }
+        })
+        fromDecimals(dt, decimals: _*)
+      case _ =>
+        throw new UnsupportedOperationException(s"Creating column vector from a GpuScalar list" +
+            s" is not supported for type ${scalars.head.dataType}.")
+    }
+  }
+
+  /**
+   * Create decimal column vector according to DecimalType.
+   * Note: it will create 3 types of column vector according to DecimalType precision
+   *  - Decimal 32 bits
+   *  - Decimal 64 bits
+   *  - Decimal 128 bits
+   *    E.g.: If the max of values are decimal 32 bits, but DecimalType is 128 bits,
+   *    then return a Decimal 128 bits column vector
+   */
+  private def fromDecimals(dt: DecimalType, values: java.math.BigDecimal*): ColumnVector = {
+    val hcv = HostColumnVector.build(
+      DecimalUtil.createCudfDecimal(dt),
+      values.length,
+      new Consumer[HostColumnVector.Builder]() {
+        override def accept(b: HostColumnVector.Builder): Unit = {
+          b.appendBoxed(values: _*)
+        }
+      }
+    )
+    withResource(hcv) { _ =>
+      hcv.copyToDevice()
+    }
   }
 }

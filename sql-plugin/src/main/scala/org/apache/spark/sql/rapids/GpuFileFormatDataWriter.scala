@@ -35,7 +35,7 @@ import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, ExternalCatalogUtils}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, Murmur3Hash, NullsFirst, ScalaUDF, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, HiveHash, Literal, Murmur3Hash, NullsFirst, ScalaUDF, UnsafeProjection}
 import org.apache.spark.sql.connector.write.DataWriter
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, PartitioningUtils, WriteTaskResult}
 import org.apache.spark.sql.rapids.GpuFileFormatDataWriter._
@@ -945,9 +945,38 @@ object BucketIdMetaUtils {
       val hashMeta = GpuOverrides.wrapExpr(expr, meta.conf, None)
       hashMeta.tagForGpu()
       if(!hashMeta.canThisBeReplaced) {
-        meta.willNotWorkOnGpu(s"Hashing for generating bucket IDs can not run" +
+        meta.willNotWorkOnGpu(s"Murmur3 hashing for generating bucket IDs can not run" +
           s" on GPU. Details: ${hashMeta.explain(all=false)}")
       }
     }
+  }
+
+  def tagForBucketingHiveWrite(meta: RapidsMeta[_, _, _], bucketSpec: Option[BucketSpec],
+      outputColumns: Seq[Attribute]): Unit = {
+    bucketSpec.foreach { bSpec =>
+      // Create a HiveHash expression to leverage the overriding types check.
+      val expr = HiveHash(bSpec.bucketColumnNames.map(n => outputColumns.find(_.name == n).get))
+      val hashMeta = GpuOverrides.wrapExpr(expr, meta.conf, None)
+      hashMeta.tagForGpu()
+      if (!hashMeta.canThisBeReplaced) {
+        meta.willNotWorkOnGpu(s"Hive hashing for generating bucket IDs can not run" +
+          s" on GPU. Details: ${hashMeta.explain(all = false)}")
+      }
+    }
+  }
+
+  def getWriteBucketSpecForHive(
+      bucketCols: Seq[Attribute],
+      numBuckets: Int): GpuWriterBucketSpec = {
+    // Hive bucketed table: use "HiveHash" and bitwise-and as bucket id expression.
+    // "bitwise-and" is used to handle the case of a wrong bucket id when
+    // the hash value is negative.
+    val hashId = GpuBitwiseAnd(GpuHiveHash(bucketCols), GpuLiteral(Int.MaxValue))
+    val bucketIdExpression = GpuPmod(hashId, GpuLiteral(numBuckets))
+
+    // The bucket file name prefix is following Hive, Presto and Trino conversion, then
+    // Hive bucketed tables written by Plugin can be read by other SQL engines.
+    val fileNamePrefix = (bucketId: Int) => f"$bucketId%05d_0_"
+    GpuWriterBucketSpec(bucketIdExpression, fileNamePrefix)
   }
 }

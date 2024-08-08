@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, CudfSum}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
@@ -58,7 +59,7 @@ class HashAggregateRetrySuite
     when(mockMetrics.numAggOps).thenReturn(NoopMetric)
     val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
-      forceMerge = false, isSorted = false))
+      forceMerge = false, new SQLConf(), isSorted = false))
 
     // mock out a reduction on the first column
     val aggs = new ArrayBuffer[CudfAggregate]()
@@ -78,7 +79,8 @@ class HashAggregateRetrySuite
   def makeGroupByAggHelper(forceMerge: Boolean): AggHelper = {
     val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
-      forceMerge = forceMerge, isSorted = false))
+      forceMerge = forceMerge, new SQLConf(),
+      isSorted = false))
 
     // mock out a group by with the first column as key, and second column
     // as a group by sum

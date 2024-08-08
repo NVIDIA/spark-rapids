@@ -323,8 +323,9 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
-      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
+    if (BucketingUtilsShim.isHiveHashBucketing(cmd.options)) {
+      BucketingUtilsShim.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
+        conf.isForceHiveHashForBucketedWrite)
     } else {
       BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
@@ -1147,8 +1148,11 @@ object GpuOverrides extends Logging {
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
+      (a, conf, p, r) => new ExprMeta[UnaryPositive](a, conf, p, r) {
+        override val isFoldableNonLitAllowed: Boolean = true
+        override def convertToGpu(): GpuExpression =
+          GpuUnaryPositive(childExprs.head.convertToGpu())
+        
       }),
     expr[Year](
       "Returns the year from a date or timestamp",
@@ -2024,7 +2028,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue)
+          GpuCaseWhen(branches, elseValue, this.conf.caseWhenFuseEnabled)
         }
       }),
     expr[If](
@@ -2913,6 +2917,23 @@ object GpuOverrides extends Logging {
           GpuArrayRemove(lhs, rhs)
       }
     ),
+    expr[MapFromArrays](
+      "Creates a new map from two arrays",
+      ExprChecks.binaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+        ("keys",
+          TypeSig.ARRAY.nested(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.all - TypeSig.MAP)),
+        ("values",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.all))),
+      GpuMapFromArraysMeta
+    ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3016,8 +3037,7 @@ object GpuOverrides extends Logging {
       "substring_index operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
+          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
@@ -3254,6 +3274,15 @@ object GpuOverrides extends Logging {
 
         def convertToGpu(): GpuExpression =
           GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
+      }),
+    expr[HiveHash](
+      "hive hash operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
+        def convertToGpu(): GpuExpression =
+          GpuHiveHash(childExprs.map(_.convertToGpu()))
       }),
     expr[Contains](
       "Contains",
@@ -4218,7 +4247,7 @@ object GpuOverrides extends Logging {
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
           condition.map(c => GpuFilterExec(c.convertToGpu(),
-            joinExec)(useTieredProject = this.conf.isTieredProjectEnabled)).getOrElse(joinExec)
+            joinExec)()).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](
@@ -4687,8 +4716,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
 
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        val found = f.relation.inputFiles.exists { name =>
-          checkDeltaFunc(name)
+        val found = StaticPartitionShims.getStaticPartitions(f.relation).map { parts =>
+          parts.exists { part =>
+            part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
+          }
+        }.getOrElse {
+          f.relation.inputFiles.exists { name =>
+            checkDeltaFunc(name)
+          }
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")

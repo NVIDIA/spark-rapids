@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import ignore_order, incompat, allow_non_gpu, datagen_overrides, tz_sensitive_test
+from marks import allow_non_gpu, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -91,6 +91,8 @@ def test_timesub_from_subquery(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(fun)
 
+
+@disable_ansi_mode  # ANSI mode tested separately.
 # Should specify `spark.sql.legacy.interval.enabled` to test `DateAddInterval` after Spark 3.2.0,
 # refer to https://issues.apache.org/jira/browse/SPARK-34896
 # [SPARK-34896][SQL] Return day-time interval from dates subtraction
@@ -437,6 +439,8 @@ def test_string_unix_timestamp_ansi_exception():
         error_message="Exception",
         conf=ansi_enabled_conf)
 
+
+@disable_ansi_mode  # ANSI mode is tested separately.
 @tz_sensitive_test
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
@@ -561,6 +565,8 @@ def test_date_format_maybe_incompat(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
 
+
+@disable_ansi_mode  # ANSI mode tested separately.
 # Reproduce conditions for https://github.com/NVIDIA/spark-rapids/issues/5670
 # where we had a failure due to GpuCast canonicalization with timezone.
 # In this case it was doing filter after project, the way I get that to happen is by adding in the
@@ -594,6 +600,7 @@ def test_unsupported_fallback_date_format(data_gen):
         conf)
 
 
+@disable_ansi_mode  # Failure cases for ANSI mode are tested separately.
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_to_date():
     date_gen = StringGen(pattern="2023-08-01")
