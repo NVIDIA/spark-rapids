@@ -96,6 +96,7 @@ The output of signature verify:
 * Support timezones with daylight savings shifts
 * Improve metrics in Spark UI
 * Refactor Parquet decode microkernels and support load balancing RLE runs
+* Improve get_json performance
 * Support dynamic scan filtering
 * Improve UCX shuffle 
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
