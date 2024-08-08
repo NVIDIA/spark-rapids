@@ -29,8 +29,8 @@ IFS=$PRE_IFS
 
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
-PROJECT_VER=${PROJECT_VER:-"24.08.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"24.08.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"24.10.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"24.10.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.2.0"}
 SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
 # Make a best attempt to set the default value for the shuffle shim.
@@ -64,39 +64,27 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES() {
    <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
 
+function createReleaseProperties() {
+  # Create Scala release properties file
+  echo "Collecting Spark versions involved..."
+  mvn -B -q -pl . $1 -DforceStdout antrun:run@create-release-properties
+}
+
+pom=""
 if [[ $SCALA_BINARY_VER == "2.13" ]]; then
-    # Create release properties file
-    mvn -B -q -pl . -f scala2.13 -DforceStdout antrun:run@create-release-properties
-
-    # Psnapshots: snapshots + noSnapshots
-    set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapAndNoSnap.buildvers" "-f scala2.13"
-    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}
-    # PnoSnapshots: noSnapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "noSnapshots.buildvers" "-f scala2.13"
-    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    echo ${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}
-    # PsnapshotOnly : snapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers" "-f scala2.13"
-    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}
-else
-    # Create release properties file
-    mvn -B -q -pl . -DforceStdout antrun:run@create-release-properties
-
-    # Psnapshots: snapshots + noSnapshots
-    set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapAndNoSnap.buildvers"
-    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}
-    # PnoSnapshots: noSnapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "noSnapshots.buildvers"
-    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    echo ${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}
-    # PsnapshotOnly : snapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers"
-    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}
+    pom="-f scala2.13"
 fi
+createReleaseProperties "$pom"
+
+# Psnapshots: snapshots + noSnapshots
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapAndNoSnap.buildvers" "$pom"
+SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PnoSnapshots: noSnapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "noSnapshots.buildvers" "$pom"
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PsnapshotOnly : snapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers" "$pom"
+SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
@@ -145,8 +133,7 @@ SPARK_SHIM_VERSIONS_JDK17=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk17-scala213-test
 SPARK_SHIM_VERSIONS_JDK17_SCALA213=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # databricks shims
-set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "databricks.buildvers"
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "databricks.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_DATABRICKS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-echo ${SPARK_SHIM_VERSIONS_DATABRICKS[@]}
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

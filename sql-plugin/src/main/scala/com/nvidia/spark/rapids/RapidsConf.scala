@@ -1015,15 +1015,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
-  val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getJsonObject.legacy.enabled")
-      .doc("When set to true, the get_json_object function will use the legacy implementation " +
-          "on the GPU. The legacy implementation is faster than the current implementation, but " +
-          "it has several incompatibilities and bugs, including no input validation, escapes are " +
-          "not properly processed for Strings, and non-string output is not normalized.")
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
-
   // FILE FORMATS
   val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
       .doc("The maximum number of threads on each executor to use for reading small " +
@@ -2330,11 +2321,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   val ENABLE_DELTA_LOW_SHUFFLE_MERGE =
     conf("spark.rapids.sql.delta.lowShuffleMerge.enabled")
     .doc("Option to turn on the low shuffle merge for Delta Lake. Currently there are some " +
-      "limitations for this feature: \n" +
-      "1. We only support Databricks Runtime 13.3 and Deltalake 2.4. \n" +
-      s"2. The file scan mode must be set to ${RapidsReaderType.PERFILE} \n" +
+      "limitations for this feature: " +
+      "1. We only support Databricks Runtime 13.3 and Deltalake 2.4. " +
+      s"2. The file scan mode must be set to ${RapidsReaderType.PERFILE} " +
       "3. The deletion vector size must be smaller than " +
-      s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} \n")
+      s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} ")
     .booleanConf
     .createWithDefault(false)
 
@@ -2403,7 +2394,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2829,9 +2820,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-
-  lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
-
+  
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {

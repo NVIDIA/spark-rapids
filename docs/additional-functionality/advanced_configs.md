@@ -75,11 +75,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.csv.read.float.enabled"></a>spark.rapids.sql.csv.read.float.enabled|CSV reading is not 100% compatible when reading floats.|true|Runtime
 <a name="sql.decimalOverflowGuarantees"></a>spark.rapids.sql.decimalOverflowGuarantees|FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of the compatibility documents for more information on this config.|true|Runtime
 <a name="sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold"></a>spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold|Currently we need to broadcast deletion vector to all executors to perform low shuffle merge. When we detect the deletion vector broadcast size is larger than this value, we will fallback to normal shuffle merge.|20971520|Runtime
-<a name="sql.delta.lowShuffleMerge.enabled"></a>spark.rapids.sql.delta.lowShuffleMerge.enabled|Option to turn on the low shuffle merge for Delta Lake. Currently there are some limitations for this feature: 
-1. We only support Databricks Runtime 13.3 and Deltalake 2.4. 
-2. The file scan mode must be set to PERFILE 
-3. The deletion vector size must be smaller than spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold 
-|false|Runtime
+<a name="sql.delta.lowShuffleMerge.enabled"></a>spark.rapids.sql.delta.lowShuffleMerge.enabled|Option to turn on the low shuffle merge for Delta Lake. Currently there are some limitations for this feature: 1. We only support Databricks Runtime 13.3 and Deltalake 2.4. 2. The file scan mode must be set to PERFILE 3. The deletion vector size must be smaller than spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold |false|Runtime
 <a name="sql.detectDeltaCheckpointQueries"></a>spark.rapids.sql.detectDeltaCheckpointQueries|Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
 <a name="sql.detectDeltaLogQueries"></a>spark.rapids.sql.detectDeltaLogQueries|Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
 <a name="sql.fast.sample"></a>spark.rapids.sql.fast.sample|Option to turn on fast sample. If enable it is inconsistent with CPU sample because of GPU sample algorithm is inconsistent with CPU.|false|Runtime
@@ -259,7 +255,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|`from_unixtime`|Get the string from a unix timestamp|true|None|
 <a name="sql.expression.GetArrayItem"></a>spark.rapids.sql.expression.GetArrayItem| |Gets the field at `ordinal` in the Array|true|None|
 <a name="sql.expression.GetArrayStructFields"></a>spark.rapids.sql.expression.GetArrayStructFields| |Extracts the `ordinal`-th fields of all array elements for the data with the type of array of struct|true|None|
-<a name="sql.expression.GetJsonObject"></a>spark.rapids.sql.expression.GetJsonObject|`get_json_object`|Extracts a json object from path|false|This is disabled by default because Experimental feature that could be unstable or have performance issues.|
+<a name="sql.expression.GetJsonObject"></a>spark.rapids.sql.expression.GetJsonObject|`get_json_object`|Extracts a json object from path|true|None|
 <a name="sql.expression.GetMapValue"></a>spark.rapids.sql.expression.GetMapValue| |Gets Value from a Map based on a key|true|None|
 <a name="sql.expression.GetStructField"></a>spark.rapids.sql.expression.GetStructField| |Gets the named field of the struct|true|None|
 <a name="sql.expression.GetTimestamp"></a>spark.rapids.sql.expression.GetTimestamp| |Gets timestamps from strings using given pattern.|true|None|
