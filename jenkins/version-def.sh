@@ -59,7 +59,7 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
 }
 
 function set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES() {
-   versionStr=$(mvn -B -q -pl . $2 -Dbuild_vers=$1 -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@get-buildvers)
+   versionStr=$(mvn -B -q -pl . $2 -Dexpression=$1 -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@get-buildvers)
    SPARK_SHIM_VERSIONS_STR=$(echo -n $versionStr)
    <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }

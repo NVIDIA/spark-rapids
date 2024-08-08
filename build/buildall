@@ -92,8 +92,14 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
-  versionStr=$(mvn -B -q -pl . $2 -Dexpression="$1" -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@set-included-buildvers help:evaluate)
+  versionStr=$(mvn -B -q -pl . $2 -Dexpression=$1 -DforceStdout org.apache.maven.plugins:maven-antrun-plugin:run@get-buildvers)
   echo -n $versionStr
+}
+
+function createReleaseProperties() {
+  # Create Scala release properties file
+  echo "Collecting Spark versions involved..."
+  mvn -B -q -pl . $1 -DforceStdout antrun:run@create-release-properties
 }
 
 FINAL_OP="package"
@@ -164,6 +170,9 @@ done
 
 if [[ "$DIST_PROFILE" == *Scala213 ]]; then
   SCALA213=1
+  createReleaseProperties "-f scala2.13"
+else
+  createReleaseProperties
 fi
 
 # include options to mvn command
