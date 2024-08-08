@@ -33,7 +33,8 @@ To tell LORE the LORE ids of the operators you are interested in, you need to se
 LORE to dump all partitions of input data of operators with id 1, 2, or 3. You can also only dump 
 some partition of the operator's input by appending partition numbers to lore ids. For example, 
 "1[0 4-6 7], 2[*]" tell LORE to dump operator with LORE id 1, but only dump partition 0, 4, 5, 
-and 7. But for operator with LORE id 2, it will dump all partitions. 
+and 7, e.g. the end of the range is exclusive. But for operator with LORE id 2, it will dump all 
+partitions. 
 
 You also need to set `spark.rapids.sql.lore.dumpPath` to tell LORE where to dump the data, the 
 value of which should point to a directory. All dumped data of a query will live in this 
