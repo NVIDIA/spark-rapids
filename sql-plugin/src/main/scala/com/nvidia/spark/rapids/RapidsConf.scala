@@ -2558,11 +2558,10 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val PLAIN, JSON = Value
   }
 
-  def dumpConfigsWithDefault(args: Array[String]): Unit = {
+  def dumpConfigsWithDefault(formatName: String, outputPath: String): Unit = {
     import com.nvidia.spark.rapids.Arm._
 
-    val format = Format.withName(args(0).toUpperCase(Locale.US))
-    val outputPath = args(1)
+    val format = Format.withName(formatName.toUpperCase(Locale.US))
 
     println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
 
@@ -2587,7 +2586,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
               })
             }
           case Format.JSON =>
-            implicit val formats = DefaultFormats
+            implicit val formats: DefaultFormats.type = DefaultFormats
             bos.write(writePretty(allConfs)
               .getBytes(StandardCharsets.UTF_8))
           case _ =>

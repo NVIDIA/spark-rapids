@@ -30,6 +30,6 @@ object DumpDefaultConfigs {
     }
     // We use the reflection as RapidsConf should be accessed via the shim layer.
     val clazz = ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.RapidsConf")
-    MethodUtils.invokeStaticMethod(clazz, "dumpConfigsWithDefault", args)
+    MethodUtils.invokeStaticMethod(clazz, "dumpConfigsWithDefault", args(0), args(1))
   }
 }
