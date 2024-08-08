@@ -873,8 +873,7 @@ object RapidsBufferCatalog extends Logging {
         memoryEventHandler = null
       }
 
-    Seq(_singleton, memoryEventHandlerCloser, deviceStorage, hostStorage, diskStorage)
-      .filter(e => e != null).safeClose()
+    Seq(_singleton, memoryEventHandlerCloser, deviceStorage, hostStorage, diskStorage).safeClose()
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
