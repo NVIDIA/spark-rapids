@@ -50,28 +50,6 @@
     </properties>
     <profiles>
         <profile>
-            <id>noSnapshotsWithDatabricks</id>
-            <properties>
-                <included_buildvers>
-                    ${noSnapshot.buildvers},
-                    ${databricks.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>noSnapshots</id>
-            <properties>
-                <included_buildvers>
-                    <!-- #if scala-2.12 -->
-                    ${noSnapshot.buildvers}
-                    <!-- #endif scala-2.12 -->
-                    <!-- #if scala-2.13 --><!--
-                    ${noSnapshotScala213.buildvers}
-                    --><!-- #endif scala-2.13 -->
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
             <id>premergeUT1</id>
             <properties>
                 <included_buildvers>
@@ -128,14 +106,6 @@
             </properties>
         </profile>
         <profile>
-            <id>databricks</id>
-            <properties>
-                <included_buildvers>
-                    ${databricks.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
             <!--
             https://spark.apache.org/versioning-policy.html
             Spark's semantic versioning [MAJOR].[FEATURE].[MAINTENANCE]
@@ -158,58 +128,6 @@
                     321cdh,
                     330,
                     330cdh
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>snapshots</id>
-            <properties>
-                <included_buildvers>
-                    ${noSnapshot.buildvers},
-                    ${snapshot.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>snapshotOnly</id>
-            <properties>
-                <included_buildvers>
-                    ${snapshot.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>snapshotsWithDatabricks</id>
-            <properties>
-                <included_buildvers>
-                    ${noSnapshot.buildvers},
-                    ${snapshot.buildvers},
-                    ${databricks.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>noSnapshotsScala213</id>
-            <properties>
-                <included_buildvers>
-                    ${noSnapshotScala213.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>snapshotsScala213</id>
-            <properties>
-                <included_buildvers>
-                    ${noSnapshotScala213.buildvers},
-                    ${snapshotScala213.buildvers}
-                </included_buildvers>
-            </properties>
-        </profile>
-        <profile>
-            <id>snapshotScala213Only</id>
-            <properties>
-                <included_buildvers>
-                    ${snapshotScala213.buildvers}
                 </included_buildvers>
             </properties>
         </profile>

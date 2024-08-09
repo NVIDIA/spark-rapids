@@ -90,12 +90,11 @@
         <module>jdk-profiles</module>
     </modules>
     <profiles>
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release320</id>
             <activation>
-                <!-- #if scala-2.12 -->
                 <activeByDefault>true</activeByDefault>
-                <!-- #endif scala-2.12 -->
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -111,6 +110,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release321</id>
             <activation>
@@ -129,6 +130,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release321cdh</id>
             <activation>
@@ -143,8 +146,10 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- #endif scala-2.12 -->
                 <!-- Keeping the scala plugin version 4.3.0 for details
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
+                <!-- #if scala-2.12 -->
                 <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
@@ -152,6 +157,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release322</id>
             <activation>
@@ -170,6 +177,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release323</id>
             <activation>
@@ -188,6 +197,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release324</id>
             <activation>
@@ -206,6 +217,7 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
         <profile>
             <id>release330</id>
             <activation>
@@ -777,34 +789,6 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
-        <noSnapshot.buildvers>
-            320,
-            321,
-            321cdh,
-            322,
-            323,
-            324,
-            330,
-            331,
-            332,
-            333,
-            334,
-            330cdh,
-            332cdh,
-            340,
-            341,
-            342,
-            343,
-            350,
-            351
-        </noSnapshot.buildvers>
-        <snapshot.buildvers>
-        </snapshot.buildvers>
-        <databricks.buildvers>
-            330db,
-            332db,
-            341db
-        </databricks.buildvers>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
           Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
@@ -836,32 +820,7 @@
             330,
             400
         </jdk17.scala213.buildvers>
-        <all.buildvers>
-            ${noSnapshot.buildvers},
-            ${snapshot.buildvers},
-            ${databricks.buildvers}
-        </all.buildvers>
-        <noSnapshotScala213.buildvers>
-            330,
-            331,
-            332,
-            333,
-            334,
-            340,
-            341,
-            342,
-            343,
-            350,
-            351
-        </noSnapshotScala213.buildvers>
-        <snapshotScala213.buildvers>
-            400
-        </snapshotScala213.buildvers>
-        <allScala213.buildvers>
-            ${noSnapshotScala213.buildvers},
-            ${snapshotScala213.buildvers}
-        </allScala213.buildvers>
-        <shimplify.shims>${all.buildvers}</shimplify.shims>
+        <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>
         <!-- SPARK-36796 for JDK-17 test-->
         <extraJavaTestArgs>
@@ -1812,6 +1771,104 @@ This will force full Scala code rebuild in downstream modules.
                                 <include>com.nvidia.spark.*</include>
                                 <include>org.apache.spark.sql.rapids.*</include>
                             </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>get-buildvers</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <script language="jython">
+import ConfigParser
+config = ConfigParser.ConfigParser()
+config.read("release.properties")
+<!-- #if scala-2.12 -->
+print(config.get("Scala212ReleaseSection", "${expression}"))
+<!-- #endif scala-2.12 -->
+<!-- #if scala-2.13 --><!--
+print(config.get("Scala213ReleaseSection", "${expression}"))
+--><!-- #endif scala-2.13 -->
+                                </script>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>create-release-properties</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <target>
+                                <script language="jython">
+import subprocess
+import os
+<!-- #if scala-2.12 -->
+pom = ""
+<!-- #endif scala-2.12 -->
+<!-- #if scala-2.13 --><!--
+pom = "-f scala2.13"
+--><!-- #endif scala-2.13 -->
+
+# Define the Bash command
+bash_command = """
+export TEMP=$(mvn help:all-profiles -pl . {pom}| sort | uniq | awk "/release[0-9]/ {{print substr(\$3, 8)}}");
+TEMP=$(echo -n $TEMP)
+[[ -n $TEMP ]] || {{ echo -e "Error setting databricks versions"; }};
+&lt;&lt;&lt; $TEMP read -r -a SPARK_SHIM_VERSIONS_ARR;
+SNAPSHOTS=();
+NO_SNAPSHOTS=()
+for ver in ${{SPARK_SHIM_VERSIONS_ARR[@]}}; do
+    TEST=$(mvn -B help:evaluate -q -pl dist {pom} -Dexpression=spark.version -Dbuildver="$ver" -DforceStdout)
+    if [[ "$TEST" != *"-SNAPSHOT" ]]; then
+        NO_SNAPSHOTS+=(" $ver")
+    else
+        SNAPSHOTS+=(" $ver")
+    fi
+done
+echo "${{SNAPSHOTS[@]}} | ${{NO_SNAPSHOTS[@]}}"
+""".format(pom=pom)
+
+try:
+    # Run the command
+    output = subprocess.check_output(bash_command, shell=True, executable="/bin/bash", stderr=subprocess.STDOUT)
+    result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
+    snapshots = result_strings[0]
+    no_snapshots = result_strings[1]
+ <!-- #if scala-2.13 --><!--
+    no_snapshots = filter(lambda x: not x.endswith("cdh"), no_snapshots)
+ --><!-- #endif scala-2.13 -->
+    db_release = filter(lambda x: x.endswith("db"), no_snapshots)
+    no_snapshots = filter(lambda x: not x.endswith("db"), no_snapshots)
+    snap_and_no_snap = no_snapshots + snapshots
+    all = snap_and_no_snap + db_release
+    f = open("release.properties", "w")
+    try:
+<!-- #if scala-2.12 -->
+        f.write("[Scala212ReleaseSection]\n")
+<!-- #endif scala-2.12 -->
+<!-- #if scala-2.13 --><!--
+        f.write("[Scala213ReleaseSection]\n")
+--><!-- #endif scala-2.13 -->
+        f.write("databricks.buildvers={}".format(" ".join(db_release)) +
+        "\nsnapshots.buildvers={}".format(" ".join(snapshots)) +
+        "\nnoSnapshots.buildvers={}".format(" ".join(no_snapshots)) +
+        "\nsnapAndNoSnap.buildvers={}".format(" ".join(snap_and_no_snap)) +
+        "\nall.buildvers={}".format(" ".join(all)))
+    finally:
+        f.close()
+except subprocess.CalledProcessError as e:
+    print("Error:", e.output)
+                                </script>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
