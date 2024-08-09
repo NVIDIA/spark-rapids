@@ -399,7 +399,7 @@ self.log("... OK")
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <equals arg1="spark320" arg2="${spark.version.classifier}"/>
                                     <ac:then>
-                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
+                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true" fork="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>
                                             <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
                                         </java>
