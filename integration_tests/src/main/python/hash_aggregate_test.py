@@ -372,6 +372,7 @@ def test_computation_in_grpby_columns():
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
+    conf = copy_and_update(conf, {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = conf)
@@ -384,6 +385,7 @@ def test_hash_grpby_sum(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
+    conf = copy_and_update(conf, {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = conf)
