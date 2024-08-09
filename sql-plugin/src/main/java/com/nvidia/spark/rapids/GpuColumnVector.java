@@ -970,8 +970,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       RapidsHostColumnVector[] hostCols = new RapidsHostColumnVector[gpuCols.length];
       try {
         for (int i = 0; i < gpuCols.length; i++) {
-          hostCols[i] = gpuCols[i].copyToHost();
+          hostCols[i] = gpuCols[i].copyToHostAsync(Cuda.DEFAULT_STREAM);
         }
+        Cuda.DEFAULT_STREAM.sync();
       } catch (Exception e) {
         for (RapidsHostColumnVector hostCol : hostCols) {
           if (hostCol != null) {
@@ -1092,6 +1093,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public final RapidsHostColumnVector copyToHost() {
     return new RapidsHostColumnVector(type, cudfCv.copyToHost());
+  }
+
+  public final RapidsHostColumnVector copyToHostAsync(Cuda.Stream stream) {
+    return new RapidsHostColumnVector(type, cudfCv.copyToHostAsync(stream));
   }
 
   public final RapidsNullSafeHostColumnVector copyToNullSafeHost() {

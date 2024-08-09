@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, OutOfBoundsPolicy, ReductionAggregation, Scalar, Table}
+import ai.rapids.cudf.{ColumnView, DType, GatherMap, NullEquality, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -398,13 +398,6 @@ abstract class BaseHashJoinIterator(
     }
   }
 
-  private def countGroups(keys: ColumnarBatch): Table = {
-    withResource(GpuColumnVector.from(keys)) { keysTable =>
-      keysTable.groupBy(0 until keysTable.getNumberOfColumns: _*)
-          .aggregate(GroupByAggregation.count(NullPolicy.INCLUDE).onColumn(0))
-    }
-  }
-
   /**
    * Guess the magnification factor for a stream side batch and detect if the build side contains
    * only unique join keys.
@@ -414,13 +407,12 @@ abstract class BaseHashJoinIterator(
     // Based off of the keys on the build side guess at how many output rows there
     // will be for each input row on the stream side. This does not take into account
     // the join type, data skew or even if the keys actually match.
-    withResource(countGroups(builtKeys)) { builtCount =>
-      val isDistinct = builtCount.getRowCount == builtKeys.numRows()
-      val counts = builtCount.getColumn(builtCount.getNumberOfColumns - 1)
-      withResource(counts.reduce(ReductionAggregation.mean(), DType.FLOAT64)) { scalarAverage =>
-        (scalarAverage.getDouble, isDistinct)
-      }
+    val builtCount = withResource(GpuColumnVector.from(builtKeys)) { keysTable =>
+      keysTable.distinctCount(NullEquality.EQUAL)
     }
+    val isDistinct = builtCount == builtKeys.numRows()
+    val magnificationFactor = builtKeys.numRows().toDouble / builtCount
+    (magnificationFactor, isDistinct)
   }
 
   private def estimatedNumBatches(cb: LazySpillableColumnarBatch): Int = joinType match {
