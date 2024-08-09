@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2023, NVIDIA CORPORATION.
+  Copyright (c) 2020-2024, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -48,6 +48,10 @@
         </file>
         <file>
             <source>${project.build.outputDirectory}/rapids4spark-version-info.properties</source>
+            <outputDirectory>integration_tests</outputDirectory>
+        </file>
+        <file>
+            <source>${project.build.directory}/spark-rapids-default-configs.json</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
     </files>
