@@ -183,6 +183,7 @@ MapFromArrays,4
 MapKeys,4
 MapValues,4
 Max,4
+MaxBy,4
 Md5,4
 MicrosToTimestamp,4
 MillisToTimestamp,4

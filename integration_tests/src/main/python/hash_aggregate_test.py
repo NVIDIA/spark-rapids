@@ -1362,7 +1362,14 @@ def test_hash_groupby_with_minby_all(data_gen):
     )
 
 @ignore_order(local=True)
-def test_hash_groupby_with_minby_debug():
+def test_hash_groupby_with_minby_debug_bipair():
+    gen_b = long_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df2(spark, byte_gen, gen_b)
+            .groupby('a').agg(f.min_by('b', 'c')))
+
+@ignore_order(local=True)
+def test_hash_groupby_with_minby_debug_normal():
     gen_b = long_gen
     # gen_c = StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])
     gen_c = ArrayGen(StructGen([['child0', short_gen]]))
