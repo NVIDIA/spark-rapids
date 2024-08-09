@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-08-07
+Generated on 2024-08-09
 
 ## Release 24.08
 
@@ -7,14 +7,11 @@ Generated on 2024-08-07
 |||
 |:---|:---|
 |[#9259](https://github.com/NVIDIA/spark-rapids/issues/9259)|[FEA] Create Spark 4.0.0 shim and build env|
-|[#11104](https://github.com/NVIDIA/spark-rapids/issues/11104)|[FEA] Adopt UCX 1.17|
 |[#10366](https://github.com/NVIDIA/spark-rapids/issues/10366)|[FEA] It would be nice if we could support Hive-style write bucketing table|
 |[#10987](https://github.com/NVIDIA/spark-rapids/issues/10987)|[FEA] Implement lore framework to support all operators.|
 |[#11087](https://github.com/NVIDIA/spark-rapids/issues/11087)|[FEA] Support regex pattern with brackets when rewrite to PrefixRange patten in rlike|
-|[#10889](https://github.com/NVIDIA/spark-rapids/issues/10889)|[Test]Spark UT framework should support exclude a case based on JDK version and Scala version|
 |[#22](https://github.com/NVIDIA/spark-rapids/issues/22)|[FEA] Add support for bucketed writes|
 |[#9939](https://github.com/NVIDIA/spark-rapids/issues/9939)|[FEA] `GpuInsertIntoHiveTable` supports parquet format|
-|[#10867](https://github.com/NVIDIA/spark-rapids/issues/10867)|[FEA] Update branch-24.08 JNI and private dependencies version to 24.08.0-SNAPSHOT|
 
 ### Performance
 |||
@@ -28,6 +25,7 @@ Generated on 2024-08-07
 |:---|:---|
 |[#11287](https://github.com/NVIDIA/spark-rapids/issues/11287)|[BUG] String split APIs on empty string produce incorrect result|
 |[#11270](https://github.com/NVIDIA/spark-rapids/issues/11270)|[BUG] test_regexp_replace[DATAGEN_SEED=1722297411, TZ=UTC] hanging there forever in pre-merge CI intermittently|
+|[#9682](https://github.com/NVIDIA/spark-rapids/issues/9682)|[BUG] Casting FLOAT64 to DECIMAL(12,7) produces different rows from Apache Spark CPU|
 |[#10809](https://github.com/NVIDIA/spark-rapids/issues/10809)|[BUG] cast(9.95 as decimal(3,1)), actual: 9.9, expected: 10.0|
 |[#11266](https://github.com/NVIDIA/spark-rapids/issues/11266)|[BUG] test_broadcast_hash_join_constant_keys failed in databricks runtimes|
 |[#11243](https://github.com/NVIDIA/spark-rapids/issues/11243)|[BUG] ArrayIndexOutOfBoundsException on a left outer join|
@@ -90,6 +88,7 @@ Generated on 2024-08-07
 ### PRs
 |||
 |:---|:---|
+|[#11309](https://github.com/NVIDIA/spark-rapids/pull/11309)|[Doc ]Update lore doc about the range [skip ci]|
 |[#11292](https://github.com/NVIDIA/spark-rapids/pull/11292)|Add work around for string split with empty input.|
 |[#11278](https://github.com/NVIDIA/spark-rapids/pull/11278)|Fix formatting of advanced configs doc|
 |[#10917](https://github.com/NVIDIA/spark-rapids/pull/10917)|Adopt changes from JNI for casting from float to decimal|
