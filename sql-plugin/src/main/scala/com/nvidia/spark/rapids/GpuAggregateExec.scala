@@ -31,8 +31,8 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -206,6 +206,76 @@ object AggregateUtils extends Logging {
     wasBatchMerged
   }
 
+  //todo : have to be a callback?
+  def streamMergeAndRunCallback(
+      aggregatedBatches: Iterator[SpillableColumnarBatch],
+      forceMergeRegardlessOfOversize: Boolean,
+      metrics: GpuHashAggregateMetrics,
+      targetMergeBatchSize: Long,
+      helper: AggHelper,
+      callback: SpillableColumnarBatch => Unit // todo: callback need to trace repratition time
+  ): Unit = {
+    // todo: can we ignore forceMergeRegardlessOfOversize?
+    println("forceMergeRegardlessOfOversize: " + forceMergeRegardlessOfOversize)
+
+    var sizeSoFar = 0L
+    val batchesToConcat: mutable.ArrayBuffer[SpillableColumnarBatch] = mutable.ArrayBuffer.empty
+    var stagingBatch: Option[SpillableColumnarBatch] = None
+
+    def handleBatchesToConcat(): Unit = {
+      println("batchesToConcat.size: " + batchesToConcat.size)
+      batchesToConcat.foreach(b =>
+        println("b.sizeInBytes: " + b.sizeInBytes + " b.numRows: " + b.numRows()))
+      if (batchesToConcat.size == 1) {
+        callback(batchesToConcat.head)
+        batchesToConcat.clear()
+        return
+      }
+
+      val concat = concatenateAndMerge(batchesToConcat, metrics, helper)
+      batchesToConcat.clear()
+      if (concat.sizeInBytes > targetMergeBatchSize * 0.5) {
+        callback(concat)
+      } else {
+        if (stagingBatch.isEmpty) {
+          stagingBatch = Some(concat)
+        } else {
+          val concatWithStaged =
+            concatenateAndMerge(ArrayBuffer.apply(stagingBatch.get, concat), metrics, helper)
+          if (concatWithStaged.sizeInBytes > targetMergeBatchSize * 0.5) {
+            stagingBatch = None
+            callback(concatWithStaged)
+          } else {
+            stagingBatch = Some(concatWithStaged)
+          }
+        }
+      }
+    }
+
+    while (aggregatedBatches.hasNext) {
+      val next = aggregatedBatches.next()
+      println("size of next: " + next.sizeInBytes + " rows of next: " + next.numRows())
+
+      if (next.sizeInBytes >= targetMergeBatchSize) {
+        callback(next)
+      } else {
+        sizeSoFar += next.sizeInBytes
+        if (sizeSoFar > targetMergeBatchSize) {
+          handleBatchesToConcat()
+          sizeSoFar = next.sizeInBytes
+        }
+        batchesToConcat += next
+      }
+    }
+
+    if (batchesToConcat.nonEmpty) {
+      handleBatchesToConcat()
+    }
+
+    stagingBatch.foreach(callback)
+  }
+
+  //todo: to remove this
 
   /**
    * Attempt to merge adjacent batches in the aggregatedBatches queue until either there is only
@@ -439,8 +509,11 @@ class AggHelper(
         withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
           opTime)) { _ =>
           withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
-            SpillableColumnarBatch(
-              aggregate(cb, numAggs),
+            val a = cb.numRows()
+            val t = aggregate(cb, numAggs)
+            val b = t.numRows()
+            println("numRows before: " + a + " numRows after: " + b)
+            SpillableColumnarBatch(t,
               SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
         }
@@ -641,6 +714,7 @@ object GpuAggregateIterator extends Logging {
 
   /**
    * Concatenates batches after extracting them from `SpillableColumnarBatch`
+   *
    * @note the input batches are not closed as part of this operation
    * @param metrics  metrics that will be updated during aggregation
    * @param toConcat spillable batches to concatenate
@@ -830,21 +904,21 @@ object GpuAggFinalPassIterator {
  * `buildSortFallbackIterator` is used to sort the aggregated batches by the grouping keys and
  * performs a final merge aggregation pass on the sorted batches.
  *
- * @param firstPassIter iterator that has done a first aggregation pass over the input data.
- * @param inputAttributes input attributes to identify the input columns from the input batches
- * @param groupingExpressions expressions used for producing the grouping keys
- * @param aggregateExpressions GPU aggregate expressions used to produce the aggregations
- * @param aggregateAttributes attribute references to each aggregate expression
- * @param resultExpressions output expression for the aggregation
- * @param modeInfo identifies which aggregation modes are being used
- * @param metrics metrics that will be updated during aggregation
- * @param configuredTargetBatchSize user-specified value for the targeted input batch size
- * @param useTieredProject user-specified option to enable tiered projections
+ * @param firstPassIter                 iterator that has done a first aggregation pass over the input data.
+ * @param inputAttributes               input attributes to identify the input columns from the input batches
+ * @param groupingExpressions           expressions used for producing the grouping keys
+ * @param aggregateExpressions          GPU aggregate expressions used to produce the aggregations
+ * @param aggregateAttributes           attribute references to each aggregate expression
+ * @param resultExpressions             output expression for the aggregation
+ * @param modeInfo                      identifies which aggregation modes are being used
+ * @param metrics                       metrics that will be updated during aggregation
+ * @param configuredTargetBatchSize     user-specified value for the targeted input batch size
+ * @param useTieredProject              user-specified option to enable tiered projections
  * @param allowNonFullyAggregatedOutput if allowed to skip third pass Agg
- * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
- * @param aggFallbackAlgorithm use sort-based fallback or repartition-based fallback
- *                             for oversize agg
- * @param localInputRowsCount metric to track the number of input rows processed locally
+ * @param skipAggPassReductionRatio     skip if the ratio of rows after a pass is bigger than this value
+ * @param aggFallbackAlgorithm          use sort-based fallback or repartition-based fallback
+ *                                      for oversize agg
+ * @param localInputRowsCount           metric to track the number of input rows processed locally
  */
 class GpuMergeAggregateIterator(
     firstPassIter: Iterator[SpillableColumnarBatch],
@@ -865,7 +939,6 @@ class GpuMergeAggregateIterator(
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
   private[this] val defaultHashBucketNum = 16
-
 
   private[this] val batchesByBucket =
     ArrayBuffer.fill(defaultHashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
@@ -897,7 +970,6 @@ class GpuMergeAggregateIterator(
 
   override def next(): ColumnarBatch = {
     fallbackIter.map(_.next()).getOrElse {
-      var inputBatchNum = 0
 
       // aggregate and merge all pending inputs
       if (firstPassIter.hasNext) {
@@ -908,7 +980,8 @@ class GpuMergeAggregateIterator(
           GpuBindReferences.bindGpuReferences(groupingAttributes, aggBufferAttributes.toSeq)
 
         def repartition(batch: SpillableColumnarBatch): Unit = {
-          withResource(new NvtxWithMetrics("agg repartition", NvtxColor.CYAN)) { _ =>
+          withResource(new NvtxWithMetrics("agg repartition",
+            NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
 
             withResource(new GpuBatchSubPartitioner(
               Seq(batch).map(batch => {
@@ -936,21 +1009,17 @@ class GpuMergeAggregateIterator(
           }
         }
 
-        while (firstPassIter.hasNext) {
-          val batch = firstPassIter.next()
-          inputBatchNum = inputBatchNum + 1
-          repartition(batch)
-        }
+        AggregateUtils.streamMergeAndRunCallback(
+          firstPassIter, false, metrics, targetMergeBatchSize, concatAndMergeHelper, repartition)
       }
 
       val totalRows = batchesByBucket.flatMap(_.map(_.numRows())).sum
       // todo, check if merge neighbor batches can help?
-      if (inputBatchNum > 1) {
+      if (batchesByBucket.exists(_.size() > 1)) {
         // Unable to merge to a single output, so must fall back
-        println(s"input batches size: ${inputBatchNum}," +
-          s" total size: ${totalRows}")
         aggFallbackAlgorithm match {
           case AggFallbackAlgorithm.REPARTITION =>
+            // todo: still named fallbakc?
             fallbackIter = Some(buildRepartitionFallbackIterator())
           case AggFallbackAlgorithm.SORT =>
             throw new UnsupportedOperationException("Sort-based fallback is no longer supported")
@@ -1019,8 +1088,8 @@ class GpuMergeAggregateIterator(
         batches.safeClose()
       }
 
-//      def totalRows(): Long = batches.map(_.numRows()).sum
-//      def totalSize(): Long = batches.map(_.sizeInBytes).sum
+      //      def totalRows(): Long = batches.map(_.numRows()).sum
+      //      def totalSize(): Long = batches.map(_.sizeInBytes).sum
 
       def areAllBatchesSingleRow: Boolean = {
         batches.forall(_.numRows() == 1)
@@ -1055,7 +1124,7 @@ class GpuMergeAggregateIterator(
                 s"${headPartition.batches.size()} batches. Before merge, there were " +
                 s"$batchSizeBeforeMerge batches.")
           }
-          withResource(headPartition.batches.removeLast()){ lastBatch =>
+          withResource(headPartition.batches.removeLast()) { lastBatch =>
             lastBatch.getColumnarBatch()
           }
         }
@@ -1812,21 +1881,21 @@ object GpuHashAggregateExecBase {
  *
  * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
  *                                             EnsureRequirements to be able to add shuffle nodes
- * @param groupingExpressions The expressions that, when applied to the input batch, return the
- *                            grouping key
- * @param aggregateExpressions The GpuAggregateExpression instances for this node
- * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
- * @param resultExpressions the expected output expression of this hash aggregate (which this
- *                          node should project)
- * @param child incoming plan (where we get input columns from)
- * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
- * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
- * @param allowNonFullyAggregatedOutput whether we can skip the third pass of aggregation
- *                                      (can omit non fully aggregated data for non-final
- *                                      stage of aggregation)
- * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
- * @param aggFallbackAlgorithm use sort-based fallback or repartition-based fallback for
- *                             oversize agg
+ * @param groupingExpressions                  The expressions that, when applied to the input batch, return the
+ *                                             grouping key
+ * @param aggregateExpressions                 The GpuAggregateExpression instances for this node
+ * @param aggregateAttributes                  References to each GpuAggregateExpression (attribute references)
+ * @param resultExpressions                    the expected output expression of this hash aggregate (which this
+ *                                             node should project)
+ * @param child                                incoming plan (where we get input columns from)
+ * @param configuredTargetBatchSize            user-configured maximum device memory size of a batch
+ * @param configuredTieredProjectEnabled       configurable optimization to use tiered projections
+ * @param allowNonFullyAggregatedOutput        whether we can skip the third pass of aggregation
+ *                                             (can omit non fully aggregated data for non-final
+ *                                             stage of aggregation)
+ * @param skipAggPassReductionRatio            skip if the ratio of rows after a pass is bigger than this value
+ * @param aggFallbackAlgorithm                 use sort-based fallback or repartition-based fallback for
+ *                                             oversize agg
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
