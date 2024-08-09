@@ -221,8 +221,6 @@ if [[ "$GEN_BLOOP" == "true" ]]; then
   exit 0
 fi
 
-[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
-
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
 export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
 export NUM_SHIMS=${#SPARK_SHIM_VERSIONS[@]}
@@ -306,7 +304,7 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dmaven.scaladoc.skip
 )

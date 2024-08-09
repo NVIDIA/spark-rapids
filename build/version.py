@@ -16,39 +16,26 @@ import logging
 import os
 import subprocess
 
-__log = logging.getLogger("release-version")
-__log.setLevel(logging.INFO)
+_log = logging.getLogger("release-version")
+show_version_info = project.getProperty("release.version.trace")
+_log.setLevel(logging.INFO if show_version_info else logging.ERROR)
+# Same as shimplify.py
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+_log.addHandler(ch)
 
 pom = attributes.get("pom")
 scala_version = "2.12" if pom == "" else "2.13"
+section_header = project.getProperty("release.212.section.header") if pom == "" else project.getProperty("release.213.section.header")
 overwrite_properties = attributes.get("overwrite_properties")
 expression = attributes.get("expression")
 release_properties = project.getProperty("spark.rapids.releases")
 
 if (overwrite_properties == "true" or not os.path.exists(release_properties)):
-    __log.info("Writing properties at {}...".format(release_properties))
-    # Define the Bash command
-    bash_command = """
-    export TEMP=$(mvn help:all-profiles -pl . {pom}| sort | uniq | awk "/([^-])release[0-9]/ {{print substr(\$3, 8)}}");
-    TEMP=$(echo -n $TEMP)
-    [[ -n $TEMP ]] || {{ echo -e "Error setting databricks versions"; }};
-    <<< $TEMP read -r -a SPARK_SHIM_VERSIONS_ARR;
-    SNAPSHOTS=();
-    NO_SNAPSHOTS=()
-    for ver in ${{SPARK_SHIM_VERSIONS_ARR[@]}}; do
-        TEST=$(mvn -B help:evaluate -q -pl dist {pom} -Dexpression=spark.version -Dbuildver="$ver" -DforceStdout)
-        if [[ "$TEST" != *"-SNAPSHOT" ]]; then
-            NO_SNAPSHOTS+=(" $ver")
-        else
-            SNAPSHOTS+=(" $ver")
-        fi
-    done
-    echo "${{SNAPSHOTS[@]}} | ${{NO_SNAPSHOTS[@]}}"
-    """.format(pom=pom)
+    _log.info("Writing properties at {}...".format(release_properties))
 
     try:
-        # Run the command
-        output = subprocess.check_output(bash_command, shell=True, executable="/bin/bash", stderr=subprocess.STDOUT)
+        output = project.getProperty("release.versions")
         result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
         snapshots = result_strings[0]
         no_snapshots = result_strings[1]
@@ -65,30 +52,21 @@ if (overwrite_properties == "true" or not os.path.exists(release_properties)):
         release_dict["no_snapshots.buildvers"]=" ".join(no_snapshots)
         release_dict["snap_and_no_snap.buildvers"]=" ".join(snap_and_no_snap)
         release_dict["all.buildvers"]=" ".join(all)
+        _log.info("release_dict: {}".format(release_dict))
         try:
-            if (scala_version == "2.12"):
-                f.write("[Scala212ReleaseSection]\n")
-            elif (scala_version == "2.13"):
-                f.write("[Scala213ReleaseSection]\n")
-            else:
-                raise Exception("Illegal scala_version")
+            f.write("[{}]\n".format(section_header))
             for key in release_dict.keys():
             	f.write("{}={}\n".format(key,release_dict[key]))
-            __log.info("Finished writing properties file at {}".format(release_properties))
+            _log.info("Finished writing properties file at {}".format(release_properties))
             if (expression):
                 print(release_dict[expression])
         finally:
             f.close()
     except subprocess.CalledProcessError as e:
-        __log.error("Error:", e.output)
+        _log.error("Error:", e.output)
 
 else:
     import ConfigParser
     config = ConfigParser.ConfigParser()
     config.read(release_properties)
-    if (scala_version == "2.12"):
-        print(config.get("Scala212ReleaseSection", expression))
-    elif (scala_version == "2.13"):
-        print(config.get("Scala213ReleaseSection", expression))
-    else:
-        raise Exception("Illegal scala_version")
+    print(config.get(section_header, expression))

@@ -687,6 +687,8 @@
 
     <properties>
         <spark.rapids.releases>target/release.properties</spark.rapids.releases>
+        <release.212.section.header>Scala212ReleaseSection</release.212.section.header>
+        <release.213.section.header>Scala213ReleaseSection</release.213.section.header>
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
@@ -1079,6 +1081,28 @@
                           <inherited>false</inherited>
                           <configuration>
                               <target xmlns:ac="antlib:net.sf.antcontrib">
+                                  <exec executable="bash" outputproperty="release.versions" failonerror="true">
+                                      <arg value="-c"/>
+                                      <arg value="export TEMP=$(mvn help:all-profiles -pl . $1| sort | uniq | awk '/([^-])release[0-9]/ {print substr($3, 8)}');
+                                      TEMP=$(echo -n $TEMP);
+                                      [[ -n $TEMP ]] || { echo -e 'Error setting databricks versions'; };
+                                      &lt;&lt;&lt; $TEMP read -r -a SPARK_SHIM_VERSIONS_ARR;
+                                      SNAPSHOTS=();
+                                      NO_SNAPSHOTS=();
+                                      for ver in ${SPARK_SHIM_VERSIONS_ARR[@]}; do
+                                      TEST=$(mvn -B help:evaluate -q -pl dist $1 -Dexpression=spark.version -Dbuildver=&quot;$ver&quot; -DforceStdout);
+                                      if [[ &quot;$TEST&quot; != *&quot;-SNAPSHOT&quot; ]]; then NO_SNAPSHOTS+=(&quot; $ver&quot;);
+                                      else SNAPSHOTS+=(&quot; $ver&quot;);
+                                      fi
+                                      done;
+                                      echo &quot;${SNAPSHOTS[@]} | ${NO_SNAPSHOTS[@]}&quot;;"/>
+                                      <!-- #if scala-2.12 --><!--
+                                      <arg value=""/>
+                                      --><!-- #endif scala-2.12 -->
+                                      <!-- #if scala-2.13 -->
+                                      <arg value="-f scala2.13"/>
+                                      <!-- #endif scala-2.13 -->
+                                  </exec>
                                   <!-- #if scala-2.12 --><!--
                                   <scriptdef name="create-properties" language="jython" src="${project.basedir}/build/version.py">
                                   --><!-- #endif scala-2.12 -->

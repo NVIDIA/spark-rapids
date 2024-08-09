@@ -188,10 +188,10 @@ __closing_shim_tag = __shim_comment_tag + ' ***/'
 __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
 __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
-config = ConfigParser.ConfigParser()
-config.read("{}/{}".format(__ant_proj_prop("spark.rapids.source.basedir"), __ant_proj_prop("spark.rapids.releases")))
-section_header = "Scala212ReleaseSection" if (__ant_attr("pom") == "") else "Scala213ReleaseSection"
-__all_shims_arr = sorted(config.get(section_header, "all.buildvers").split(" "))
+__config = ConfigParser.ConfigParser()
+__config.read("{}/{}".format(__ant_proj_prop("spark.rapids.source.basedir"), __ant_proj_prop("spark.rapids.releases")))
+__section_header = __ant_proj_prop("release.212.section.header") if (__ant_attr("pom") == "") else __ant_proj_prop("release.213.section.header")
+__all_shims_arr = sorted(__config.get(__section_header, "all.buildvers").split(" "))
 __shims_arr = __all_shims_arr if not __shims_arr else __shims_arr
 __log = logging.getLogger('shimplify')
 __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
