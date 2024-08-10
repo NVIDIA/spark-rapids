@@ -371,9 +371,7 @@ def test_mod_pmod_long_min_value():
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
-    if is_before_spark_320():
-        exception_str = 'java.lang.ArithmeticException: divide by zero'
-    elif is_before_spark_330():
+    if is_before_spark_330():
         exception_str = 'SparkArithmeticException: divide by zero'
     elif is_before_spark_340() and not is_databricks113_or_later():
         exception_str = 'SparkArithmeticException: Division by zero'
@@ -571,7 +569,6 @@ def test_abs_ansi_no_overflow_decimal128(data_gen):
 
 # Only run this test for Spark v3.2.0 and later to verify abs will
 # throw exceptions for overflow when ANSI mode is enabled.
-@pytest.mark.skipif(is_before_spark_320(), reason='SPARK-33275')
 @pytest.mark.parametrize('data_type,value', [
     (LongType(), LONG_MIN),
     (IntegerType(), INT_MIN),
@@ -1049,9 +1046,7 @@ def _test_div_by_zero(ansi_mode, expr, is_lit=False):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
-    if is_before_spark_320():
-        err_message = 'java.lang.ArithmeticException: divide by zero'
-    elif is_before_spark_330():
+    if is_before_spark_330():
         err_message = 'SparkArithmeticException: divide by zero'
     elif is_before_spark_340() and not is_databricks113_or_later():
         err_message = 'SparkArithmeticException: Division by zero'
@@ -1105,7 +1100,6 @@ def _div_overflow_exception_when(expr, ansi_enabled, is_lit=False):
 
 # Only run this test for Spark v3.2.0 and later to verify IntegralDivide will
 # throw exceptions for overflow when ANSI mode is enabled.
-@pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', ['a DIV CAST(-1 AS INT)', 'a DIV b'])
 @pytest.mark.parametrize('ansi_enabled', [False, True])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
@@ -1115,7 +1109,6 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
 # throw exceptions for overflow when ANSI mode is enabled.
 # We have split this test from test_div_overflow_exception_when_ansi because Spark 3.4
 # throws a different exception for literals
-@pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', ['CAST(-9223372036854775808L as LONG) DIV -1'])
 @pytest.mark.parametrize('ansi_enabled', [False, True])
 def test_div_overflow_exception_when_ansi_literal(expr, ansi_enabled):
@@ -1123,7 +1116,6 @@ def test_div_overflow_exception_when_ansi_literal(expr, ansi_enabled):
 
 # Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
 # throw exceptions for overflow even ANSI mode is enabled.
-@pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', ['CAST(-9223372036854775808L as LONG) DIV -1', 'a DIV CAST(-1 AS INT)', 'a DIV b'])
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):

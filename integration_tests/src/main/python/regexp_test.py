@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_350, is_jvm_charset_utf8, is_databricks_runtime, spark_version
+from spark_session import is_before_spark_350, is_jvm_charset_utf8, is_databricks_runtime, spark_version
 
 if not is_jvm_charset_utf8():
     pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
@@ -422,7 +422,6 @@ def test_regexp_replace():
                 'regexp_replace(a, "a|b|c", "A")'),
         conf=_regexp_conf)
 
-@pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
 def test_regexp():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -433,7 +432,6 @@ def test_regexp():
                 'regexp(a, "a[bc]d")'),
         conf=_regexp_conf)
 
-@pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
 def test_regexp_like():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(

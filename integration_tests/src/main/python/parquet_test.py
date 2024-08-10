@@ -284,10 +284,8 @@ def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, rea
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
-parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
-# zstd is available in spark 3.2.0 and later.
-if not is_before_spark_320():
-    parquet_compress_options.append('zstd')
+parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip', 'zstd']
+
 # The following need extra jars 'lzo', 'lz4', 'brotli', 'zstd'
 # https://github.com/NVIDIA/spark-rapids/issues/143
 
@@ -747,7 +745,6 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
-@pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
 @pytest.mark.skipif(is_dataproc_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/8074')
 def test_parquet_read_nano_as_longs_31x(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
@@ -755,7 +752,6 @@ def test_parquet_read_nano_as_longs_31x(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path))
 
-@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 def test_parquet_read_nano_as_longs_false(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
     conf = copy_and_update(original_parquet_file_reader_conf, {
@@ -767,7 +763,6 @@ def test_parquet_read_nano_as_longs_false(std_input_path):
         conf,
         error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
 
-@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 def test_parquet_read_nano_as_longs_not_configured(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
     def read_timestamp_nano_parquet(spark):
@@ -777,7 +772,6 @@ def test_parquet_read_nano_as_longs_not_configured(std_input_path):
         conf=original_parquet_file_reader_conf,
         error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
 
-@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 @pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
 @pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
 @pytest.mark.skipif(is_databricks_runtime() and spark_version() == '3.3.2', reason='Config not in DB 12.2')
@@ -1399,7 +1393,7 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
 
-@pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
+@pytest.mark.skipif(is_spark_321cdh(), reason='Encryption is not supported before Parquet < 1.12')
 @pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)

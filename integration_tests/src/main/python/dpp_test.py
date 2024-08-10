@@ -20,7 +20,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gp
 from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, datagen_overrides, disable_ansi_mode
-from spark_session import is_before_spark_320, with_cpu_session, is_databricks_runtime, is_databricks113_or_later
+from spark_session import with_cpu_session, is_databricks_runtime, is_databricks113_or_later
 
 # non-positive values here can produce a degenerative join, so here we ensure that most values are
 # positive to ensure the join will produce rows. See https://github.com/NVIDIA/spark-rapids/issues/10147
@@ -220,8 +220,7 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+    pytest.param('true', marks=pytest.mark.skipif(not is_databricks_runtime(), reason='AQE+DPP not supported on Databricks'))
 ], ids=idfn)
 def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
@@ -245,8 +244,8 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+    pytest.param('true', marks=pytest.mark.skipif(not is_databricks_runtime(),
+                                                  reason='AQE+DPP not supported on Databricks'))
 ], ids=idfn)
 def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
@@ -267,8 +266,8 @@ def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_ind
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+    pytest.param('true', marks=pytest.mark.skipif(not is_databricks_runtime(),
+                                                  reason='AQE+DPP not supported on Databricks'))
 ], ids=idfn)
 def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
@@ -288,8 +287,8 @@ def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+    pytest.param('true', marks=pytest.mark.skipif(not is_databricks_runtime(),
+                                                  reason='AQE+DPP not supported on Databricks'))
 ], ids=idfn)
 def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
@@ -325,8 +324,8 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
 # Test handling DPP expressions from a HashedRelation that rearranges columns
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+    pytest.param('true', marks=pytest.mark.skipif(not is_databricks_runtime(),
+                                                  reason='AQE+DPP not supported on Databricks'))
 ], ids=idfn)
 def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
     dim_table = spark_tmp_table_factory.get()
@@ -357,8 +356,8 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
 # Test handling DPP subquery that could broadcast EmptyRelation rather than a GPU serialized batch
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+    pytest.param('true', marks=pytest.mark.skipif(not is_databricks_runtime(),
+                                                  reason='AQE+DPP not supported on Databricks'))
 ], ids=idfn)
 def test_dpp_empty_relation(spark_tmp_table_factory, aqe_enabled):
     dim_table = spark_tmp_table_factory.get()

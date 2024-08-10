@@ -23,7 +23,7 @@ from delta_lake_utils import *
 from marks import *
 from parquet_write_test import parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, with_cpu_session
+from spark_session import is_before_spark_330, is_spark_340_or_later, with_cpu_session
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
 
@@ -76,7 +76,6 @@ def _assert_sql(data_path, confs, query):
                          [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.write.enabled": "false"}], ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -89,7 +88,6 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_round_trip_unmanaged(spark_tmp_path):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -104,7 +102,6 @@ def test_delta_write_round_trip_unmanaged(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("gens", delta_part_write_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -122,7 +119,6 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("gens", delta_part_write_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens), ("c", SetValuesGen(StringType(), ["x", "y", "z"]))]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -159,14 +155,12 @@ def do_update_round_trip_managed(spark_tmp_path, mode):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path):
     do_update_round_trip_managed(spark_tmp_path, "overwrite")
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_append_round_trip_unmanaged(spark_tmp_path):
     do_update_round_trip_managed(spark_tmp_path, "append")
 
@@ -191,21 +185,18 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
@@ -225,7 +216,6 @@ def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 def test_delta_overwrite_by_expression_exec_v1(spark_tmp_table_factory, spark_tmp_path, use_cdf):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
@@ -252,7 +242,6 @@ def test_delta_overwrite_by_expression_exec_v1(spark_tmp_table_factory, spark_tm
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     schema = "id bigint, data string, data2 string"
@@ -293,7 +282,6 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
     "STATIC",
     pytest.param("DYNAMIC", marks=pytest.mark.xfail(is_databricks_runtime(),
@@ -316,7 +304,6 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("mode", [
     "STATIC",
     pytest.param("DYNAMIC", marks=pytest.mark.xfail(is_databricks_runtime(),
@@ -341,7 +328,6 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(is_databricks_runtime() and is_before_spark_330(),
                     reason="Databricks 10.4 does not properly handle options passed during DataFrame API write")
 def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path):
@@ -376,7 +362,6 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
     gen_list = [("ints", int_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -416,7 +401,6 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
     gen = TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
                        end=datetime(2000, 1, 1, tzinfo=timezone.utc)).with_special_case(
@@ -439,7 +423,6 @@ def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
     def write_func(spark, path):
         writer = unary_op_df(spark, int_gen).coalesce(1).write.format("delta")
@@ -460,7 +443,6 @@ def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -476,7 +458,6 @@ def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_opt
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_hadoop_confs(spark):
@@ -500,7 +481,6 @@ def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_opti
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize('codec', ['gzip'])
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_compression_fallback(spark_tmp_path, codec):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.compression.codec": codec})
@@ -514,7 +494,6 @@ def test_delta_write_compression_fallback(spark_tmp_path, codec):
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_legacy_format_fallback(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.writeLegacyFormat": "true"})
@@ -527,7 +506,6 @@ def test_delta_write_legacy_format_fallback(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_append_only(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     gen = int_gen
@@ -545,7 +523,6 @@ def test_delta_write_append_only(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_constraint_not_null(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     not_null_gen = StringGen(nullable=False)
@@ -570,7 +547,6 @@ def test_delta_write_constraint_not_null(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_constraint_check(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
 
@@ -600,7 +576,6 @@ def test_delta_write_constraint_check(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_constraint_check_fallback(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     # create table with check constraint
@@ -629,7 +604,6 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("num_cols", [-1, 0, 1, 2, 3 ], ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_stat_column_limits(num_cols, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(delta_writes_enabled_conf, {"spark.databricks.io.skipping.stringPrefixLength": 8})
@@ -653,7 +627,6 @@ def test_delta_write_stat_column_limits(num_cols, spark_tmp_path):
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
     from delta.tables import DeltaTable
     def write_data(spark, path):
@@ -679,8 +652,7 @@ def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320() or not is_databricks_runtime(),
-                    reason="Delta Lake identity columns are currently only supported on Databricks")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake identity columns are currently only supported on Databricks")
 def test_delta_write_identity_columns(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def create_data(spark, path):
@@ -705,8 +677,7 @@ def test_delta_write_identity_columns(spark_tmp_path):
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320() or not is_databricks_runtime(),
-                    reason="Delta Lake identity columns are currently only supported on Databricks")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake identity columns are currently only supported on Databricks")
 def test_delta_write_multiple_identity_columns(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def create_data(spark, path):
@@ -738,7 +709,6 @@ def test_delta_write_multiple_identity_columns(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("confkey", ["optimizeWrite"], ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(is_databricks_runtime(), reason="Optimized write is supported on Databricks")
 def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -757,7 +727,6 @@ def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
         is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
     pytest.param("delta.autoOptimize.optimizeWrite", marks=pytest.mark.skipif(
         is_databricks_runtime(), reason="Optimize write is supported on Databricks"))], ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Auto optimize only supported on Databricks")
 def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -780,7 +749,6 @@ def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path)
         is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
     pytest.param("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite", marks=pytest.mark.skipif(
         is_databricks_runtime(), reason="Optimize write is supported on Databricks"))], ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {confkey: "true"})
@@ -794,7 +762,6 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_aqe_join(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"})
@@ -811,7 +778,6 @@ def test_delta_write_aqe_join(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 @pytest.mark.parametrize("enable_conf_key", [
     "spark.databricks.delta.optimizeWrite.enabled",
@@ -842,7 +808,6 @@ def test_delta_write_optimized_aqe(spark_tmp_path, enable_conf_key, aqe_enabled)
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 def test_delta_write_optimized_supported_types(spark_tmp_path):
     num_chunks = 20
@@ -869,7 +834,6 @@ def test_delta_write_optimized_supported_types(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -889,7 +853,6 @@ def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
 @allow_non_gpu(delta_optimized_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 @pytest.mark.parametrize("gen", [
     simple_string_to_string_map_gen,
@@ -911,7 +874,6 @@ def test_delta_write_optimized_unsupported_sort_fallback(spark_tmp_path, gen):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 def test_delta_write_optimized_table_confs(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -952,7 +914,6 @@ def test_delta_write_optimized_table_confs(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 def test_delta_write_optimized_partitioned(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -983,7 +944,6 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
@@ -1028,7 +988,6 @@ if is_spark_340_or_later() or is_databricks_runtime():
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("mapping", column_mappings)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_column_name_mapping(spark_tmp_path, mapping):
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),

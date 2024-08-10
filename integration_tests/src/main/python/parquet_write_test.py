@@ -236,10 +236,7 @@ def test_all_null_int96(spark_tmp_path):
         data_path,
         conf=confs)
 
-parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
-# zstd is available in spark 3.2.0 and later.
-if not is_before_spark_320():
-    parquet_write_compress_options.append('zstd')
+parquet_write_compress_options = ['none', 'uncompressed', 'snappy', 'zstd']
 
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
 def test_compress_write_round_trip(spark_tmp_path, compress):
@@ -671,7 +668,6 @@ def test_write_daytime_interval(spark_tmp_path):
             conf=writer_confs)
 
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 def test_concurrent_writer(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -687,7 +683,6 @@ def test_concurrent_writer(spark_tmp_path):
 
 
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 @allow_non_gpu(any=True)
 @pytest.mark.parametrize('aqe_enabled', [True, False])
 def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, aqe_enabled):
