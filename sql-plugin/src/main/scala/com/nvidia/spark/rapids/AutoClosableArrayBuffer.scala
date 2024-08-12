@@ -43,6 +43,8 @@ class AutoClosableArrayBuffer[T <: AutoCloseable] extends AutoCloseable {
 
   def forall(p: T => Boolean): Boolean = data.forall(p)
 
+  def iterator: Iterator[T] = data.iterator
+
   override def toString: String = s"AutoCloseable(${super.toString})"
 
   override def close(): Unit = {

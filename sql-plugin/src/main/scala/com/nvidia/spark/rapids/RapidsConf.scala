@@ -1531,6 +1531,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(Set("sort", "repartition"))
     .createWithDefault("sort")
 
+  // todo: remove this
   object AggFallbackAlgorithm extends Enumeration {
     val SORT, REPARTITION = Value
   }
