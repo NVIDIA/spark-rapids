@@ -19,27 +19,7 @@
 {"spark": "341"}
 {"spark": "342"}
 {"spark": "343"}
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.paths.SparkPath
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.PartitionedFile
-
-object PartitionedFileUtilsShim {
-  // Wrapper for case class constructor so Java code can access
-  // the default values across Spark versions.
-  def newPartitionedFile(
-      partitionValues: InternalRow,
-      filePath: String,
-      start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues,
-    SparkPath.fromPathString(filePath), start, length)
-
-  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
-    pf.copy(locations = locations.toArray)
-  }
-}
+object PartitionedFileUtilsShim extends PartitionedFileUtilsShimBase

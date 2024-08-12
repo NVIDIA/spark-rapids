@@ -26,7 +26,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
-  chainedFunc: Seq[ChainedPythonFunctions],
+  chainedFunc: Seq[(ChainedPythonFunctions, Long)],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
   pythonOutputSchema: StructType,

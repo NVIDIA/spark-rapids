@@ -20,7 +20,7 @@
 
 set -ex
 
-CUDF_VER=${CUDF_VER:-24.06}
+CUDF_VER=${CUDF_VER:-24.08}
 CUDA_VER=${CUDA_VER:-11.8}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.

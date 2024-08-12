@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,8 +107,8 @@ case class GpuFlatMapCoGroupsInPandasExec(
 
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
   private val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
-  private val pandasFunction = udf.asInstanceOf[GpuPythonUDF].func
-  private val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+  private val pyUDF = udf.asInstanceOf[GpuPythonUDF]
+  private val chainedFunc = Seq((ChainedPythonFunctions(Seq(pyUDF.func)), pyUDF.resultId.id))
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
 

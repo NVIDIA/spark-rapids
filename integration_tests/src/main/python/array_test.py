@@ -17,8 +17,8 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from conftest import is_databricks_runtime
-from marks import incompat, allow_non_gpu
-from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
+from marks import incompat, allow_non_gpu, disable_ansi_mode
+from spark_session import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit, array
@@ -103,11 +103,13 @@ array_index_gens = [byte_array_index_gen, short_array_index_gen, int_array_index
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 @pytest.mark.parametrize('index_gen', array_index_gens, ids=idfn)
+@disable_ansi_mode
 def test_array_item(data_gen, index_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, data_gen, index_gen).selectExpr('a[b]'))
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+@disable_ansi_mode
 def test_array_item_lit_ordinal(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -145,8 +147,10 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
 
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
+@disable_ansi_mode
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
+    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later() and is_before_spark_400()) else \
+        "ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:
@@ -171,6 +175,7 @@ def test_array_item_ansi_not_fail_all_null_data():
                          decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit, binary_gen,
                          StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
                          StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
+@disable_ansi_mode
 def test_make_array(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -181,6 +186,13 @@ def test_make_array(data_gen):
                 'array(b, a, null, {}, {})'.format(s1, s2),
                 'array(array(b, a, null, {}, {}), array(a), array(null))'.format(s1, s2)))
 
+@pytest.mark.parametrize('empty_type', all_empty_string_types)
+def test_make_array_empty_input(empty_type):
+    data_gen = mk_empty_str_gen(empty_type)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'array(a)',
+                'array(a, b)'))
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array_unique(data_gen):
@@ -212,6 +224,7 @@ def test_orderby_array_of_structs(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@disable_ansi_mode
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
     literal = with_cpu_session(lambda spark: gen_scalar(data_gen, force_no_nulls=True))
@@ -239,6 +252,7 @@ def test_array_contains_for_nans(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+@disable_ansi_mode
 def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, data_gen, array_no_zero_index_gen).selectExpr(
@@ -252,8 +266,9 @@ def test_array_element_at(data_gen):
 
 # No need tests for multiple data types for list data. Only one is enough.
 @pytest.mark.parametrize('index', [100, array_out_index_gen], ids=idfn)
+@disable_ansi_mode
 def test_array_element_at_ansi_fail_invalid_index(index):
-    message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() else "SparkArrayIndexOutOfBoundsException"
+    message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() or not is_before_spark_400() else "SparkArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(
             element_at(col('a'), index)).collect()
@@ -282,9 +297,10 @@ def test_array_element_at_ansi_not_fail_all_null_data():
 
 @pytest.mark.parametrize('index', [0, array_zero_index_gen], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [False, True], ids=idfn)
+@disable_ansi_mode
 def test_array_element_at_zero_index_fail(index, ansi_enabled):
     if is_spark_340_or_later():
-        message = "org.apache.spark.SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
+        message = "SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
     elif is_databricks113_or_later():
         message = "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
     else:
@@ -303,6 +319,7 @@ def test_array_element_at_zero_index_fail(index, ansi_enabled):
 
 
 @pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+@disable_ansi_mode
 def test_array_transform(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
@@ -730,3 +747,59 @@ def test_flatten_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')
     )
+
+# No NULL keys are allowed
+data_gen = [IntegerGen(nullable=False), StringGen(nullable=False),
+            StructGen(nullable=False,children=[('a',IntegerGen())]), DateGen(nullable=False),
+            DoubleGen(nullable=False), TimestampGen(nullable=False)]
+
+@pytest.mark.parametrize('data_gen', data_gen, ids=idfn)
+def test_map_from_arrays(data_gen):
+    # min_length and max_length is fixed because map_from_arrays expects same sized array for keys and values
+    # NULL rows are valid
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True, min_length=10, max_length=10)), ('b', ArrayGen(data_gen, nullable=True, min_length=10, max_length=10))], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(a, b)'),
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'}
+    )
+
+def test_map_from_arrays_dup_exception():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+
+    assert_gpu_and_cpu_error(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(1,1), a)').collect(),
+        conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+        error_message = "Duplicate map key")
+
+def test_map_from_arrays_last_win():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(1,1), a)'),
+        conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'}
+    )
+
+def test_map_from_arrays_null_exception():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+
+    assert_gpu_and_cpu_error(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(NULL,1), a)').collect(),
+        conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+        error_message = "null as map key")
+
+def test_map_from_arrays_length_exception():
+    gen = StructGen(
+        [('a', ArrayGen(IntegerGen(nullable=False), nullable=True, min_length=2, max_length=2))], nullable=False)
+
+    assert_gpu_and_cpu_error(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'map_from_arrays(array(1), a)').collect(),
+        conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+        error_message = "The key array and value array of MapData must have the same length")

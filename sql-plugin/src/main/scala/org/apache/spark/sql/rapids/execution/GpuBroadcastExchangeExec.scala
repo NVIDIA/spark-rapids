@@ -31,6 +31,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.SparkException
@@ -486,7 +488,9 @@ abstract class GpuBroadcastExchangeExecBase(
       throw new IllegalStateException("A canonicalized plan is not supposed to be executed.")
     }
     try {
-      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[Broadcast[T]]
+      val ret = relationFuture.get(timeout, TimeUnit.SECONDS)
+      doLoreDump(ret)
+      ret.asInstanceOf[Broadcast[T]]
     } catch {
       case ex: TimeoutException =>
         logError(s"Could not execute broadcast in $timeout secs.", ex)
@@ -498,6 +502,18 @@ abstract class GpuBroadcastExchangeExecBase(
           s"You can increase the timeout for broadcasts via ${SQLConf.BROADCAST_TIMEOUT.key} or " +
           s"disable broadcast join by setting ${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1",
           ex)
+    }
+  }
+
+  // We have to do this explicitly here rather than similar to the general version one in
+  // [[GpuExec]] since in adaptive execution, the broadcast value has already been calculated
+  // before we tag this plan to dump.
+  private def doLoreDump(result: Broadcast[Any]): Unit = {
+    val inner = new SimpleRDD(session.sparkContext, result, schema)
+    getTagValue(LORE_DUMP_RDD_TAG).foreach { info =>
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd.foreach(_.close())
     }
   }
 

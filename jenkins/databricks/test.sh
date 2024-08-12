@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -59,14 +59,12 @@ IS_SPARK_321_OR_LATER=0
 # - DELTA_LAKE_ONLY: delta_lake tests only
 # - MULTITHREADED_SHUFFLE: shuffle tests only
 # - PYARROW_ONLY: pyarrow tests only
+# - CI_PART1 or CI_PART2 : part1 or part2 of the tests run in parallel from CI
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
 # https://github.com/NVIDIA/spark-rapids/pull/5646
-
-# Increase driver memory as Delta Lake tests can slowdown with default 1G (possibly due to caching?)
-DELTA_LAKE_CONFS="--driver-memory 2g"
 
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
@@ -76,6 +74,7 @@ rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
 
     # using MULTITHREADED shuffle
+    TEST_PARALLEL=0 \
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
@@ -89,32 +88,30 @@ run_pyarrow_tests() {
         bash integration_tests/run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
 
-## limit parallelism to avoid OOM kill
-export TEST_PARALLEL=${TEST_PARALLEL:-4}
-
-if [[ $TEST_MODE == "DEFAULT" ]]; then
+## Separate the integration tests into "CI_PART1" and "CI_PART2", run each part in parallel on separate Databricks clusters to speed up the testing process.
+if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
     bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
-
-    ## Run cache tests
-    if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
-        PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-    fi
 fi
 
 ## Run tests with jars building from the spark-rapids source code
-if [ "$(pwd)" == "$SOURCE_PATH" ]; then
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
+if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
+    ## Run cache tests
+    if [[ "$IS_SPARK_321_OR_LATER" -eq "1" && ("$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2") ]]; then
+        PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
+            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
+    fi
+
+    if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
+        DRIVER_MEMORY="4g" \
             bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
     fi
 
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
+    if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
         ## Mutithreaded Shuffle test
         rapids_shuffle_smoke_test
     fi
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
+    if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
       # Pyarrow tests
       run_pyarrow_tests
     fi

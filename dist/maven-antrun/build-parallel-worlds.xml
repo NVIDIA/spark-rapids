@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  Copyright (c) 2021-2023, NVIDIA CORPORATION.
+  Copyright (c) 2021-2024, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -131,8 +131,8 @@
 
         <!-- Remove the explicily unshimmed files from the common directory -->
         <delete>
-            <fileset dir="${project.build.directory}/parallel-world/spark3xx-common"
-                     includesfile="${spark.rapids.source.basedir}/${rapids.module}/unshimmed-common-from-spark311.txt"/>
+            <fileset dir="${project.build.directory}/parallel-world/spark-shared"
+                     includesfile="${spark.rapids.source.basedir}/${rapids.module}/unshimmed-common-from-spark320.txt"/>
         </delete>
     </target>
     <target name="remove-dependencies-from-pom" depends="build-parallel-worlds">

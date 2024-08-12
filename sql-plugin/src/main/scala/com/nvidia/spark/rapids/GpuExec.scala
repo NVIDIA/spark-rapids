@@ -19,7 +19,10 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.filecache.FileCacheConf
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
@@ -80,6 +83,8 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_MISSES_SIZE = "filecacheDataRangeMissesSize"
   val FILECACHE_FOOTER_READ_TIME = "filecacheFooterReadTime"
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
+  val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
+  val DELETION_VECTOR_SIZE = "deletionVectorSize"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -114,6 +119,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES_SIZE = "cached data misses size"
   val DESCRIPTION_FILECACHE_FOOTER_READ_TIME = "cached footer read time"
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
+  val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
+  val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -152,12 +159,34 @@ sealed abstract class GpuMetric extends Serializable {
   def +=(v: Long): Unit
   def add(v: Long): Unit
 
+  private var isTimerActive = false
+
+  final def tryActivateTimer(): Boolean = {
+    if (!isTimerActive) {
+      isTimerActive = true
+      true
+    } else {
+      false
+    }
+  }
+
+  final def deactivateTimer(duration: Long): Unit = {
+    if (isTimerActive) {
+      isTimerActive = false
+      add(duration)
+    }
+  }
+
   final def ns[T](f: => T): T = {
-    val start = System.nanoTime()
-    try {
+    if (tryActivateTimer()) {
+      val start = System.nanoTime()
+      try {
+        f
+      } finally {
+        deactivateTimer(System.nanoTime() - start)
+      }
+    } else {
       f
-    } finally {
-      add(System.nanoTime() - start)
     }
   }
 }
@@ -363,7 +392,8 @@ trait GpuExec extends SparkPlan {
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val orig = internalDoExecuteColumnar()
+    this.dumpLoreMetaInfo()
+    val orig = this.dumpLoreRDD(internalDoExecuteColumnar())
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
@@ -372,6 +402,30 @@ trait GpuExec extends SparkPlan {
         iter
       }
     }.getOrElse(orig)
+  }
+
+  override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs
+
+  protected def loreArgs: Iterator[String] = {
+    val loreIdStr = loreIdOf(this).map(id => s"[loreId=$id]")
+    val lorePathStr = getTagValue(LORE_DUMP_PATH_TAG).map(path => s"[lorePath=$path]")
+    val loreRDDInfoStr = getTagValue(LORE_DUMP_RDD_TAG).map(info => s"[loreRDDInfo=$info]")
+
+    List(loreIdStr, lorePathStr, loreRDDInfoStr).flatten.iterator
+  }
+
+  private def dumpLoreMetaInfo(): Unit = {
+    getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
+      GpuLore.dumpPlan(this, new Path(rootPath))
+    }
+  }
+
+  protected def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
+    getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd
+    }.getOrElse(inner)
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]

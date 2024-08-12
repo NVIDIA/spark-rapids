@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,18 @@
  */
 
 package com.nvidia.spark.rapids
-
-import org.apache.spark.internal.Logging
-
 /*
  * This is specifically for functions dealing with loading classes via reflection. This
  * class itself should not contain or import any shimmed/parallel world classes so that
  * it can also be called via reflection, like calling getMethod on ShimReflectionUtils.
  */
-object ShimReflectionUtils extends Logging {
+object ShimReflectionUtils {
+
+  val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
 
   def loadClass(className: String): Class[_] = {
     val loader = ShimLoader.getShimClassLoader()
-    logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
+    log.debug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
     loader.loadClass(className)
   }
 
@@ -37,10 +36,10 @@ object ShimReflectionUtils extends Logging {
 
   // avoid cached constructors
   def instantiateClass[T](cls: Class[T]): T = {
-    logDebug(s"Instantiate ${cls.getName} using classloader " + cls.getClassLoader)
+    log.debug(s"Instantiate ${cls.getName} using classloader " + cls.getClassLoader)
     cls.getClassLoader match {
       case urcCl: java.net.URLClassLoader =>
-        logDebug("urls " + urcCl.getURLs.mkString("\n"))
+        log.debug("urls " + urcCl.getURLs.mkString("\n"))
       case _ =>
     }
     val constructor = cls.getConstructor()

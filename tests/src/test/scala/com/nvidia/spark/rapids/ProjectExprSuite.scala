@@ -29,6 +29,7 @@ import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, Literal, NamedExpression}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuAdd
 import org.apache.spark.sql.types._
 
@@ -102,7 +103,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val b = AttributeReference("b", LongType)()
       val simpleAdd = GpuAdd(a, b, false)
       val fullAdd = GpuAlias(GpuAdd(simpleAdd, simpleAdd, false), "ret")()
-      val tp = GpuBindReferences.bindGpuReferencesTiered(Seq(fullAdd), Seq(a, b), true)
+      val tp = GpuBindReferences.bindGpuReferencesTiered(Seq(fullAdd), Seq(a, b), new SQLConf())
       val sb = buildProjectBatch()
 
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
