@@ -26,7 +26,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatches}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
-import com.nvidia.spark.rapids.RapidsConf.AggFallbackAlgorithm
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -85,7 +84,6 @@ object AggregateUtils extends Logging {
   /**
    * Computes a target input batch size based on the assumption that computation can consume up to
    * 4X the configured batch size.
-   *
    * @param confTargetSize  user-configured maximum desired batch size
    * @param inputTypes      input batch schema
    * @param outputTypes     output batch schema
@@ -222,6 +220,10 @@ object AggregateUtils extends Logging {
       batchesByBucket: ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]
   ): Unit = {
 
+    if (hashSeed > 200) {
+      throw new IllegalStateException("Too many times of repartition, may hit a bug?")
+    }
+
     def repartition(batch: SpillableColumnarBatch): Unit = {
       withResource(new NvtxWithMetrics("agg repartition",
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
@@ -316,7 +318,9 @@ object AggregateUtils extends Logging {
       logDebug("Some of the repartition buckets are over sized, trying to split them")
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
-        if (bucket.map(_.sizeInBytes).sum > targetMergeBatchSize) {
+        if (bucket.map(_.sizeInBytes).sum > targetMergeBatchSize
+          && !bucket.forall(_.numRows() == 1) // If so, repartition will not help anymore
+        ) {
           val temp =
             ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
           // Recursively merge and repartition the over sized bucket
@@ -332,8 +336,6 @@ object AggregateUtils extends Logging {
       newBuckets.clear()
     }
   }
-
-  //todo: to remove this
 
   /**
    * Attempt to merge adjacent batches in the aggregatedBatches queue until either there is only
@@ -974,8 +976,6 @@ object GpuAggFinalPassIterator {
  * @param useTieredProject              user-specified option to enable tiered projections
  * @param allowNonFullyAggregatedOutput if allowed to skip third pass Agg
  * @param skipAggPassReductionRatio     skip if the ratio of rows after a pass is bigger than this value
- * @param aggFallbackAlgorithm          use sort-based fallback or repartition-based fallback
- *                                      for oversize agg
  * @param localInputRowsCount           metric to track the number of input rows processed locally
  */
 class GpuMergeAggregateIterator(
@@ -991,7 +991,6 @@ class GpuMergeAggregateIterator(
     useTieredProject: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    aggFallbackAlgorithm: AggFallbackAlgorithm.Value,
     localInputRowsCount: LocalGpuMetric)
   extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
@@ -1076,13 +1075,7 @@ class GpuMergeAggregateIterator(
       val totalRows = batchesByBucket.flatMap(_.map(_.numRows())).sum
       if (batchesByBucket.exists(_.size() > 1)) {
         // Unable to merge to a single output, so must fall back
-        aggFallbackAlgorithm match {
-          case AggFallbackAlgorithm.REPARTITION =>
-            // todo: still named fallbakc?
-            fallbackIter = Some(buildRepartitionFallbackIterator())
-          case AggFallbackAlgorithm.SORT =>
-            throw new UnsupportedOperationException("Sort-based fallback is no longer supported")
-        }
+        fallbackIter = Some(buildRepartitionFallbackIterator())
         fallbackIter.get.next()
       } else if (totalRows == 0) {
         if (hasReductionOnlyBatch) {
@@ -1099,7 +1092,6 @@ class GpuMergeAggregateIterator(
           new Iterator[ColumnarBatch] {
             override def hasNext: Boolean = batchesByBucket.exists(_.size() > 0)
 
-            //todo do we need to coallesce the batches?
             override def next(): ColumnarBatch = {
               batchesByBucket.collectFirst(
                 { case bucket if bucket.size() > 0 =>
@@ -1139,16 +1131,13 @@ class GpuMergeAggregateIterator(
       repartitionTime: GpuMetric) extends Iterator[ColumnarBatch]
     with AutoCloseable {
 
-    case class AggregatePartition(
+    private case class AggregatePartition(
         batches: AutoClosableArrayBuffer[SpillableColumnarBatch])
       extends AutoCloseable {
 
       override def close(): Unit = {
         batches.safeClose()
       }
-
-      //      def totalRows(): Long = batches.map(_.numRows()).sum
-      //      def totalSize(): Long = batches.map(_.sizeInBytes).sum
 
       def areAllBatchesSingleRow: Boolean = {
         batches.forall(_.numRows() == 1)
@@ -1510,8 +1499,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       conf.forceSinglePassPartialSortAgg,
       allowSinglePassAgg,
       allowNonFullyAggregatedOutput,
-      conf.skipAggPassReductionRatio,
-      conf.aggFallbackAlgorithm)
+      conf.skipAggPassReductionRatio)
   }
 }
 
@@ -1599,8 +1587,7 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         false,
         false,
         false,
-        1,
-        conf.aggFallbackAlgorithm)
+        1)
     } else {
       super.convertToGpu()
     }
@@ -1953,8 +1940,6 @@ object GpuHashAggregateExecBase {
  *                                             (can omit non fully aggregated data for non-final
  *                                             stage of aggregation)
  * @param skipAggPassReductionRatio            skip if the ratio of rows after a pass is bigger than this value
- * @param aggFallbackAlgorithm                 use sort-based fallback or repartition-based fallback for
- *                                             oversize agg
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -1969,8 +1954,7 @@ case class GpuHashAggregateExec(
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
-    skipAggPassReductionRatio: Double,
-    aggFallbackAlgorithm: AggFallbackAlgorithm.Value
+    skipAggPassReductionRatio: Double
 ) extends ShimUnaryExecNode with GpuExec {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
@@ -2059,8 +2043,7 @@ case class GpuHashAggregateExec(
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
         postBoundReferences, targetBatchSize, aggMetrics, useTieredProject,
-        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio,
-        aggFallbackAlgorithm)
+        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio)
     }
   }
 
@@ -2180,8 +2163,7 @@ class DynamicGpuPartialSortAggregateIterator(
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
-    skipAggPassReductionRatio: Double,
-    aggFallbackAlgorithm: AggFallbackAlgorithm.Value
+    skipAggPassReductionRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
   private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
@@ -2282,7 +2264,6 @@ class DynamicGpuPartialSortAggregateIterator(
       useTiered,
       allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
-      aggFallbackAlgorithm,
       localInputRowsMetrics)
 
     GpuAggFinalPassIterator.makeIter(mergeIter, postBoundReferences, metrics)

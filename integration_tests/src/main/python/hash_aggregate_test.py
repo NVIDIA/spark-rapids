@@ -38,9 +38,6 @@ _float_smallbatch_conf = copy_and_update(_float_conf,
 _float_conf_skipagg = copy_and_update(_float_smallbatch_conf,
         {'spark.rapids.sql.agg.skipAggPassReductionRatio': '0'})
 
-_float_conf_repartition_fallback = copy_and_update(_float_smallbatch_conf,
-        {'spark.rapids.sql.agg.fallbackAlgorithm': 'repartition'})
-
 _float_conf_partial = copy_and_update(_float_conf,
         {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
 
@@ -228,9 +225,7 @@ def get_params(init_list, marked_params=[]):
 
 
 # Run these tests with in 5 modes, all on the GPU
-_confs = [_float_conf, _float_smallbatch_conf,
-          _float_conf_skipagg, _float_conf_repartition_fallback,
-          _float_conf_final, _float_conf_partial]
+_confs = [_float_conf, _float_smallbatch_conf, _float_conf_skipagg, _float_conf_final, _float_conf_partial]
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
