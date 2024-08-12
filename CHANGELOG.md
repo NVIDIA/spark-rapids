@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-08-09
+Generated on 2024-08-12
 
 ## Release 24.08
 
@@ -88,6 +88,8 @@ Generated on 2024-08-09
 ### PRs
 |||
 |:---|:---|
+|[#11303](https://github.com/NVIDIA/spark-rapids/pull/11303)|Update rapids JNI and private dependency to 24.08.0|
+|[#11296](https://github.com/NVIDIA/spark-rapids/pull/11296)|[DOC] update doc for 2408 release [skip CI]|
 |[#11309](https://github.com/NVIDIA/spark-rapids/pull/11309)|[Doc ]Update lore doc about the range [skip ci]|
 |[#11292](https://github.com/NVIDIA/spark-rapids/pull/11292)|Add work around for string split with empty input.|
 |[#11278](https://github.com/NVIDIA/spark-rapids/pull/11278)|Fix formatting of advanced configs doc|
