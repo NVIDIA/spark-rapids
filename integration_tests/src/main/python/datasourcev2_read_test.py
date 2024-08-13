@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,11 +41,15 @@ def test_read_all_types():
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
             conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
 
+
+@disable_ansi_mode  # Cannot run in ANSI mode until COUNT aggregation is supported.
+                    # See https://github.com/NVIDIA/spark-rapids/issues/5114
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
 def test_read_all_types_count():
     assert_gpu_and_cpu_row_counts_equal(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
             conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
+
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
 def test_read_arrow_off():

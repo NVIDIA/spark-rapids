@@ -40,7 +40,7 @@ object GpuParseUrl {
 
   def isSupportedPart(part: String): Boolean = {
     part match {
-      case PROTOCOL | HOST | QUERY =>
+      case PROTOCOL | HOST | QUERY | PATH =>
         true
       case _ =>
         false
@@ -67,9 +67,11 @@ case class GpuParseUrl(children: Seq[Expression])
         ParseURI.parseURIHost(url.getBase)
       case QUERY =>
         ParseURI.parseURIQuery(url.getBase)
-      case PATH | REF | FILE | AUTHORITY | USERINFO =>
+      case PATH =>
+        ParseURI.parseURIPath(url.getBase)
+      case REF | FILE | AUTHORITY | USERINFO =>
         throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
-            s"Only PROTOCOL, HOST and QUERY without a key are supported")
+            s"Only PROTOCOL, HOST, QUERY and PATH are supported")
       case _ =>
         throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
     }
@@ -77,7 +79,7 @@ case class GpuParseUrl(children: Seq[Expression])
 
   def doColumnar(col: GpuColumnVector, partToExtract: GpuScalar, key: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
-    if (part != QUERY) {
+    if (part != QUERY || key == null || !key.isValid) {
       // return a null columnvector
       return GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, StringType)
     }

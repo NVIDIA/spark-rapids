@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shuffle
 
@@ -171,7 +173,7 @@ class RapidsShuffleIterator(
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)
 
     (local ++ remote).foreach {
-      case (blockManagerId: BlockManagerId, blockIds: Seq[(BlockId, Long, Int)]) => {
+      case (blockManagerId: BlockManagerId, blockIds: collection.Seq[(BlockId, Long, Int)]) => {
         val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
           blockIds.map { case (blockId, _, mapIndex) =>
             /**
@@ -191,7 +193,7 @@ class RapidsShuffleIterator(
                 throw new IllegalArgumentException(
                   s"${blockId.getClass} $blockId is not currently supported")
             }
-          }
+          }.toSeq
 
         val client = try {
           transport.makeClient(blockManagerId)

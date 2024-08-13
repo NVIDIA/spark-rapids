@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
@@ -65,7 +65,7 @@ class GpuProjectExecMeta(
         }
       }
     }
-    GpuProjectExec(gpuExprs, gpuChild)(useTieredProject = conf.isTieredProjectEnabled)
+    GpuProjectExec(gpuExprs, gpuChild)
   }
 }
 
@@ -357,12 +357,8 @@ case class GpuProjectExec(
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
    projectList: List[NamedExpression],
-   child: SparkPlan)(
-   useTieredProject : Boolean = false
- ) extends GpuProjectExecLike {
+   child: SparkPlan) extends GpuProjectExecLike {
 
-  override def otherCopyArgs: Seq[AnyRef] =
-    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean])
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -373,7 +369,7 @@ case class GpuProjectExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
-      useTieredProject)
+      conf)
 
     val rdd = child.executeColumnar()
     rdd.map { cb =>
@@ -780,16 +776,26 @@ object GpuFilter {
   }
 }
 
+case class GpuFilterExecMeta(
+  filter: FilterExec,
+  override val conf: RapidsConf,
+  parentMetaOpt: Option[RapidsMeta[_, _, _]],
+  rule: DataFromReplacementRule
+) extends SparkPlanMeta[FilterExec](filter, conf, parentMetaOpt, rule) {
+  override def convertToGpu(): GpuExec = {
+    GpuFilterExec(childExprs.head.convertToGpu(),
+      childPlans.head.convertIfNeeded())()
+  }
+}
+
 case class GpuFilterExec(
     condition: Expression,
     child: SparkPlan)(
-    useTieredProject : Boolean = false,
     override val coalesceAfter: Boolean = true)
     extends ShimUnaryExecNode with ShimPredicateHelper with GpuExec {
 
   override def otherCopyArgs: Seq[AnyRef] =
-    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean],
-      coalesceAfter.asInstanceOf[java.lang.Boolean])
+    Seq[AnyRef](coalesceAfter.asInstanceOf[java.lang.Boolean])
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -829,7 +835,7 @@ case class GpuFilterExec(
     val opTime = gpuLongMetric(OP_TIME)
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
-      useTieredProject)
+      conf)
     rdd.flatMap { batch =>
       GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
         numOutputBatches, opTime)
@@ -1269,6 +1275,8 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
       rdd.coalesce(numPartitions, shuffle = false)
     }
   }
+
+  override val coalesceAfter: Boolean = true
 }
 
 object GpuCoalesceExec {

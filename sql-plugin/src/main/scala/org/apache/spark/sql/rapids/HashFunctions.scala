@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,7 +80,7 @@ object GpuMurmur3Hash {
         HashUtils.normalizeInput(cv).asInstanceOf[ColumnView]
       }
       withResource(normalized) { _ =>
-        ColumnVector.spark32BitMurmurHash3(seed, normalized)
+        Hash.murmurHash32(seed, normalized)
       }
     }
   }
@@ -95,7 +95,6 @@ case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuHashE
     GpuColumnVector.from(GpuMurmur3Hash.compute(batch, children, seed), dataType)
 }
 
-
 case class GpuXxHash64(children: Seq[Expression], seed: Long) extends GpuHashExpression {
   override def dataType: DataType = LongType
 
@@ -105,6 +104,22 @@ case class GpuXxHash64(children: Seq[Expression], seed: Long) extends GpuHashExp
     withResource(children.safeMap(_.columnarEval(batch))) { childCols =>
       val cudfCols = childCols.map(_.getBase.asInstanceOf[ColumnView]).toArray
       GpuColumnVector.from(Hash.xxhash64(seed, cudfCols), dataType)
+    }
+  }
+}
+
+case class GpuHiveHash(children: Seq[Expression]) extends GpuHashExpression {
+  override def dataType: DataType = IntegerType
+
+  override def prettyName: String = "hive-hash"
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(GpuProjectExec.project(batch, children)) { args =>
+      val bases = GpuColumnVector.extractBases(args)
+      val normalized = bases.safeMap { cv =>
+        HashUtils.normalizeInput(cv).asInstanceOf[ColumnView]
+      }
+      GpuColumnVector.from(withResource(normalized)(Hash.hiveHash), dataType)
     }
   }
 }

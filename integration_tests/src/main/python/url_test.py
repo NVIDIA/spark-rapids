@@ -148,16 +148,16 @@ edge_cases_gen = SetValuesGen(StringType(), edge_cases)
 
 url_gen = StringGen(url_pattern)
 
-supported_parts = ['PROTOCOL', 'HOST', 'QUERY']
-unsupported_parts = ['PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
-supported_with_key_parts = ['PROTOCOL', 'HOST', 'QUERY']
-unsupported_with_key_parts = ['PATH', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+supported_parts = ['PROTOCOL', 'HOST', 'QUERY', 'PATH']
+unsupported_parts = ['REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
 def test_parse_url_supported(data_gen, part):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr("a", "parse_url(a, '" + part + "')"))
+        lambda spark: unary_op_df(spark, data_gen).selectExpr("a", "parse_url(a, '" + part + "')"),
+        ansi_disabled_conf  # ANSI mode failures are tested in test_parse_url_query_ansi_mode.
+    )
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')
 @pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
@@ -170,16 +170,36 @@ def test_parse_url_query_with_key():
     url_gen = StringGen(url_pattern_with_key)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, url_gen)
-            .selectExpr("a", "parse_url(a, 'QUERY', 'abc')", "parse_url(a, 'QUERY', 'a')")
-        )
+            .selectExpr("a", "parse_url(a, 'QUERY', 'abc')", "parse_url(a, 'QUERY', 'a')"),
+            ansi_disabled_conf  # ANSI mode failures are tested in test_parse_url_query_ansi_mode.
+    )
+
+
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/11193")
+def test_parse_url_query_ansi_mode():
+    """
+    This tests parse_url()'s behaviour when ANSI mode is enabled.
+    Specifically, the query is expected to fail with an error, if parse_url() fails
+    in ANSI mode.
+    This test currently xfails because "fail on error" is not currently supported
+    for parse_url().
+    """
+    url_gen = StringGen(url_pattern_with_key)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, url_gen)
+        .selectExpr("a", "parse_url(a, 'QUERY', 'abc')", "parse_url(a, 'QUERY', 'a')"),
+        conf = ansi_enabled_conf
+    )
+
 
 def test_parse_url_query_with_key_column():
     url_gen = StringGen(url_pattern_with_key)
     key_gen = StringGen('[a-d]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, url_gen, key_gen)
-            .selectExpr("a", "parse_url(a, 'QUERY', b)")
-        )    
+            .selectExpr("a", "parse_url(a, 'QUERY', b)"),
+        ansi_disabled_conf  # ANSI mode failures are tested in test_parse_url_query_ansi_mode.
+    )
 
 @pytest.mark.parametrize('key', ['a?c', '*'], ids=idfn)
 @allow_non_gpu('ProjectExec', 'ParseUrl')
@@ -190,13 +210,15 @@ def test_parse_url_query_with_key_regex_fallback(key):
             .selectExpr("a", "parse_url(a, 'QUERY', '" + key + "')"),
             'ParseUrl')
 
-@pytest.mark.parametrize('part', supported_with_key_parts, ids=idfn)
+@pytest.mark.parametrize('part', supported_parts, ids=idfn)
 def test_parse_url_with_key(part):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"))
+        lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),
+        ansi_disabled_conf  # ANSI mode failures are tested in test_parse_url_query_ansi_mode.
+    )
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')
-@pytest.mark.parametrize('part', unsupported_with_key_parts, ids=idfn)
+@pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
 def test_parse_url_with_key_fallback(part):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, url_gen).selectExpr("parse_url(a, '" + part + "', 'key')"),

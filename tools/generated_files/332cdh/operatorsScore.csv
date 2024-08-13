@@ -53,6 +53,7 @@ ApproximatePercentile,4
 ArrayContains,4
 ArrayExcept,4
 ArrayExists,4
+ArrayFilter,4
 ArrayIntersect,4
 ArrayMax,4
 ArrayMin,4
@@ -78,6 +79,7 @@ BitwiseOr,4
 BitwiseXor,4
 BloomFilterAggregate,4
 BloomFilterMightContain,4
+BoundReference,4
 CaseWhen,4
 Cbrt,4
 Ceil,4
@@ -134,6 +136,7 @@ GreaterThan,4
 GreaterThanOrEqual,4
 Greatest,4
 HiveGenericUDF,4
+HiveHash,4
 HiveSimpleUDF,4
 Hour,4
 Hypot,4
@@ -174,6 +177,7 @@ MakeDecimal,4
 MapConcat,4
 MapEntries,4
 MapFilter,4
+MapFromArrays,4
 MapKeys,4
 MapValues,4
 Max,4

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,12 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
-import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, NoMapping}
+import org.apache.spark.sql.delta.{DeltaColumnMapping, DeltaColumnMappingMode, NameMapping, NoMapping}
+import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{MetadataBuilder, StructType}
 import org.apache.spark.util.SerializableConfiguration
 
 trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
@@ -35,7 +36,18 @@ trait GpuDeltaParquetFileFormat extends GpuReadParquetFileFormat {
   val referenceSchema: StructType
 
   def prepareSchema(inputSchema: StructType): StructType = {
-    DeltaColumnMapping.createPhysicalSchema(inputSchema, referenceSchema, columnMappingMode)
+    val schema = DeltaColumnMapping.createPhysicalSchema(
+      inputSchema, referenceSchema, columnMappingMode)
+    if (columnMappingMode == NameMapping) {
+      SchemaMergingUtils.transformColumns(schema) { (_, field, _) =>
+        field.copy(metadata = new MetadataBuilder()
+          .withMetadata(field.metadata)
+          .remove(DeltaColumnMapping.PARQUET_FIELD_ID_METADATA_KEY)
+          .build())
+      }
+    } else {
+      schema
+    }
   }
 
   override def createMultiFileReaderFactory(

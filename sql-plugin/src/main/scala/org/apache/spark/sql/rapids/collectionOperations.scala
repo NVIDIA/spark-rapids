@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.shims.{GetSequenceSize, ShimExpression}
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, NullIntolerant, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -49,8 +50,8 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val res = dataType match {
-      // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
-      case dt if children.isEmpty => GpuScalar.from(null, dt)
+      // in Spark concat() will be considered as an empty string here
+      case dt if children.isEmpty => GpuScalar("", dt)
       // For single column concat, we pass the result of child node to avoid extra cuDF call.
       case _ if children.length == 1 => children.head.columnarEval(batch)
       case StringType => stringConcat(batch)
@@ -1160,6 +1161,166 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
       }
     }
   }
+}
+
+case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  private val mapKeyDedupPolicy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
+
+  override def dataType: MapType = {
+    MapType(
+      keyType = left.dataType.asInstanceOf[ArrayType].elementType,
+      valueType = right.dataType.asInstanceOf[ArrayType].elementType,
+      valueContainsNull = right.dataType.asInstanceOf[ArrayType].containsNull)
+  }
+
+  /**
+   * Compare top level offsets to ensure there are equal number of elements in
+   * keys array and values array for each row.
+   */
+  private def compareOffsets(lhs: ColumnVector, rhs: ColumnVector) : Boolean = {
+    val boolScalar = withResource(lhs.getListOffsetsView) { lhsOffsets =>
+      withResource(rhs.getListOffsetsView) { rhsOffsets =>
+        withResource(lhsOffsets.equalToNullAware(rhsOffsets)) { compareOffsets =>
+          compareOffsets.all
+        }
+      }
+    }
+    withResource(boolScalar) { all =>
+      all.getBoolean
+    }
+  }
+
+  /**
+   * Build new keys column and values column where a row is not NULL only if
+   * keys[row_id] and values[row_id] are not NULL.
+   */
+  private def nullSanitize(lhs: ColumnVector, rhs: ColumnVector) :
+  (ColumnVector, ColumnVector) = {
+    if (lhs.hasNulls || rhs.hasNulls) {
+      val combinedNulls = withResource(lhs.isNull) { lhsNulls =>
+        withResource(rhs.isNull) { rhsNulls =>
+          lhsNulls.or(rhsNulls)
+        }
+      }
+      withResource(combinedNulls) { combinedNulls =>
+            withResource(GpuScalar.from(null, left.dataType)) { leftScalar =>
+              withResource(GpuScalar.from(null, right.dataType)) { rightScalar =>
+                //  lhs: [[1,2], NULL, [3]]
+                //  rhs: [NULL, [2,5], [6]]
+                //  newLhs: [NULL, NULL, [3]]
+                //  newRhs: [NULL, NULL, [6]]
+                val newLhs = combinedNulls.ifElse(leftScalar, lhs)
+                val newRhs = combinedNulls.ifElse(rightScalar, rhs)
+                (newLhs, newRhs)
+              }
+          }
+        }
+    } else {
+      lhs.incRefCount()
+      rhs.incRefCount()
+      (lhs,rhs)
+    }
+  }
+
+  /**
+   * Spark by default does not allow keys array to contain duplicate values
+   * Compare distinct key count before and after dropping duplicates per row
+   */
+  private def rowContainsDuplicates(keysList: ColumnVector): Boolean = {
+    withResource(keysList.getChildColumnView(0)) { childView =>
+      withResource(keysList.dropListDuplicates) { newKeyList =>
+        withResource(newKeyList.getChildColumnView(0)) { newChildView =>
+          childView.getRowCount != newChildView.getRowCount
+        }
+      }
+    }
+  }
+
+  /**
+   * Create list< struct < X, Y > > from list< X > and List< Y >
+   */
+  private def constructMapColumn(sanitizedLhsBase: ColumnVector, sanitizedRhsBase: ColumnVector)
+  : ColumnVector = {
+    withResource(ColumnView.makeStructView(sanitizedLhsBase.getChildColumnView(0),
+      sanitizedRhsBase.getChildColumnView(0))) { structView =>
+      withResource(sanitizedLhsBase.getValid) { valid =>
+        withResource(sanitizedLhsBase.getOffsets) { offsets =>
+          withResource(new ColumnView(DType.LIST, sanitizedLhsBase.getRowCount,
+            java.util.Optional.of[java.lang.Long](sanitizedLhsBase.getNullCount),
+            valid, offsets, Array(structView))) { retView =>
+            retView.copyToColumnVector()
+          }
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+
+    require(lhs.getRowCount == rhs.getRowCount,
+      "All columns must have the same number of rows")
+
+    // Set a row to NULL in both columns if it is NULL in either the keys
+    // column or the values column
+    val (sanitizedLhsBase, sanitizedRhsBase) = nullSanitize(lhs.getBase,rhs.getBase)
+
+    withResource(sanitizedLhsBase) { sanitizedLhsBase =>
+      withResource(sanitizedRhsBase) { sanitizedRhsBase =>
+
+        if(mapKeyDedupPolicy == "EXCEPTION") {
+          val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
+          require(!containsDuplicates,
+            "[DUPLICATED_MAP_KEY] Duplicate map key was found")
+        }
+
+        // Ensure keys array and values array have same length
+        require(compareOffsets(sanitizedLhsBase, sanitizedRhsBase),
+          "The key array and value array of MapData must have the same length")
+
+        // Ensure keys array does not contain NULLs in any row
+        val nullKeysCount = withResource(sanitizedLhsBase.getChildColumnView(0)) { childView =>
+          childView.getNullCount
+        }
+        require(nullKeysCount == 0,
+          "[NULL_MAP_KEY] Cannot use null as map key")
+
+        val mapCol = constructMapColumn(sanitizedLhsBase, sanitizedRhsBase)
+
+        val result = withResource(mapCol) { mapCol =>
+          mapKeyDedupPolicy match {
+            case "LAST_WIN" if rowContainsDuplicates(sanitizedLhsBase) =>
+                mapCol.dropListDuplicatesWithKeysValues
+            case _ =>
+              mapCol.incRefCount()
+          }
+        }
+        result
+      }
+    }
+
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+
 }
 
 case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinaryExpression {

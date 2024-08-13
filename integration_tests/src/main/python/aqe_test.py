@@ -19,7 +19,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are
 from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import with_cpu_session, is_databricks113_or_later
+from spark_session import with_cpu_session, is_databricks113_or_later, is_before_spark_330
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
 not_utc_aqe_allow=['ShuffleExchangeExec', 'HashAggregateExec'] if is_not_utc() else []
@@ -298,3 +298,171 @@ def test_aqe_join_executor_broadcast_not_single_partition(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=bhj_disable_conf)
 
+
+# See https://github.com/NVIDIA/spark-rapids/issues/10645. Sometimes the exchange can provide multiple
+# batches, so we to coalesce them into a single batch for the broadcast hash join.
+@ignore_order(local=True)
+@pytest.mark.skipif(not (is_databricks_runtime()), \
+    reason="Executor side broadcast only supported on Databricks")
+def test_aqe_join_executor_broadcast_enforce_single_batch():
+    # Use a small batch to see if Databricks could send multiple batches
+    conf = copy_and_update(_adaptive_conf, { "spark.rapids.sql.batchSizeBytes": "25" })
+    def prep(spark):
+        id_gen = RepeatSeqGen(IntegerGen(nullable=False), length=250)
+        name_gen = RepeatSeqGen(["Adam", "Bob", "Cathy"], data_type=StringType())
+        school_gen = RepeatSeqGen(["School1", "School2", "School3"], data_type=StringType())
+
+        df = gen_df(spark, StructGen([('id', id_gen), ('name', name_gen)], nullable=False), length=1000)
+        df.createOrReplaceTempView("df")
+
+        df_school = gen_df(spark, StructGen([('id', id_gen), ('school', school_gen)], nullable=False), length=250)
+        df.createOrReplaceTempView("df_school")
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        res = spark.sql(
+            """
+                select /*+ BROADCAST(df_school) */ * from df, df_school where df.id == df_school.id
+            """
+        )
+        res.explain()
+        return res
+    # Ensure this is an EXECUTOR_BROADCAST
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_it, 
+        exist_classes="GpuShuffleExchangeExec,GpuBroadcastHashJoinExec",
+        non_exist_classes="GpuBroadcastExchangeExec",
+        conf=conf)
+
+
+# this should be fixed by https://github.com/NVIDIA/spark-rapids/issues/11120
+aqe_join_with_dpp_fallback=["FilterExec"] if (is_databricks_runtime() or is_before_spark_330()) else []
+
+# Verify that DPP and AQE can coexist in even some odd cases involving multiple tables
+@ignore_order(local=True)
+@allow_non_gpu(*aqe_join_with_dpp_fallback)
+def test_aqe_join_with_dpp(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def write_data(spark):
+        spark.range(34).selectExpr("concat('test_', id % 9) as test_id",
+            "concat('site_', id % 2) as site_id").repartition(200).write.parquet(data_path + "/tests")
+        spark.range(1000).selectExpr(
+                "CAST(if (id % 2 == 0, '1990-01-01', '1990-01-02') as DATE) as day",
+                "concat('test_', (id % 9) + 100) as test_id", 
+                "concat('site_', id % 40) as site_id",
+                "rand(1) as extra_info").write.partitionBy("day", "site_id", "test_id").parquet(data_path + "/infoA")
+        spark.range(1000).selectExpr(
+                "CAST(if (id % 2 == 0, '1990-01-01', '1990-01-02') as DATE) as day",
+                "concat('exp_', id % 9) as test_spec",
+                "concat('LONG_SITE_NAME_', id % 40) as site_id",
+                "rand(0) as extra_info").write.partitionBy("day", "site_id").parquet(data_path + "/infoB")
+
+    with_cpu_session(write_data)
+
+    def run_test(spark):
+        spark.read.parquet(data_path + "/tests/").createOrReplaceTempView("tests")
+        spark.read.parquet(data_path + "/infoA/").createOrReplaceTempView("infoA")
+        spark.read.parquet(data_path + "/infoB/").createOrReplaceTempView("infoB")
+        return spark.sql("""
+        with tmp as 
+        (SELECT
+          site_id,
+          day,
+          test_id
+         FROM
+          infoA
+        UNION ALL
+         SELECT
+           CASE
+             WHEN site_id = 'LONG_SITE_NAME_0' then 'site_0'
+             WHEN site_id = 'LONG_SITE_NAME_1' then 'site_1'
+             ELSE site_id
+           END AS site_id,
+           day,
+           test_spec AS test_id
+           FROM infoB
+        )
+        SELECT *
+        FROM tmp a
+        JOIN tests b ON a.test_id = b.test_id AND a.site_id = b.site_id
+        WHERE day = '1990-01-01'
+        AND a.site_id IN ('site_0', 'site_1')
+        """)
+
+    assert_gpu_and_cpu_are_equal_collect(run_test, conf=_adaptive_conf)
+
+# Verify that DPP and AQE can coexist in even some odd cases involving 2 tables with multiple columns
+@ignore_order(local=True)
+@allow_non_gpu(*aqe_join_with_dpp_fallback)
+def test_aqe_join_with_dpp_multi_columns(spark_tmp_path):
+    conf = copy_and_update(_adaptive_conf, {
+        "spark.rapids.sql.explain": "ALL",
+        "spark.rapids.sql.debug.logTransformations": "true"})
+
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def write_data(spark):
+        spark.range(100).selectExpr(
+            "concat('t_name_', id % 9) as t_name",
+            "concat('t_id_', id % 9) as t_id",
+            "concat('v_id_', id % 3) as v_id",
+            "concat('site_', id % 2) as site_id"
+            ).repartition(200).write.parquet(data_path + "/tests")
+        spark.range(2000).selectExpr(
+            "concat('t_id_', id % 9) as t_spec",
+            "concat('v_id_', id % 3) as v_spec",
+            "CAST(id as STRING) as extra_1",
+            "concat('LONG_SITE_NAME_', id % 2) as site_id",
+            "if (id % 2 == 0, '1990-01-01', '1990-01-02') as day"
+            ).write.partitionBy("site_id", "day").parquet(data_path + "/infoB")
+        spark.range(2000).selectExpr(
+            "CAST(id as STRING) as extra_1",
+            "concat('v_id_', id % 3) as v_id",
+            "CAST(id + 10 as STRING) as extra_3",
+            "if (id % 3 == 0, 'site_0', 'site_3') as site_id",
+            "if (id % 2 == 0, '1990-01-01', '1990-01-02') as day",
+            "concat('t_id_', id % 9) as t_id"
+            ).write.partitionBy("site_id", "day", "t_id").parquet(data_path + "/infoA")
+
+    with_cpu_session(write_data)
+
+    def run_test(spark):
+        spark.read.parquet(data_path + "/tests/").createOrReplaceTempView("tests")
+        spark.read.parquet(data_path + "/infoA/").createOrReplaceTempView("infoA")
+        spark.read.parquet(data_path + "/infoB/").createOrReplaceTempView("infoB")
+        return spark.sql("""
+        WITH tmp AS 
+        ( SELECT
+            extra_1,
+            v_id,
+            site_id,
+            day,
+            t_id
+          FROM infoA WHERE
+            day >= '1980-01-01' AND
+            extra_3 != 50
+        UNION ALL
+          SELECT
+            extra_1,
+            v_spec as v_id,
+            CASE
+              WHEN site_id = 'LONG_SITE_NAME_0' then 'site_0'
+              WHEN site_id = 'LONG_SITE_NAME_1' then 'site_1'
+              ELSE site_id
+            END AS site_id,
+            day,
+            t_spec as t_id
+            FROM infoB
+        )
+        SELECT
+        a.t_id,
+        b.t_name,
+        a.extra_1,
+        day
+        FROM tmp a
+        JOIN tests b ON a.t_id = b.t_id AND a.v_id = b.v_id AND a.site_id = b.site_id
+        and day = '1990-01-01'
+        and a.site_id IN ('site_0', 'site_1');
+        """)
+
+    assert_gpu_and_cpu_are_equal_collect(run_test, conf=conf)

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
-import java.util.concurrent.{Callable, ConcurrentLinkedQueue, ExecutorCompletionService, Future, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{Callable, ConcurrentLinkedQueue, ExecutorCompletionService, Future, ThreadPoolExecutor, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -123,20 +123,11 @@ object MultiFileReaderThreadPool extends Logging {
 
   private def initThreadPool(
       maxThreads: Int,
-      keepAliveSeconds: Long = 60): ThreadPoolExecutor = synchronized {
+      keepAliveSeconds: Int = 60): ThreadPoolExecutor = synchronized {
     if (threadPool.isEmpty) {
-      val threadFactory = new ThreadFactoryBuilder()
-        .setNameFormat(s"multithreaded file reader worker-%d")
-        .setDaemon(true)
-        .build()
-
-      val threadPoolExecutor = new ThreadPoolExecutor(
-        maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
-        maxThreads, // maximumPoolSize: because we use LinkedBlockingDeque, this is not used
-        keepAliveSeconds,
-        TimeUnit.SECONDS,
-        new LinkedBlockingQueue[Runnable],
-        threadFactory)
+      val threadPoolExecutor =
+        TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", maxThreads,
+          keepAliveSeconds)
       threadPoolExecutor.allowCoreThreadTimeOut(true)
       logDebug(s"Using $maxThreads for the multithreaded reader thread pool")
       threadPool = Some(threadPoolExecutor)
@@ -214,8 +205,14 @@ abstract class MultiFilePartitionReaderFactoryBase(
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   protected val targetBatchSizeBytes: Long = rapidsConf.gpuTargetBatchSizeBytes
-  protected val subPageChunked: Boolean = rapidsConf.chunkedSubPageReaderEnabled
   protected val maxGpuColumnSizeBytes: Long = rapidsConf.maxGpuColumnSizeBytes
+  protected val useChunkedReader: Boolean = rapidsConf.chunkedReaderEnabled
+  protected val maxChunkedReaderMemoryUsageSizeBytes: Long =
+    if(rapidsConf.limitChunkedReaderMemoryUsage) {
+      (rapidsConf.chunkedReaderMemoryUsageRatio * targetBatchSizeBytes).toLong
+    } else {
+      0L
+    }
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {

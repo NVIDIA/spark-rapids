@@ -114,8 +114,8 @@ else
         #  - 1.5 GiB of GPU memory for the tests and 750 MiB for loading CUDF + CUDA.
         #    From profiling we saw that tests allocated under 200 MiB of GPU memory and
         #    1.5 GiB felt like it gave us plenty of room to grow.
-        #  - 5 GiB of host memory. In testing with a limited number of tasks (4) we saw
-        #    the amount of host memory not go above 3 GiB so 5 felt like a good number
+        #  - 8 GiB of host memory. In testing with a limited number of tasks (4) we saw
+        #    the amount of host memory not go above 5.5 GiB so 8 felt like a good number
         #    for future growth.
         #  - 1 CPU core
         # per Spark application. We reserve 2 GiB of GPU memory for general overhead also.
@@ -129,7 +129,7 @@ else
         # below where the processes are launched.
         GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
         CPU_CORES=`nproc`
-        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024 * 1024))}'`
+        HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (8 * 1024 * 1024))}'`
         TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
         TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
 
@@ -171,18 +171,35 @@ else
         TEST_TYPE_PARAM="--test_type $TEST_TYPE"
     fi
 
+    # We found that when parallelism > 8, as it increases, the test speed will become slower and slower. So we set the default maximum parallelism to 8.
+    # Note that MAX_PARALLEL varies with the hardware, OS, and test case. Please overwrite it with an appropriate value if needed.
+    MAX_PARALLEL=${MAX_PARALLEL:-8}
     if [[ ${TEST_PARALLEL} -lt 2 ]];
     then
         # With xdist 0 and 1 are the same parallelism but
         # 0 is more efficient
         TEST_PARALLEL_OPTS=()
+    elif [[ ${TEST_PARALLEL} -gt ${MAX_PARALLEL} ]]; then
+        TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL")
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
 
     mkdir -p "$TARGET_DIR"
 
-    RUN_DIR=${RUN_DIR-$(mktemp -p "$TARGET_DIR" -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}
+    while true; do
+      # to avoid hit spark bug https://issues.apache.org/jira/browse/SPARK-44242
+      # do not dry-run to provide a safe directory name
+      temp_rundir=$(mktemp -p "${TARGET_DIR}" -d "run_dir-$(date +%Y%m%d%H%M%S)-XXXX")
+      if [[ ! "${temp_rundir}" =~ [xX][mM][xXsS] ]]; then
+        echo "run_dir: ${temp_rundir}"
+        break
+      fi
+      echo "invalid ${temp_rundir}, regenerating..."
+      rmdir "$temp_rundir"
+    done
+
+    RUN_DIR=${RUN_DIR-"${temp_rundir}"}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
@@ -205,10 +222,11 @@ else
     fi
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
+    STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
     TEST_COMMON_OPTS=(-v
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
-          --std_input_path="$INPUT_PATH"/src/test/resources
+          --std_input_path="$STD_INPUT_PATH"
           --color=yes
           $TEST_TYPE_PARAM
           "$TEST_ARGS"
@@ -217,7 +235,7 @@ else
           "$@")
 
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
-    MB_PER_EXEC=${MB_PER_EXEC:-1024}
+    MB_PER_EXEC=${MB_PER_EXEC:-1536}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
 
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
@@ -241,8 +259,17 @@ else
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
     deltaCacheSize=$PYSP_TEST_spark_databricks_delta_delta_log_cacheSize
-    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize $COVERAGE_SUBMIT_FLAGS"
+    DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize"
+    export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
+
+    # TODO: https://github.com/NVIDIA/spark-rapids/issues/10940
+    export PYSP_TEST_spark_driver_memory=${PYSP_TEST_spark_driver_memory:-"${MB_PER_EXEC}m"}
+    # Set driver memory to speed up tests such as deltalake
+    if [[ -n "${DRIVER_MEMORY}" ]]; then
+        export PYSP_TEST_spark_driver_memory="${DRIVER_MEMORY}"
+    fi
+
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone=$TZ
     export PYSP_TEST_spark_sql_shuffle_partitions='4'
@@ -313,7 +340,11 @@ EOF
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
-
+    if [[ "$SPARK_SUBMIT_FLAGS" == *"--master local"* || "$PYSP_TEST_spark_master" == "local"* ]]; then
+        # The only case where we want worker logs is in local mode so we set the value here explicitly
+        # We can't use the PYSP_TEST_spark_master as it's not always set e.g. when using --master
+        export USE_WORKER_LOGS=1
+    fi
     # Set a seed to be used in the tests, for datagen
     export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-${DATAGEN_SEED:-`date +%s`}}
     echo "SPARK_RAPIDS_TEST_DATAGEN_SEED used: $SPARK_RAPIDS_TEST_DATAGEN_SEED"
@@ -370,6 +401,15 @@ EOF
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
+        if [[ "$USE_WORKER_LOGS" == "1" ]]; then
+          # Setting the extraJavaOptions again to set the log4j confs that will be needed for writing logs in the expected location
+          # We have to export it again because we want to be able to let the user override these confs by setting them on the
+          # command-line using the COVERAGE_SUBMIT_FLAGS which won't be possible if we were to just say
+          # export $PYSP_TEST_spark_driver_extraJavaOptions = "$PYSP_TEST_spark_driver_extraJavaOptions $LOG4J_CONF"
+          LOG4J_CONF="-Dlog4j.configuration=file://$STD_INPUT_PATH/pytest_log4j.properties -Dlogfile=$RUN_DIR/gw0_worker_logs.log"
+          export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $LOG4J_CONF $COVERAGE_SUBMIT_FLAGS"
+        fi
+
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
         jarOpts=()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -60,9 +62,9 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
-            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
           val projectList: Seq[BaseExprMeta[NamedExpression]] =
-            takeExec.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            takeExec.projectList.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
           override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
 
           override def convertToGpu(): GpuExec = {

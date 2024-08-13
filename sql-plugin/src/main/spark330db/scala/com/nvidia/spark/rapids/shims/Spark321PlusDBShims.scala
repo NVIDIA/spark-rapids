@@ -41,8 +41,8 @@ import org.apache.spark.sql.execution.exchange._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window._
 import org.apache.spark.sql.rapids.GpuSubstring
-import org.apache.spark.sql.rapids.execution._
-import org.apache.spark.sql.rapids.execution.shims.{GpuSubqueryBroadcastMeta,ReuseGpuBroadcastExchangeAndSubquery}
+import org.apache.spark.sql.rapids.execution.GpuSubqueryBroadcastMeta
+import org.apache.spark.sql.rapids.execution.shims.ReuseGpuBroadcastExchangeAndSubquery
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
 
@@ -56,7 +56,8 @@ trait Spark321PlusDBShims extends SparkShims
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+      metadataColumns: Seq[AttributeReference],
+      fileFormat: Option[FileFormat]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 

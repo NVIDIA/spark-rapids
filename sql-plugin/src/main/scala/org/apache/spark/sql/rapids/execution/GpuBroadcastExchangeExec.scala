@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.SparkException
@@ -486,7 +488,9 @@ abstract class GpuBroadcastExchangeExecBase(
       throw new IllegalStateException("A canonicalized plan is not supposed to be executed.")
     }
     try {
-      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[Broadcast[T]]
+      val ret = relationFuture.get(timeout, TimeUnit.SECONDS)
+      doLoreDump(ret)
+      ret.asInstanceOf[Broadcast[T]]
     } catch {
       case ex: TimeoutException =>
         logError(s"Could not execute broadcast in $timeout secs.", ex)
@@ -498,6 +502,18 @@ abstract class GpuBroadcastExchangeExecBase(
           s"You can increase the timeout for broadcasts via ${SQLConf.BROADCAST_TIMEOUT.key} or " +
           s"disable broadcast join by setting ${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1",
           ex)
+    }
+  }
+
+  // We have to do this explicitly here rather than similar to the general version one in
+  // [[GpuExec]] since in adaptive execution, the broadcast value has already been calculated
+  // before we tag this plan to dump.
+  private def doLoreDump(result: Broadcast[Any]): Unit = {
+    val inner = new SimpleRDD(session.sparkContext, result, schema)
+    getTagValue(LORE_DUMP_RDD_TAG).foreach { info =>
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd.foreach(_.close())
     }
   }
 
@@ -514,33 +530,8 @@ abstract class GpuBroadcastExchangeExecBase(
 }
 
 object GpuBroadcastExchangeExecBase {
-  /**
-   * Create a thread factory that names threads with a prefix and also sets the threads to daemon.
-   */
-  private def namedThreadFactory(prefix: String): ThreadFactory = {
-    new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build()
-  }
-
-  /**
-   * Create a cached thread pool whose max number of threads is `maxThreadNumber`. Thread names
-   * are formatted as prefix-ID, where ID is a unique, sequentially assigned integer.
-   */
-  private def newDaemonCachedThreadPool(
-      prefix: String, maxThreadNumber: Int, keepAliveSeconds: Int = 60): ThreadPoolExecutor = {
-    val threadFactory = namedThreadFactory(prefix)
-    val threadPool = new ThreadPoolExecutor(
-      maxThreadNumber, // corePoolSize: the max number of threads to create before queuing the tasks
-      maxThreadNumber, // maximumPoolSize: because we use LinkedBlockingDeque, this one is not used
-      keepAliveSeconds,
-      TimeUnit.SECONDS,
-      new LinkedBlockingQueue[Runnable],
-      threadFactory)
-    threadPool.allowCoreThreadTimeOut(true)
-    threadPool
-  }
-
   val executionContext = ExecutionContext.fromExecutorService(
-    newDaemonCachedThreadPool("gpu-broadcast-exchange",
+    org.apache.spark.util.ThreadUtils.newDaemonCachedThreadPool("gpu-broadcast-exchange",
       SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
 
   protected def checkRowLimit(numRows: Int) = {
