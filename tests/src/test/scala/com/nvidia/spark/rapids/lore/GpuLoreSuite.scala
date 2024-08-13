@@ -33,22 +33,6 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
-  test("mhb") {
-
-    withGpuSparkSession { spark =>
-
-      val restoredResultLength = GpuColumnarToRowExec(GpuLore.restoreGpuExec(
-        new Path(s"/tmp/lore/loreId-275"),
-        spark))
-        .executeCollect()
-        .length
-
-      println(restoredResultLength)
-//      scala.io.StdIn.readLine()
-
-    }
-  }
-
   test("Broadcast join") {
     doTestReplay("32[*]") { spark =>
       val df1 = spark.range(0, 1000, 1, 10)

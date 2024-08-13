@@ -65,7 +65,7 @@ class RapidsBufferCatalog(
   extends AutoCloseable with Logging {
 
   /** Map of buffer IDs to buffers sorted by storage tier */
-  val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
+  private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
 
   /** Map of buffer IDs to buffer handles in insertion order */
   private[this] val bufferIdToHandles =
@@ -611,14 +611,7 @@ class RapidsBufferCatalog(
       } else {
         // this thread wins the race and should spill
         spillCount += 1
-        val start = System.nanoTime()
-        val x = Some(store.synchronousSpill(targetTotalSize, this, stream))
-        val end = System.nanoTime()
-        logWarning(s"Spill to next tier from  ${store.tier} " +
-          s"size=${x.get} t:${end - start} " +
-          s"bandwidth=${x.get / (end -start)} } B/nano")
-
-        x
+        Some(store.synchronousSpill(targetTotalSize, this, stream))
       }
     }
   }
@@ -744,10 +737,10 @@ class RapidsBufferCatalog(
 object RapidsBufferCatalog extends Logging {
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 
-  var deviceStorage: RapidsDeviceMemoryStore = _
-  var hostStorage: RapidsHostMemoryStore = _
+  private var deviceStorage: RapidsDeviceMemoryStore = _
+  private var hostStorage: RapidsHostMemoryStore = _
   private var diskBlockManager: RapidsDiskBlockManager = _
-  var diskStorage: RapidsDiskStore = _
+  private var diskStorage: RapidsDiskStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
   private var _shouldUnspill: Boolean = _
   private var _singleton: RapidsBufferCatalog = null

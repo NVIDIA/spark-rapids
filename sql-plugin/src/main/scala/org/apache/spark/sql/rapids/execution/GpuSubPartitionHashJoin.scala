@@ -190,7 +190,6 @@ class GpuBatchSubPartitioner(
             if (table.getRowCount > 0) {
               subTables(id) = null
               pendingParts(id) += SpillableColumnarBatch(table, types,
-//                                SpillPriorities.ACTIVE_ON_DECK_PRIORITY +1  + id)
                 SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               numCurBatches += 1
             }

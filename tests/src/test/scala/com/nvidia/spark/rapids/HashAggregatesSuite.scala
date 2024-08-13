@@ -114,40 +114,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     assert(!output(2).nullable)
   } }
 
-  test("mhb1"){
-    val spillable = new HashedPriorityQueue[String](100, new Ordering[String] {
-      override def compare(x: String, y: String): Int = 0
-    })
-    for(i <- 0 until 100){
-      spillable.add(s"key${100- i}")
-    }
-    for(i <- 0 until 100){
-      val x = spillable.poll()
-      println("x: " + x)
-    }
-    println("hell" + spillable.size())
-
-    withGpuSparkSession(spark => {
-
-      spark.time(spark.range(0, 2000000000L, 1, 2).selectExpr(
-        "CAST(rand(0) * 2000000000 AS LONG) DIV 2 as id", "id % 2 as data").
-        groupBy("id").agg(count(lit(1)), avg(col("data"))).orderBy("id").show())
-
-    })
-    println("hell")
-    scala.io.StdIn.readLine()
-  }
-
-  test("mhb2"){
-    withGpuSparkSession(spark => {
-
-      spark.time(spark.range(0, 10000000L, 1, 2).selectExpr("id as key", "id as value").
-        groupBy("key").agg(avg(col("value")).alias("avg_v")).
-        orderBy(desc("avg_v"), col("key")).show())
-    })
-    println("hell")
-    scala.io.StdIn.readLine()
-  }
   test("SortAggregateExec is translated correctly ENABLE_HASH_OPTIMIZE_SORT=false") {
 
     val conf = new SparkConf()
