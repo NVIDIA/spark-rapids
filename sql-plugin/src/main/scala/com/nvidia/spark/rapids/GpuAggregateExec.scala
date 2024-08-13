@@ -919,6 +919,7 @@ object GpuAggFinalPassIterator {
     cbIter.map { batch =>
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
+        println("batch rows: " + batch.numRows())
         val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
           GpuProjectExec.projectAndClose(batch, exprs, NoopMetric)
         }.getOrElse(batch)
@@ -1022,7 +1023,7 @@ class GpuMergeAggregateIterator(
     }
   }
 
-  def getFirstPassIter =
+  def getFirstPassIter: Iterator[SpillableColumnarBatch] =
     reconstructedFirstPassIter.getOrElse(firstPassIter)
 
   override def hasNext: Boolean = {
@@ -1034,6 +1035,32 @@ class GpuMergeAggregateIterator(
 
   override def next(): ColumnarBatch = {
     fallbackIter.map(_.next()).getOrElse {
+
+      // Handle reduction-only aggregation
+      if (isReductionOnly) {
+        val batches = ArrayBuffer.apply[SpillableColumnarBatch]()
+        while (getFirstPassIter.hasNext) {
+          batches += getFirstPassIter.next()
+        }
+        AggregateUtils.tryMergeAggregatedBatches(
+          batches, forceMergeRegardlessOfOversize = true, metrics,
+          targetMergeBatchSize, concatAndMergeHelper)
+        if (batches.size > 1 || (batches.size == 1 && batches.head.numRows() > 1)) {
+          throw new IllegalStateException(
+            "Expected at most a single batch with single row, but got " +
+              s"${batches.size} batches, with head batch having ${batches.head.numRows()} rows")
+        }
+
+        if (batches.size == 1 && batches.head.numRows() == 1) {
+          hasReductionOnlyBatch = false
+          return withResource(batches.head) { cb =>
+            cb.getColumnarBatch()
+          }
+        } else {
+          hasReductionOnlyBatch = false
+          return generateEmptyReductionBatch()
+        }
+      }
 
       // Handle the case of skipping second and third pass of aggregation
       if (reconstructedFirstPassIter.isEmpty && getFirstPassIter.hasNext
@@ -1055,6 +1082,7 @@ class GpuMergeAggregateIterator(
                 cb.getColumnarBatch()
               }
             }))
+          return fallbackIter.get.next()
         } else {
           // As if nothing happened, put the first batch back to the iterator
           val iter = getFirstPassIter
@@ -1078,12 +1106,7 @@ class GpuMergeAggregateIterator(
         fallbackIter = Some(buildRepartitionFallbackIterator())
         fallbackIter.get.next()
       } else if (totalRows == 0) {
-        if (hasReductionOnlyBatch) {
-          hasReductionOnlyBatch = false
-          generateEmptyReductionBatch()
-        } else {
-          throw new NoSuchElementException("batches exhausted")
-        }
+        throw new NoSuchElementException("batches exhausted")
       } else {
         hasReductionOnlyBatch = false
 
@@ -1164,7 +1187,7 @@ class GpuMergeAggregateIterator(
           val batchSizeBeforeMerge = headPartition.batches.size()
           AggregateUtils.tryMergeAggregatedBatches(
             headPartition.batches.data,
-            isReductionOnly || headPartition.areAllBatchesSingleRow, metrics,
+            headPartition.areAllBatchesSingleRow, metrics,
             targetMergeBatchSize, concatAndMergeHelper)
           if (headPartition.batches.size != 1) {
             throw new IllegalStateException(
