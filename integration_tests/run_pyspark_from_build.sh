@@ -211,7 +211,7 @@ else
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
-    TEST_COMMON_OPTS=(-v
+    TEST_COMMON_OPTS=(-v -x
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$STD_INPUT_PATH"

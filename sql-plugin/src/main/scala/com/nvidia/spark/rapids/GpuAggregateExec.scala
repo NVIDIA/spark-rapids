@@ -219,6 +219,10 @@ object AggregateUtils extends Logging {
       batchesByBucket: ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]
   ): Boolean = {
 
+    var sizeSoFar = 0L
+    val batchesToConcat: mutable.ArrayBuffer[SpillableColumnarBatch] = mutable.ArrayBuffer.empty
+    var stagingBatch: Option[SpillableColumnarBatch] = None
+
     var repartitionHappened = false
     if (hashSeed > 200) {
       throw new IllegalStateException("Too many times of repartition, may hit a bug?")
@@ -226,12 +230,14 @@ object AggregateUtils extends Logging {
 
     def repartitionAndClose(batch: SpillableColumnarBatch): Unit = {
 
-      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)) {
-        // If this is the only batch, we can just add it to the first bucket
-        // In this case, no repartition is ever happened
-        batchesByBucket.head.append(batch)
-        return
-      }
+//      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)
+//          && stagingBatch.isEmpty && batchesToConcat.isEmpty) {
+//        // If this is the only batch (after merging neighbours) to be repartitioned,
+//        // we can just add it to the first bucket and skip repartitioning.
+//        // This is a common case when total input size can fit into a single batch.
+//        batchesByBucket.head.append(batch)
+//        return
+//      }
 
       withResource(new NvtxWithMetrics("agg repartition",
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
@@ -262,10 +268,6 @@ object AggregateUtils extends Logging {
       }
       repartitionHappened = true
     }
-
-    var sizeSoFar = 0L
-    val batchesToConcat: mutable.ArrayBuffer[SpillableColumnarBatch] = mutable.ArrayBuffer.empty
-    var stagingBatch: Option[SpillableColumnarBatch] = None
 
     def handleBatchesToConcat(): Unit = {
       if (batchesToConcat.size == 1) {
@@ -318,7 +320,10 @@ object AggregateUtils extends Logging {
     stagingBatch.foreach(repartitionAndClose)
 
     // Deal with the over sized buckets
-    if (batchesByBucket.exists(bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize)) {
+    if (repartitionHappened &&
+        batchesByBucket.exists(
+          bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize)
+    ) {
       logDebug("Some of the repartition buckets are over sized, trying to split them")
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
@@ -1010,6 +1015,7 @@ class GpuMergeAggregateIterator(
   private[this] val batchesByBucket =
     ArrayBuffer.fill(defaultHashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
 
+  private[this] var firstBatchChecked = false
   private[this] var reconstructedFirstPassIter: Option[Iterator[SpillableColumnarBatch]] = None
 
   private[this] var bucketIter: Option[RepartitionAggregateIterator] = None
@@ -1067,8 +1073,9 @@ class GpuMergeAggregateIterator(
 
       // Handle the case of skipping second and third pass of aggregation
       // This only work when spark.rapids.sql.agg.skipAggPassReductionRatio < 1
-      if (reconstructedFirstPassIter.isEmpty && getFirstPassIter.hasNext
+      if (!firstBatchChecked && getFirstPassIter.hasNext
         && allowNonFullyAggregatedOutput) {
+        firstBatchChecked = true
 
         val next = getFirstPassIter.next()
         // It's only based on first batch of first pass agg, so it's an estimate
@@ -1093,6 +1100,7 @@ class GpuMergeAggregateIterator(
           reconstructedFirstPassIter = Some(Iterator.single(next) ++ iter)
         }
       }
+      firstBatchChecked = true
 
       val groupingAttributes = groupingExpressions.map(_.toAttribute)
       val aggBufferAttributes = groupingAttributes ++
@@ -1117,7 +1125,9 @@ class GpuMergeAggregateIterator(
       } else {
         hasReductionOnlyBatch = false
         // None of bucket has more than one batch, so we can just return the single batch
-        // This is the "most happy path"
+        // This is the "most happy path", containing 2 situations:
+        // 1) repartition happened, but all buckets have <= 1 batch
+        // 2) repartition didn't happen, only first bucket contains a single batch
         backupIter = Some(
           new Iterator[ColumnarBatch] {
             override def hasNext: Boolean = batchesByBucket.exists(_.size() > 0)
