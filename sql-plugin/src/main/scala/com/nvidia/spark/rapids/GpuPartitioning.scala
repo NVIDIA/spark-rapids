@@ -133,7 +133,7 @@ trait GpuPartitioning extends Partitioning {
     }
     try {
       // Leaving the GPU for a while
-      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+      GpuSemaphore.voluntaryRelease(TaskContext.get())
 
       val origParts = new Array[ColumnarBatch](numPartitions)
       var start = 0

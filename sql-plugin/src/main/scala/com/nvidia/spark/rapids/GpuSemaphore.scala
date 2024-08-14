@@ -112,6 +112,24 @@ object GpuSemaphore {
     }
   }
 
+  def forbidVoluntaryRelease(context: TaskContext): Unit= {
+    if (context != null) {
+      getInstance.forbidVoluntaryRelease(context)
+    }
+  }
+
+  def allowVoluntaryRelease(context: TaskContext): Unit = {
+    if (context != null) {
+      getInstance.allowVoluntaryRelease(context)
+    }
+  }
+
+  def voluntaryRelease(context: TaskContext): Unit = {
+    if (context != null) {
+      getInstance.voluntaryRelease(context)
+    }
+  }
+
   /**
    * Dumps the stack traces for any tasks that have accessed the GPU semaphore
    * and have not completed. The output includes whether the task has the GPU semaphore
@@ -144,6 +162,11 @@ object GpuSemaphore {
     // (who has more than 1000 threads anyways).
     val permits = MAX_PERMITS / math.min(math.max(concurrentInt, 1), MAX_PERMITS)
     math.max(permits, 1)
+  }
+
+  def isVoluntaryReleaseCheckEnabled(conf: SQLConf): Boolean = {
+    val str = conf.getConfString(RapidsConf.ENABLE_VOLUNTARY_GPU_RELEASE_CHECK.key, "false")
+    str.toBoolean
   }
 }
 
@@ -321,6 +344,9 @@ private final class GpuSemaphore() extends Logging {
   // Keep track of all tasks that are both active on the GPU and blocked waiting on the GPU
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
+  private val checkVoluntaryReleaseEnabled = isVoluntaryReleaseCheckEnabled(SQLConf.get)
+  private val voluntaryReleaseForbiddenRecords = new ConcurrentHashMap[Long, Boolean]
+
   def tryAcquire(context: TaskContext): TryAcquireResult = {
     // Make sure that the thread/task is registered before we try and block
     TaskRegistryTracker.registerThreadForRetry()
@@ -372,9 +398,31 @@ private final class GpuSemaphore() extends Logging {
     }
   }
 
+  def forbidVoluntaryRelease(context: TaskContext): Unit = {
+    val taskAttemptId = context.taskAttemptId()
+    voluntaryReleaseForbiddenRecords.put(taskAttemptId, true)
+  }
+
+  def allowVoluntaryRelease(context: TaskContext): Unit = {
+    val taskAttemptId = context.taskAttemptId()
+    voluntaryReleaseForbiddenRecords.remove(taskAttemptId)
+  }
+
+  def voluntaryRelease(context: TaskContext): Unit = {
+    val taskAttemptId = context.taskAttemptId()
+    if (!checkVoluntaryReleaseEnabled ||
+      !voluntaryReleaseForbiddenRecords.getOrDefault(taskAttemptId, false)) {
+      releaseIfNecessary(context)
+      logInfo(s"Voluntary release GPU for task $taskAttemptId")
+    } else {
+      logInfo(s"Voluntary release GPU is forbidden for task $taskAttemptId")
+    }
+  }
+
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
+    voluntaryReleaseForbiddenRecords.remove(taskAttemptId)
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")

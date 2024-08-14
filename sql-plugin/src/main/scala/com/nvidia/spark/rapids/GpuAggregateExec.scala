@@ -2326,8 +2326,16 @@ class DynamicGpuPartialAggregateIterator(
       }
       aggIter = Some(newIter)
     }
-    aggIter.map(_.next()).getOrElse {
+    val ret = aggIter.map(_.next()).getOrElse {
       throw new NoSuchElementException()
     }
+
+    if (hasNext) {
+      GpuSemaphore.forbidVoluntaryRelease(TaskContext.get())
+    } else {
+      GpuSemaphore.allowVoluntaryRelease(TaskContext.get())
+    }
+
+    ret
   }
 }

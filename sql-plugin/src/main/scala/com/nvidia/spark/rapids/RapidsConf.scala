@@ -551,6 +551,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createWithDefault(2)
 
+  val ENABLE_VOLUNTARY_GPU_RELEASE_CHECK = conf("spark.rapids.gpu.voluntaryReleaseCheck")
+    .doc("If true, the plugin will check if voluntary release of GPU is forbidden, " +
+      "e.g. when GpuAggregateExec still have more output batches to offer." +
+      "This is to avoid too many tasks being scheduled to put pressure on GPU memory.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
     .doc("Number of threads used to spill shuffle data to disk in the background.")
     .commonlyUsed()
