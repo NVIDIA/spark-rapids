@@ -848,8 +848,8 @@ def gen_df_help(data_gen, length, seed_value):
     rand = random.Random(seed_value)
     data_gen.start(rand)
     data = [data_gen.gen() for index in range(0, length)]
-    # for i in range(0, length):
-    #     print(data[i], ',')
+    for i in range(0, length):
+        print(data[i], ',')
     return data
 
 def gen_df(spark, data_gen, length=2048, seed=None, num_slices=None):

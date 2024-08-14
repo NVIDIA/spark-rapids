@@ -1348,6 +1348,23 @@ def test_hash_groupby_with_maxby_all_bipair_same(data_gen_c):
         lambda spark: three_col_df2(spark, byte_gen, data_gen_c)
             .groupby('a').agg(f.max_by('b', 'c')))
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen_b', _all_basic_gens_with_all_nans_cases + nested_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128, ids=idfn)
+def test_hash_groupby_with_maxby_all_bipair_diff(data_gen_b, data_gen_c):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, byte_gen, data_gen_b, data_gen_c)
+            .groupby('a').agg(f.max_by('b', 'c')))
+
+
+@ignore_order(local=True)
+def test_hash_groupby_with_maxby_debug_normal():
+    gen_b = long_gen
+    # gen_c = StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])
+    gen_c = byte_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, byte_gen, gen_b, gen_c)
+            .groupby('a').agg(f.max_by('b', 'c')))
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
@@ -1363,16 +1380,16 @@ def test_hash_groupby_with_minby_all(data_gen):
 
 @ignore_order(local=True)
 def test_hash_groupby_with_minby_debug_bipair():
-    gen_b = long_gen
+    gen_b = int_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df2(spark, byte_gen, gen_b)
             .groupby('a').agg(f.min_by('b', 'c')))
 
 @ignore_order(local=True)
 def test_hash_groupby_with_minby_debug_normal():
-    gen_b = long_gen
+    gen_b = LongGen(special_cases=[(None, 20)])
     # gen_c = StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])
-    gen_c = ArrayGen(StructGen([['child0', short_gen]]))
+    gen_c = SetValuesGen(FloatType(), [None, 1.1])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, byte_gen, gen_b, gen_c)
             .groupby('a').agg(f.min_by('b', 'c')))
@@ -1383,7 +1400,7 @@ def test_hash_groupby_with_minby_debug_normal():
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen_b', _all_basic_gens_with_all_nans_cases + nested_gens_sample, ids=idfn)
 @pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128, ids=idfn)
-def test_hash_groupby_with_minby_all_bipair(data_gen_b, data_gen_c):
+def test_hash_groupby_with_minby_all_bipair_diff(data_gen_b, data_gen_c):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, byte_gen, data_gen_b, data_gen_c)
             .groupby('a').agg(f.min_by('b', 'c')))
