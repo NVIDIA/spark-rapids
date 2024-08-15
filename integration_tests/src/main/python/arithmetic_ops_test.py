@@ -287,10 +287,11 @@ def test_special_decimal_division():
 @pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
 @disable_ansi_mode
 def test_float_division_mixed(lhs, rhs):
+    conf = copy_and_update(allow_neg_scale_conf, {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a') / f.col('b')),
-        conf=allow_neg_scale_conf)
+        conf=conf)
 
 @pytest.mark.parametrize('data_gen', integral_gens + [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_7_7, _decimal_gen_18_3, _decimal_gen_30_2,
@@ -907,7 +908,8 @@ def test_acosh(data_gen):
 @pytest.mark.parametrize('data_gen', [DoubleGen(min_exp=-20, max_exp=20)], ids=idfn)
 def test_columnar_acosh_improved(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('acosh(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('acosh(a)'),
+        {'spark.rapids.sql.improvedFloatOps.enabled': 'true'})
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
