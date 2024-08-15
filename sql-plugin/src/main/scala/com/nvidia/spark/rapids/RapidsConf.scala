@@ -2542,6 +2542,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
+  lazy val checkVoluntaryGpuRelease = get(ENABLE_VOLUNTARY_GPU_RELEASE_CHECK)
+
   lazy val profilePath: Option[String] = get(PROFILE_PATH)
 
   lazy val profileExecutors: String = get(PROFILE_EXECUTORS)

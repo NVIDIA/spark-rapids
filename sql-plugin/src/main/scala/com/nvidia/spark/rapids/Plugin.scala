@@ -560,7 +560,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       logDebug("Loading extra executor plugins: " +
         s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
-      GpuSemaphore.initialize()
+      GpuSemaphore.initialize(conf.checkVoluntaryGpuRelease)
       FileCache.init(pluginContext)
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process

@@ -59,7 +59,7 @@ object GpuSemaphore {
         // Since we don't have access to a configuration object here,
         // default to only one task per GPU behavior.
         if (instance == null) {
-          initialize()
+          initialize(false)
         }
       }
     }
@@ -69,11 +69,11 @@ object GpuSemaphore {
   /**
    * Initializes the GPU task semaphore.
    */
-  def initialize(): Unit = synchronized {
+  def initialize(checkVoluntaryGpuRelease: Boolean): Unit = synchronized {
     if (instance != null) {
       throw new IllegalStateException("already initialized")
     }
-    instance = new GpuSemaphore()
+    instance = new GpuSemaphore(checkVoluntaryGpuRelease)
   }
 
   /**
@@ -162,11 +162,6 @@ object GpuSemaphore {
     // (who has more than 1000 threads anyways).
     val permits = MAX_PERMITS / math.min(math.max(concurrentInt, 1), MAX_PERMITS)
     math.max(permits, 1)
-  }
-
-  def isVoluntaryReleaseCheckEnabled(conf: SQLConf): Boolean = {
-    val str = conf.getConfString(RapidsConf.ENABLE_VOLUNTARY_GPU_RELEASE_CHECK.key, "false")
-    str.toBoolean
   }
 }
 
@@ -338,13 +333,12 @@ private final class SemaphoreTaskInfo() extends Logging {
   }
 }
 
-private final class GpuSemaphore() extends Logging {
+private final class GpuSemaphore(val checkVoluntaryGpuRelease: Boolean) extends Logging {
   import GpuSemaphore._
   private val semaphore = new Semaphore(MAX_PERMITS)
   // Keep track of all tasks that are both active on the GPU and blocked waiting on the GPU
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
-  private val checkVoluntaryReleaseEnabled = isVoluntaryReleaseCheckEnabled(SQLConf.get)
   private val voluntaryReleaseForbiddenRecords = new ConcurrentHashMap[Long, Boolean]
 
   def tryAcquire(context: TaskContext): TryAcquireResult = {
@@ -410,7 +404,7 @@ private final class GpuSemaphore() extends Logging {
 
   def voluntaryRelease(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
-    if (!checkVoluntaryReleaseEnabled ||
+    if (!checkVoluntaryGpuRelease ||
       !voluntaryReleaseForbiddenRecords.getOrDefault(taskAttemptId, false)) {
       releaseIfNecessary(context)
       logInfo(s"Voluntary release GPU for task $taskAttemptId")
