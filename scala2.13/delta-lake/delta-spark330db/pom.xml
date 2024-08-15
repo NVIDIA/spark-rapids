@@ -21,9 +21,9 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
+        <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
         <version>24.10.0-SNAPSHOT</version>
-        <relativePath>../../jdk-profiles/pom.xml</relativePath>
+        <relativePath>../../shim-deps/pom.xml</relativePath>
     </parent>
 
     <artifactId>rapids-4-spark-delta-spark330db_2.13</artifactId>
