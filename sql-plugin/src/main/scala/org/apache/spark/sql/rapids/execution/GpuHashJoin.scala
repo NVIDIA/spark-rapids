@@ -264,8 +264,7 @@ object GpuHashJoin {
 case class JoinBuildSideStats(streamMagnificationFactor: Double, isDistinct: Boolean)
 
 object JoinBuildSideStats {
-  // TODO: Make boundBuildKeys Seq[GpuExpression]
-  def fromBatch(batch: ColumnarBatch, boundBuildKeys: Seq[Expression]): JoinBuildSideStats = {
+  def fromBatch(batch: ColumnarBatch, boundBuildKeys: Seq[GpuExpression]): JoinBuildSideStats = {
     // This is okay because the build keys must be deterministic
     withResource(GpuProjectExec.project(batch, boundBuildKeys)) { buildKeys =>
       // Based off of the keys on the build side guess at how many output rows there
@@ -283,10 +282,10 @@ object JoinBuildSideStats {
 
 abstract class BaseHashJoinIterator(
     built: LazySpillableColumnarBatch,
-    boundBuiltKeys: Seq[Expression],
+    boundBuiltKeys: Seq[GpuExpression],
     buildStatsOpt: Option[JoinBuildSideStats],
     stream: Iterator[LazySpillableColumnarBatch],
-    boundStreamKeys: Seq[Expression],
+    boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
     targetSize: Long,
     joinType: JoinType,
@@ -441,10 +440,10 @@ abstract class BaseHashJoinIterator(
  */
 class HashJoinIterator(
     built: LazySpillableColumnarBatch,
-    val boundBuiltKeys: Seq[Expression],
+    val boundBuiltKeys: Seq[GpuExpression],
     buildStatsOpt: Option[JoinBuildSideStats],
     private val stream: Iterator[LazySpillableColumnarBatch],
-    val boundStreamKeys: Seq[Expression],
+    val boundStreamKeys: Seq[GpuExpression],
     val streamAttributes: Seq[Attribute],
     val targetSize: Long,
     val joinType: JoinType,
@@ -508,10 +507,10 @@ class HashJoinIterator(
  */
 class ConditionalHashJoinIterator(
     built: LazySpillableColumnarBatch,
-    boundBuiltKeys: Seq[Expression],
+    boundBuiltKeys: Seq[GpuExpression],
     buildStatsOpt: Option[JoinBuildSideStats],
     stream: Iterator[LazySpillableColumnarBatch],
-    boundStreamKeys: Seq[Expression],
+    boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
     compiledCondition: CompiledExpression,
     targetSize: Long,
@@ -612,11 +611,11 @@ class ConditionalHashJoinIterator(
 class HashJoinStreamSideIterator(
     joinType: JoinType,
     built: LazySpillableColumnarBatch,
-    boundBuiltKeys: Seq[Expression],
+    boundBuiltKeys: Seq[GpuExpression],
     buildStatsOpt: Option[JoinBuildSideStats],
     buildSideTrackerInit: Option[SpillableColumnarBatch],
     stream: Iterator[LazySpillableColumnarBatch],
-    boundStreamKeys: Seq[Expression],
+    boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
     compiledCondition: Option[CompiledExpression],
     targetSize: Long,
@@ -851,11 +850,11 @@ class HashJoinStreamSideIterator(
 class HashOuterJoinIterator(
     joinType: JoinType,
     built: LazySpillableColumnarBatch,
-    boundBuiltKeys: Seq[Expression],
+    boundBuiltKeys: Seq[GpuExpression],
     buildStats: Option[JoinBuildSideStats],
     buildSideTrackerInit: Option[SpillableColumnarBatch],
     stream: Iterator[LazySpillableColumnarBatch],
-    boundStreamKeys: Seq[Expression],
+    boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
     boundCondition: Option[GpuExpression],
     numFirstConditionTableColumns: Int,
