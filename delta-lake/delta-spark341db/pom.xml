@@ -49,13 +49,6 @@
             <classifier>${spark.version.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-db-bom</artifactId>
-            <version>${project.version}</version>
-            <type>pom</type>
-            <scope>provided</scope>
-        </dependency>
     </dependencies>
 
     <build>
