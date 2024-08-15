@@ -636,12 +636,20 @@ class HashJoinStreamSideIterator(
       buildSide,
       opTime = opTime,
       joinTime = joinTime) {
+  // Determine the type of join to use as we iterate through the stream-side batches.
+  // Each of these outer joins can be implemented in terms of another join as we iterate
+  // through the stream-side batches and then emit a final anti-join batch based on which
+  // build-side rows were left untouched by the stream-side iteration.
+  // FullOuter joins are implemented in terms of LeftOuter + RightAnti or RightOuter + LeftAnti
+  // LeftOuter joins are implemented in terms of Inner + RightAnti
+  // RightOuter joins are implemented in terms of Inner + LeftAnti
   private val subJoinType = joinType match {
     case FullOuter if buildSide == GpuBuildRight => LeftOuter
     case FullOuter if buildSide == GpuBuildLeft => RightOuter
-    case LeftOuter | RightOuter => Inner
+    case LeftOuter if buildSide == GpuBuildLeft => Inner
+    case RightOuter if buildSide == GpuBuildRight => Inner
     case t =>
-      throw new IllegalStateException(s"unsupported join type: $t")
+      throw new IllegalStateException(s"unsupported join type $t with $buildSide")
   }
 
   private val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
