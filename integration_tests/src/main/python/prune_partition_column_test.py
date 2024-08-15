@@ -19,7 +19,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, run_with_cpu_and_gpu, 
 from data_gen import *
 from marks import *
 from pyspark.sql.types import IntegerType
-from spark_session import with_cpu_session, is_before_spark_320
+from spark_session import with_cpu_session
 from conftest import spark_jvm
 
 # Several values to avoid generating too many folders for partitions.
@@ -192,7 +192,6 @@ def test_select_complex_field(format, spark_tmp_path, query, expected_schemata, 
 # https://github.com/NVIDIA/spark-rapids/issues/8715
 @pytest.mark.parametrize('query, expected_schemata', [("friend.First", "struct<friends:array<struct<first:string>>>"),
                                                           ("friend.MIDDLE", "struct<friends:array<struct<middle:string>>>")])
-@pytest.mark.skipif(is_before_spark_320(), reason='https://issues.apache.org/jira/browse/SPARK-34638')
 @pytest.mark.parametrize('is_partitioned', [True, False])
 @pytest.mark.parametrize('format', ["parquet", "orc"])
 def test_nested_column_prune_on_generator_output(format, spark_tmp_path, query, expected_schemata, is_partitioned, spark_tmp_table_factory):

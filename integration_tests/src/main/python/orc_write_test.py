@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_before_spark_400, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_400, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
 from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
@@ -155,7 +155,7 @@ def test_dynamic_partition_write_round_trip(spark_tmp_path, orc_gen, orc_impl):
 
 orc_write_compress_options = ['none', 'uncompressed', 'snappy']
 # zstd is available in spark 3.2.0 and later.
-if not is_before_spark_320() and not is_spark_cdh():
+if not is_spark_cdh():
     orc_write_compress_options.append('zstd')
 
 @pytest.mark.parametrize('compress', orc_write_compress_options)
@@ -305,7 +305,6 @@ def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
 
 
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 def test_concurrent_writer(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -321,7 +320,6 @@ def test_concurrent_writer(spark_tmp_path):
 
 
 @ignore_order
-@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(

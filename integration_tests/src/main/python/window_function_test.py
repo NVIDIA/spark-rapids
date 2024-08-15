@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session
+from spark_session import is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -1083,7 +1083,6 @@ def test_percent_rank_single_part_multiple_batches():
                 .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame', *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
@@ -1107,7 +1106,6 @@ def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
         FROM window_agg_table
         ''')
 
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lag', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame', *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
@@ -1808,7 +1806,6 @@ def test_window_first_last_nth(data_gen):
         'SELECT a, b, c, ' + exprs_for_nth_first_last +
         'FROM window_agg_table')
 
-@pytest.mark.skipif(is_before_spark_320(), reason='IGNORE NULLS clause is not supported for FIRST(), LAST() and NTH_VALUE in Spark 3.1.x')
 @pytest.mark.parametrize('data_gen', all_basic_gens_no_null + decimal_gens + _nested_gens, ids=idfn)
 def test_window_first_last_nth_ignore_nulls(data_gen):
     assert_gpu_and_cpu_are_equal_sql(

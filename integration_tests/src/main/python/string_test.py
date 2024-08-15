@@ -23,7 +23,8 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_before_spark_320, is_before_spark_400
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, \
+    is_before_spark_400
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -663,8 +664,6 @@ def test_unsupported_fallback_translate():
 
 
 @incompat
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2+ does translate() support unicode \
-    characters with code point >= U+10000. See https://issues.apache.org/jira/browse/SPARK-34094")
 def test_translate_large_codepoints():
     gen = mk_str_gen('.{0,5}TEST[\ud720 \U0010FFFF A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -833,9 +832,7 @@ def test_like_complex_escape():
 # to_base can be positive and negative
 @pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
 def test_conv_dec_to_from_hex(from_base, to_base, pattern):
-    # before 3.2 leading space are deem the string non-numeric and the result is 0
-    if not is_before_spark_320:
-        pattern = r' ?' + pattern
+    pattern = r' ?' + pattern
     gen = mk_str_gen(pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),

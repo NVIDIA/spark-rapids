@@ -19,7 +19,7 @@ from conftest import is_databricks_runtime
 from data_gen import *
 from hive_write_test import _restricted_timestamp
 from marks import allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_spark_350_or_later, is_before_spark_330, is_spark_330_or_later, is_databricks122_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_spark_350_or_later, is_before_spark_330, is_spark_330_or_later, is_databricks122_or_later
 
 # Disable the meta conversion from Hive write to FrameData write in Spark, to test
 # "GpuInsertIntoHiveTable" for Parquet write.
@@ -154,12 +154,9 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
         all_confs)
 
 
-zstd_param = pytest.param('ZSTD',
-    marks=pytest.mark.skipif(is_before_spark_320(), reason="zstd is not supported before 320"))
-
 @allow_non_gpu(*(non_utc_allow))
 @ignore_order(local=True)
-@pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'SNAPPY', zstd_param])
+@pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'SNAPPY', 'ZSTD'])
 def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type):
     # Generate hive table in Parquet format
     def gen_table(spark):

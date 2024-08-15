@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_not_utc
 from data_gen import *
-from spark_session import with_cpu_session, is_before_spark_313, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330
 from pyspark.sql.types import *
 from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
@@ -335,16 +335,10 @@ def test_in(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
 
-# We avoid testing inset with NaN in Spark < 3.1.3 since it has issue with NaN comparisons.
-# See https://github.com/NVIDIA/spark-rapids/issues/9687.
-test_inset_data_gen = [gen for gen in eq_gens_with_decimal_gen if gen != float_gen if gen != double_gen] + \
-                                   [FloatGen(no_nans=True), DoubleGen(no_nans=True)] \
-                      if is_before_spark_313() else eq_gens_with_decimal_gen
-
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries over that value.
 @allow_non_gpu(*non_utc_allow)
-@pytest.mark.parametrize('data_gen', test_inset_data_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_in_set(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) + 1

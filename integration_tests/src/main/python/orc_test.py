@@ -234,7 +234,7 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
 # zstd is available in spark 3.2.0 and later.
-if not is_before_spark_320() and not is_spark_cdh():
+if not is_spark_cdh():
     orc_compress_options.append('zstd')
 
 # The following need extra jars 'lzo'
@@ -301,7 +301,6 @@ def setup_external_table_with_forced_positions(spark, table_name, data_path):
     rename_cols_query = "CREATE EXTERNAL TABLE `{}` (`col10` INT, `_c1` STRING, `col30` DOUBLE) STORED AS orc LOCATION '{}'".format(table_name, data_path)
     spark.sql(rename_cols_query).collect
 
-@pytest.mark.skipif(is_before_spark_320(), reason='ORC forced positional evolution support is added in Spark-3.2')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('forced_position', ["true", "false"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])

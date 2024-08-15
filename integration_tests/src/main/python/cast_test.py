@@ -86,19 +86,7 @@ valid_values_string_to_date = ['2001', ' 2001 ', '1970-01', ' 1970-1 ',
                                ]
 values_string_to_data = invalid_values_string_to_date + valid_values_string_to_date
 
-# Spark 320+ and databricks support Ansi mode when casting string to date
-# This means an exception will be thrown when casting invalid string to date on Spark 320+ or databricks
-# test Spark versions < 3.2.0 and non databricks, ANSI mode
-@pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
-def test_cast_string_date_invalid_ansi_before_320():
-    data_rows = [(v,) for v in values_string_to_data]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'}, )
-
 # test Spark versions >= 320 and databricks, ANSI mode, valid values
-@pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
 def test_cast_string_date_valid_ansi():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
@@ -107,7 +95,6 @@ def test_cast_string_date_valid_ansi():
               'spark.sql.ansi.enabled': 'true'})
 
 # test Spark versions >= 320, ANSI mode
-@pytest.mark.skipif(is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_cast_string_date_invalid_ansi(invalid):
     assert_gpu_and_cpu_error(
@@ -118,7 +105,7 @@ def test_cast_string_date_invalid_ansi(invalid):
 
 
 # test try_cast in Spark versions >= 320 and < 340
-@pytest.mark.skipif(is_before_spark_320() or is_spark_340_or_later() or is_databricks113_or_later(), reason="try_cast only in Spark 3.2+")
+@pytest.mark.skipif(is_before_spark_340() or is_databricks113_or_later(), reason="try_cast only in Spark 3.2+")
 @allow_non_gpu('ProjectExec', 'TryCast')
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_try_cast_fallback(invalid):
@@ -162,7 +149,6 @@ def test_cast_string_ts_valid_format(data_gen):
                 'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
 def test_cast_string_date_fallback():
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
@@ -170,7 +156,6 @@ def test_cast_string_date_fallback():
             'Cast')
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
 def test_cast_string_timestamp_fallback():
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
