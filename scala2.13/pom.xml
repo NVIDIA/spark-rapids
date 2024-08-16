@@ -686,7 +686,12 @@
     </profiles>
 
     <properties>
-        <spark.rapids.releases>target/release.properties</spark.rapids.releases>
+        <!-- #if scala-2.12 --><!--
+        <dyn.shim.detection.properties>${maven.multiModuleProjectDirectory}/target/release.properties</dyn.shim.detection.properties>
+        --><!-- #endif scala-2.12 -->
+        <!-- #if scala-2.13 -->
+        <dyn.shim.detection.properties>${maven.multiModuleProjectDirectory}/target/release.properties</dyn.shim.detection.properties>
+        <!-- #endif scala-2.13 -->
         <release.212.section.header>Scala212ReleaseSection</release.212.section.header>
         <release.213.section.header>Scala213ReleaseSection</release.213.section.header>
         <rapids.module>.</rapids.module>
@@ -792,6 +797,16 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
+        <!-- #if scala-2.12 --><!--
+        <dyn.shim.detection.basedir>${maven.multiModuleProjectDirectory}/build</dyn.shim.detection.basedir>
+        <dyn.shim.detection.rundir>${maven.multiModuleProjectDirectory}</dyn.shim.detection.rundir>
+        <dyn.shim.detection.pom>-f .</dyn.shim.detection.pom>
+        --><!-- #endif scala-2.12 -->
+        <!-- #if scala-2.13 -->
+        <dyn.shim.detection.basedir>${maven.multiModuleProjectDirectory}/../build</dyn.shim.detection.basedir>
+        <dyn.shim.detection.rundir>${maven.multiModuleProjectDirectory}/..</dyn.shim.detection.rundir>
+        <dyn.shim.detection.pom>-f scala2.13</dyn.shim.detection.pom>
+        <!-- #endif scala-2.13 -->
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
           Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
@@ -1047,32 +1062,6 @@
                   <version>3.1.0</version>
                   <executions>
                       <execution>
-                          <id>get-buildvers</id>
-                          <goals>
-                              <goal>run</goal>
-                          </goals>
-                          <configuration>
-                              <target xmlns:ac="antlib:net.sf.antcontrib">
-                                  <!-- #if scala-2.12 --><!--
-                                  <scriptdef name="get-buildvers" language="jython" src="${project.basedir}/build/version.py">
-                                  --><!-- #endif scala-2.12 -->
-                                  <!-- #if scala-2.13 -->
-                                  <scriptdef name="get-buildvers" language="jython" src="${project.basedir}/../build/version.py">
-                                  <!-- #endif scala-2.13 -->
-                                    <attribute name="overwrite_properties"/>
-                                    <attribute name="expression"/>
-                                    <attribute name="pom"/>
-                                  </scriptdef>
-                                  <!-- #if scala-2.12 --><!--
-                                  <get-buildvers overwrite_properties="${overwrite_properties}" pom="" expression="${expression}"/>
-                                  --><!-- #endif scala-2.12 -->
-                                  <!-- #if scala-2.13 -->
-                                  <get-buildvers overwrite_properties="${overwrite_properties}" pom="-f scala2.13" expression="${expression}"/>
-                                  <!-- #endif scala-2.13 -->
-                              </target>
-                          </configuration>
-                      </execution>
-                      <execution>
                           <id>create-release-properties</id>
                           <goals>
                               <goal>run</goal>
@@ -1081,44 +1070,40 @@
                           <inherited>false</inherited>
                           <configuration>
                               <target xmlns:ac="antlib:net.sf.antcontrib">
-                                  <exec executable="bash" outputproperty="release.versions" failonerror="true">
-                                      <arg value="-c"/>
-                                      <arg value="export TEMP=$(mvn help:all-profiles -pl . $1| sort | uniq | awk '/([^-])release[0-9]/ {print substr($3, 8)}');
-                                      TEMP=$(echo -n $TEMP);
-                                      [[ -n $TEMP ]] || { echo -e 'Error setting databricks versions'; };
-                                      &lt;&lt;&lt; $TEMP read -r -a SPARK_SHIM_VERSIONS_ARR;
-                                      SNAPSHOTS=();
-                                      NO_SNAPSHOTS=();
-                                      for ver in ${SPARK_SHIM_VERSIONS_ARR[@]}; do
-                                      TEST=$(mvn -B help:evaluate -q -pl dist $1 -Dexpression=spark.version -Dbuildver=&quot;$ver&quot; -DforceStdout);
-                                      if [[ &quot;$TEST&quot; != *&quot;-SNAPSHOT&quot; ]]; then NO_SNAPSHOTS+=(&quot; $ver&quot;);
-                                      else SNAPSHOTS+=(&quot; $ver&quot;);
-                                      fi
-                                      done;
-                                      echo &quot;${SNAPSHOTS[@]} | ${NO_SNAPSHOTS[@]}&quot;;"/>
-                                      <!-- #if scala-2.12 --><!--
-                                      <arg value=""/>
-                                      --><!-- #endif scala-2.12 -->
-                                      <!-- #if scala-2.13 -->
-                                      <arg value="-f scala2.13"/>
-                                      <!-- #endif scala-2.13 -->
+                                    <exec executable="bash" dir="${dyn.shim.detection.rundir}" outputproperty="dyn.shim.detection.versions" failonerror="true">
+                                        <arg value="${dyn.shim.detection.basedir}/get-profile-versions.sh"/>
+                                      <!-- overwrite properties -->
+                                      <arg value="true"/>
+                                      <arg value="${dyn.shim.detection.pom}"/>
                                   </exec>
-                                  <!-- #if scala-2.12 --><!--
-                                  <scriptdef name="create-properties" language="jython" src="${project.basedir}/build/version.py">
-                                  --><!-- #endif scala-2.12 -->
-                                  <!-- #if scala-2.13 -->
-                                  <scriptdef name="create-properties" language="jython" src="${project.basedir}/../build/version.py">
-                                  <!-- #endif scala-2.13 -->
+                                    <scriptdef name="create-properties" language="jython" src="${dyn.shim.detection.basedir}/dyn-shim-detection.py">
                                       <attribute name="overwrite_properties"/>
                                       <attribute name="pom"/>
                                   </scriptdef>
-                                  <!-- #if scala-2.13 -->
-                                  <create-properties overwrite_properties="true" pom=""/>
-                                  --><!-- #endif scala-2.12 -->
-                                  <!-- #if scala-2.13 -->
-                                  <create-properties overwrite_properties="true" pom="-f scala2.13"/>
-                                  <!-- #endif scala-2.13 -->
-                                  </target>
+                                  <create-properties overwrite_properties="true" pom="${dyn.shim.detection.pom}"/>
+                              </target>
+                          </configuration>
+                      </execution>
+                      <execution>
+                          <id>get-buildvers</id>
+                          <goals>
+                              <goal>run</goal>
+                          </goals>
+                          <configuration>
+                              <target xmlns:ac="antlib:net.sf.antcontrib">
+                                  <exec executable="bash" dir="${dyn.shim.detection.rundir}" outputproperty="dyn.shim.detection.versions" failonerror="true">
+                                        <arg value="${dyn.shim.detection.basedir}/get-profile-versions.sh"/>
+                                      <!-- overwrite properties -->
+                                      <arg value="${overwrite_properties}"/>
+                                      <arg value="${dyn.shim.detection.pom}"/>
+                                  </exec>
+                                    <scriptdef name="get-buildvers" language="jython" src="${dyn.shim.detection.basedir}/dyn-shim-detection.py">
+                                    <attribute name="overwrite_properties"/>
+                                    <attribute name="expression"/>
+                                    <attribute name="pom"/>
+                                  </scriptdef>
+                                  <get-buildvers overwrite_properties="${overwrite_properties}" pom="${dyn.shim.detection.pom}" expression="${expression}"/>
+                              </target>
                           </configuration>
                       </execution>
                     <execution>
@@ -1131,12 +1116,7 @@
                                     <attribute name="if"/>
                                     <attribute name="pom"/>
                                 </scriptdef>
-                                <!-- #if scala-2.12 --><!--
-                                <shimplify if="shimplify" pom=""/>
-                                --><!-- #endif scala-2.12 -->
-                                <!-- #if scala-2.13 -->
-                                <shimplify if="shimplify" pom="-f scala2.13"/>
-                                <!-- #endif scala-2.13 -->
+                                <shimplify if="shimplify" pom="${dyn.shim.detection.pom}"/>
                             </target>
                         </configuration>
                     </execution>

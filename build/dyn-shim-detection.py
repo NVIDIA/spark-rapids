@@ -16,8 +16,8 @@ import logging
 import os
 import subprocess
 
-_log = logging.getLogger("release-version")
-show_version_info = project.getProperty("release.version.trace")
+_log = logging.getLogger("dyn-shim-detection")
+show_version_info = project.getProperty("dyn.shim.detection.trace")
 _log.setLevel(logging.INFO if show_version_info else logging.ERROR)
 # Same as shimplify.py
 ch = logging.StreamHandler()
@@ -25,17 +25,17 @@ ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 _log.addHandler(ch)
 
 pom = attributes.get("pom")
-scala_version = "2.12" if pom == "" else "2.13"
-section_header = project.getProperty("release.212.section.header") if pom == "" else project.getProperty("release.213.section.header")
+scala_version = "2.13" if pom == "-f scala2.13" else "2.12"
+section_header = project.getProperty("release.212.section.header") if scala_version == "2.12" else project.getProperty("release.213.section.header")
 overwrite_properties = attributes.get("overwrite_properties")
 expression = attributes.get("expression")
-release_properties = project.getProperty("spark.rapids.releases")
+release_properties = project.getProperty("dyn.shim.detection.properties")
 
 if (overwrite_properties == "true" or not os.path.exists(release_properties)):
     _log.info("Writing properties at {}...".format(release_properties))
 
     try:
-        output = project.getProperty("release.versions")
+        output = project.getProperty("dyn.shim.detection.versions")
         result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
         snapshots = result_strings[0]
         no_snapshots = result_strings[1]
@@ -66,6 +66,7 @@ if (overwrite_properties == "true" or not os.path.exists(release_properties)):
         _log.error("Error:", e.output)
 
 else:
+    _log.info("Reading properties {}...".format(release_properties))
     import ConfigParser
     config = ConfigParser.ConfigParser()
     config.read(release_properties)
