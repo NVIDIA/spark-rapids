@@ -57,7 +57,7 @@ if [ -f "$lastcommit" ]; then
     git checkout $basebranch
     git log --oneline HEAD...$latestcommit -- sql/core/src/main sql/catalyst/src/main \
         core/src/main/scala/org/apache/spark/shuffle core/src/main/scala/org/apache/spark/storage \
-        sql/hive | tee ${COMMIT_DIFF_LOG}
+        sql/hive/src/main | tee ${COMMIT_DIFF_LOG}
     git log HEAD -n 1 --pretty="%h" > ${lastcommit}
 
     cd $WORKSPACE
