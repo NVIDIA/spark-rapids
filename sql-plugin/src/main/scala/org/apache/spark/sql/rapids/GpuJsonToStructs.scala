@@ -171,43 +171,50 @@ case class GpuJsonToStructs(
         //  and make the first one null, but I don't think this will ever happen in practice
         val cudfSchema = makeSchema(struct)
 
-        // We cannot handle all corner cases with this right now. The parser just isn't
-        // good enough, but we will try to handle a few common ones.
-        val numRows = input.getRowCount.toInt
-
-        // Step 1: verify and preprocess the data to clean it up and normalize a few things
-        // Step 2: Concat the data into a single buffer
-        val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
-        withResource(isNullOrEmpty) { isNullOrEmpty =>
-          // Step 3: setup a datasource
-          val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
-            // Step 4: Have cudf parse the JSON data
-            try {
-              cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
-            } catch {
-              case e : RuntimeException =>
-                throw new JsonParsingException("Currently some Json to Struct cases " +
-                  "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
-                  "=false", e)
-            }
+        if (!cudfSchema.getFlattenedTypes.contains(cudf.DType.LIST)) {
+          val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema)
+          withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
+            cudf.ColumnVector.makeStruct(columns: _*)
           }
+        } else {
+          // We cannot handle all corner cases with this right now. The parser just isn't
+          // good enough, but we will try to handle a few common ones.
+          val numRows = input.getRowCount.toInt
 
-          // process duplicated field names in input struct schema
-
-          withResource(table) { _ =>
-            // Step 5: verify that the data looks correct
-            if (table.getRowCount != numRows) {
-              throw new IllegalStateException("The input data didn't parse correctly and we read " +
-                  s"a different number of rows than was expected. Expected $numRows, " +
-                  s"but got ${table.getRowCount}")
+          // Step 1: verify and preprocess the data to clean it up and normalize a few things
+          // Step 2: Concat the data into a single buffer
+          val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
+          withResource(isNullOrEmpty) { isNullOrEmpty =>
+            // Step 3: setup a datasource
+            val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
+              // Step 4: Have cudf parse the JSON data
+              try {
+                cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+              } catch {
+                case e: RuntimeException =>
+                  throw new JsonParsingException("Currently some Json to Struct cases " +
+                    "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
+                    "=false", e)
+              }
             }
 
-            // Step 7: turn the data into a Struct
-            withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
-              withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-                // Step 8: put nulls back in for nulls and empty strings
-                withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  isNullOrEmpty.ifElse(nullVal, structData)
+            // process duplicated field names in input struct schema
+
+            withResource(table) { _ =>
+              // Step 5: verify that the data looks correct
+              if (table.getRowCount != numRows) {
+                throw new IllegalStateException("The input data didn't parse correctly " +
+                  "and we read a different number of rows than was expected. " +
+                  s"Expected $numRows, but got ${table.getRowCount}")
+              }
+
+              // Step 6: turn the data into a Struct
+              withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
+                withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
+                  // Step 7: put nulls back in for nulls and empty strings
+                  withResource(GpuScalar.from(null, struct)) { nullVal =>
+                    isNullOrEmpty.ifElse(nullVal, structData)
+                  }
                 }
               }
             }
