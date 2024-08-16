@@ -17,7 +17,7 @@ import os
 import subprocess
 
 _log = logging.getLogger("dyn-shim-detection")
-show_version_info = project.getProperty("dyn.shim.detection.trace")
+show_version_info = project.getProperty("dyn.shim.trace")
 _log.setLevel(logging.INFO if show_version_info else logging.ERROR)
 # Same as shimplify.py
 ch = logging.StreamHandler()
@@ -25,21 +25,21 @@ ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 _log.addHandler(ch)
 
 pom = attributes.get("pom")
-scala_version = "2.13" if pom == "-f scala2.13" else "2.12"
-section_header = project.getProperty("release.212.section.header") if scala_version == "2.12" else project.getProperty("release.213.section.header")
+multi_module_project_dir = project.getProperty("maven.multiModuleProjectDirectory")
+section_header = project.getProperty("dyn.shim.section.header")
 overwrite_properties = attributes.get("overwrite_properties")
 expression = attributes.get("expression")
-release_properties = project.getProperty("dyn.shim.detection.properties")
+release_properties = project.getProperty("dyn.shim.properties.location")
 
 if (overwrite_properties == "true" or not os.path.exists(release_properties)):
     _log.info("Writing properties at {}...".format(release_properties))
 
     try:
-        output = project.getProperty("dyn.shim.detection.versions")
+        output = project.getProperty("dyn.shim.versions")
         result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
         snapshots = result_strings[0]
         no_snapshots = result_strings[1]
-        if (scala_version == "2.13"):
+        if multi_module_project_dir.endswith("scala2.13"):
             no_snapshots = filter(lambda x: not x.endswith("cdh"), no_snapshots)
         db_release = filter(lambda x: x.endswith("db"), no_snapshots)
         no_snapshots = filter(lambda x: not x.endswith("db"), no_snapshots)

@@ -195,10 +195,10 @@ __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
 
 __config = ConfigParser.ConfigParser()
-release_properties = __ant_proj_prop("dyn.shim.detection.properties")
+release_properties = __ant_proj_prop("dyn.shim.properties.location")
 __log.info("Reading release.properties from {}...".format(release_properties))
 __config.read(release_properties)
-__section_header = __ant_proj_prop("release.212.section.header") if (__ant_attr("pom") == "-f .") else __ant_proj_prop("release.213.section.header")
+__section_header = __ant_proj_prop("dyn.shim.section.header")
 __all_shims_arr = sorted(__config.get(__section_header, "all.buildvers").split(" "))
 __shims_arr = __all_shims_arr if not __shims_arr else __shims_arr
 
