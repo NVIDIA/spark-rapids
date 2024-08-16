@@ -993,7 +993,7 @@ object GpuAggFinalPassIterator {
  * @param localInputRowsCount metric to track the number of input rows processed locally
  */
 class GpuMergeAggregateIterator(
-    firstPassIter: Iterator[SpillableColumnarBatch],
+    firstPassIter: CloseableBufferedIterator[SpillableColumnarBatch],
     inputAttributes: Seq[Attribute],
     groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
@@ -1015,8 +1015,23 @@ class GpuMergeAggregateIterator(
   private[this] val batchesByBucket =
     ArrayBuffer.fill(defaultHashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
 
+  //todo remove this
+  private case class AggregatePartition(
+      batches: AutoClosableArrayBuffer[SpillableColumnarBatch])
+    extends AutoCloseable {
+
+    override def close(): Unit = {
+      batches.safeClose()
+    }
+
+    def areAllBatchesSingleRow: Boolean = {
+      batches.forall(_.numRows() == 1)
+    }
+  }
+
+  private val aggPartitions = ListBuffer.empty[AggregatePartition]
+
   private[this] var firstBatchChecked = false
-  private[this] var reconstructedFirstPassIter: Option[Iterator[SpillableColumnarBatch]] = None
 
   private[this] var bucketIter: Option[RepartitionAggregateIterator] = None
 
@@ -1032,13 +1047,10 @@ class GpuMergeAggregateIterator(
     }
   }
 
-  def getFirstPassIter: Iterator[SpillableColumnarBatch] =
-    reconstructedFirstPassIter.getOrElse(firstPassIter)
-
   override def hasNext: Boolean = {
     backupIter.map(_.hasNext).getOrElse {
       // reductions produce a result even if the input is empty
-      hasReductionOnlyBatch || getFirstPassIter.hasNext
+      hasReductionOnlyBatch || firstPassIter.hasNext
     }
   }
 
@@ -1048,8 +1060,8 @@ class GpuMergeAggregateIterator(
       // Handle reduction-only aggregation
       if (isReductionOnly) {
         val batches = ArrayBuffer.apply[SpillableColumnarBatch]()
-        while (getFirstPassIter.hasNext) {
-          batches += getFirstPassIter.next()
+        while (firstPassIter.hasNext) {
+          batches += firstPassIter.next()
         }
         AggregateUtils.tryMergeAggregatedBatches(
           batches, forceMergeRegardlessOfOversize = true, metrics,
@@ -1073,31 +1085,21 @@ class GpuMergeAggregateIterator(
 
       // Handle the case of skipping second and third pass of aggregation
       // This only work when spark.rapids.sql.agg.skipAggPassReductionRatio < 1
-      if (!firstBatchChecked && getFirstPassIter.hasNext
+      if (!firstBatchChecked && firstPassIter.hasNext
         && allowNonFullyAggregatedOutput) {
         firstBatchChecked = true
 
-        val next = getFirstPassIter.next()
+        val peak = firstPassIter.head
         // It's only based on first batch of first pass agg, so it's an estimate
-        val firstPassReductionRatioEstimate = next.numRows() / localInputRowsCount.value
+        val firstPassReductionRatioEstimate = peak.numRows() / localInputRowsCount.value
         if (firstPassReductionRatioEstimate > skipAggPassReductionRatio) {
           logDebug("Skipping second and third pass aggregation due to " +
             "too high reduction ratio in first pass: " +
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
 
-          val iter = getFirstPassIter
-          backupIter = Some(
-            (Iterator.single(next) ++ iter).map(cb => {
-              withResource(cb) { cb =>
-                cb.getColumnarBatch()
-              }
-            }))
+          backupIter = Some(ConcatIterator.apply(firstPassIter, configuredTargetBatchSize))
           return backupIter.get.next()
-        } else {
-          // As if nothing happened, put the first batch back to the iterator
-          val iter = getFirstPassIter
-          reconstructedFirstPassIter = Some(Iterator.single(next) ++ iter)
         }
       }
       firstBatchChecked = true
@@ -1109,7 +1111,7 @@ class GpuMergeAggregateIterator(
         GpuBindReferences.bindGpuReferences(groupingAttributes, aggBufferAttributes.toSeq)
 
       val repartitionHappened = AggregateUtils.streamMergeAndRepartition(
-        getFirstPassIter, metrics, targetMergeBatchSize, concatAndMergeHelper,
+        firstPassIter, metrics, targetMergeBatchSize, concatAndMergeHelper,
         hashKeys, defaultHashBucketNum, defaultHashSeed, batchesByBucket)
       if (repartitionHappened) {
         metrics.numTasksRepartitioned += 1
@@ -1118,7 +1120,8 @@ class GpuMergeAggregateIterator(
       val totalRows = batchesByBucket.flatMap(_.map(_.numRows())).sum
       if (batchesByBucket.exists(_.size() > 1)) {
         // Unable to merge to a single output, so must fall back
-        backupIter = Some(buildBucketIterator())
+        backupIter = Some(ConcatIterator.apply(
+          new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
         backupIter.get.next()
       } else if (totalRows == 0) {
         throw new NoSuchElementException("batches exhausted")
@@ -1128,21 +1131,19 @@ class GpuMergeAggregateIterator(
         // This is the "most happy path", containing 2 situations:
         // 1) repartition happened, but all buckets have <= 1 batch
         // 2) repartition didn't happen, only first bucket contains a single batch
-        backupIter = Some(
-          new Iterator[ColumnarBatch] {
+        backupIter = Some(ConcatIterator.apply(
+          new CloseableBufferedIterator(
+          new Iterator[SpillableColumnarBatch] {
             override def hasNext: Boolean = batchesByBucket.exists(_.size() > 0)
 
-            override def next(): ColumnarBatch = {
+            override def next(): SpillableColumnarBatch = {
               batchesByBucket.collectFirst(
-                { case bucket if bucket.size() > 0 =>
-                  val last = bucket.removeLast()
-                  withResource(last) { _ =>
-                    last.getColumnarBatch()
-                  }
+                {
+                  case bucket if bucket.size() > 0 => bucket.removeLast()
                 }
               ).get
             }
-          })
+          }), configuredTargetBatchSize))
         backupIter.get.next
       }
     }
@@ -1151,9 +1152,8 @@ class GpuMergeAggregateIterator(
   override def close(): Unit = {
     batchesByBucket.foreach(_.close())
     batchesByBucket.clear()
-    bucketIter.foreach(_.close())
-    bucketIter = None
-    backupIter = None
+    aggPartitions.foreach(_.close())
+    aggPartitions.clear()
     hasReductionOnlyBatch = false
   }
 
@@ -1166,33 +1166,46 @@ class GpuMergeAggregateIterator(
     new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
       forceMerge = true, useTieredProject = useTieredProject)
 
-  private case class RepartitionAggregateIterator(opTime: GpuMetric) extends Iterator[ColumnarBatch]
-    with AutoCloseable {
+  private case class ConcatIterator(
+      input: CloseableBufferedIterator[SpillableColumnarBatch],
+      targetSize: Long)
+    extends Iterator[ColumnarBatch] {
 
-    private case class AggregatePartition(
-        batches: AutoClosableArrayBuffer[SpillableColumnarBatch])
-      extends AutoCloseable {
+    override def hasNext: Boolean = input.hasNext
 
-      override def close(): Unit = {
-        batches.safeClose()
-      }
+    override def next(): ColumnarBatch = {
+      // combine all the sorted data into a single batch
+      val spillCbs = ArrayBuffer[SpillableColumnarBatch]()
+      var totalBytes = 0L
+      closeOnExcept(spillCbs) { _ =>
+        while (input.hasNext && (spillCbs.isEmpty ||
+          (totalBytes + input.head.sizeInBytes) < targetSize)) {
+          val tmp = input.next
+          totalBytes += tmp.sizeInBytes
+          spillCbs += tmp
+        }
 
-      def areAllBatchesSingleRow: Boolean = {
-        batches.forall(_.numRows() == 1)
+        val concat = GpuAggregateIterator.concatenateBatches(metrics, spillCbs)
+        withResource(concat) { _ =>
+          concat.getColumnarBatch()
+        }
       }
     }
+  }
 
-    private val aggPartitions = ListBuffer.empty[AggregatePartition]
+  private case class RepartitionAggregateIterator(opTime: GpuMetric)
+    extends Iterator[SpillableColumnarBatch] {
 
     batchesByBucket.foreach(batches => {
       if (batches.size() != 0) {
         aggPartitions += AggregatePartition(batches)
       }
     })
+    batchesByBucket.clear()
 
     override def hasNext: Boolean = aggPartitions.nonEmpty
 
-    override def next(): ColumnarBatch = {
+    override def next(): SpillableColumnarBatch = {
       withResource(new NvtxWithMetrics("RepartitionAggregateIterator.next",
         NvtxColor.BLUE, opTime)) { _ =>
 
@@ -1210,21 +1223,15 @@ class GpuMergeAggregateIterator(
                 s"${headPartition.batches.size()} batches. Before merge, there were " +
                 s"$batchSizeBeforeMerge batches.")
           }
-          withResource(headPartition.batches.removeLast()) { lastBatch =>
-            lastBatch.getColumnarBatch()
-          }
+          headPartition.batches.removeLast()
         }
       }
-    }
-
-    override def close(): Unit = {
-      aggPartitions.foreach(_.safeClose())
     }
   }
 
 
   /** Build an iterator merging aggregated batches in each bucket. */
-  private def buildBucketIterator(): Iterator[ColumnarBatch] = {
+  private def buildBucketIterator(): Iterator[SpillableColumnarBatch] = {
     bucketIter = Some(RepartitionAggregateIterator(opTime = metrics.opTime))
     bucketIter.get
   }
@@ -2285,7 +2292,7 @@ class DynamicGpuPartialAggregateIterator(
       metrics)
 
     val mergeIter = new GpuMergeAggregateIterator(
-      firstPassIter,
+      new CloseableBufferedIterator(firstPassIter),
       inputAttrs,
       groupingExprs,
       aggregateExprs,
