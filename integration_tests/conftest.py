@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,7 +61,4 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--pyarrow_test", action='store_true', default=False, help="if enable pyarrow tests"
-    )
-    parser.addoption(
-        "--default_configs_path", action="store", default=None, help="path to a JSON file that stores default configs for integration test"
     )

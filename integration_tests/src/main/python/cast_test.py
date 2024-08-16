@@ -194,8 +194,7 @@ def test_cast_string_timestamp_fallback():
 def test_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
-            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true',
-                    'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -209,8 +208,7 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
             conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True,
-                    'spark.sql.ansi.enabled': True,
-                    'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+                'spark.sql.ansi.enabled': True})
 
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
@@ -230,8 +228,7 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
     DecimalType(1, -1)], ids=meta_idfn('to:'))
 def test_cast_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('to_type', [
@@ -251,26 +248,22 @@ def test_cast_integral_to_decimal(data_gen, to_type):
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, byte_gen).select(
-            f.col('a').cast(DecimalType(2, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            f.col('a').cast(DecimalType(2, -1))))
 
 def test_cast_short_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, short_gen).select(
-            f.col('a').cast(DecimalType(4, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            f.col('a').cast(DecimalType(4, -1))))
 
 def test_cast_int_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, int_gen).select(
-            f.col('a').cast(DecimalType(9, -1))),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            f.col('a').cast(DecimalType(9, -1))))
 
 def test_cast_long_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, long_gen).select(
-            f.col('a').cast(DecimalType(18, -1))),
-    conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            f.col('a').cast(DecimalType(18, -1))))
 
 
 _float_special_cases = [(float("inf"), 5.0), (float("-inf"), 5.0), (float("nan"), 5.0)]
@@ -289,8 +282,7 @@ def test_cast_floating_point_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(
             f.col('a'), f.col('a').cast(to_type)),
-        conf={'spark.rapids.sql.castFloatToDecimal.enabled': 'true',
-              'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+        conf={'spark.rapids.sql.castFloatToDecimal.enabled': 'true'})
 
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen]
@@ -447,8 +439,7 @@ def is_neg_dec_scale_bug_version():
 def test_cast_string_to_negative_scale_decimal():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
-            f.col('a').cast(DecimalType(8, -3))),
-    conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+            f.col('a').cast(DecimalType(8, -3))))
 
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
