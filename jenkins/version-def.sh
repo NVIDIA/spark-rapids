@@ -79,15 +79,12 @@ createReleaseProperties "$pom"
 # Psnapshots: snapshots + noSnapshots
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snap_and_no_snap.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}
 # PnoSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "no_snapshots.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-echo ${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}
 # PsnapshotOnly : snapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-echo ${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
@@ -138,6 +135,5 @@ SPARK_SHIM_VERSIONS_JDK17_SCALA213=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # databricks shims
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "databricks.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_DATABRICKS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-echo ${SPARK_SHIM_VERSIONS_DATABRICKS[@]}
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"
