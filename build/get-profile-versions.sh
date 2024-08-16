@@ -16,16 +16,27 @@
 # limitations under the License.
 #
 
-[[ "$1" != "true" ]] || { export TEMP=$(mvn help:all-profiles -pl . -f $2 | sort | uniq | awk '/release[0-9]/ {print substr($3, 8)}');
+[[ "$1" != "true" ]] || {
+PKG_OK=$(dpkg-query -W -f='${Status}' libxml-xpath-perl 2>/dev/null | grep -c "ok installed");
+if [ ${PKG_OK} -eq 0 ]; then
+    export TEMP=$(mvn help:all-profiles -pl . -f $2 | sort | uniq | awk '/release[0-9]/ {print substr($3, 8)}');
+else
+    export TEMP=$(xpath -q -e "//profiles/profile/id/text()" "$2/pom.xml" |grep "release" | sort | uniq);
+fi
 TEMP=$(echo -n $TEMP);
-[[ -n $TEMP ]] || { echo -e 'Error setting databricks versions'; };
+[[ -n $TEMP ]] || { echo -e 'Error setting release versions'; };
 <<< $TEMP read -r -a SPARK_SHIM_VERSIONS_ARR;
 SNAPSHOTS=();
 NO_SNAPSHOTS=();
 for ver in ${SPARK_SHIM_VERSIONS_ARR[@]}; do
-    TEST=$(mvn -B help:evaluate -q -pl dist -f $2 -Dexpression=spark.version -Dbuildver="$ver" -DforceStdout);
-    if [[ "$TEST" != *"-SNAPSHOT" ]]; then NO_SNAPSHOTS+=(" $ver");
-    else SNAPSHOTS+=(" $ver");
+    buildver=$([ "$PKG_OK" == 0 ] && echo $ver || echo ${ver:7} );
+    if [ ${PKG_OK} -eq 0 ]; then
+        TEST=$(mvn -B help:evaluate -q -pl dist -f $2 -Dexpression=spark.version -Dbuildver="$buildver" -DforceStdout);
+    else
+        TEST=$(xpath -q -e "//spark${buildver}.version/text()" "$2/pom.xml");
+    fi
+    if [[ "$TEST" != *"-SNAPSHOT" ]]; then NO_SNAPSHOTS+=(" ${buildver}");
+    else SNAPSHOTS+=(" ${buildver}");
     fi
 done;
 echo "${SNAPSHOTS[@]} | ${NO_SNAPSHOTS[@]}"; };
