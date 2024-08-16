@@ -19,9 +19,9 @@
 [[ "$1" != "true" ]] || {
 PKG_OK=$(dpkg-query -W -f='${Status}' libxml-xpath-perl 2>/dev/null | grep -c "ok installed");
 if [ ${PKG_OK} -eq 0 ]; then
-    export TEMP=$(mvn help:all-profiles -pl . -f $2 | sort | uniq | awk '/release[0-9]/ {print substr($3, 8)}');
+    TEMP=$(mvn help:all-profiles -pl . -f $2 | sort | uniq | awk '/release[0-9]/ {print substr($3, 8)}');
 else
-    export TEMP=$(xpath -q -e "//profiles/profile/id/text()" "$2/pom.xml" |grep "release" | sort | uniq);
+    TEMP=$(xpath -q -e "//profiles/profile/id/text()" "$2/pom.xml" |grep "release" | sort | uniq);
 fi
 TEMP=$(echo -n $TEMP);
 [[ -n $TEMP ]] || { echo -e 'Error setting release versions'; };
@@ -39,4 +39,4 @@ for ver in ${SPARK_SHIM_VERSIONS_ARR[@]}; do
     else SNAPSHOTS+=(" ${buildver}");
     fi
 done;
-echo "${SNAPSHOTS[@]} | ${NO_SNAPSHOTS[@]}"; };
+echo "${PKG_OK} | ${SNAPSHOTS[@]} | ${NO_SNAPSHOTS[@]}"; };

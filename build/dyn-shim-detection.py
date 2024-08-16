@@ -18,7 +18,7 @@ import subprocess
 
 _log = logging.getLogger("dyn-shim-detection")
 show_version_info = project.getProperty("dyn.shim.trace")
-_log.setLevel(logging.INFO if show_version_info else logging.ERROR)
+_log.setLevel(logging.DEBUG if show_version_info else logging.INFO)
 # Same as shimplify.py
 ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
@@ -38,8 +38,10 @@ if (overwrite_properties == "true" or not os.path.exists(release_properties)):
         output = project.getProperty("dyn.shim.versions")
         result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
         excluded_shims = project.getProperty("dyn.shim.excluded.releases")
-        snapshots = result_strings[0]
-        no_snapshots = result_strings[1]
+        if (result_strings[0][0] == "0"):
+           _log.info("To speed up the creation of release.properties please install xpath by running 'sudo apt install libxml-xpath-perl'")
+        snapshots = result_strings[1]
+        no_snapshots = result_strings[2]
         if (excluded_shims):
             for removed_shim in [x.strip() for x in excluded_shims.split(",")]:
                 if (removed_shim not in snapshots and removed_shim not in no_snapshots):
@@ -67,7 +69,7 @@ if (overwrite_properties == "true" or not os.path.exists(release_properties)):
         release_dict["no_snapshots.buildvers"]=" ".join(no_snapshots)
         release_dict["snap_and_no_snap.buildvers"]=" ".join(snap_and_no_snap)
         release_dict["all.buildvers"]=" ".join(all)
-        _log.info("release_dict: {}".format(release_dict))
+        _log.debug("release_dict: {}".format(release_dict))
         try:
             f.write("[{}]\n".format(section_header))
             for key in release_dict.keys():
