@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import pyspark.sql.functions as f
 import pytest
-import sys
 
 from asserts import *
 from data_gen import *
@@ -628,27 +628,45 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.parametrize("num_cols", [-1, 0, 1, 2, 3 ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_write_stat_column_limits(num_cols, spark_tmp_path):
+def test_delta_write_stat_column_limits(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(delta_writes_enabled_conf, {"spark.databricks.io.skipping.stringPrefixLength": 8})
-    strgen = StringGen() \
-        .with_special_case((chr(sys.maxunicode) * 7) + "abc") \
-        .with_special_case((chr(sys.maxunicode) * 8) + "abc") \
-        .with_special_case((chr(sys.maxunicode) * 16) + "abc") \
-        .with_special_case(('\U0000FFFD' * 7) + "abc") \
-        .with_special_case(('\U0000FFFD' * 8) + "abc") \
-        .with_special_case(('\U0000FFFD' * 16) + "abc")
-    gens = [("a", StructGen([("x", strgen), ("y", StructGen([("z", strgen)]))])),
-            ("b", binary_gen),
-            ("c", strgen)]
+    # maximum unicode codepoint and maximum ascii character
+    umax, amax = chr(1114111), chr(0x7f)
+    expected_min = {"a": "abcdefgh", "b": "abcdefg�", "c": "abcdefgh",
+                    "d": "abcdefgh", "e": umax * 4, "f": umax * 4}
+    # no max expected for column f since it cannot be truncated to 8 characters and remain
+    # larger than the original value
+    expected_max = {"a": "bcdefghi", "b": "bcdefgh�", "c": "bcdefghi" + amax,
+                    "d": "bcdefghi" + umax, "e": umax * 8}
+    def write_table(spark, path):
+        df = spark.createDataFrame([
+            ("bcdefghi", "abcdefg�", "bcdefghijk", "abcdefgh�", umax * 4, umax * 9),
+            ("abcdefgh", "bcdefgh�", "abcdefghij", "bcdefghi�", umax * 8, umax * 9)],
+            "a string, b string, c string, d string, e string, f string")
+        df.repartition(1).write.format("delta").save(path)
+    def verify_stat_limits(spark):
+        log_data = read_delta_logs(spark, data_path + "/GPU/_delta_log/*.json")
+        assert len(log_data) == 1, "GPU should generate exactly one Delta log"
+        json_objs = list(log_data.values())[0]
+        json_adds = [x["add"] for x in json_objs if "add" in x]
+        assert len(json_adds) == 1, "GPU should only generate a single add in Delta log"
+        stats = json.loads(json_adds[0]["stats"])
+        actual_min = stats["minValues"]
+        assert expected_min == actual_min, \
+            f"minValues mismatch, expected: {expected_min} actual: {actual_min}"
+        actual_max = stats["maxValues"]
+        assert expected_max == actual_max, \
+                f"maxValues stats mismatch, expected: {expected_max} actual: {actual_max}"
     assert_gpu_and_cpu_writes_are_equal_collect(
-        lambda spark, path: gen_df(spark, gens).coalesce(1).write.format("delta").save(path),
-        lambda spark, path: spark.read.format("delta").load(path),
+        write_table,
+        read_delta_path,
         data_path,
         conf=confs)
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Many Delta Lake versions are missing the fix from https://github.com/delta-io/delta/pull/3430
+    # so instead of a full delta log compare with the CPU, focus on the reported statistics on GPU.
+    with_cpu_session(verify_stat_limits)
 
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
 @delta_lake
