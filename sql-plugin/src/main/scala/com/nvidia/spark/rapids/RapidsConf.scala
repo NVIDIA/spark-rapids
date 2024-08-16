@@ -15,15 +15,18 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileOutputStream}
+import java.io.{BufferedOutputStream, DataOutputStream, File, FileOutputStream}
+import java.nio.charset.StandardCharsets
 import java.util
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable.{HashMap, ListBuffer}
+import java.util.Locale
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
+import org.json4s.DefaultFormats
+import org.json4s.jackson.Serialization.writePretty
+import scala.collection.JavaConverters._
+import scala.collection.mutable.{HashMap, ListBuffer}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -124,6 +127,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
+  def getDefault(): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -145,6 +149,10 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     } else {
       converter(tmp)
     }
+  }
+
+  override def getDefault(): T = {
+    defaultValue
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -180,6 +188,10 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
     } else {
       Some(rawConverter(tmp))
     }
+  }
+
+  override def getDefault(): Option[T] = {
+    None
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -2374,6 +2386,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     println("-----|-----------------|-------------|---------------|------")
   }
 
+  /**
+   * Returns all spark-rapids configs with their default values.
+   * This function is used to dump default configs, so that they
+   * could be used by the integration test.
+   */
+  def getAllConfigsWithDefault: Map[String, Any] = {
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    allConfs.map(e => e.key -> e.getDefault).toMap
+  }
+
   def help(asTable: Boolean = false): Unit = {
     helpCommon(asTable)
     helpAdvanced(asTable)
@@ -2520,6 +2543,49 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     Console.withOut(advanced) {
       Console.withErr(advanced) {
         RapidsConf.helpAdvanced(true)
+      }
+    }
+  }
+
+  object Format extends Enumeration {
+    type Format = Value
+    val PLAIN, JSON = Value
+  }
+
+  def dumpConfigsWithDefault(formatName: String, outputPath: String): Unit = {
+    import com.nvidia.spark.rapids.Arm._
+
+    val format = Format.withName(formatName.toUpperCase(Locale.US))
+
+    println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
+
+    val allConfs = getAllConfigsWithDefault
+    withResource(new FileOutputStream(outputPath)) { fos =>
+      withResource(new BufferedOutputStream(fos)) { bos =>
+        format match {
+          case Format.PLAIN =>
+            withResource(new DataOutputStream(bos)) { dos =>
+              allConfs.foreach( { case (k, v) =>
+                val valStr = v match {
+                  case Some(optVal) => optVal.toString
+                  case None => ""
+                  case _ =>
+                    if (v == null) {
+                      ""
+                    } else {
+                      v.toString
+                    }
+                }
+                dos.writeUTF(s"'${k}': '${valStr}',")
+              })
+            }
+          case Format.JSON =>
+            implicit val formats: DefaultFormats.type = DefaultFormats
+            bos.write(writePretty(allConfs)
+              .getBytes(StandardCharsets.UTF_8))
+          case _ =>
+            System.err.println(s"Unknown format: ${format}")
+        }
       }
     }
   }
