@@ -202,7 +202,6 @@ case $DIST_PROFILE in
     ;;
 
   [34]*)
-    # verify if we support those versions
     <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS
     INCLUDED_BUILDVERS_OPT="-Dincluded_buildvers=$DIST_PROFILE"
     unset DIST_PROFILE
