@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * This file was derived from StatisticsCollection.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF
 import org.apache.spark.sql.{Column, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.functions.{count, lit, max, min, struct, substring, sum, when}
+import org.apache.spark.sql.functions.{count, lit, max, min, struct, sum, when}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -87,7 +87,9 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
       collectStats(MIN, statCollectionSchema) {
         // Truncate string min values as necessary
         case (c, GpuSkippingEligibleDataType(StringType), true) =>
-          substring(min(c), 0, stringPrefixLength)
+          val udfTruncateMin = ShimDeltaUDF.stringStringUdf(
+            GpuStatisticsCollection.truncateMinStringAgg(prefixLength)_)
+          udfTruncateMin(min(c))
 
         // Collect all numeric min values
         case (c, GpuSkippingEligibleDataType(_), true) =>
@@ -203,24 +205,75 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
 }
 
 object GpuStatisticsCollection {
-  /**
-   * Helper method to truncate the input string `x` to the given `prefixLen` length, while also
-   * appending the unicode max character to the end of the truncated string. This ensures that any
-   * value in this column is less than or equal to the max.
-   */
-  def truncateMaxStringAgg(prefixLen: Int)(x: String): String = {
-    if (x == null || x.length <= prefixLen) {
-      x
+  val ASCII_MAX_CHARACTER = '\u007F'
+
+  val UTF8_MAX_CHARACTER = new String(Character.toChars(Character.MAX_CODE_POINT))
+
+  def truncateMinStringAgg(prefixLen: Int)(input: String): String = {
+    if (input == null || input.length <= prefixLen) {
+      return input
+    }
+    if (prefixLen <= 0) {
+      return null
+    }
+    if (Character.isHighSurrogate(input.charAt(prefixLen - 1)) &&
+        Character.isLowSurrogate(input.charAt(prefixLen))) {
+      // If the character at prefixLen - 1 is a high surrogate and the next character is a low
+      // surrogate, we need to include the next character in the prefix to ensure that we don't
+      // truncate the string in the middle of a surrogate pair.
+      input.take(prefixLen + 1)
     } else {
-      // Grab the prefix. We want to append `\ufffd` as a tie-breaker, but that is only safe
-      // if the character we truncated was smaller. Keep extending the prefix until that
-      // condition holds, or we run off the end of the string.
-      // scalastyle:off nonascii
-      val tieBreaker = '\ufffd'
-      x.take(prefixLen) + x.substring(prefixLen).takeWhile(_ >= tieBreaker) + tieBreaker
-      // scalastyle:off nonascii
+      input.take(prefixLen)
     }
   }
+
+  /**
+   * Helper method to truncate the input string `input` to the given `prefixLen` length, while also
+   * ensuring the any value in this column is less than or equal to the truncated max in UTF-8
+   * encoding.
+   */
+  def truncateMaxStringAgg(prefixLen: Int)(originalMax: String): String = {
+    // scalastyle:off nonascii
+    if (originalMax == null || originalMax.length <= prefixLen) {
+      return originalMax
+    }
+    if (prefixLen <= 0) {
+      return null
+    }
+
+    // Grab the prefix. We want to append max Unicode code point `\uDBFF\uDFFF` as a tie-breaker,
+    // but that is only safe if the character we truncated was smaller in UTF-8 encoded binary
+    // comparison. Keep extending the prefix until that condition holds, or we run off the end of
+    // the string.
+    // We also try to use the ASCII max character `\u007F` as a tie-breaker if possible.
+    val maxLen = getExpansionLimit(prefixLen)
+    // Start with a valid prefix
+    var currLen = truncateMinStringAgg(prefixLen)(originalMax).length
+    while (currLen <= maxLen) {
+      if (currLen >= originalMax.length) {
+        // Return originalMax if we have reached the end of the string
+        return originalMax
+      } else if (currLen + 1 < originalMax.length &&
+        originalMax.substring(currLen, currLen + 2) == UTF8_MAX_CHARACTER) {
+        // Skip the UTF-8 max character. It occupies two characters in a Scala string.
+        currLen += 2
+      } else if (originalMax.charAt(currLen) < ASCII_MAX_CHARACTER) {
+        return originalMax.take(currLen) + ASCII_MAX_CHARACTER
+      } else {
+        return originalMax.take(currLen) + UTF8_MAX_CHARACTER
+      }
+    }
+
+    // Return null when the input string is too long to truncate.
+    null
+    // scalastyle:on nonascii
+  }
+
+  /**
+   * Calculates the upper character limit when constructing a maximum is not possible with only
+   * prefixLen chars.
+   */
+  private def getExpansionLimit(prefixLen: Int): Int = 2 * prefixLen
 
   def batchStatsToRow(
       schema: StructType,
