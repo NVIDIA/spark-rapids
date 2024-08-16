@@ -37,8 +37,23 @@ if (overwrite_properties == "true" or not os.path.exists(release_properties)):
     try:
         output = project.getProperty("dyn.shim.versions")
         result_strings = map(lambda x: x.split(), output.encode("ASCII", "ignore").split("|"))
+        excluded_shims = project.getProperty("dyn.shim.excluded.releases")
         snapshots = result_strings[0]
         no_snapshots = result_strings[1]
+        if (excluded_shims):
+            for removed_shim in [x.strip() for x in excluded_shims.split(",")]:
+                if (removed_shim not in snapshots and removed_shim not in no_snapshots):
+                    raise Exception("Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(removed_shim))
+                try:
+                    snapshots.remove(removed_shim)
+                except ValueError:
+                    pass
+                try:
+                    no_snapshots.remove(removed_shim)
+                except ValueError:
+                    pass
+
+
         if multi_module_project_dir.endswith("scala2.13"):
             no_snapshots = filter(lambda x: not x.endswith("cdh"), no_snapshots)
         db_release = filter(lambda x: x.endswith("db"), no_snapshots)

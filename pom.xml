@@ -686,16 +686,19 @@
     </profiles>
 
     <properties>
-        <!-- dyn.shim properties -->
+        <!-- start dyn.shim properties -->
         <dyn.shim.properties.location>${maven.multiModuleProjectDirectory}/target/release.properties</dyn.shim.properties.location>
         <!-- #if scala-2.12 -->
+        <dyn.shim.excluded.releases/>
         <dyn.shim.section.header>Scala212ReleaseSection</dyn.shim.section.header>
         <dyn.shim.rundir>${maven.multiModuleProjectDirectory}</dyn.shim.rundir>
         <!-- #endif scala-2.12 -->
         <!-- #if scala-2.13 --><!--
+        <dyn.shim.excluded.releases/>
         <dyn.shim.section.header>Scala213ReleaseSection</dyn.shim.section.header>
         <dyn.shim.rundir>${maven.multiModuleProjectDirectory}/..</dyn.shim.rundir>
         --><!-- #endif scala-2.13 -->
+        <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
