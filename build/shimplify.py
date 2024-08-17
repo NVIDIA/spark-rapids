@@ -78,14 +78,12 @@ You can find all shim files for a particular shim, e.g. 320, easily by executing
 git grep '{"spark": "320"}' '*.java' '*.scala'
 """
 
-import ConfigParser
 import errno
 import json
 import logging
 import os
 import re
 import subprocess
-
 
 def __project():
     """
@@ -193,13 +191,7 @@ __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
 __ch = logging.StreamHandler()
 __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
-
-__config = ConfigParser.ConfigParser()
-release_properties = __ant_proj_prop("dyn.shim.properties.location")
-__log.info("Reading release.properties from {}...".format(release_properties))
-__config.read(release_properties)
-__section_header = __ant_proj_prop("dyn.shim.section.header")
-__all_shims_arr = sorted(__config.get(__section_header, "all.buildvers").split(" "))
+__all_shims_arr = sorted(__ant_proj_prop("all.buildvers").split(" "))
 __shims_arr = __all_shims_arr if not __shims_arr else __shims_arr
 
 __shim_dir_pattern = re.compile(r'spark\d{3}')
