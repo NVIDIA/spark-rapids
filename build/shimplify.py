@@ -85,6 +85,7 @@ import os
 import re
 import subprocess
 
+
 def __project():
     """
     Wraps access to the implicitly provided Ant project reference[1] to reduce undefined-name
