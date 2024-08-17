@@ -372,7 +372,6 @@ def test_computation_in_grpby_columns():
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
-    conf = copy_and_update(conf, {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = conf)
@@ -385,7 +384,6 @@ def test_hash_grpby_sum(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
-    conf = copy_and_update(conf, {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf = conf)
@@ -410,7 +408,6 @@ def test_hash_reduction_sum(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9779')
 def test_hash_reduction_sum_full_decimal(data_gen, conf):
-    conf = copy_and_update(conf, {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
         conf = conf)
@@ -455,8 +452,7 @@ def test_hash_avg_nulls_partial_only(data_gen):
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 def test_intersect_all(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)),
-    conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+        lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
 
 @approximate_float
 @ignore_order
@@ -465,8 +461,7 @@ def test_intersect_all(data_gen):
 @pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+        lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')))
 
 # Spark fails to sort some decimal values due to overflow when calculating the sorting prefix.
 # See https://issues.apache.org/jira/browse/SPARK-40129
@@ -494,7 +489,6 @@ _pivot_gens_with_decimals = _init_list + [
 @pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
-    conf = copy_and_update(conf, {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
@@ -1116,8 +1110,7 @@ def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback()
         non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
         table_name='table',
         sql="""select k,
-        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""",
-    conf={'spark.rapids.sql.incompatibleOps.enabled': 'false'})
+        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
 
 @approximate_float
 @ignore_order

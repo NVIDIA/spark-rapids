@@ -622,8 +622,7 @@ seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_seconds(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)"),
-    conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)"))
 
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_seconds_long_overflow():
