@@ -64,17 +64,10 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES() {
    <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
 
-function createReleaseProperties() {
-  # Create Scala release properties file
-  echo "Collecting Spark versions involved..."
-  mvn -B -q -pl . $1 -DforceStdout antrun:run@create-release-properties
-}
-
 pom=""
 if [[ $SCALA_BINARY_VER == "2.13" ]]; then
     pom="-f scala2.13"
 fi
-createReleaseProperties "$pom"
 
 # Psnapshots: snapshots + noSnapshots
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snap_and_no_snap.buildvers" "$pom"
