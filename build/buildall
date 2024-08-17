@@ -92,7 +92,7 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
-  versionStr=$(mvn -B -q -pl . $2 -Doverwrite_properties=true -Dexpression=$1 -DforceStdout antrun:run@get-buildvers)
+  versionStr=$(mvn -B -q -pl . $2 -Dexpression=$1 -DforceStdout antrun:run@get-buildvers)
   echo -n $versionStr
 }
 
