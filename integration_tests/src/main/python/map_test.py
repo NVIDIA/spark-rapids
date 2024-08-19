@@ -440,6 +440,16 @@ def test_str_to_map_expr_with_all_regex_delimiters():
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 
+@pytest.mark.parametrize('empty_type', all_empty_string_types)
+def test_str_to_map_input_all_empty(empty_type):
+    data_gen = mk_empty_str_gen(empty_type)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m0',
+            'str_to_map(a, ",") as m1',
+            'str_to_map(a, ",", ":") as m2'
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
 @pytest.mark.skipif(not is_before_spark_330(),
                     reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
