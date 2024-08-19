@@ -28,6 +28,12 @@ import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
+/**
+ *  Exception thrown when cudf cannot parse the JSON data because some Json to Struct cases are not
+ *  currently supported.
+ */
+class JsonParsingException(s: String, cause: Throwable) extends RuntimeException(s, cause) {}
+
 class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
   lazy val data: BaseDeviceMemoryBuffer = combined.getData
   lazy val totalSize: Long = data.getLength
@@ -176,7 +182,14 @@ case class GpuJsonToStructs(
           // Step 3: setup a datasource
           val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
             // Step 4: Have cudf parse the JSON data
-            cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+            try {
+              cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+            } catch {
+              case e : RuntimeException =>
+                throw new JsonParsingException("Currently some Json to Struct cases " +
+                  "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
+                  "=false", e)
+            }
           }
 
           // process duplicated field names in input struct schema

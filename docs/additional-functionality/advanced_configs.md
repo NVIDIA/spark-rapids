@@ -75,11 +75,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.csv.read.float.enabled"></a>spark.rapids.sql.csv.read.float.enabled|CSV reading is not 100% compatible when reading floats.|true|Runtime
 <a name="sql.decimalOverflowGuarantees"></a>spark.rapids.sql.decimalOverflowGuarantees|FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of the compatibility documents for more information on this config.|true|Runtime
 <a name="sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold"></a>spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold|Currently we need to broadcast deletion vector to all executors to perform low shuffle merge. When we detect the deletion vector broadcast size is larger than this value, we will fallback to normal shuffle merge.|20971520|Runtime
-<a name="sql.delta.lowShuffleMerge.enabled"></a>spark.rapids.sql.delta.lowShuffleMerge.enabled|Option to turn on the low shuffle merge for Delta Lake. Currently there are some limitations for this feature: 
-1. We only support Databricks Runtime 13.3 and Deltalake 2.4. 
-2. The file scan mode must be set to PERFILE 
-3. The deletion vector size must be smaller than spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold 
-|false|Runtime
+<a name="sql.delta.lowShuffleMerge.enabled"></a>spark.rapids.sql.delta.lowShuffleMerge.enabled|Option to turn on the low shuffle merge for Delta Lake. Currently there are some limitations for this feature: 1. We only support Databricks Runtime 13.3 and Deltalake 2.4. 2. The file scan mode must be set to PERFILE 3. The deletion vector size must be smaller than spark.rapids.sql.delta.lowShuffleMerge.deletionVector.broadcast.threshold |false|Runtime
 <a name="sql.detectDeltaCheckpointQueries"></a>spark.rapids.sql.detectDeltaCheckpointQueries|Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
 <a name="sql.detectDeltaLogQueries"></a>spark.rapids.sql.detectDeltaLogQueries|Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When this option is enabled, the plugin will attempt to detect these queries and fall back to the CPU.|true|Runtime
 <a name="sql.fast.sample"></a>spark.rapids.sql.fast.sample|Option to turn on fast sample. If enable it is inconsistent with CPU sample because of GPU sample algorithm is inconsistent with CPU.|false|Runtime
@@ -259,7 +255,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|`from_unixtime`|Get the string from a unix timestamp|true|None|
 <a name="sql.expression.GetArrayItem"></a>spark.rapids.sql.expression.GetArrayItem| |Gets the field at `ordinal` in the Array|true|None|
 <a name="sql.expression.GetArrayStructFields"></a>spark.rapids.sql.expression.GetArrayStructFields| |Extracts the `ordinal`-th fields of all array elements for the data with the type of array of struct|true|None|
-<a name="sql.expression.GetJsonObject"></a>spark.rapids.sql.expression.GetJsonObject|`get_json_object`|Extracts a json object from path|false|This is disabled by default because Experimental feature that could be unstable or have performance issues.|
+<a name="sql.expression.GetJsonObject"></a>spark.rapids.sql.expression.GetJsonObject|`get_json_object`|Extracts a json object from path|true|None|
 <a name="sql.expression.GetMapValue"></a>spark.rapids.sql.expression.GetMapValue| |Gets Value from a Map based on a key|true|None|
 <a name="sql.expression.GetStructField"></a>spark.rapids.sql.expression.GetStructField| |Gets the named field of the struct|true|None|
 <a name="sql.expression.GetTimestamp"></a>spark.rapids.sql.expression.GetTimestamp| |Gets timestamps from strings using given pattern.|true|None|
@@ -304,6 +300,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MapConcat"></a>spark.rapids.sql.expression.MapConcat|`map_concat`|Returns the union of all the given maps|true|None|
 <a name="sql.expression.MapEntries"></a>spark.rapids.sql.expression.MapEntries|`map_entries`|Returns an unordered array of all entries in the given map|true|None|
 <a name="sql.expression.MapFilter"></a>spark.rapids.sql.expression.MapFilter|`map_filter`|Filters entries in a map using the function|true|None|
+<a name="sql.expression.MapFromArrays"></a>spark.rapids.sql.expression.MapFromArrays|`map_from_arrays`|Creates a new map from two arrays|true|None|
 <a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
 <a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|
 <a name="sql.expression.Md5"></a>spark.rapids.sql.expression.Md5|`md5`|MD5 hash operator|true|None|
@@ -329,7 +326,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.PromotePrecision"></a>spark.rapids.sql.expression.PromotePrecision| |PromotePrecision before arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.PythonUDF"></a>spark.rapids.sql.expression.PythonUDF| |UDF run in an external python process. Does not actually run on the GPU, but the transfer of data to/from it can be accelerated|true|None|
 <a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|`quarter`|Returns the quarter of the year for date, in the range 1 to 4|true|None|
-<a name="sql.expression.RLike"></a>spark.rapids.sql.expression.RLike|`rlike`|Regular expression version of Like|true|None|
+<a name="sql.expression.RLike"></a>spark.rapids.sql.expression.RLike|`regexp_like`, `regexp`, `rlike`|Regular expression version of Like|true|None|
 <a name="sql.expression.RaiseError"></a>spark.rapids.sql.expression.RaiseError|`raise_error`|Throw an exception|true|None|
 <a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|`rand`, `random`|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
 <a name="sql.expression.Rank"></a>spark.rapids.sql.expression.Rank|`rank`|Window function that returns the rank value within the aggregation window|true|None|
@@ -438,14 +435,18 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.SubqueryBroadcastExec"></a>spark.rapids.sql.exec.SubqueryBroadcastExec|Plan to collect and transform the broadcast key values|true|None|
 <a name="sql.exec.TakeOrderedAndProjectExec"></a>spark.rapids.sql.exec.TakeOrderedAndProjectExec|Take the first limit elements as defined by the sortOrder, and do projection if needed|true|None|
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
-<a name="sql.exec.CustomShuffleReaderExec"></a>spark.rapids.sql.exec.CustomShuffleReaderExec|A wrapper of shuffle query stage|true|None|
+<a name="sql.exec.AQEShuffleReadExec"></a>spark.rapids.sql.exec.AQEShuffleReadExec|A wrapper of shuffle query stage|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
 <a name="sql.exec.ObjectHashAggregateExec"></a>spark.rapids.sql.exec.ObjectHashAggregateExec|The backend for hash based aggregations supporting TypedImperativeAggregate functions|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
 <a name="sql.exec.InMemoryTableScanExec"></a>spark.rapids.sql.exec.InMemoryTableScanExec|Implementation of InMemoryTableScanExec to use GPU accelerated caching|true|None|
 <a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 <a name="sql.exec.ExecutedCommandExec"></a>spark.rapids.sql.exec.ExecutedCommandExec|Eagerly executed commands|true|None|
+<a name="sql.exec.AppendDataExecV1"></a>spark.rapids.sql.exec.AppendDataExecV1|Append data into a datasource V2 table using the V1 write interface|true|None|
+<a name="sql.exec.AtomicCreateTableAsSelectExec"></a>spark.rapids.sql.exec.AtomicCreateTableAsSelectExec|Create table as select for datasource V2 tables that support staging table creation|true|None|
+<a name="sql.exec.AtomicReplaceTableAsSelectExec"></a>spark.rapids.sql.exec.AtomicReplaceTableAsSelectExec|Replace table as select for datasource V2 tables that support staging table creation|true|None|
 <a name="sql.exec.BatchScanExec"></a>spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
+<a name="sql.exec.OverwriteByExpressionExecV1"></a>spark.rapids.sql.exec.OverwriteByExpressionExecV1|Overwrite into a datasource V2 table using the V1 write interface|true|None|
 <a name="sql.exec.BroadcastExchangeExec"></a>spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|
 <a name="sql.exec.ShuffleExchangeExec"></a>spark.rapids.sql.exec.ShuffleExchangeExec|The backend for most data being exchanged between processes|true|None|
 <a name="sql.exec.BroadcastHashJoinExec"></a>spark.rapids.sql.exec.BroadcastHashJoinExec|Implementation of join using broadcast data|true|None|

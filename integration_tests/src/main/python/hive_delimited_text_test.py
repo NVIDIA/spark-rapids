@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.
+# Copyright (c) 2022-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -120,6 +120,24 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 
     return read_impl
 
+def read_hive_text_sql_wrong_case(data_path, schema, spark_tmp_table_factory, options=None):
+    if options is None:
+        options = {}
+    def mk_upper(f):
+        return StructField(f.name.upper(), f.dataType)
+
+    upper_s = StructType(list(map(mk_upper, schema.fields)))
+    print("CONVERTED " +str(schema) + " TO " + str(upper_s))
+    lower_fields = ','.join(map(lambda name: name.lower(), schema.fieldNames()))
+    opts = copy_and_update(options, {'schema': upper_s})
+
+    def read_impl(spark):
+        tmp_name = spark_tmp_table_factory.get()
+        spark.catalog.createTable(tmp_name, source='hive', path=data_path, **opts)
+        return spark.sql("SELECT " + lower_fields + " FROM " + tmp_name)
+
+    return read_impl
+
 
 non_utc_allow_for_test_basic_hive_text_read=['HiveTableScanExec', 'DataWritingCommandExec', 'WriteFilesExec'] if is_not_utc() else []
 @pytest.mark.skipif(is_spark_cdh(),
@@ -191,6 +209,20 @@ non_utc_allow_for_test_basic_hive_text_read=['HiveTableScanExec', 'DataWritingCo
 @allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
+                                                            schema, spark_tmp_table_factory, options),
+                                         conf=hive_text_enabled_conf)
+
+
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
+@approximate_float
+@pytest.mark.parametrize('name,schema,options', [
+    ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()), {})
+], ids=idfn)
+@allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
+def test_case_insensitive_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
+    assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql_wrong_case(std_input_path + '/' + name,
                                                             schema, spark_tmp_table_factory, options),
                                          conf=hive_text_enabled_conf)
 
@@ -296,6 +328,24 @@ def test_hive_text_round_trip_partitioned(spark_tmp_path, data_gen, spark_tmp_ta
         lambda spark: read_hive_text_table_partitions(spark, table_name, "dt='1'"),
         conf=hive_text_enabled_conf)
 
+
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
+@approximate_float
+@allow_non_gpu("EqualTo,IsNotNull,Literal", *non_utc_allow_for_test_basic_hive_text_read)  # Accounts for partition predicate: `WHERE dt='1'`
+@pytest.mark.parametrize('data_gen', [boolean_gen], ids=idfn)
+def test_hive_text_round_trip_partitioned_case_insensitive(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    gen = StructGen([('my_field', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/hive_text_table'
+    table_name = spark_tmp_table_factory.get()
+
+    with_cpu_session(lambda spark: create_hive_text_table_partitioned(spark, gen, table_name, data_path))
+
+    # The 'DT' would need to be 'dt' for it to be case sensitive
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: read_hive_text_table_partitions(spark, table_name, "DT='1'"),
+        conf=hive_text_enabled_conf)
 
 @pytest.mark.skipif(is_spark_cdh(),
                     reason="Hive text reads are disabled on CDH, as per "
@@ -425,6 +475,8 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
         conf=hive_text_enabled_conf)
 
 
+@disable_ansi_mode  # Cannot run in ANSI mode until COUNT aggregation is supported.
+                    # See https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.skipif(is_spark_cdh(),
                     reason="Hive text reads are disabled on CDH, as per "
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")

@@ -56,9 +56,6 @@ _hive_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), 
 
 _hive_write_gens = [_hive_basic_gens, _hive_struct_gens, _hive_array_gens, _hive_map_gens]
 
-# ProjectExec falls back on databricks due to no GPU version of "MapFromArrays".
-fallback_nodes = ['ProjectExec'] if is_databricks_runtime() or is_spark_350_or_later() else []
-
 
 def read_single_bucket(table, bucket_id):
     # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
@@ -74,7 +71,7 @@ def read_single_bucket(table, bucket_id):
         .collect())
 
 
-@allow_non_gpu(*(non_utc_allow + fallback_nodes))
+@allow_non_gpu(*(non_utc_allow))
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_ctas", [True, False], ids=['CTAS', 'CTTW'])
 @pytest.mark.parametrize("gens", _hive_write_gens, ids=idfn)
@@ -160,7 +157,7 @@ def test_write_parquet_into_partitioned_hive_table(spark_tmp_table_factory, is_s
 zstd_param = pytest.param('ZSTD',
     marks=pytest.mark.skipif(is_before_spark_320(), reason="zstd is not supported before 320"))
 
-@allow_non_gpu(*(non_utc_allow + fallback_nodes))
+@allow_non_gpu(*(non_utc_allow))
 @ignore_order(local=True)
 @pytest.mark.parametrize("comp_type", ['UNCOMPRESSED', 'SNAPPY', zstd_param])
 def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type):
@@ -192,6 +189,7 @@ def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_
         _write_to_hive_conf)
 
 
+@allow_non_gpu(*non_utc_allow)
 @pytest.mark.skipif(is_before_spark_330() or (is_databricks_runtime() and not is_databricks122_or_later()),
                     reason="InsertIntoHiveTable supports bucketed write since Spark 330")
 def test_insert_hive_bucketed_table(spark_tmp_table_factory):

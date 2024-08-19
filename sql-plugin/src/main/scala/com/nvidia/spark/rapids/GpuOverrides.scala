@@ -1148,8 +1148,11 @@ object GpuOverrides extends Logging {
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
+      (a, conf, p, r) => new ExprMeta[UnaryPositive](a, conf, p, r) {
+        override val isFoldableNonLitAllowed: Boolean = true
+        override def convertToGpu(): GpuExpression =
+          GpuUnaryPositive(childExprs.head.convertToGpu())
+        
       }),
     expr[Year](
       "Returns the year from a date or timestamp",
@@ -2025,7 +2028,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue)
+          GpuCaseWhen(branches, elseValue, this.conf.caseWhenFuseEnabled)
         }
       }),
     expr[If](
@@ -2860,6 +2863,23 @@ object GpuOverrides extends Logging {
           GpuArrayRemove(lhs, rhs)
       }
     ),
+    expr[MapFromArrays](
+      "Creates a new map from two arrays",
+      ExprChecks.binaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+        ("keys",
+          TypeSig.ARRAY.nested(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.all - TypeSig.MAP)),
+        ("values",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.all))),
+      GpuMapFromArraysMeta
+    ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -2963,8 +2983,7 @@ object GpuOverrides extends Logging {
       "substring_index operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
+          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
@@ -3660,8 +3679,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)).disabledByDefault(
-      "Experimental feature that could be unstable or have performance issues."),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -4174,7 +4192,7 @@ object GpuOverrides extends Logging {
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
           condition.map(c => GpuFilterExec(c.convertToGpu(),
-            joinExec)(useTieredProject = this.conf.isTieredProjectEnabled)).getOrElse(joinExec)
+            joinExec)()).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](
@@ -4643,8 +4661,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
 
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        val found = f.relation.inputFiles.exists { name =>
-          checkDeltaFunc(name)
+        val found = StaticPartitionShims.getStaticPartitions(f.relation).map { parts =>
+          parts.exists { part =>
+            part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
+          }
+        }.getOrElse {
+          f.relation.location.rootPaths.exists { path =>
+            checkDeltaFunc(path.toString)
+          }
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")

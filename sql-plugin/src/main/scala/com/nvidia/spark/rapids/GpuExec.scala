@@ -84,6 +84,8 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_MISSES_SIZE = "filecacheDataRangeMissesSize"
   val FILECACHE_FOOTER_READ_TIME = "filecacheFooterReadTime"
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
+  val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
+  val DELETION_VECTOR_SIZE = "deletionVectorSize"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -119,6 +121,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES_SIZE = "cached data misses size"
   val DESCRIPTION_FILECACHE_FOOTER_READ_TIME = "cached footer read time"
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
+  val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
+  val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
