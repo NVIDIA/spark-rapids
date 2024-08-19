@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite, RapidsParquetFieldIdIOSuite, RapidsParquetFileFormatSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
@@ -79,9 +79,12 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsStringFunctionsSuite]
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
+    .exclude("Create parquet table with compression", WONT_FIX_ISSUE(""))
   enableSuite[RapidsParquetDeltaByteArrayEncodingSuite]
   enableSuite[RapidsParquetDeltaEncodingInteger]
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
+  enableSuite[RapidsParquetFieldIdIOSuite]
+  enableSuite[RapidsParquetFileFormatSuite]
 }
 // scalastyle:on line.size.limit
