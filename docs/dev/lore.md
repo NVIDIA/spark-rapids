@@ -29,11 +29,12 @@ By default, LORE id will always be generated for operators, but user could disab
 by setting `spark.rapids.sql.lore.tag.enabled` to `false`. 
 
 To tell LORE the LORE ids of the operators you are interested in, you need to set 
-`spark.rapids.sql.lore.idsToDump`. For example, you could set it to "1[*], 2[*], 3[*]" to tell 
+`spark.rapids.sql.lore.idsToDump`. For example, you could set it to "1[\*], 2[\*], 3[\*]" to tell 
 LORE to dump all partitions of input data of operators with id 1, 2, or 3. You can also only dump 
 some partition of the operator's input by appending partition numbers to lore ids. For example, 
-"1[0 4-6 7], 2[*]" tell LORE to dump operator with LORE id 1, but only dump partition 0, 4, 5, 6, 
-and 7. But for operator with LORE id 2, it will dump all partitions. 
+"1[0 4-6 7], 2[\*]" tell LORE to dump operator with LORE id 1, but only dump partition 0, 4, 5, 
+and 7, e.g. the end of the range is exclusive. But for operator with LORE id 2, it will dump all 
+partitions. 
 
 You also need to set `spark.rapids.sql.lore.dumpPath` to tell LORE where to dump the data, the 
 value of which should point to a directory. All dumped data of a query will live in this 
@@ -67,4 +68,8 @@ directory. A typical directory hierarchy would look like this:
       - batch-0.parquet
 ```
 
+# Limitations
 
+1. Currently, the LORE id is missed when the RDD of a `DataFrame` is used directly.
+2. Not all operators are supported by LORE. For example, shuffle related operator (e.g. 
+   `GpuShuffleExchangeExec`), leaf operator (e.g. `GpuFileSourceScanExec`) are not supported.

@@ -83,16 +83,19 @@ mvn_verify() {
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
     # things we care about
-    SPK_VER=${JACOCO_SPARK_VER:-"311"}
+    SPK_VER=${JACOCO_SPARK_VER:-"320"}
     mkdir -p target/jacoco_classes/
     FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
-    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-311}/"
+    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-320}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
-    rm -rf com/nvidia/shaded/ org/openucx/ spark-shared/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+    rm -rf com/nvidia/shaded/ \
+      org/openucx/ spark-shared/com/nvidia/spark/udf/ \
+      spark${SPK_VER}/com/nvidia/spark/udf/ \
+      spark${SPK_VER}/META-INF/versions/*
     popd
 
     # Triggering here until we change the jenkins file
@@ -222,7 +225,7 @@ ci_scala213() {
 }
 
 prepare_spark() {
-    spark_ver=${1:-'3.1.1'}
+    spark_ver=${1:-'3.2.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"

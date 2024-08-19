@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,8 +73,8 @@ for bv in buildver_list:
             shell_exec(mvn_cmd)
 
         dist_dir = os.sep.join([source_basedir, 'dist'])
-        with open(os.sep.join([dist_dir, 'unshimmed-common-from-spark311.txt']), 'r') as f:
-            from_spark311 = f.read().splitlines()
+        with open(os.sep.join([dist_dir, 'unshimmed-common-from-spark320.txt']), 'r') as f:
+            from_spark320 = f.read().splitlines()
         with open(os.sep.join([dist_dir, 'unshimmed-from-each-spark3xx.txt']), 'r') as f:
             from_each = f.read().splitlines()
         with zipfile.ZipFile(os.sep.join([deps_dir, art_jar]), 'r') as zip_handle:
@@ -88,7 +88,7 @@ for bv in buildver_list:
                 # TODO deprecate
                 namelist = zip_handle.namelist()
                 matching_members = []
-                glob_list = from_spark311 + from_each if bv == buildver_list[0] else from_each
+                glob_list = from_spark320 + from_each if bv == buildver_list[0] else from_each
                 for pat in glob_list:
                     new_matches = fnmatch.filter(namelist, pat)
                     matching_members += new_matches

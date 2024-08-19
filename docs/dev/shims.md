@@ -8,7 +8,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
-Apache Spark such as 3.1.x, 3.2.x, 3.3.0 and a number of vendor releases that contain
+Apache Spark such as 3.2.x, 3.3.x, 3.4.x, 3.5.x and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally
 incompatible between each other, at both source code level and even more often
 at the binary level. The role of the Shim layer is to hide these issues from the
@@ -68,17 +68,17 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 Spark 3.0.2's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-24.10.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-24.10.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-24.10.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-24.08.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-24.10.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-24.10.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-24.10.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes
@@ -159,7 +159,7 @@ to build against the lowest and highest versions of the supported Spark version
 range. As of the time of this writing:
 
 ```bash
-./build/buildall --parallel=4  --profile=311,330 --module=dist
+./build/buildall --parallel=4  --profile=320,351 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.

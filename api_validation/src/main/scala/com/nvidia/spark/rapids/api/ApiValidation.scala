@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ object ApiValidation extends Logging {
     val gpuKeys = gpuExecs.keys
     var printNewline = false
 
-    val sparkToShimMap = Map("3.1.1" -> "spark311")
+    val sparkToShimMap = Map("3.2.0" -> "spark320")
     val sparkVersion = ShimLoader.getShimVersion.toString
     val shimVersion = sparkToShimMap(sparkVersion)
 

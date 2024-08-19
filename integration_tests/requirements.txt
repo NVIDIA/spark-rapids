@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,4 +17,5 @@ pandas
 pyarrow
 pytest-xdist >= 2.0.0
 findspark
-fastparquet == 0.8.3
+fastparquet == 0.8.3 ; python_version == '3.8'
+fastparquet == 2024.5.0 ; python_version >= '3.9'

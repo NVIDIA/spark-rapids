@@ -15,6 +15,7 @@
 import copy
 from datetime import date, datetime, timedelta, timezone
 from decimal import *
+from enum import Enum
 import math
 from pyspark.context import SparkContext
 from pyspark.sql import Row
@@ -744,8 +745,8 @@ class MapGen(DataGen):
 
 class NullGen(DataGen):
     """Generate NullType values"""
-    def __init__(self):
-        super().__init__(NullType(), nullable=True)
+    def __init__(self, dt = NullType()):
+        super().__init__(dt, nullable=True)
 
     def start(self, rand):
         def make_null():
@@ -1044,6 +1045,22 @@ def gen_scalars_for_sql(data_gen, count, seed=None, force_no_nulls=False):
     spark_type = data_gen.data_type
     return (_convert_to_sql(spark_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
+class EmptyStringType(Enum):
+    ALL_NULL = 1
+    ALL_EMPTY = 2
+    MIXED = 3
+
+all_empty_string_types = EmptyStringType.__members__.values()
+
+empty_string_gens_map = {
+  EmptyStringType.ALL_NULL : lambda: NullGen(StringType()),
+  EmptyStringType.ALL_EMPTY : lambda: StringGen("", nullable=False),
+  EmptyStringType.MIXED : lambda: StringGen("", nullable=True)
+}
+
+def mk_empty_str_gen(empty_type):
+    return empty_string_gens_map[empty_type]()
+
 byte_gen = ByteGen()
 short_gen = ShortGen()
 int_gen = IntegerGen()
@@ -1164,6 +1181,7 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
+ansi_disabled_conf = {'spark.sql.ansi.enabled': 'false'}
 legacy_interval_enabled_conf = {'spark.sql.legacy.interval.enabled': 'true'}
 
 def copy_and_update(conf, *more_confs):

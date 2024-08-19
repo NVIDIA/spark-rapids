@@ -43,6 +43,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types._
@@ -230,14 +231,14 @@ object AggregateUtils extends Logging {
 
     def repartitionAndClose(batch: SpillableColumnarBatch): Unit = {
 
-//      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)
-//          && stagingBatch.isEmpty && batchesToConcat.isEmpty) {
-//        // If this is the only batch (after merging neighbours) to be repartitioned,
-//        // we can just add it to the first bucket and skip repartitioning.
-//        // This is a common case when total input size can fit into a single batch.
-//        batchesByBucket.head.append(batch)
-//        return
-//      }
+      //      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)
+      //          && stagingBatch.isEmpty && batchesToConcat.isEmpty) {
+      //        // If this is the only batch (after merging neighbours) to be repartitioned,
+      //        // we can just add it to the first bucket and skip repartitioning.
+      //        // This is a common case when total input size can fit into a single batch.
+      //        batchesByBucket.head.append(batch)
+      //        return
+      //      }
 
       withResource(new NvtxWithMetrics("agg repartition",
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
@@ -321,8 +322,8 @@ object AggregateUtils extends Logging {
 
     // Deal with the over sized buckets
     if (repartitionHappened &&
-        batchesByBucket.exists(
-          bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize)
+      batchesByBucket.exists(
+        bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize)
     ) {
       logDebug("Some of the repartition buckets are over sized, trying to split them")
 
@@ -446,15 +447,16 @@ object AggregateModeInfo {
  *                             the merge steps for each aggregate function
  * @param isSorted             if the batch is sorted this is set to true and is passed to cuDF
  *                             as an optimization hint
- * @param useTieredProject     if true, used tiered project for input projections
+ * @param conf                 A configuration used to control TieredProject operations in an
+ *                             aggregation.
  */
 class AggHelper(
     inputAttributes: Seq[Attribute],
     groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
     forceMerge: Boolean,
-    isSorted: Boolean = false,
-    useTieredProject: Boolean = true) extends Serializable {
+    conf: SQLConf,
+    isSorted: Boolean = false) extends Serializable {
 
   private var doSortAgg = isSorted
 
@@ -481,7 +483,7 @@ class AggHelper(
 
   private val groupingAttributes = groupingExpressions.map(_.toAttribute)
   private val aggBufferAttributes = groupingAttributes ++
-      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+    aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
   // `GpuAggregateFunction` can add a pre and post step for update
   // and merge aggregates.
@@ -501,7 +503,7 @@ class AggHelper(
   postStep ++= groupingAttributes
   postStepAttr ++= groupingAttributes
   postStepDataTypes ++=
-      groupingExpressions.map(_.dataType)
+    groupingExpressions.map(_.dataType)
 
   private var ix = groupingAttributes.length
   for (aggExp <- aggregateExpressions) {
@@ -536,11 +538,11 @@ class AggHelper(
     inputAttributes
   }
   val preStepBound = GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
-    preStepAttributes.toList, useTieredProject)
+    preStepAttributes.toList, conf)
 
   // a bound expression that is applied after the cuDF aggregate
   private val postStepBound = GpuBindReferences.bindGpuReferencesTiered(postStep.toList,
-    postStepAttr.toList, useTieredProject)
+    postStepAttr.toList, conf)
 
   /**
    * Apply the "pre" step: preMerge for merge, or pass-through in the update case
@@ -653,9 +655,9 @@ class AggHelper(
     withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
         val groupOptions = cudf.GroupByOptions.builder()
-            .withIgnoreNullKeys(false)
-            .withKeysSorted(doSortAgg)
-            .build()
+          .withIgnoreNullKeys(false)
+          .withKeysSorted(doSortAgg)
+          .build()
 
         val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
           case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
@@ -663,8 +665,8 @@ class AggHelper(
 
         // perform the aggregate
         val aggTbl = preProcessedTbl
-            .groupBy(groupOptions, groupingOrdinals: _*)
-            .aggregate(cudfAggsOnColumn.toSeq: _*)
+          .groupBy(groupOptions, groupingOrdinals: _*)
+          .aggregate(cudfAggsOnColumn.toSeq: _*)
 
         withResource(aggTbl) { _ =>
           GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
@@ -870,11 +872,11 @@ object GpuAggFinalPassIterator {
       modeInfo: AggregateModeInfo): BoundExpressionsModeAggregates = {
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
     val aggBufferAttributes = groupingAttributes ++
-        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
       val finalProjections = groupingAttributes ++
-          aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
+        aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
       Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
       None
@@ -987,7 +989,6 @@ object GpuAggFinalPassIterator {
  * @param modeInfo identifies which aggregation modes are being used
  * @param metrics metrics that will be updated during aggregation
  * @param configuredTargetBatchSize user-specified value for the targeted input batch size
- * @param useTieredProject user-specified option to enable tiered projections
  * @param allowNonFullyAggregatedOutput if allowed to skip third pass Agg
  * @param skipAggPassReductionRatio skip if the ratio of rows after a pass is bigger than this value
  * @param localInputRowsCount metric to track the number of input rows processed locally
@@ -1002,7 +1003,7 @@ class GpuMergeAggregateIterator(
     modeInfo: AggregateModeInfo,
     metrics: GpuHashAggregateMetrics,
     configuredTargetBatchSize: Long,
-    useTieredProject: Boolean,
+    conf: SQLConf,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
     localInputRowsCount: LocalGpuMetric)
@@ -1164,7 +1165,7 @@ class GpuMergeAggregateIterator(
 
   private lazy val concatAndMergeHelper =
     new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
-      forceMerge = true, useTieredProject = useTieredProject)
+      forceMerge = true, conf, isSorted = true)
 
   private case class ConcatIterator(
       input: CloseableBufferedIterator[SpillableColumnarBatch],
@@ -1461,18 +1462,17 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     // This is a short term heuristic until we can better understand the cost
     // of sort vs the cost of doing aggregations so we can better decide.
     lazy val hasSingleBasicGroupingKey = agg.groupingExpressions.length == 1 &&
-        agg.groupingExpressions.headOption.map(_.dataType).exists {
-          case StringType | BooleanType | ByteType | ShortType | IntegerType |
-               LongType | _: DecimalType | DateType | TimestampType => true
-          case _ => false
-        }
+      agg.groupingExpressions.headOption.map(_.dataType).exists {
+        case StringType | BooleanType | ByteType | ShortType | IntegerType |
+             LongType | _: DecimalType | DateType | TimestampType => true
+        case _ => false
+      }
 
     val gpuChild = childPlans.head.convertIfNeeded()
     val gpuAggregateExpressions =
       aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression])
     val gpuGroupingExpressions =
       groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression])
-    val useTiered = conf.isTieredProjectEnabled
 
     // Sorting before we do an aggregation helps if the size of the input data is
     // smaller than the size of the output data. But it is an aggregation how can
@@ -1498,7 +1498,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
         gpuChild.output, inputAggBufferAttributes)
       val preProcessAggHelper = new AggHelper(
         inputAttrs, gpuGroupingExpressions, gpuAggregateExpressions,
-        forceMerge = false, useTieredProject = useTiered)
+        forceMerge = false, conf = agg.conf)
 
       // We are going to estimate the growth by looking at the estimated size the output could
       // be compared to the estimated size of the input (both based off of the schemas).
@@ -1520,11 +1520,11 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     }
 
     val allowSinglePassAgg = (conf.forceSinglePassPartialSortAgg ||
-        (conf.allowSinglePassPartialSortAgg &&
-            hasSingleBasicGroupingKey &&
-            estimatedPreProcessGrowth > 1.1)) &&
-        canUsePartialSortAgg &&
-        groupingCanBeSorted
+      (conf.allowSinglePassPartialSortAgg &&
+        hasSingleBasicGroupingKey &&
+        estimatedPreProcessGrowth > 1.1)) &&
+      canUsePartialSortAgg &&
+      groupingCanBeSorted
 
     GpuHashAggregateExec(
       aggRequiredChildDistributionExpressions,
@@ -1534,7 +1534,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
       gpuChild,
       conf.gpuTargetBatchSizeBytes,
-      useTiered,
       estimatedPreProcessGrowth,
       conf.forceSinglePassPartialSortAgg,
       allowSinglePassAgg,
@@ -1558,7 +1557,7 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
   private val mayNeedAggBufferConversion: Boolean =
     agg.aggregateExpressions.exists { expr =>
       expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] &&
-          (expr.mode == Partial || expr.mode == PartialMerge)
+        (expr.mode == Partial || expr.mode == PartialMerge)
     }
 
   // overriding data types of Aggregation Buffers if necessary
@@ -1621,12 +1620,11 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
         childPlans.head.convertIfNeeded(),
         conf.gpuTargetBatchSizeBytes,
-        conf.isTieredProjectEnabled,
         // For now we are just going to go with the original hash aggregation
         1.0,
-        false,
-        false,
-        false,
+        forceSinglePassAgg = false,
+        allowSinglePassAgg = false,
+        allowNonFullyAggregatedOutput = false,
         1)
     } else {
       super.convertToGpu()
@@ -1731,8 +1729,8 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
         // [A]. there will be a R2C or C2R transition between them
         // [B]. there exists TypedImperativeAggregate functions in each of them
         (stages(i).canThisBeReplaced ^ stages(i + 1).canThisBeReplaced) &&
-            containTypedImperativeAggregate(stages(i)) &&
-            containTypedImperativeAggregate(stages(i + 1))
+          containTypedImperativeAggregate(stages(i)) &&
+          containTypedImperativeAggregate(stages(i + 1))
     }
 
     // Return if all internal aggregation buffers are compatible with GPU Overrides.
@@ -1810,10 +1808,10 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       fromCpuToGpu: Boolean): Seq[NamedExpression] = {
 
     val converters = mutable.Queue[Either[
-        CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter]]()
+      CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter]]()
     mergeAggMeta.childExprs.foreach {
       case e if e.childExprs.length == 1 &&
-          e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
+        e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
         e.wrapped.asInstanceOf[AggregateExpression].mode match {
           case Final | PartialMerge =>
             val typImpAggMeta = e.childExprs.head.asInstanceOf[TypedImperativeAggExprMeta[_]]
@@ -1868,16 +1866,16 @@ class GpuHashAggregateMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuBaseAggregateMeta(agg, agg.requiredChildDistributionExpressions,
-      conf, parent, rule)
+  extends GpuBaseAggregateMeta(agg, agg.requiredChildDistributionExpressions,
+    conf, parent, rule)
 
 class GpuSortAggregateExecMeta(
     override val agg: SortAggregateExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
-      agg.requiredChildDistributionExpressions, conf, parent, rule) {
+  extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
+    agg.requiredChildDistributionExpressions, conf, parent, rule) {
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
 
@@ -1924,14 +1922,14 @@ class GpuObjectHashAggregateExecMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
-      agg.requiredChildDistributionExpressions, conf, parent, rule)
+  extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
+    agg.requiredChildDistributionExpressions, conf, parent, rule)
 
 object GpuHashAggregateExecBase {
 
   def calcInputAttributes(aggregateExpressions: Seq[GpuAggregateExpression],
-                          childOutput: Seq[Attribute],
-                          inputAggBufferAttributes: Seq[Attribute]): Seq[Attribute] = {
+      childOutput: Seq[Attribute],
+      inputAggBufferAttributes: Seq[Attribute]): Seq[Attribute] = {
     val modes = aggregateExpressions.map(_.mode).distinct
     if (modes.contains(Final) || modes.contains(PartialMerge)) {
       // SPARK-31620: when planning aggregates, the partial aggregate uses aggregate function's
@@ -1975,7 +1973,6 @@ object GpuHashAggregateExecBase {
  *                          node should project)
  * @param child incoming plan (where we get input columns from)
  * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
- * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
  * @param allowNonFullyAggregatedOutput whether we can skip the third pass of aggregation
  *                                      (can omit non fully aggregated data for non-final
  *                                      stage of aggregation)
@@ -1989,7 +1986,6 @@ case class GpuHashAggregateExec(
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan,
     configuredTargetBatchSize: Long,
-    configuredTieredProjectEnabled: Boolean,
     estimatedPreProcessGrowth: Double,
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
@@ -2062,7 +2058,6 @@ case class GpuHashAggregateExec(
     val resultExprs = resultExpressions
     val modeInfo = AggregateModeInfo(uniqueModes)
     val targetBatchSize = configuredTargetBatchSize
-    val useTieredProject = configuredTieredProjectEnabled
 
     val rdd = child.executeColumnar()
 
@@ -2073,7 +2068,7 @@ case class GpuHashAggregateExec(
       expectedOrdering) && expectedOrdering.nonEmpty
     val localEstimatedPreProcessGrowth = estimatedPreProcessGrowth
 
-    val boundGroupExprs = GpuBindReferences.bindGpuReferencesTiered(groupingExprs, inputAttrs, true)
+    val boundGroupExprs = GpuBindReferences.bindGpuReferencesTiered(groupingExprs, inputAttrs, conf)
 
     rdd.mapPartitions { cbIter =>
       val postBoundReferences = GpuAggFinalPassIterator.setupReferences(groupingExprs,
@@ -2082,7 +2077,7 @@ case class GpuHashAggregateExec(
       new DynamicGpuPartialAggregateIterator(cbIter, inputAttrs, groupingExprs,
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
-        postBoundReferences, targetBatchSize, aggMetrics, useTieredProject,
+        postBoundReferences, targetBatchSize, aggMetrics, conf,
         localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio)
     }
   }
@@ -2150,7 +2145,7 @@ case class GpuHashAggregateExec(
    */
   override lazy val allAttributes: AttributeSeq =
     child.output ++ aggregateBufferAttributes ++ aggregateAttributes ++
-        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
   override def verboseString(maxFields: Int): String = toString(verbose = true, maxFields)
 
@@ -2169,8 +2164,8 @@ case class GpuHashAggregateExec(
         s"""${loreArgs.mkString(", ")}"""
     } else {
       s"$nodeName (keys=$keyString, functions=$functionString)," +
-          s" filters=${aggregateExpressions.map(_.filter)})" +
-          s""" ${loreArgs.mkString(", ")}"""
+        s" filters=${aggregateExpressions.map(_.filter)})" +
+        s""" ${loreArgs.mkString(", ")}"""
     }
   }
   //
@@ -2199,7 +2194,7 @@ class DynamicGpuPartialAggregateIterator(
     postBoundReferences: BoundExpressionsModeAggregates,
     configuredTargetBatchSize: Long,
     metrics: GpuHashAggregateMetrics,
-    useTiered: Boolean,
+    conf: SQLConf,
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
@@ -2211,7 +2206,7 @@ class DynamicGpuPartialAggregateIterator(
   // When doing a reduction we don't have the aggIter setup for the very first time
   // so we have to match what happens for the normal reduction operations.
   override def hasNext: Boolean = aggIter.map(_.hasNext)
-      .getOrElse(isReductionOnly || cbIter.hasNext)
+    .getOrElse(isReductionOnly || cbIter.hasNext)
 
   private[this] def estimateCardinality(cb: ColumnarBatch): Int = {
     withResource(boundGroupExprs.project(cb)) { groupingKeys =>
@@ -2301,7 +2296,7 @@ class DynamicGpuPartialAggregateIterator(
       modeInfo,
       metrics,
       configuredTargetBatchSize,
-      useTiered,
+      conf,
       allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
       localInputRowsMetrics)
@@ -2313,7 +2308,7 @@ class DynamicGpuPartialAggregateIterator(
     if (aggIter.isEmpty) {
       val preProcessAggHelper = new AggHelper(
         inputAttrs, groupingExprs, aggregateExprs,
-        forceMerge = false, isSorted = true, useTieredProject = useTiered)
+        forceMerge = false, isSorted = true, conf = conf)
       val (inputIter, doSinglePassAgg) = if (allowSinglePassAgg) {
         if (forceSinglePassAgg || alreadySorted) {
           (cbIter, true)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -413,6 +413,13 @@ object BatchWithPartitionDataUtils {
     if (splitIndices.isEmpty) {
       Seq(SpillableColumnarBatch(GpuColumnVector.incRefCounts(input),
         SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+    } else if (input.numCols() == 0) {
+      // calculate the number of rows for each batch based on the split indices
+      val batchRows =
+        splitIndices.head +: splitIndices.zip(splitIndices.tail :+ input.numRows()).map {
+          case (startRow, endRow) => endRow - startRow
+        }
+      batchRows.map(numRows => new JustRowsColumnarBatch(numRows))
     } else {
       val schema = GpuColumnVector.extractTypes(input)
       val splitInput = withResource(GpuColumnVector.from(input)) { table =>
