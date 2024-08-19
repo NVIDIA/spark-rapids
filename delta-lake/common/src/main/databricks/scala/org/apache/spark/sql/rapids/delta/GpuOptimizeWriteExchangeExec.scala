@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * This file was derived from OptimizeWriteExchange.scala
  * in the Delta Lake project at https://github.com/delta-io/delta
@@ -78,6 +78,8 @@ case class GpuOptimizeWriteExchangeExec(
         createNanoTimingMetric(DEBUG_LEVEL, "rs. serialization time"),
     "rapidsShuffleDeserializationTime" ->
         createNanoTimingMetric(DEBUG_LEVEL, "rs. deserialization time"),
+    "rapidsShufflePartitionTime" ->
+      createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle partition time"),
     "rapidsShuffleWriteTime" ->
         createNanoTimingMetric(ESSENTIAL_LEVEL, "rs. shuffle write time"),
     "rapidsShuffleCombineTime" ->
@@ -97,8 +99,9 @@ case class GpuOptimizeWriteExchangeExec(
     ) ++ additionalMetrics
   }
 
-  private lazy val serializer: Serializer =
-    new GpuColumnarBatchSerializer(gpuLongMetric("dataSize"))
+  private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
+    gpuLongMetric("dataSize"), allMetrics("rapidsShuffleSerializationTime"),
+    allMetrics("rapidsShuffleDeserializationTime"))
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
