@@ -46,10 +46,7 @@ case class GpuBringBackToHost(child: SparkPlan) extends ShimUnaryExecNode with G
       try {
         val hostColumns = (0 until b.numCols()).map(
           i => b.column(i).asInstanceOf[GpuColumnVector].copyToHost())
-        if (hostColumns.isEmpty) {
-          throw new RuntimeException("hostColumns should not be empty")
-        }
-        new ColumnarBatch(hostColumns.toArray, hostColumns(0).getRowCount.toInt)
+        new ColumnarBatch(hostColumns.toArray, b.numRows())
       } finally {
         range.close()
         b.close()
