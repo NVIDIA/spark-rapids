@@ -79,7 +79,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsStringFunctionsSuite]
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
-    .exclude("Create parquet table with compression", WONT_FIX_ISSUE(""))
   enableSuite[RapidsParquetDeltaByteArrayEncodingSuite]
   enableSuite[RapidsParquetDeltaEncodingInteger]
   enableSuite[RapidsParquetDeltaEncodingLong]
