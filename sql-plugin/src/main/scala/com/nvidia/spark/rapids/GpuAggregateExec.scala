@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
@@ -1024,22 +1024,6 @@ class GpuMergeAggregateIterator(
   private[this] val batchesByBucket =
     ArrayBuffer.fill(defaultHashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
 
-  //todo remove this
-  private case class AggregatePartition(
-      batches: AutoClosableArrayBuffer[SpillableColumnarBatch])
-    extends AutoCloseable {
-
-    override def close(): Unit = {
-      batches.safeClose()
-    }
-
-    def areAllBatchesSingleRow: Boolean = {
-      batches.forall(_.numRows() == 1)
-    }
-  }
-
-  private val aggPartitions = ListBuffer.empty[AggregatePartition]
-
   private[this] var firstBatchChecked = false
 
   private[this] var bucketIter: Option[RepartitionAggregateIterator] = None
@@ -1161,8 +1145,6 @@ class GpuMergeAggregateIterator(
   override def close(): Unit = {
     batchesByBucket.foreach(_.close())
     batchesByBucket.clear()
-    aggPartitions.foreach(_.close())
-    aggPartitions.clear()
     hasReductionOnlyBatch = false
   }
 
@@ -1205,34 +1187,33 @@ class GpuMergeAggregateIterator(
   private case class RepartitionAggregateIterator(opTime: GpuMetric)
     extends Iterator[SpillableColumnarBatch] {
 
-    batchesByBucket.foreach(batches => {
-      if (batches.size() != 0) {
-        aggPartitions += AggregatePartition(batches)
-      }
-    })
+    val nonEmptyBuckets = batchesByBucket.filter(_.size() > 0)
     batchesByBucket.clear()
+    batchesByBucket.appendAll(nonEmptyBuckets)
 
-    override def hasNext: Boolean = aggPartitions.nonEmpty
+    override def hasNext: Boolean = batchesByBucket.nonEmpty
 
     override def next(): SpillableColumnarBatch = {
       withResource(new NvtxWithMetrics("RepartitionAggregateIterator.next",
         NvtxColor.BLUE, opTime)) { _ =>
 
-        val headPartition = aggPartitions.remove(0)
+        val oneBucket = batchesByBucket.remove(batchesByBucket.size - 1)
 
-        withResource(headPartition) { _ =>
-          val batchSizeBeforeMerge = headPartition.batches.size()
+        withResource(oneBucket) { _ =>
+          val batchSizeBeforeMerge = oneBucket.size()
           AggregateUtils.tryMergeAggregatedBatches(
-            headPartition.batches.data,
-            headPartition.areAllBatchesSingleRow, metrics,
-            targetMergeBatchSize, concatAndMergeHelper)
-          if (headPartition.batches.size != 1) {
+            oneBucket.data,
+            oneBucket.forall(_.numRows() == 1),
+            metrics,
+            targetMergeBatchSize,
+            concatAndMergeHelper)
+          if (oneBucket.size != 1) {
             throw new IllegalStateException(
               "Expected a single batch after tryMergeAggregatedBatches, but got " +
-                s"${headPartition.batches.size()} batches. Before merge, there were " +
+                s"${oneBucket.size()} batches. Before merge, there were " +
                 s"$batchSizeBeforeMerge batches.")
           }
-          headPartition.batches.removeLast()
+          oneBucket.removeLast()
         }
       }
     }
