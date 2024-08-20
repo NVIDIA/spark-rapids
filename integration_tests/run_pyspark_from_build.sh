@@ -223,7 +223,7 @@ else
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     STD_INPUT_PATH="$INPUT_PATH"/src/test/resources
-    TEST_COMMON_OPTS=(-v -x -s
+    TEST_COMMON_OPTS=(-v -x
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$STD_INPUT_PATH"
@@ -254,7 +254,7 @@ else
 
     # Disable Spark UI by default since it is not needed for tests, and Spark can fail to start
     # due to Spark UI port collisions, especially in a parallel test setup.
-    export PYSP_TEST_spark_ui_enabled=${PYSP_TEST_spark_ui_enabled:-true}
+    export PYSP_TEST_spark_ui_enabled=${PYSP_TEST_spark_ui_enabled:-false}
 
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_databricks_delta_delta_log_cacheSize=${PYSP_TEST_spark_databricks_delta_delta_log_cacheSize:-10}
@@ -447,7 +447,6 @@ EOF
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
             --conf 'spark.databricks.delta.delta.log.cacheSize='"$deltaCacheSize" \
-            --conf 'spark.rapids.sql.agg.singlePassPartialSortEnabled=false' \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi

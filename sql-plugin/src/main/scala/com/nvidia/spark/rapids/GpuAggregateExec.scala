@@ -225,11 +225,6 @@ object AggregateUtils extends Logging {
     var stagingBatch: Option[SpillableColumnarBatch] = None
 
     var repartitionHappened = false
-    var xxx = false
-    if(hashSeed == 177){
-      println("hashSeed: " + hashSeed)
-      xxx = true
-    }
     if (hashSeed > 200) {
       throw new IllegalStateException("Too many times of repartition, may hit a bug?")
     }
@@ -248,62 +243,10 @@ object AggregateUtils extends Logging {
       withResource(new NvtxWithMetrics("agg repartition",
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
 
-        val batchRowNum = batch.numRows()
-        var getRowNum = 0
         withResource(new GpuBatchSubPartitioner(
           Seq(batch).map(batch => {
             withResource(batch) { _ =>
-              val x= batch.getColumnarBatch()
-              if(batch.numRows() > 0) {
-                val c0 = x.column(0).asInstanceOf[GpuColumnVector].
-                  copyToHost()
-                var count = 0
-                for(i <- 0 until x.numRows()) {
-                  val x = c0.getInt(i)
-                  if(x == -1) {
-                    count = count + 1
-                    if(count == 2) {
-                      throw new IllegalStateException("xxxxxxxxxxx")
-                    } else {
-                      println ("yyyy" + count)
-                    }
-                  }
-                }
-              }
-              if(batch.numRows() == 2 && xxx) {
-              val c0 = x.column(0).asInstanceOf[GpuColumnVector].
-                copyToHost()
-              val c1 = x.column(1).asInstanceOf[GpuColumnVector].
-                copyToHost()
-
-                val v00 = if (c0.isNullAt(0)) {
-                  "null"
-                } else {
-                  c0.getInt(0).toString
-                }
-
-                val v01 = if (c1.isNullAt(0)) {
-                  "null"
-                } else {
-                  c1.getLong(0).toString
-                }
-
-                val v10 =if (c0.isNullAt(1)) {
-                  "null"
-                } else {
-                  c0.getInt(1).toString
-                }
-
-                val v11 = if (c1.isNullAt(1)) {
-                  "null"
-                } else {
-                  c1.getLong(1).toString
-                }
-
-                println("row 0:"+ v00 + ", " + v01)
-                println("row 1:"+ v10 + ", " + v11)
-              }
-              x
+              batch.getColumnarBatch()
             }
           }).iterator,
           hashKeys, hashBucketNum, hashSeed, "aggRepartition")) {
@@ -314,7 +257,6 @@ object AggregateUtils extends Logging {
                 newBatches.foreach { newBatch =>
                   if (newBatch.numRows() > 0) {
                     batchesByBucket(id).append(newBatch)
-                    getRowNum += newBatch.numRows()
                   } else {
                     newBatch.safeClose()
                   }
@@ -324,12 +266,6 @@ object AggregateUtils extends Logging {
             }
           }
         }
-
-        if(batchRowNum != getRowNum){
-          println("batchRowNum: " + batchRowNum + ", getRowNum: " + getRowNum)
-          throw new IllegalStateException("batchRowNum != getRowNum")
-        }
-
       }
       repartitionHappened = true
     }
@@ -339,12 +275,8 @@ object AggregateUtils extends Logging {
         throw new IllegalStateException("No batches to concatenate")
       }
       if (batchesToConcat.size == 1) {
-        withResource(batchesToConcat.head) { _ =>
-          val cb = batchesToConcat.head.getColumnarBatch()
-          val aggregated = computeAggregateAndClose(metrics, cb, helper)
-          repartitionAndClose(aggregated)
-          batchesToConcat.clear()
-        }
+        repartitionAndClose(batchesToConcat.head)
+        batchesToConcat.clear()
         return
       }
 
@@ -375,13 +307,9 @@ object AggregateUtils extends Logging {
     while (aggregatedBatches.hasNext) {
       val next = aggregatedBatches.next()
       if (next.sizeInBytes >= targetMergeBatchSize &&
-        (next.numRows() != 1) // for tests
+        (next.numRows() != 1) // for tests where a batch contains only 1 row
       ) {
-        withResource(next) { _ =>
-          val cb = next.getColumnarBatch()
-          val aggregated = computeAggregateAndClose(metrics, cb, helper)
-          repartitionAndClose(aggregated)
-        }
+        repartitionAndClose(next)
       } else {
         sizeSoFar += next.sizeInBytes
         if (sizeSoFar > targetMergeBatchSize &&
@@ -402,13 +330,15 @@ object AggregateUtils extends Logging {
     // Deal with the over sized buckets
     if (repartitionHappened &&
       batchesByBucket.exists(
-        bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize && bucket.size() != 1
+        bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize &&
+          bucket.map(_.numRows()).sum != 1
       )
     ) {
       logDebug("Some of the repartition buckets are over sized, trying to split them")
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
-        if (bucket.map(_.sizeInBytes).sum > targetMergeBatchSize) {
+        if (bucket.map(_.sizeInBytes).sum > targetMergeBatchSize
+          && bucket.map(_.numRows()).sum != 1) {
           val nextLayerBuckets =
             ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
           // Recursively merge and repartition the over sized bucket
@@ -1089,7 +1019,7 @@ class GpuMergeAggregateIterator(
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
 
-  private[this] val defaultHashBucketNum = 1600
+  private[this] val defaultHashBucketNum = 16
   private[this] val defaultHashSeed = 107
   private[this] val batchesByBucket =
     ArrayBuffer.fill(defaultHashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
@@ -1168,9 +1098,9 @@ class GpuMergeAggregateIterator(
         && allowNonFullyAggregatedOutput) {
         firstBatchChecked = true
 
-        val peak = firstPassIter.head
+        val peek = firstPassIter.head
         // It's only based on first batch of first pass agg, so it's an estimate
-        val firstPassReductionRatioEstimate = peak.numRows() / localInputRowsCount.value
+        val firstPassReductionRatioEstimate = peek.numRows() / localInputRowsCount.value
         if (firstPassReductionRatioEstimate > skipAggPassReductionRatio) {
           logDebug("Skipping second and third pass aggregation due to " +
             "too high reduction ratio in first pass: " +
@@ -1192,7 +1122,6 @@ class GpuMergeAggregateIterator(
       val repartitionHappened = AggregateUtils.streamMergeAndRepartition(
         firstPassIter, metrics, targetMergeBatchSize, concatAndMergeHelper,
         hashKeys, defaultHashBucketNum, defaultHashSeed, batchesByBucket)
-      println("localInputRowsCount.value: " + localInputRowsCount.value)
       if (repartitionHappened) {
         metrics.numTasksRepartitioned += 1
       }
@@ -1217,16 +1146,11 @@ class GpuMergeAggregateIterator(
             override def hasNext: Boolean = batchesByBucket.exists(_.size() > 0)
 
             override def next(): SpillableColumnarBatch = {
-              val x = batchesByBucket.collectFirst(
+              batchesByBucket.collectFirst(
                 {
                   case bucket if bucket.size() > 0 => bucket.removeLast()
                 }
               ).get
-
-              // todo : remove
-              withResource(x){ _ =>
-                computeAggregateAndClose(metrics, x.getColumnarBatch(), concatAndMergeHelper)
-              }
             }
           }), configuredTargetBatchSize))
         backupIter.get.next
@@ -2336,8 +2260,6 @@ class DynamicGpuPartialAggregateIterator(
         outputBatches = NoopMetric,
         outputRows = NoopMetric)
     }
-
-
 
     // After sorting we want to split the input for the project so that
     // we don't get ourselves in trouble.

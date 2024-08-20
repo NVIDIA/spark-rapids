@@ -109,22 +109,12 @@ def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""
     try:
         _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
-        print('KK hello!!')
-        for line in sys.stdin:
-            if 'q' == line.rstrip():
-                break
-        print(f'KKInput : {line}')
     except:
         sys.stdout.writelines(difflib.unified_diff(
             a=[f"{x}\n" for x in cpu],
             b=[f"{x}\n" for x in gpu],
             fromfile='CPU OUTPUT',
             tofile='GPU OUTPUT'))
-        print('OO hello!!')
-        for line in sys.stdin:
-            if 'q' == line.rstrip():
-                break
-            print(f'OOInput : {line}')
         raise
 
 def _has_incompat_conf(conf):
