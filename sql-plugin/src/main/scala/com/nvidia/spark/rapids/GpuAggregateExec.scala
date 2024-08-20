@@ -254,6 +254,22 @@ object AggregateUtils extends Logging {
           Seq(batch).map(batch => {
             withResource(batch) { _ =>
               val x= batch.getColumnarBatch()
+              if(batch.numRows() > 0) {
+                val c0 = x.column(0).asInstanceOf[GpuColumnVector].
+                  copyToHost()
+                var count = 0
+                for(i <- 0 until x.numRows()) {
+                  val x = c0.getInt(i)
+                  if(x == -1) {
+                    count = count + 1
+                    if(count == 2) {
+                      throw new IllegalStateException("xxxxxxxxxxx")
+                    } else {
+                      println ("yyyy" + count)
+                    }
+                  }
+                }
+              }
               if(batch.numRows() == 2 && xxx) {
               val c0 = x.column(0).asInstanceOf[GpuColumnVector].
                 copyToHost()
@@ -1233,7 +1249,7 @@ class GpuMergeAggregateIterator(
 
   private lazy val concatAndMergeHelper =
     new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
-      forceMerge = true, conf, isSorted = true)
+      forceMerge = true, conf, isSorted = false)
 
   private case class ConcatIterator(
       input: CloseableBufferedIterator[SpillableColumnarBatch],
@@ -2320,6 +2336,8 @@ class DynamicGpuPartialAggregateIterator(
         outputBatches = NoopMetric,
         outputRows = NoopMetric)
     }
+
+
 
     // After sorting we want to split the input for the project so that
     // we don't get ourselves in trouble.

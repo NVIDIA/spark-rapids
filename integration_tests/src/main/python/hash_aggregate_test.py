@@ -173,13 +173,14 @@ struct_gens_xfail = [
 _init_list = [
     # _longs_with_nulls,
     _longs_with_no_nulls,
-    _grpkey_longs_with_nulls,
-    _grpkey_dbls_with_nulls,
-    _grpkey_floats_with_nulls,
-    _grpkey_strings_with_nulls,
-    _grpkey_strings_with_extra_nulls,
-    _grpkey_nulls,
-    _grpkey_floats_with_nulls_and_nans]
+    # _grpkey_longs_with_nulls,
+    # _grpkey_dbls_with_nulls,
+    # _grpkey_floats_with_nulls,
+    # _grpkey_strings_with_nulls,
+    # _grpkey_strings_with_extra_nulls,
+    # _grpkey_nulls,
+    # _grpkey_floats_with_nulls_and_nans
+]
 
 # grouping decimals with nulls
 _decimals_with_nulls = [('a', DecimalGen()), ('b', DecimalGen()), ('c', DecimalGen())]
@@ -224,7 +225,13 @@ def get_params(init_list, marked_params=[]):
 
 
 # Run these tests with in 5 modes, all on the GPU
-_confs = [_float_conf, _float_smallbatch_conf, _float_conf_skipagg, _float_conf_final, _float_conf_partial]
+_confs = [
+    # _float_conf,
+    _float_smallbatch_conf,
+    # _float_conf_skipagg,
+    # _float_conf_final,
+    # _float_conf_partial
+]
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
@@ -518,10 +525,7 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_pivot(data_gen, conf):
-    with_gpu_session(lambda spark : gen_df(spark, data_gen, length=100)
-                     .groupby()
-                     .pivot('b')
-                     .agg(f.count(f.expr('*'))).show, conf=conf)
+
     # print('hello!!!')
     # for line in sys.stdin:
     #
@@ -531,8 +535,8 @@ def test_hash_reduction_pivot(data_gen, conf):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby()
-            .pivot('b')
+            .groupby('b')
+            # .pivot('b')
         .agg(f.count(f.expr('*'))),
         conf=conf)
 

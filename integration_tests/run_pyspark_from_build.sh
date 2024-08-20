@@ -447,6 +447,7 @@ EOF
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
             --conf 'spark.databricks.delta.delta.log.cacheSize='"$deltaCacheSize" \
+            --conf 'spark.rapids.sql.agg.singlePassPartialSortEnabled=false' \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
