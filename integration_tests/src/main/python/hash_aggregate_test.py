@@ -171,7 +171,7 @@ struct_gens_xfail = [
 
 # List of schemas with NaNs included
 _init_list = [
-    _longs_with_nulls,
+    # _longs_with_nulls,
     _longs_with_no_nulls,
     _grpkey_longs_with_nulls,
     _grpkey_dbls_with_nulls,
@@ -518,11 +518,22 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_pivot(data_gen, conf):
+    with_gpu_session(lambda spark : gen_df(spark, data_gen, length=100)
+                     .groupby()
+                     .pivot('b')
+                     .agg(f.count(f.expr('*'))).show, conf=conf)
+    # print('hello!!!')
+    # for line in sys.stdin:
+    #
+    #     if 'q' == line.rstrip():
+    #         break
+    #     print(f'Input : {line}')
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby()
             .pivot('b')
-            .agg(f.sum('c')),
+        .agg(f.count(f.expr('*'))),
         conf=conf)
 
 

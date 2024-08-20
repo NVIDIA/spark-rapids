@@ -115,6 +115,11 @@ def assert_equal(cpu, gpu):
             b=[f"{x}\n" for x in gpu],
             fromfile='CPU OUTPUT',
             tofile='GPU OUTPUT'))
+        print('OO hello!!')
+        for line in sys.stdin:
+            if 'q' == line.rstrip():
+                break
+            print(f'OOInput : {line}')
         raise
 
 def _has_incompat_conf(conf):
