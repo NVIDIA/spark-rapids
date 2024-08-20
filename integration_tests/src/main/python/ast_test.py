@@ -191,14 +191,12 @@ def test_atan(data_descr):
 @approximate_float
 @pytest.mark.parametrize('data_descr', [(double_gen, False)], ids=idfn)
 def test_asinh(data_descr):
-    assert_unary_ast(data_descr, lambda df: df.selectExpr('asinh(a)'),
-                     conf={'spark.rapids.sql.improvedFloatOps.enabled': 'false'})
+    assert_unary_ast(data_descr, lambda df: df.selectExpr('asinh(a)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_descr', ast_double_descr, ids=idfn)
 def test_acosh(data_descr):
-    assert_unary_ast(data_descr, lambda df: df.selectExpr('acosh(a)'),
-                     conf={'spark.rapids.sql.improvedFloatOps.enabled': 'false'})
+    assert_unary_ast(data_descr, lambda df: df.selectExpr('acosh(a)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_descr', ast_double_descr, ids=idfn)
@@ -213,7 +211,7 @@ def test_atanh(data_descr):
 @pytest.mark.parametrize('data_descr', [(DoubleGen(min_exp=-20, max_exp=20), True)], ids=idfn)
 def test_asinh_improved(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('asinh(a)'),
-                     conf={'spark.rapids.sql.improvedFloatOps.enabled': 'true'})
+        conf={'spark.rapids.sql.improvedFloatOps.enabled': 'true'})
 
 # The default approximate is 1e-6 or 1 in a million
 # in some cases we need to adjust this because the algorithm is different

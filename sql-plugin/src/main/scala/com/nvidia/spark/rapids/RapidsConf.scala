@@ -15,18 +15,15 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{BufferedOutputStream, DataOutputStream, File, FileOutputStream}
-import java.nio.charset.StandardCharsets
+import java.io.{File, FileOutputStream}
 import java.util
-import java.util.Locale
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
-import org.json4s.DefaultFormats
-import org.json4s.jackson.Serialization.writePretty
-import scala.collection.JavaConverters._
-import scala.collection.mutable.{HashMap, ListBuffer}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -127,7 +124,6 @@ abstract class ConfEntry[T](val key: String, val converter: String => T, val doc
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
-  def getDefault(): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -149,10 +145,6 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
     } else {
       converter(tmp)
     }
-  }
-
-  override def getDefault(): T = {
-    defaultValue
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -188,10 +180,6 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
     } else {
       Some(rawConverter(tmp))
     }
-  }
-
-  override def getDefault(): Option[T] = {
-    None
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -677,10 +665,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val USE_SHUFFLED_SYMMETRIC_HASH_JOIN = conf("spark.rapids.sql.join.useShuffledSymmetricHashJoin")
     .doc("Use the experimental shuffle symmetric hash join designed to improve handling of large " +
-      "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
+      "symmetric joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
     .internal()
     .booleanConf
     .createWithDefault(true)
+
+  val USE_SHUFFLED_ASYMMETRIC_HASH_JOIN =
+    conf("spark.rapids.sql.join.useShuffledAsymmetricHashJoin")
+      .doc("Use the experimental shuffle asymmetric hash join designed to improve handling of " +
+        "large joins for left and right outer joins. Requires " +
+        "spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true and " +
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin=true")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val JOIN_OUTER_MAGNIFICATION_THRESHOLD =
+    conf("spark.rapids.sql.join.outer.magnificationFactorThreshold")
+      .doc("The magnification factor threshold at which outer joins will consider using the " +
+        "unnatural side of the join to build the hash table")
+      .internal()
+      .integerConf
+      .createWithDefault(10000)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -2386,17 +2392,6 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     println("-----|-----------------|-------------|---------------|------")
   }
 
-  /**
-   * Returns all spark-rapids configs with their default values.
-   * This function is used to dump default configs, so that they
-   * could be used by the integration test.
-   */
-  def getAllConfigsWithDefault: Map[String, Any] = {
-    val allConfs = registeredConfs.clone()
-    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
-    allConfs.map(e => e.key -> e.getDefault).toMap
-  }
-
   def help(asTable: Boolean = false): Unit = {
     helpCommon(asTable)
     helpAdvanced(asTable)
@@ -2546,49 +2541,6 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       }
     }
   }
-
-  object Format extends Enumeration {
-    type Format = Value
-    val PLAIN, JSON = Value
-  }
-
-  def dumpConfigsWithDefault(formatName: String, outputPath: String): Unit = {
-    import com.nvidia.spark.rapids.Arm._
-
-    val format = Format.withName(formatName.toUpperCase(Locale.US))
-
-    println(s"Dumping all spark-rapids configs and their defaults at ${outputPath}")
-
-    val allConfs = getAllConfigsWithDefault
-    withResource(new FileOutputStream(outputPath)) { fos =>
-      withResource(new BufferedOutputStream(fos)) { bos =>
-        format match {
-          case Format.PLAIN =>
-            withResource(new DataOutputStream(bos)) { dos =>
-              allConfs.foreach( { case (k, v) =>
-                val valStr = v match {
-                  case Some(optVal) => optVal.toString
-                  case None => ""
-                  case _ =>
-                    if (v == null) {
-                      ""
-                    } else {
-                      v.toString
-                    }
-                }
-                dos.writeUTF(s"'${k}': '${valStr}',")
-              })
-            }
-          case Format.JSON =>
-            implicit val formats: DefaultFormats.type = DefaultFormats
-            bos.write(writePretty(allConfs)
-              .getBytes(StandardCharsets.UTF_8))
-          case _ =>
-            System.err.println(s"Unknown format: ${format}")
-        }
-      }
-    }
-  }
 }
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
@@ -2646,6 +2598,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
   lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
+
+  lazy val useShuffledAsymmetricHashJoin: Boolean =
+    get(USE_SHUFFLED_ASYMMETRIC_HASH_JOIN)
+
+  lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
