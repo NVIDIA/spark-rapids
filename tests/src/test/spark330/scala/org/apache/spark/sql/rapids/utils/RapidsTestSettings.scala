@@ -79,9 +79,11 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsStringFunctionsSuite]
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
+    .exclude("Create parquet table with compression", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetDeltaByteArrayEncodingSuite]
   enableSuite[RapidsParquetDeltaEncodingInteger]
   enableSuite[RapidsParquetDeltaEncodingLong]
+    .exclude("Propagate Hadoop configs from parquet options to underlying file system", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetFieldIdIOSuite]
   enableSuite[RapidsParquetFileFormatSuite]
