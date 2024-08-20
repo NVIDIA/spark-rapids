@@ -687,12 +687,12 @@
 
     <properties>
         <!-- start dyn.shim properties -->
-        <!-- #if scala-2.12 -->
         <dyn.shim.excluded.releases/>
+        <expression>all.buildvers</expression>
+        <!-- #if scala-2.12 -->
         <dyn.shim.rundir>${maven.multiModuleProjectDirectory}</dyn.shim.rundir>
         <!-- #endif scala-2.12 -->
         <!-- #if scala-2.13 --><!--
-        <dyn.shim.excluded.releases/>
         <dyn.shim.rundir>${maven.multiModuleProjectDirectory}/..</dyn.shim.rundir>
         --><!-- #endif scala-2.13 -->
         <!-- end dyn.shim properties -->
@@ -1068,18 +1068,18 @@
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>3.1.0</version>
                   <executions>
-                      <execution>
-                          <id>get-buildvers</id>
-                          <goals>
-                              <goal>run</goal>
-                          </goals>
-                          <configuration>
-                              <target xmlns:ac="antlib:net.sf.antcontrib">
-                                  <property name="expression" value="${expression}"/>
-                                  <script language="jython" src="${dyn.shim.rundir}/build/dyn_shim_detection.py"/>
-                              </target>
-                          </configuration>
-                      </execution>
+                    <execution>
+                        <id>get-buildvers</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target xmlns:ac="antlib:net.sf.antcontrib">
+                                <property name="expression" value="${expression}"/>
+                                <script language="jython" src="${dyn.shim.rundir}/build/dyn_shim_detection.py"/>
+                            </target>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>shimplify-shim-sources</id>
                         <goals><goal>run</goal></goals>
@@ -1186,7 +1186,7 @@ This will force full Scala code rebuild in downstream modules.
                             </target>
                         </configuration>
                     </execution>
-                  </executions>
+                </executions>
                 <dependencies>
                     <dependency>
                         <groupId>org.apache.ant</groupId>

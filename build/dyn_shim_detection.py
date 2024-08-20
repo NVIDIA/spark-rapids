@@ -14,7 +14,6 @@
 
 import logging
 import os
-import subprocess
 import xml.etree.ElementTree as ET
 
 _log = logging.getLogger("dyn-shim-detection")
@@ -28,13 +27,14 @@ _log.addHandler(ch)
 multi_module_project_dir = project.getProperty("maven.multiModuleProjectDirectory")
 expression = project.getProperty("expression")
 
-def __get_buildver(pom, expression):
+def _get_buildver(pom, expression):
     pom = ET.parse(pom)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []
+    release_prefix = "release"
     for profile in pom.findall("//pom:profile/pom:id", ns):
-       if profile.text.startswith("release"):
-            releases.append(profile.text[7:])
+       if profile.text.startswith(release_prefix):
+            releases.append(profile.text[len(release_prefix):])
     snapshots = []
     no_snapshots = []
 
@@ -44,41 +44,37 @@ def __get_buildver(pom, expression):
             snapshots.append(release)
         else:
             no_snapshots.append(release)
-    try:
-        excluded_shims = project.getProperty("dyn.shim.excluded.releases")
-        if (excluded_shims):
-            for removed_shim in [x.strip() for x in excluded_shims.split(",")]:
-                if (removed_shim not in snapshots and removed_shim not in no_snapshots):
-                    raise Exception("Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(removed_shim))
-                try:
-                    snapshots.remove(removed_shim)
-                except ValueError:
-                    pass
-                try:
-                    no_snapshots.remove(removed_shim)
-                except ValueError:
-                    pass
+    excluded_shims = project.getProperty("dyn.shim.excluded.releases")
+    if (excluded_shims):
+        for removed_shim in [x.strip() for x in excluded_shims.split(",")]:
+            if (removed_shim not in snapshots and removed_shim not in no_snapshots):
+                raise Exception("Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(removed_shim))
+            try:
+                snapshots.remove(removed_shim)
+            except ValueError:
+                pass
+            try:
+                no_snapshots.remove(removed_shim)
+            except ValueError:
+                pass
 
 
-        if multi_module_project_dir.endswith("scala2.13"):
-            no_snapshots = filter(lambda x: not x.endswith("cdh"), no_snapshots)
-        db_release = filter(lambda x: x.endswith("db"), no_snapshots)
-        no_snapshots = filter(lambda x: not x.endswith("db"), no_snapshots)
-        snap_and_no_snap = no_snapshots + snapshots
-        all = snap_and_no_snap + db_release
-        release_dict={}
-        release_dict["databricks.buildvers"]=" ".join(db_release)
-        release_dict["snapshots.buildvers"]=" ".join(snapshots)
-        release_dict["no_snapshots.buildvers"]=" ".join(no_snapshots)
-        release_dict["snap_and_no_snap.buildvers"]=" ".join(snap_and_no_snap)
-        release_dict["all.buildvers"]=" ".join(all)
-        _log.debug("release_dict: {}".format(release_dict))
-        if (expression):
-            return release_dict[expression]
+    if multi_module_project_dir.endswith("scala2.13"):
+        no_snapshots = filter(lambda x: not x.endswith("cdh"), no_snapshots)
+    db_release = filter(lambda x: x.endswith("db"), no_snapshots)
+    no_snapshots = filter(lambda x: not x.endswith("db"), no_snapshots)
+    snap_and_no_snap = no_snapshots + snapshots
+    all = snap_and_no_snap + db_release
+    release_dict={}
+    release_dict["databricks.buildvers"]=" ".join(db_release)
+    release_dict["snapshots.buildvers"]=" ".join(snapshots)
+    release_dict["no_snapshots.buildvers"]=" ".join(no_snapshots)
+    release_dict["snap_and_no_snap.buildvers"]=" ".join(snap_and_no_snap)
+    release_dict["all.buildvers"]=" ".join(all)
+    _log.debug("release_dict: {}".format(release_dict))
+    if (expression):
+        return release_dict[expression]
 
-    except subprocess.CalledProcessError as e:
-        _log.error("Error:", e.output)
-
-value=__get_buildver("{}/pom.xml".format(multi_module_project_dir), expression)
+value=_get_buildver("{}/pom.xml".format(multi_module_project_dir), expression)
 project.setProperty(expression, value)
 print(value)
