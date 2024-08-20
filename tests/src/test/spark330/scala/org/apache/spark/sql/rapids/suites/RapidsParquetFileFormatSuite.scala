@@ -22,6 +22,4 @@ package org.apache.spark.sql.rapids.suites
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormatSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
-class RapidsParquetFileFormatSuite
-  extends ParquetFileFormatSuite
-    with RapidsSQLTestsBaseTrait {}
+class RapidsParquetFileFormatSuite extends ParquetFileFormatSuite with RapidsSQLTestsBaseTrait {}

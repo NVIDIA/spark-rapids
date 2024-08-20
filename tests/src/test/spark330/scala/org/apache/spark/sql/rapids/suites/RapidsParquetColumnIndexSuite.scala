@@ -23,7 +23,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.datasources.parquet.ParquetColumnIndexSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
-class RapidsParquetColumnIndexSuite extends ParquetColumnIndexSuite with RapidsSQLTestsBaseTrait{
+class RapidsParquetColumnIndexSuite extends ParquetColumnIndexSuite with RapidsSQLTestsBaseTrait {
   private val actions: Seq[DataFrame => DataFrame] = Seq(
     "_1 = 500",
     "_1 = 500 or _1 = 1500",

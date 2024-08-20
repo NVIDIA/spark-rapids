@@ -22,6 +22,4 @@ package org.apache.spark.sql.rapids.suites
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFieldIdIOSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
-class RapidsParquetFieldIdIOSuite
-  extends ParquetFieldIdIOSuite
-    with RapidsSQLTestsBaseTrait {}
+class RapidsParquetFieldIdIOSuite extends ParquetFieldIdIOSuite with RapidsSQLTestsBaseTrait {}
