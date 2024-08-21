@@ -29,7 +29,8 @@ import scala.util.Random
 
 import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, XXH64}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, UnaryExpression, XXH64}
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, DateTimeUtils}
 import org.apache.spark.sql.functions.{approx_count_distinct, avg, coalesce, col, count, lit, stddev, struct, transform, udf, when}
 import org.apache.spark.sql.types._
@@ -577,7 +578,8 @@ object DataGen {
 case class DataGenExpr(child: Expression,
     override val dataType: DataType,
     canHaveNulls: Boolean,
-    f: GeneratorFunction) extends DataGenExprBase {
+    f: GeneratorFunction)
+    extends UnaryExpression with ExpectsInputTypes with CodegenFallback {
 
   override def nullable: Boolean = canHaveNulls
 
@@ -587,6 +589,9 @@ case class DataGenExpr(child: Expression,
     val rowLoc = new RowLocation(child.eval(input).asInstanceOf[Long])
     f(rowLoc)
   }
+
+  override def withNewChildInternal(newChild: Expression): Expression =
+    DataGenExpr(newChild, dataType, canHaveNulls, f)
 }
 
 abstract class CommonDataGen(
@@ -2670,7 +2675,9 @@ object ColumnGen {
       dataType: DataType,
       nullable: Boolean,
       gen: GeneratorFunction): Column = {
-    Column(DataGenExpr(rowNumber.expr, dataType, nullable, gen))
+    val rowNumberExpr = DataGenExprShims.columnToExpr(rowNumber)
+    val expr = DataGenExpr(rowNumberExpr, dataType, nullable, gen)
+    DataGenExprShims.exprToColumn(expr)
   }
 }
 
