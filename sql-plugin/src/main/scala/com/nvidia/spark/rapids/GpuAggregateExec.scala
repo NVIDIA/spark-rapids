@@ -284,14 +284,14 @@ object AggregateUtils extends Logging {
     if (repartitionHappened &&
       batchesByBucket.exists(
         bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize &&
-          bucket.map(_.numRows()).sum != 1
+          bucket.size() != 1
       )
     ) {
       logDebug("Some of the repartition buckets are over sized, trying to split them")
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
         if (bucket.map(_.sizeInBytes).sum > targetMergeBatchSize
-          && bucket.map(_.numRows()).sum != 1) {
+          && bucket.size != 1) {
           val nextLayerBuckets =
             ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
           // Recursively merge and repartition the over sized bucket
