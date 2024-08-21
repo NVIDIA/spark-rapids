@@ -1387,9 +1387,9 @@ def test_hash_groupby_with_minby_debug_bipair():
 
 @ignore_order(local=True)
 def test_hash_groupby_with_minby_debug_normal():
-    gen_b = LongGen(special_cases=[(None, 20)])
+    gen_b = LongGen()
     # gen_c = StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])
-    gen_c = SetValuesGen(FloatType(), [None, 1.1])
+    gen_c = LongGen()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, byte_gen, gen_b, gen_c)
             .groupby('a').agg(f.min_by('b', 'c')))

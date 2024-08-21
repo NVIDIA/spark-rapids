@@ -2024,6 +2024,32 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
   override def prettyName: String = "var_samp"
 }
 
+case class GpuReplaceNullmask(input: Expression, mask: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = input.dataType
+
+  override def nullable: Boolean = input.nullable
+
+  override def left = input
+
+  override def right = mask
+
+  override def doColumnar(input: GpuColumnVector, mask: GpuColumnVector): ColumnVector = {
+    withResource(mask.getBase.isNotNull) { maskColumn =>
+      input.getBase.copyWithBooleanColumnAsValidity(maskColumn)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = 
+    throw new UnsupportedOperationException("This should not be called")
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException("This should not be called")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException("This should not be called")
+}
+
 object CudfMaxMinBy {
   val KEY_ORDERING: String = "_key_ordering"
   val KEY_VALUE: String = "_key_value"
@@ -2059,7 +2085,7 @@ class CudfMaxBy(valueType: DataType, orderingType: DataType)
   override val name: String = "CudfMaxBy"
   override lazy val sortOrder: Int => cudf.OrderByArg =
     i => cudf.OrderByArg.desc(i, true)
-  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.maxBy()
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.max()
 }
 
 class CudfMinBy(valueType: DataType, orderingType: DataType)
@@ -2068,7 +2094,7 @@ class CudfMinBy(valueType: DataType, orderingType: DataType)
   override val name: String = "CudfMinBy"
   override lazy val sortOrder: Int => cudf.OrderByArg =
     i => cudf.OrderByArg.asc(i, false)
-  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.minBy()
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.min()
 }
 
 abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
@@ -2084,10 +2110,12 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Cudf allows only one column as input, so wrap value and ordering columns by
   // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression =
+  private def createStructExpression(order: Expression, value: Expression): Expression = 
+    GpuReplaceNullmask(
     GpuCreateNamedStruct(Seq(
       GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
-      GpuLiteral(CudfMaxMinBy.KEY_VALUE, StringType), value))
+      GpuLiteral(CudfMaxMinBy.KEY_VALUE, StringType), value)),
+    order)
 
   // Extract the value and ordering columns from cuDF results
   // to match the expectation of Spark.
