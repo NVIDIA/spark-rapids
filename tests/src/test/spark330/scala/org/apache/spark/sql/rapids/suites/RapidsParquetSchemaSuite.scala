@@ -19,7 +19,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.datasources.parquet.ParquetSchemaSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
