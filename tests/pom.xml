@@ -33,7 +33,6 @@
         <rapids.module>tests</rapids.module>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
-        <parquet.version>1.12.2</parquet.version>
     </properties>
 
     <dependencies>
