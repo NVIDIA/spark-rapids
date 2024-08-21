@@ -154,7 +154,7 @@ object AggregateUtils extends Logging {
    * and repartition them into buckets. Each bucket will be less or equal to targetMergeBatchSize
    */
   def streamMergeAndRepartition(
-      aggregatedBatches: Iterator[SpillableColumnarBatch],
+      aggregatedBatches: CloseableBufferedIterator[SpillableColumnarBatch],
       metrics: GpuHashAggregateMetrics,
       targetMergeBatchSize: Long,
       helper: AggHelper,
@@ -252,20 +252,20 @@ object AggregateUtils extends Logging {
     }
 
     while (aggregatedBatches.hasNext) {
-      val next = aggregatedBatches.next()
-      if (next.sizeInBytes >= targetMergeBatchSize &&
-        (next.numRows() != 1) // for tests where a batch contains only 1 row
+      val peek = aggregatedBatches.head
+      if (peek.sizeInBytes >= targetMergeBatchSize &&
+        (peek.numRows() != 1) // for tests where a batch contains only 1 row
       ) {
-        repartitionAndClose(next)
+        repartitionAndClose(aggregatedBatches.next)
       } else {
-        sizeSoFar += next.sizeInBytes
+        sizeSoFar += peek.sizeInBytes
         if (sizeSoFar > targetMergeBatchSize &&
-          !(batchesToConcat ++ Seq(next)).forall(_.numRows() == 1) // for tests
+          !(batchesToConcat ++ Seq(peek)).forall(_.numRows() == 1) // for tests
         ) {
           handleBatchesToConcat()
-          sizeSoFar = next.sizeInBytes
+          sizeSoFar = peek.sizeInBytes
         }
-        batchesToConcat += next
+        batchesToConcat += aggregatedBatches.next
       }
     }
 
@@ -297,7 +297,7 @@ object AggregateUtils extends Logging {
           // Recursively merge and repartition the over sized bucket
           repartitionHappened =
             streamMergeAndRepartition(
-              bucket.iterator, metrics, targetMergeBatchSize,
+              new CloseableBufferedIterator(bucket.iterator), metrics, targetMergeBatchSize,
               helper, hashKeys, hashBucketNum, hashSeed + 7,
               nextLayerBuckets) || repartitionHappened
           nextLayerBuckets
@@ -1066,10 +1066,14 @@ class GpuMergeAggregateIterator(
       withResource(new NvtxWithMetrics("RepartitionAggregateIterator.next",
         NvtxColor.BLUE, opTime)) { _ =>
 
-        val oneBucket = batchesByBucket.remove(batchesByBucket.size - 1)
-
-        withResource(oneBucket) { _ =>
-          AggregateUtils.concatenateAndMerge(oneBucket.data, metrics, concatAndMergeHelper)
+        withResource(batchesByBucket.remove(batchesByBucket.size - 1)) { oneBucket =>
+          if (oneBucket.size > 1) {
+            AggregateUtils.concatenateAndMerge(oneBucket.data, metrics, concatAndMergeHelper)
+          } else if (oneBucket.size() == 1) {
+            oneBucket.removeLast()
+          } else {
+            throw new IllegalStateException("Empty bucket found")
+          }
         }
       }
     }
