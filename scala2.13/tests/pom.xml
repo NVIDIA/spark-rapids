@@ -156,6 +156,13 @@
                     <version>3.1.0.0-RC2</version>
                     <scope>test</scope>
                 </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-column</artifactId>
+                    <version>${parquet.hadoop.version}</version>
+                    <scope>test</scope>
+                    <classifier>tests</classifier>
+                </dependency>
             </dependencies>
         </profile>
     </profiles>
