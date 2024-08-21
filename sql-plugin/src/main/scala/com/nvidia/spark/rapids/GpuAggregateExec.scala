@@ -175,14 +175,15 @@ object AggregateUtils extends Logging {
 
     def repartitionAndClose(batch: SpillableColumnarBatch): Unit = {
 
-      //      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)
-      //          && stagingBatch.isEmpty && batchesToConcat.isEmpty) {
-      //        // If this is the only batch (after merging neighbours) to be repartitioned,
-      //        // we can just add it to the first bucket and skip repartitioning.
-      //        // This is a common case when total input size can fit into a single batch.
-      //        batchesByBucket.head.append(batch)
-      //        return
-      //      }
+      // OPTIMIZATION
+      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)
+        && stagingBatch.isEmpty && batchesToConcat.isEmpty) {
+        // If this is the only batch (after merging neighbours) to be repartitioned,
+        // we can just add it to the first bucket and skip repartitioning.
+        // This is a common case when total input size can fit into a single batch.
+        batchesByBucket.head.append(batch)
+        return
+      }
 
       withResource(new NvtxWithMetrics("agg repartition",
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
@@ -219,8 +220,9 @@ object AggregateUtils extends Logging {
         throw new IllegalStateException("No batches to concatenate")
       }
       if (batchesToConcat.size == 1) {
-        repartitionAndClose(batchesToConcat.head)
+        val head = batchesToConcat.head
         batchesToConcat.clear()
+        repartitionAndClose(head)
         return
       }
 
@@ -270,7 +272,13 @@ object AggregateUtils extends Logging {
     if (batchesToConcat.nonEmpty) {
       handleBatchesToConcat()
     }
-    stagingBatch.foreach(repartitionAndClose)
+    if (stagingBatch.nonEmpty) {
+      // cannot use stagingBatch.foreach(repartitionAndClose) here,
+      // as in repartitionAndClose it checks stagingBatch.isEmpty
+      val temp = stagingBatch.get
+      stagingBatch = None
+      repartitionAndClose(temp)
+    }
 
     // Deal with the over sized buckets
     if (repartitionHappened &&
@@ -924,7 +932,7 @@ class GpuMergeAggregateIterator(
 
   private[this] var bucketIter: Option[RepartitionAggregateIterator] = None
 
-  private[this] var backupIter: Option[Iterator[ColumnarBatch]] = None
+  private[this] var realIter: Option[Iterator[ColumnarBatch]] = None
 
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
@@ -937,14 +945,14 @@ class GpuMergeAggregateIterator(
   }
 
   override def hasNext: Boolean = {
-    backupIter.map(_.hasNext).getOrElse {
+    realIter.map(_.hasNext).getOrElse {
       // reductions produce a result even if the input is empty
       hasReductionOnlyBatch || firstPassIter.hasNext
     }
   }
 
   override def next(): ColumnarBatch = {
-    backupIter.map(_.next()).getOrElse {
+    realIter.map(_.next()).getOrElse {
 
       // Handle reduction-only aggregation
       if (isReductionOnly) {
@@ -980,8 +988,8 @@ class GpuMergeAggregateIterator(
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
 
-          backupIter = Some(ConcatIterator.apply(firstPassIter, configuredTargetBatchSize))
-          return backupIter.get.next()
+          realIter = Some(ConcatIterator.apply(firstPassIter, configuredTargetBatchSize))
+          return realIter.get.next()
         }
       }
       firstBatchChecked = true
@@ -999,35 +1007,9 @@ class GpuMergeAggregateIterator(
         metrics.numTasksRepartitioned += 1
       }
 
-      val totalRows = batchesByBucket.flatMap(_.map(_.numRows())).sum
-      if (batchesByBucket.exists(_.size() > 1)) {
-        // Unable to merge to a single output, so must fall back
-        backupIter = Some(ConcatIterator.apply(
-          new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
-        backupIter.get.next()
-      } else if (totalRows == 0) {
-        throw new NoSuchElementException("batches exhausted")
-      } else {
-        hasReductionOnlyBatch = false
-        // None of bucket has more than one batch, so we can just return the single batch
-        // This is the "most happy path", containing 2 situations:
-        // 1) repartition happened, but all buckets have <= 1 batch
-        // 2) repartition didn't happen, only first bucket contains a single batch
-        backupIter = Some(ConcatIterator.apply(
-          new CloseableBufferedIterator(
-          new Iterator[SpillableColumnarBatch] {
-            override def hasNext: Boolean = batchesByBucket.exists(_.size() > 0)
-
-            override def next(): SpillableColumnarBatch = {
-              batchesByBucket.collectFirst(
-                {
-                  case bucket if bucket.size() > 0 => bucket.removeLast()
-                }
-              ).get
-            }
-          }), configuredTargetBatchSize))
-        backupIter.get.next
-      }
+      realIter = Some(ConcatIterator.apply(
+        new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
+      realIter.get.next()
     }
   }
 
