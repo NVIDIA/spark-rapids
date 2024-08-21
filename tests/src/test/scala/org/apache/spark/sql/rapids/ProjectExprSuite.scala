@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids
 
 import java.io.File
 import java.nio.file.Files
 
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito.{mock, spy, when}
@@ -30,8 +31,8 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuAdd
 import org.apache.spark.sql.types._
+
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
@@ -186,12 +187,12 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         lit(Array("a", "b", null, "")),
         lit(Array(Array(1, 2), null, Array(3, 4))),
         lit(Array(Array(Array(1, 2), Array(2, 3), null), null)),
-        new Column(Literal.create(Array(Row(1, "s1"), Row(2, "s2"), null),
+        Column(Literal.create(Array(Row(1, "s1"), Row(2, "s2"), null),
           ArrayType(StructType(
             Array(StructField("id", IntegerType), StructField("name", StringType)))))),
-        new Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
+        Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
           ArrayType(DecimalType(10, 2)))),
-        new Column(Literal.create(List(BigDecimal("1234567890123456789012345678")),
+        Column(Literal.create(List(BigDecimal("1234567890123456789012345678")),
           ArrayType(DecimalType(30, 2))))
       )
           .selectExpr("*", "array(null)", "array(array(null))", "array()")

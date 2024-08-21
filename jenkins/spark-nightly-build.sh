@@ -110,7 +110,7 @@ function distWithReducedPom {
 SKIP_TESTS=${SKIP_TESTS:-"false"}
 
 set +H # turn off history expansion
-DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"!${DIST_PL}"} # TODO: deploy only required submodules to save time
+DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"integration_tests"}
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \

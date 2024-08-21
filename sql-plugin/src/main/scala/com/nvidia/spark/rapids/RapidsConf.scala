@@ -665,10 +665,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val USE_SHUFFLED_SYMMETRIC_HASH_JOIN = conf("spark.rapids.sql.join.useShuffledSymmetricHashJoin")
     .doc("Use the experimental shuffle symmetric hash join designed to improve handling of large " +
-      "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
+      "symmetric joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
     .internal()
     .booleanConf
     .createWithDefault(true)
+
+  val USE_SHUFFLED_ASYMMETRIC_HASH_JOIN =
+    conf("spark.rapids.sql.join.useShuffledAsymmetricHashJoin")
+      .doc("Use the experimental shuffle asymmetric hash join designed to improve handling of " +
+        "large joins for left and right outer joins. Requires " +
+        "spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true and " +
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin=true")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val JOIN_OUTER_MAGNIFICATION_THRESHOLD =
+    conf("spark.rapids.sql.join.outer.magnificationFactorThreshold")
+      .doc("The magnification factor threshold at which outer joins will consider using the " +
+        "unnatural side of the join to build the hash table")
+      .internal()
+      .integerConf
+      .createWithDefault(10000)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -1014,15 +1032,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .booleanConf
       .createWithDefault(true)
-
-  val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getJsonObject.legacy.enabled")
-      .doc("When set to true, the get_json_object function will use the legacy implementation " +
-          "on the GPU. The legacy implementation is faster than the current implementation, but " +
-          "it has several incompatibilities and bugs, including no input validation, escapes are " +
-          "not properly processed for Strings, and non-string output is not normalized.")
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
 
   // FILE FORMATS
   val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
@@ -2590,6 +2599,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
 
+  lazy val useShuffledAsymmetricHashJoin: Boolean =
+    get(USE_SHUFFLED_ASYMMETRIC_HASH_JOIN)
+
+  lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
+
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isFileScanPrunePartitionEnabled: Boolean = get(FILE_SCAN_PRUNE_PARTITION_ENABLED)
@@ -2829,9 +2843,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-
-  lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
-
+  
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {

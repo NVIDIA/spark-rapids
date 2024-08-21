@@ -43,6 +43,7 @@ import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSeq, AttributeSet, BindReferences, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile}
@@ -233,7 +234,10 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     val requestedCols = requestedAttributes.filter(a => !partitionKeys.contains(a.name))
                                            .toList
     val distinctColumns = requestedCols.distinct
-    val distinctFields  = distinctColumns.map(a => tableSchema.apply(a.name))
+    // In hive column names are case-insensitive but the default tableSchema lookup is
+    // case-sensitive
+    val fieldMap = CaseInsensitiveMap(tableSchema.map(f => (f.name, f)).toMap)
+    val distinctFields  = distinctColumns.map(a => fieldMap(a.name))
     StructType(distinctFields)
   }
 

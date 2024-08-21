@@ -123,6 +123,10 @@ def _decode_jsons(json_data):
     jsons.sort(key=json_to_sort_key)
     return jsons
 
+def read_delta_logs(spark, path):
+    log_data = spark.sparkContext.wholeTextFiles(path).collect()
+    return dict([(os.path.basename(x), _decode_jsons(y)) for x, y in log_data])
+
 def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
     cpu_log_data = spark.sparkContext.wholeTextFiles(data_path + "/CPU/_delta_log/*").collect()
     gpu_log_data = spark.sparkContext.wholeTextFiles(data_path + "/GPU/_delta_log/*").collect()
