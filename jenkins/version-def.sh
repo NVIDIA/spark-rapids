@@ -59,14 +59,14 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
 }
 
 function set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES() {
-   versionStr=$(mvn -B -q -pl . $2 -Dexpression=$1 -DforceStdout antrun:run@get-buildvers)
+   versionStr=$(python build/get_buildvers.py $1 $2)
    SPARK_SHIM_VERSIONS_STR=$(echo -n $versionStr)
    <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
 
-pom=""
+pom="pom.xml"
 if [[ $SCALA_BINARY_VER == "2.13" ]]; then
-    pom="-f scala2.13"
+    pom="scala2.13/pom.xml"
 fi
 
 # Psnapshots: snapshots + noSnapshots
