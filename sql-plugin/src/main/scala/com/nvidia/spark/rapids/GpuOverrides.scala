@@ -2281,8 +2281,8 @@ object GpuOverrides extends Logging {
           ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
             + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
             TypeSig.all),
-          ParamCheck("ordering", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
-            + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
             TypeSig.orderable))
       ),
       (maxBy, conf, p, r) => new AggExprMeta[MaxBy](maxBy, conf, p, r) {
@@ -2308,8 +2308,8 @@ object GpuOverrides extends Logging {
           ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
             + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
             TypeSig.all),
-          ParamCheck("ordering", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
-            + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
             TypeSig.orderable))
       ),
       (minBy, conf, p, r) => new AggExprMeta[MinBy](minBy, conf, p, r) {

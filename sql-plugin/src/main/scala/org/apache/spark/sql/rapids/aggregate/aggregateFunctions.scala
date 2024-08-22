@@ -2024,30 +2024,24 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
   override def prettyName: String = "var_samp"
 }
 
-case class GpuReplaceNullmask(input: Expression, mask: Expression) extends GpuBinaryExpression {
+case class GpuReplaceNullmask(
+    input: Expression, 
+    mask: Expression) extends GpuExpression with ShimExpression {
 
   override def dataType: DataType = input.dataType
+  override def nullable: Boolean = mask.nullable
+  override def children: Seq[Expression] = Seq(input, mask)
 
-  override def nullable: Boolean = input.nullable
-
-  override def left = input
-
-  override def right = mask
-
-  override def doColumnar(input: GpuColumnVector, mask: GpuColumnVector): ColumnVector = {
-    withResource(mask.getBase.isNotNull) { maskColumn =>
-      input.getBase.copyWithBooleanColumnAsValidity(maskColumn)
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val res = withResource(input.columnarEval(batch)) { inputColumn =>
+      withResource(mask.columnarEval(batch)) { maskColumn =>
+        withResource(maskColumn.getBase.isNotNull) { maskColumnNotNull =>
+          inputColumn.getBase.copyWithBooleanColumnAsValidity(maskColumnNotNull)
+        }
+      }
     }
+    GpuColumnVector.from(res, dataType)
   }
-
-  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = 
-    throw new UnsupportedOperationException("This should not be called")
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new UnsupportedOperationException("This should not be called")
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
-    throw new UnsupportedOperationException("This should not be called")
 }
 
 object CudfMaxMinBy {
@@ -2061,16 +2055,17 @@ abstract class CudfMaxMinByAggregate(
 
   protected val sortOrder: Int => cudf.OrderByArg
 
-  // This is a short term solution. and better to have a dedicate reduction for this.
+  protected val reductionAggregation: ReductionAggregation
+
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = col => {
     val orderCol = col.getChildColumnView(0).copyToColumnVector()
     val tmpTable = withResource(orderCol)(_ =>new cudf.Table(orderCol, col))
     val sorted = withResource(tmpTable) { _ =>
       // columns in table [order, original struct]
-      tmpTable.orderBy(sortOrder(1))
+      tmpTable.orderBy(sortOrder(0))
     }
     withResource(sorted) { _ =>
-      sorted.getColumn(0).reduce(ReductionAggregation.nth(0, NullPolicy.INCLUDE))
+      sorted.getColumn(1).reduce(reductionAggregation)
     }
   }
 
@@ -2086,6 +2081,7 @@ class CudfMaxBy(valueType: DataType, orderingType: DataType)
   override lazy val sortOrder: Int => cudf.OrderByArg =
     i => cudf.OrderByArg.desc(i, true)
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.max()
+  override lazy val reductionAggregation: ReductionAggregation = ReductionAggregation.max()
 }
 
 class CudfMinBy(valueType: DataType, orderingType: DataType)
@@ -2095,6 +2091,7 @@ class CudfMinBy(valueType: DataType, orderingType: DataType)
   override lazy val sortOrder: Int => cudf.OrderByArg =
     i => cudf.OrderByArg.asc(i, false)
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.min()
+  override lazy val reductionAggregation: ReductionAggregation = ReductionAggregation.min()
 }
 
 abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
