@@ -59,7 +59,9 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     try {
       val condition = lock.newCondition()
       while (!canAcquire(numPermits)) {
-        waitingQueue.enqueue(ThreadInfo(priority, condition))
+        if (!waitingQueue.exists(_.condition == condition)) {
+          waitingQueue.enqueue(ThreadInfo(priority, condition))
+        }
         condition.await()
       }
       commitAcquire(numPermits)
