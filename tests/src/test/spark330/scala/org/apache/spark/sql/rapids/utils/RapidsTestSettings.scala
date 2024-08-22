@@ -84,6 +84,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("To be added"))
     .exclude("parquet timestamp conversion", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
+    .exclude("struct with unannotated array", KNOWN_ISSUE("To be added"))
+    .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetSchemaSuite]
   enableSuite[RapidsParquetThriftCompatibilitySuite]
   enableSuite[RapidsParquetVectorizedSuite]
