@@ -86,7 +86,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetFieldIdIOSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
-    .excluteSuite("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("To be added"))
+    .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
   enableSuite[RapidsParquetSchemaSuite]
   enableSuite[RapidsParquetThriftCompatibilitySuite]
