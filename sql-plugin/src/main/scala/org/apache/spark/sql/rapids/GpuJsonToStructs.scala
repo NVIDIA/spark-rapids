@@ -20,7 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.MapUtils
+import com.nvidia.spark.rapids.jni.JSONUtils
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -165,7 +165,7 @@ case class GpuJsonToStructs(
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
       case _: MapType =>
-        MapUtils.extractRawMapFromJsonString(input.getBase)
+        JSONUtils.extractRawMapFromJsonString(input.getBase)
       case struct: StructType => {
         // if we ever need to support duplicate keys we need to keep track of the duplicates
         //  and make the first one null, but I don't think this will ever happen in practice
