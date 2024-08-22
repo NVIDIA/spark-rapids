@@ -25,11 +25,17 @@ object PrioritySemaphore {
 }
 
 class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) {
+  // This lock is used to generate condition variables, which affords us the flexibility to notify
+  // specific threads at a time. If we use the regular synchronized pattern, we have to either
+  // notify randomly, or if we try creating condition variables not tied to a shared lock, they
+  // won't work together properly, and we see things like deadlocks.
   private val lock = new ReentrantLock()
   private var occupiedSlots: Int = 0
 
   private case class ThreadInfo(priority: T, condition: Condition)
 
+  // We expect a relatively small number of threads to be contending for this lock at any given
+  // time, therefore we are not concerned with the insertion/removal time complexity.
   private val waitingQueue: PriorityQueue[ThreadInfo] = PriorityQueue()(Ordering.by(_.priority))
 
   def this()(implicit ordering: Ordering[T]) = this(PrioritySemaphore.DEFAULT_MAX_PERMITS)(ordering)
@@ -37,12 +43,12 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
   def tryAcquire(numPermits: Int): Boolean = {
     lock.lock()
     try {
-    if (canAcquire(numPermits)) {
-      commitAcquire(numPermits)
-      true
-    } else {
-      false
-    }
+      if (canAcquire(numPermits)) {
+        commitAcquire(numPermits)
+        true
+      } else {
+        false
+      }
     } finally {
       lock.unlock()
     }
@@ -74,8 +80,7 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
         val nextThread = waitingQueue.dequeue()
         nextThread.condition.signal()
       }
-    }
-    finally {
+    } finally {
       lock.unlock()
     }
   }
