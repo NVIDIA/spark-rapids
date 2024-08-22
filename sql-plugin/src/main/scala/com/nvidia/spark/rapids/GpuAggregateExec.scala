@@ -150,10 +150,9 @@ object AggregateUtils extends Logging {
   }
 
   /**
-   * Stream read the input batches, merge them into larger batches if possible,
-   * and repartition them into buckets. Each bucket will be less or equal to targetMergeBatchSize
+   * Read the input batches and repartition them into buckets.
    */
-  def streamMergeAndRepartition(
+  def iterateAndRepartition(
       aggregatedBatches: CloseableBufferedIterator[SpillableColumnarBatch],
       metrics: GpuHashAggregateMetrics,
       targetMergeBatchSize: Long,
@@ -164,10 +163,6 @@ object AggregateUtils extends Logging {
       batchesByBucket: ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]
   ): Boolean = {
 
-    var sizeSoFar = 0L
-    val batchesToConcat: mutable.ArrayBuffer[SpillableColumnarBatch] = mutable.ArrayBuffer.empty
-    var stagingBatch: Option[SpillableColumnarBatch] = None
-
     var repartitionHappened = false
     if (hashSeed > 200) {
       throw new IllegalStateException("Too many times of repartition, may hit a bug?")
@@ -176,8 +171,7 @@ object AggregateUtils extends Logging {
     def repartitionAndClose(batch: SpillableColumnarBatch): Unit = {
 
       // OPTIMIZATION
-      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)
-        && stagingBatch.isEmpty && batchesToConcat.isEmpty) {
+      if (!aggregatedBatches.hasNext && batchesByBucket.forall(_.size() == 0)) {
         // If this is the only batch (after merging neighbours) to be repartitioned,
         // we can just add it to the first bucket and skip repartitioning.
         // This is a common case when total input size can fit into a single batch.
@@ -215,88 +209,27 @@ object AggregateUtils extends Logging {
       repartitionHappened = true
     }
 
-    def handleBatchesToConcat(): Unit = {
-      if (batchesToConcat.size < 1) {
-        throw new IllegalStateException("No batches to concatenate")
-      }
-      if (batchesToConcat.size == 1) {
-        val head = batchesToConcat.head
-        batchesToConcat.clear()
-        repartitionAndClose(head)
-        return
-      }
-
-      val concat = AggregateUtils.concatenateAndMerge(batchesToConcat, metrics, helper)
-      batchesToConcat.clear()
-      if (concat.sizeInBytes > targetMergeBatchSize * 0.5) {
-        repartitionAndClose(concat)
-      } else {
-        // If less than half of the target size,
-        // we can wait for more batches to merge before repartition
-
-        if (stagingBatch.isEmpty) {
-          stagingBatch = Some(concat)
-        } else {
-          val concatWithStaged =
-            AggregateUtils.concatenateAndMerge(
-              ArrayBuffer.apply(stagingBatch.get, concat), metrics, helper)
-          if (concatWithStaged.sizeInBytes > targetMergeBatchSize * 0.5) {
-            stagingBatch = None
-            repartitionAndClose(concatWithStaged)
-          } else {
-            // Keep waiting for more batches to merge
-            stagingBatch = Some(concatWithStaged)
-          }
-        }
-      }
-    }
-
     while (aggregatedBatches.hasNext) {
-      val peek = aggregatedBatches.head
-      if (peek.sizeInBytes >= targetMergeBatchSize &&
-        (peek.numRows() != 1) // for tests where a batch contains only 1 row
-      ) {
-        repartitionAndClose(aggregatedBatches.next)
-      } else {
-        sizeSoFar += peek.sizeInBytes
-        if (sizeSoFar > targetMergeBatchSize &&
-          !(batchesToConcat ++ Seq(peek)).forall(_.numRows() == 1) // for tests
-        ) {
-          handleBatchesToConcat()
-          sizeSoFar = peek.sizeInBytes
-        }
-        batchesToConcat += aggregatedBatches.next
-      }
-    }
-
-    if (batchesToConcat.nonEmpty) {
-      handleBatchesToConcat()
-    }
-    if (stagingBatch.nonEmpty) {
-      // cannot use stagingBatch.foreach(repartitionAndClose) here,
-      // as in repartitionAndClose it checks stagingBatch.isEmpty
-      val temp = stagingBatch.get
-      stagingBatch = None
-      repartitionAndClose(temp)
+      repartitionAndClose(aggregatedBatches.next)
     }
 
     // Deal with the over sized buckets
-    if (repartitionHappened &&
-      batchesByBucket.exists(
-        bucket => bucket.map(_.sizeInBytes).sum > targetMergeBatchSize &&
-          bucket.size() != 1
-      )
-    ) {
+    def needRepartitionAgain(bucket: AutoClosableArrayBuffer[SpillableColumnarBatch]) = {
+      bucket.map(_.sizeInBytes).sum > targetMergeBatchSize &&
+        bucket.size() != 1 &&
+        !bucket.forall(_.numRows() == 1) // this is for test
+    }
+
+    if (repartitionHappened && batchesByBucket.exists(needRepartitionAgain)) {
       logDebug("Some of the repartition buckets are over sized, trying to split them")
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
-        if (bucket.map(_.sizeInBytes).sum > targetMergeBatchSize
-          && bucket.size != 1) {
+        if (needRepartitionAgain(bucket)) {
           val nextLayerBuckets =
             ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
           // Recursively merge and repartition the over sized bucket
           repartitionHappened =
-            streamMergeAndRepartition(
+            iterateAndRepartition(
               new CloseableBufferedIterator(bucket.iterator), metrics, targetMergeBatchSize,
               helper, hashKeys, hashBucketNum, hashSeed + 7,
               nextLayerBuckets) || repartitionHappened
@@ -1000,7 +933,7 @@ class GpuMergeAggregateIterator(
       val hashKeys: Seq[GpuExpression] =
         GpuBindReferences.bindGpuReferences(groupingAttributes, aggBufferAttributes.toSeq)
 
-      val repartitionHappened = AggregateUtils.streamMergeAndRepartition(
+      val repartitionHappened = AggregateUtils.iterateAndRepartition(
         firstPassIter, metrics, targetMergeBatchSize, concatAndMergeHelper,
         hashKeys, defaultHashBucketNum, defaultHashSeed, batchesByBucket)
       if (repartitionHappened) {
