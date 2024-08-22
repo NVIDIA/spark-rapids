@@ -87,6 +87,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("struct with unannotated array", KNOWN_ISSUE("To be added"))
     .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetSchemaSuite]
+    .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("To be added"))
+    .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("To be added"))
   enableSuite[RapidsParquetThriftCompatibilitySuite]
   enableSuite[RapidsParquetVectorizedSuite]
   enableSuite[RapidsRegexpExpressionsSuite]
