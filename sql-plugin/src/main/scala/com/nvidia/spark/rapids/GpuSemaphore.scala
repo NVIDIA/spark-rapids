@@ -185,6 +185,8 @@ private final class SemaphoreTaskInfo() extends Logging {
   private var hasSemaphore = false
   private var lastHeld: Long = 0
 
+  type GpuBackingSemaphore = PrioritySemaphore[Long]
+
   /**
    * Does this task have the GPU semaphore or not. Be careful because it can change at
    * any point in time. So only use it for logging.
@@ -217,7 +219,7 @@ private final class SemaphoreTaskInfo() extends Logging {
    * Block the current thread until we have the semaphore.
    * @param semaphore what we are going to wait on.
    */
-  def blockUntilReady(semaphore: PrioritySemaphore[Long]): Unit = {
+  def blockUntilReady(semaphore: GpuBackingSemaphore): Unit = {
     val t = Thread.currentThread()
     // All threads start out in blocked, but will move out of it inside of the while loop.
     synchronized {
@@ -278,7 +280,7 @@ private final class SemaphoreTaskInfo() extends Logging {
     }
   }
 
-  def tryAcquire(semaphore: PrioritySemaphore[Long]): Boolean = synchronized {
+  def tryAcquire(semaphore: GpuBackingSemaphore): Boolean = synchronized {
     val t = Thread.currentThread()
     if (hasSemaphore) {
       activeThreads.add(t)
@@ -300,7 +302,7 @@ private final class SemaphoreTaskInfo() extends Logging {
     }
   }
 
-  def releaseSemaphore(semaphore: PrioritySemaphore[Long]): Unit = synchronized {
+  def releaseSemaphore(semaphore: GpuBackingSemaphore): Unit = synchronized {
     val t = Thread.currentThread()
     activeThreads.remove(t)
     if (hasSemaphore) {
@@ -320,7 +322,8 @@ private final class SemaphoreTaskInfo() extends Logging {
 private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
-  private val semaphore = new PrioritySemaphore[Long](MAX_PERMITS)
+  type GpuBackingSemaphore = PrioritySemaphore[Long]
+  private val semaphore = new GpuBackingSemaphore(MAX_PERMITS)
   // Keep track of all tasks that are both active on the GPU and blocked waiting on the GPU
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
