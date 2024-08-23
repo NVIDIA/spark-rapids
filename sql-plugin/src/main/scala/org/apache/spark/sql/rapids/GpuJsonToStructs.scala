@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar, TableDebug}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
@@ -171,18 +171,18 @@ case class GpuJsonToStructs(
         val cudfSchema = makeSchema(struct)
 
         if (!cudfSchema.getFlattenedTypes.contains(cudf.DType.LIST)) {
-          System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
+//       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
           val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
             parsedOptions.allowNumericLeadingZeros)
-          TableDebug.get.debug("input.getBase", input.getBase)
-          TableDebug.get.debug("table", table)
+//          TableDebug.get.debug("input.getBase", input.getBase)
+//          TableDebug.get.debug("table", table)
 
           val convertedStructs =
             withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
             cudf.ColumnVector.makeStruct(columns: _*)
           }
 
-          TableDebug.get.debug("convertedStructs", convertedStructs)
+//          TableDebug.get.debug("convertedStructs", convertedStructs)
 
           withResource(convertedStructs) { converted =>
             val stripped = if (input.getBase.getData == null) {

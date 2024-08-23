@@ -18,7 +18,7 @@
 package org.apache.spark.sql.rapids
 
 import java.util.Locale
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table, TableDebug}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.{ColumnCastUtil, DecimalUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
@@ -209,7 +209,7 @@ object GpuJsonReadCommon {
     }
     val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
     withResource(input.matchesRe(prog)) { isValid =>
-      TableDebug.get.debug("isValid unquoted", isValid)
+//      TableDebug.get.debug("isValid unquoted", isValid)
 
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         isValid.ifElse(input, nullString)
@@ -224,10 +224,10 @@ object GpuJsonReadCommon {
     val output = withResource(isQuotedString(input)) { isQuoted =>
       withResource(sanitizeUnquotedDecimal(input, options)) { unquoted =>
         withResource(sanitizeQuotedDecimalInUSLocale(input)) { quoted =>
-    TableDebug.get.debug("input to sanitizeDecimal", input)
-    TableDebug.get.debug("isQuoted", isQuoted)
-    TableDebug.get.debug("unquoted", unquoted)
-    TableDebug.get.debug("quoted", quoted)
+//    TableDebug.get.debug("input to sanitizeDecimal", input)
+//    TableDebug.get.debug("isQuoted", isQuoted)
+//    TableDebug.get.debug("unquoted", unquoted)
+//    TableDebug.get.debug("quoted", quoted)
 
           isQuoted.ifElse(quoted, unquoted)
         }
