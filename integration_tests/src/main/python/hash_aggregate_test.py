@@ -1338,129 +1338,66 @@ def test_generic_reductions(data_gen):
             'count()',
             'count(1)'),
         conf=local_conf)
-    
-basic_gen_no_floats = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_hash_groupby_with_maxby_all_bipair_same(data_gen_c):
+@pytest.mark.parametrize('data_gen', all_basic_gens + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+def test_hash_groupby_max_by_unique(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df2(spark, byte_gen, data_gen_c)
+        lambda spark: three_col_df(spark, byte_gen, data_gen, UniqueLongGen())
             .groupby('a').agg(f.max_by('b', 'c')))
 
+# When the ordering column is not unique this gpu will always return the minimal value 
+# while spark's result is non-deterministic. So we need to set the column b and c to be
+# the same to make the result comparable.
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_b', _all_basic_gens_with_all_nans_cases + nested_gens_sample, ids=idfn)
-@pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128, ids=idfn)
-def test_hash_groupby_with_maxby_all_bipair_diff(data_gen_b, data_gen_c):
+@pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+def test_hash_groupby_max_by_same(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, data_gen_b, data_gen_c)
-            .groupby('a').agg(f.max_by('b', 'c')))
-
-
-@ignore_order(local=True)
-def test_hash_groupby_with_maxby_debug_normal():
-    gen_b = long_gen
-    # gen_c = StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])
-    gen_c = byte_gen
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, gen_b, gen_c)
-            .groupby('a').agg(f.max_by('b', 'c')))
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
-def test_hash_groupby_with_minby_all(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a').agg(f.min_by('b', 'c'))
-    )
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a').agg(f.min_by('c', 'b'))
-    )
-
-@ignore_order(local=True)
-def test_hash_groupby_with_minby_debug_bipair():
-    gen_b = int_gen
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df2(spark, byte_gen, gen_b)
-            .groupby('a').agg(f.min_by('b', 'c')))
-
-@ignore_order(local=True)
-def test_hash_groupby_with_minby_debug_normal():
-    gen_b = LongGen()
-    # gen_c = StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])
-    gen_c = LongGen()
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, gen_b, gen_c)
-            .groupby('a').agg(f.min_by('b', 'c')))
-
-# @pytest.mark.parametrize('data_gen_b', _all_basic_gens_with_all_nans_cases + nested_gens_sample, ids=idfn)
-# @pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128, ids=idfn)
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_b', _all_basic_gens_with_all_nans_cases + nested_gens_sample, ids=idfn)
-@pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128, ids=idfn)
-def test_hash_groupby_with_minby_all_bipair_diff(data_gen_b, data_gen_c):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, data_gen_b, data_gen_c)
-            .groupby('a').agg(f.min_by('b', 'c')))
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
+            .groupby('a').agg(f.max_by('b', 'b')))
     
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_c', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_hash_groupby_with_minby_all_bipair_same(data_gen_c):
+@pytest.mark.parametrize('data_gen', all_basic_gens + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+def test_hash_groupby_min_by_unique(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df2(spark, byte_gen, data_gen_c)
+        lambda spark: three_col_df(spark, byte_gen, data_gen, UniqueLongGen())
             .groupby('a').agg(f.min_by('b', 'c')))
+
+# When the ordering column is not unique this gpu will always return the minimal value 
+# while spark's result is non-deterministic. So we need to set the column b and c to be
+# the same to make the result comparable.
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+def test_hash_groupby_min_by_same(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
+            .groupby('a').agg(f.min_by('b', 'b')))
     
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_c', struct_gens_sample_with_decimal128, ids=idfn)
-def test_hash_groupby_with_minby_stu(data_gen_c):
+def test_reduction_with_maxby_unique():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, StringGen("{abc}[2]"), data_gen_c, data_gen_c)
-            .groupby('a').agg(f.min_by('b', 'c')))
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_c', struct_gens_sample_with_decimal128, ids=idfn)
-def test_hash_groupby_with_minby_stu_byte(data_gen_c):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, data_gen_c, data_gen_c)
-            .groupby('a').agg(f.min_by('b', 'c')))
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen_c', struct_gens_sample_with_decimal128, ids=idfn)
-def test_hash_groupby_with_minby_stu_long(data_gen_c):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, long_gen, data_gen_c, data_gen_c)
-            .groupby('a').agg(f.min_by('b', 'c')))
-
-@ignore_order(local=True)
-def test_hash_groupby_with_minby_c():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, StringGen("[abc]{3}"), 
-                                   long_gen,
-                                   long_gen)
-            .groupby('a').agg(f.min_by('c', 'c'))
+        lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
+            "max_by(a, b)")
     )
 
-@ignore_order(local=True)
-def test_hash_groupby_with_minby_ax():
+@pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+def test_reduction_with_maxby_same(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, long_gen, IntegerGen(nullable=True), long_gen)
-            .groupby('a').agg(f.min_by('b', 'c'))
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            "max_by(a, a)")
     )
 
-@ignore_order(local=True)
-def test_hash_groupby_with_minby_2():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, long_gen, IntegerGen(nullable=True), null_gen, length=20)
-            .groupby('a').agg(f.min_by('b', 'c'))
-    )
-
-@ignore_order(local=True)
-def test_reduction_with_minby():
+def test_reduction_with_minby_unique():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
             "min_by(a, b)")
+    )
+
+@pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+@ignore_order(local=True)
+def test_reduction_with_minby_same(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            "min_by(a, a)")
     )
 
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
@@ -2265,49 +2202,16 @@ def test_std_variance_partial_replace_fallback(data_gen,
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
 
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen',  [FloatGen(no_nans = False), DoubleGen(no_nans = False)], ids=idfn)
-def test_min_max_for_single_level_struct_2(data_gen):
-    df_gen = [
-        ('a', StructGen([
-                ('aa', data_gen)])),
-        ('b', RepeatSeqGen(IntegerGen(), length=20))]
-
-    # test max
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, df_gen),
-        "hash_agg_table",
-        'select b, max(a) from hash_agg_table group by b', debug=True)
-
-    # # test min
-    # assert_gpu_and_cpu_are_equal_sql(
-    #     lambda spark : gen_df(spark, df_gen, length=1024),
-    #     "hash_agg_table",
-    #     'select b, min(a) from hash_agg_table group by b', debug=True)
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen',  [StructGen([['child0', SetValuesGen(FloatType(), [math.nan])], ['child1', double_gen]])], ids=idfn)
-def test_min_max_in_groupby_and_reduction_2(data_gen):
-    df_gen = [('a', data_gen), ('b', RepeatSeqGen(IntegerGen(), length=20))]
-
-    # test max
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, df_gen, length=30000),
-        "hash_agg_table",
-        'select b, max(a) from hash_agg_table group by b',
-        _float_conf)
-
-    # test min
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, df_gen, length=30000),
-        "hash_agg_table",
-        'select b, min(a) from hash_agg_table group by b',
-        _float_conf)
-
 #
 # Test min/max aggregations on simple type (integer) keys and nested type values.
 #
-gens_for_max_min = [float_gen, double_gen]
+gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
+    float_gen, double_gen,
+    string_gen, boolean_gen,
+    date_gen, timestamp_gen,
+    DecimalGen(precision=12, scale=2),
+    DecimalGen(precision=36, scale=5),
+    null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -2328,12 +2232,12 @@ def test_min_max_in_groupby_and_reduction(data_gen):
 
     # test min
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, df_gen, length=30000),
+        lambda spark : gen_df(spark, df_gen, length=1024),
         "hash_agg_table",
         'select b, min(a) from hash_agg_table group by b',
         _float_conf)
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, df_gen, length=30000),
+        lambda spark : gen_df(spark, df_gen, length=1024),
         "hash_agg_table",
         'select min(a) from hash_agg_table',
         _float_conf)

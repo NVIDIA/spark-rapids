@@ -541,35 +541,6 @@ class StructGen(DataGen):
     def contains_ts(self):
         return any(child[1].contains_ts() for child in self.children)
 
-class StructGen2(DataGen):
-    """Generate a Struct"""
-    def __init__(self, child1, child2, nullable=True, special_cases=[]):
-        tmp = [StructField('a', child1.data_type, nullable=child1.nullable),
-                StructField('b', child2.data_type, nullable=child2.nullable),
-                StructField('c', child2.data_type, nullable=child2.nullable)]
-        super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
-        self.child1 = child1
-        self.child2 = child2
-
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self.child1) + ',' + str(self.child2) + ')'
-
-    def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self.child1._cache_repr()) + ',' + str(self.child2._cache_repr()) + ')'
-
-    def start(self, rand):
-        self.child1.start(rand)
-        self.child2.start(rand)
-        def make_tuple():
-            tmp_child2_gen = self.child2.gen()
-            data = [self.child1.gen(), tmp_child2_gen, tmp_child2_gen]
-            return tuple(data)
-        self._start(rand, make_tuple)
-
-def three_col_df2(spark, a_gen, b_gen, length=2048, seed=None, num_slices=None):
-    gen = StructGen2(a_gen, b_gen, nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
-
 class DateGen(DataGen):
     """Generate Dates in a given range"""
     def __init__(self, start=None, end=None, nullable=True):
@@ -849,8 +820,6 @@ def gen_df_help(data_gen, length, seed_value):
     rand = random.Random(seed_value)
     data_gen.start(rand)
     data = [data_gen.gen() for index in range(0, length)]
-    for i in range(0, length):
-        print(data[i], ',')
     return data
 
 def gen_df(spark, data_gen, length=2048, seed=None, num_slices=None):
@@ -1125,6 +1094,8 @@ decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
 all_basic_gens_no_null = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                           string_gen, boolean_gen, date_gen, timestamp_gen]
 all_basic_gens = all_basic_gens_no_null + [null_gen]
+
+basic_gen_no_floats = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
