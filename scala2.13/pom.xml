@@ -557,6 +557,26 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release352</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>352</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>352</buildver>
+                <spark.version>${spark352.version}</spark.version>
+                <spark.test.version>${spark352.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -747,6 +767,7 @@
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
+        <spark352.version>3.5.2</spark352.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
@@ -796,7 +817,8 @@
             342,
             343,
             350,
-            351
+            351,
+            352
         </noSnapshot.buildvers>
         <snapshot.buildvers>
         </snapshot.buildvers>
@@ -852,7 +874,8 @@
             342,
             343,
             350,
-            351
+            351,
+            352
         </noSnapshotScala213.buildvers>
         <snapshotScala213.buildvers>
             400
