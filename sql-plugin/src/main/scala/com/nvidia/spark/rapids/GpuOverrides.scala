@@ -3679,8 +3679,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)).disabledByDefault(
-      "Experimental feature that could be unstable or have performance issues."),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -4667,8 +4666,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
             part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
           }
         }.getOrElse {
-          f.relation.inputFiles.exists { name =>
-            checkDeltaFunc(name)
+          f.relation.location.rootPaths.exists { path =>
+            checkDeltaFunc(path.toString)
           }
         }
         if (found) {

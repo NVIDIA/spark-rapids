@@ -304,7 +304,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    */
   def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = {
     plan match {
-      case j: GpuShuffledSymmetricHashJoinExec =>
+      case j: GpuShuffledSizedHashJoinExec[_] =>
         val newChildren = Seq(j.left, j.right).map {
           case GpuCoalesceBatches(GpuShuffleCoalesceExec(c, _), _) => c
           case GpuShuffleCoalesceExec(c, _) => c
