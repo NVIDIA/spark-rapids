@@ -32,7 +32,7 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
   private val lock = new ReentrantLock()
   private var occupiedSlots: Int = 0
 
-  private case class ThreadInfo(priority: T, condition: Condition)
+  private case class ThreadInfo(priority: T, condition: Condition, numPermits: Int)
 
   // We expect a relatively small number of threads to be contending for this lock at any given
   // time, therefore we are not concerned with the insertion/removal time complexity.
@@ -58,11 +58,20 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     lock.lock()
     try {
       val condition = lock.newCondition()
+      var queued = false
       while (!canAcquire(numPermits)) {
-        if (!waitingQueue.exists(_.condition == condition)) {
-          waitingQueue.enqueue(ThreadInfo(priority, condition))
+        if (!queued) {
+          waitingQueue.enqueue(ThreadInfo(priority, condition, numPermits))
+          queued = true
         }
         condition.await()
+      }
+      if (queued) {
+        if (waitingQueue.isEmpty || waitingQueue.head.condition != condition) {
+          throw new IllegalStateException("acquire thought it queued but acquired semaphore "
+            + "without being at the head of the queue")
+        }
+        waitingQueue.dequeue()
       }
       commitAcquire(numPermits)
 
@@ -79,8 +88,10 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     try {
       occupiedSlots -= numPermits
       if (waitingQueue.nonEmpty) {
-        val nextThread = waitingQueue.dequeue()
-        nextThread.condition.signal()
+        val nextThread = waitingQueue.head
+        if (canAcquire(nextThread.numPermits)) {
+          nextThread.condition.signal()
+        }
       }
     } finally {
       lock.unlock()
