@@ -173,7 +173,7 @@ case class GpuJsonToStructs(
         if (!cudfSchema.getFlattenedTypes.contains(cudf.DType.LIST)) {
 //       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
           val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
-            parsedOptions.allowNumericLeadingZeros)
+            parsedOptions.allowNumericLeadingZeros, parsedOptions.allowNonNumericNumbers)
 //          TableDebug.get.debug("input.getBase", input.getBase)
 //          TableDebug.get.debug("table", table)
 
