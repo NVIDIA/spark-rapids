@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,14 +37,14 @@
 {"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
-{"spark": "400"}
+{"spark": "352"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.tests.datagen
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, UnaryExpression}
-import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.Column
+import org.apache.spark.sql.catalyst.expressions.Expression
 
-trait DataGenExprBase extends UnaryExpression with ExpectsInputTypes with CodegenFallback {
-  override def withNewChildInternal(newChild: Expression): Expression =
-    legacyWithNewChildren(Seq(newChild))
+object DataGenExprShims {
+  def columnToExpr(c: Column): Expression = c.expr
+  def exprToColumn(e: Expression): Column = Column(e)
 }
