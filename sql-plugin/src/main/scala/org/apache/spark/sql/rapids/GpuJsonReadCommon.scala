@@ -18,13 +18,11 @@
 package org.apache.spark.sql.rapids
 
 import java.util.Locale
-
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table, TableDebug}
+import com.nvidia.spark.rapids.{ColumnCastUtil, DecimalUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.CastStrings
-
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
 import org.apache.spark.sql.types.{DataType, _}
@@ -46,6 +44,8 @@ object GpuJsonReadCommon {
       }
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
+    case dt: DecimalType =>
+      builder.addColumn(DecimalUtil.createCudfDecimal(dt), name)
     case _ =>
       builder.addColumn(DType.STRING, name)
   }
@@ -201,27 +201,41 @@ object GpuJsonReadCommon {
     //  an entire line/row instead of a single field.
     // https://github.com/NVIDIA/spark-rapids/issues/10534
     val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
+      System.out.println("allowNumericLeadingZeros")
       "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
     } else {
+      System.out.println("NOT allowNumericLeadingZeros")
       "^-?(?:(?:[1-9][0-9]*)|0)(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
     }
     val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
     withResource(input.matchesRe(prog)) { isValid =>
+      TableDebug.get.debug("isValid unquoted", isValid)
+
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         isValid.ifElse(input, nullString)
       }
     }
   }
 
+  // This is incorrect?
+  // The decimal numbers are expected to be whole numbers?
   private def sanitizeDecimal(input: ColumnView, options: JSONOptions): ColumnVector = {
     assert(options.locale == Locale.US)
-    withResource(isQuotedString(input)) { isQuoted =>
+    val output = withResource(isQuotedString(input)) { isQuoted =>
       withResource(sanitizeUnquotedDecimal(input, options)) { unquoted =>
         withResource(sanitizeQuotedDecimalInUSLocale(input)) { quoted =>
+    TableDebug.get.debug("input to sanitizeDecimal", input)
+    TableDebug.get.debug("isQuoted", isQuoted)
+    TableDebug.get.debug("unquoted", unquoted)
+    TableDebug.get.debug("quoted", quoted)
+
           isQuoted.ifElse(quoted, unquoted)
         }
       }
     }
+
+
+    output
   }
 
   private def castStringToFloat(input: ColumnView, dt: DType,

@@ -17,12 +17,11 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar, TableDebug}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
 import org.apache.commons.text.StringEscapeUtils
-
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
@@ -172,9 +171,43 @@ case class GpuJsonToStructs(
         val cudfSchema = makeSchema(struct)
 
         if (!cudfSchema.getFlattenedTypes.contains(cudf.DType.LIST)) {
-          val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema)
-          withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
+          System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
+          val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
+            parsedOptions.allowNumericLeadingZeros)
+          TableDebug.get.debug("input.getBase", input.getBase)
+          TableDebug.get.debug("table", table)
+
+          val convertedStructs =
+            withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
             cudf.ColumnVector.makeStruct(columns: _*)
+          }
+
+          TableDebug.get.debug("convertedStructs", convertedStructs)
+
+          withResource(convertedStructs) { converted =>
+            val stripped = if (input.getBase.getData == null) {
+              input.getBase.incRefCount
+            } else {
+              withResource(cudf.Scalar.fromString(" ")) { space =>
+                input.getBase.strip(space)
+              }
+            }
+
+            withResource(stripped) { stripped =>
+              val isEmpty = withResource(stripped.getByteCount) { lengths =>
+                withResource(cudf.Scalar.fromInt(0)) { zero =>
+                  lengths.lessOrEqualTo(zero)
+                }
+              }
+              val isNullOrEmpty = withResource(isEmpty) { _ =>
+                withResource(input.getBase.isNull) { isNull =>
+                  isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
+                }
+              }
+              withResource(GpuScalar.from(null, struct)) { nullVal =>
+                isNullOrEmpty.ifElse(nullVal, converted)
+              }
+            }
           }
         } else {
           // We cannot handle all corner cases with this right now. The parser just isn't
