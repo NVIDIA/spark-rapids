@@ -178,9 +178,11 @@ case class GpuJsonToStructs(
 //          TableDebug.get.debug("table", table)
 
           val convertedStructs =
-            withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
-            cudf.ColumnVector.makeStruct(columns: _*)
-          }
+            withResource(table) { _ =>
+              withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
+                cudf.ColumnVector.makeStruct(columns: _*)
+              }
+            }
 
 //          TableDebug.get.debug("convertedStructs", convertedStructs)
 
@@ -204,8 +206,10 @@ case class GpuJsonToStructs(
                   isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
                 }
               }
-              withResource(GpuScalar.from(null, struct)) { nullVal =>
-                isNullOrEmpty.ifElse(nullVal, converted)
+              withResource(isNullOrEmpty) { nullOrEmpty =>
+                withResource(GpuScalar.from(null, struct)) { nullVal =>
+                  nullOrEmpty.ifElse(nullVal, converted)
+                }
               }
             }
           }
