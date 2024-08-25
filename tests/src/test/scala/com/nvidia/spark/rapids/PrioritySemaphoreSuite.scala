@@ -28,16 +28,16 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   test("tryAcquire should return true if permits are available") {
     val semaphore = new TestPrioritySemaphore(10)
 
-    assert(semaphore.tryAcquire(5))
-    assert(semaphore.tryAcquire(3))
-    assert(semaphore.tryAcquire(2))
-    assert(!semaphore.tryAcquire(1))
+    assert(semaphore.tryAcquire(5, 0))
+    assert(semaphore.tryAcquire(3, 0))
+    assert(semaphore.tryAcquire(2, 0))
+    assert(!semaphore.tryAcquire(1, 0))
   }
 
   test("acquire and release should work correctly") {
     val semaphore = new TestPrioritySemaphore(1)
 
-    assert(semaphore.tryAcquire(1))
+    assert(semaphore.tryAcquire(1, 0))
 
     val latch = new CountDownLatch(1)
     val t = new Thread(() => {
