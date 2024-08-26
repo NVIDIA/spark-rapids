@@ -2295,7 +2295,7 @@ object GpuOverrides extends Logging {
           GpuMaxBy(childExprs.head, childExprs.last)
         }
 
-        // MinBy does not overflow, so it doesn't need the ANSI check
+        // MaxBy does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[MinBy](

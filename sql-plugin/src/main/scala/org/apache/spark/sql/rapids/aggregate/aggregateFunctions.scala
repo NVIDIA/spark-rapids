@@ -2060,9 +2060,7 @@ abstract class CudfMaxMinByAggregate(
     if (col.getNullCount == col.getRowCount) { // all nulls
       GpuScalar.from(null, dataType)
     } else {
-      withResource(col.copyToColumnVector()) { colVec =>
-        colVec.reduce(reductionAggregation)
-      }
+      col.reduce(reductionAggregation)
     }
   }
 
