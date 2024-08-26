@@ -1339,65 +1339,41 @@ def test_generic_reductions(data_gen):
             'count(1)'),
         conf=local_conf)
 
+# min_by and max_by are supported for pyspark since 3.3.0 so tested with sql
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_hash_groupby_max_by_unique(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, data_gen, UniqueLongGen())
-            .groupby('a').agg(f.max_by('b', 'c')))
+def test_hash_groupby_min_max_by_unique(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, data_gen, UniqueLongGen()),
+        "tbl",
+        "SELECT a, min_by(b, c), max_by(b, c) FROM tbl GROUP BY a")
 
-# When the ordering column is not unique this gpu will always return the minimal value 
+
+# When the ordering column is not unique this gpu will always return the minimal/maximal value
 # while spark's result is non-deterministic. So we need to set the column b and c to be
 # the same to make the result comparable.
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_hash_groupby_max_by_same(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, byte_gen, data_gen)
-            .groupby('a').agg(f.max_by('b', 'b')))
+def test_hash_groupby_min_max_by_same(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, byte_gen, data_gen),
+        "tbl",
+        "SELECT a, min_by(b, b), max_by(b, b) FROM tbl GROUP BY a")
     
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_basic_gens + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_hash_groupby_min_by_unique(data_gen):
+def test_reduction_with_min_max_by_unique():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: three_col_df(spark, byte_gen, data_gen, UniqueLongGen())
-            .groupby('a').agg(f.min_by('b', 'c')))
+        lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
+            "min_by(a, b)", "max_by(a, b)")
+    )
 
-# When the ordering column is not unique this gpu will always return the minimal value 
+# When the ordering column is not unique this gpu will always return the minimal/maximal value 
 # while spark's result is non-deterministic. So we need to set the column b and c to be
 # the same to make the result comparable.
-@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_hash_groupby_min_by_same(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, byte_gen, data_gen)
-            .groupby('a').agg(f.min_by('b', 'b')))
-    
-def test_reduction_with_maxby_unique():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
-            "max_by(a, b)")
-    )
-
-@pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-def test_reduction_with_maxby_same(data_gen):
+def test_reduction_with_max_by_same(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
-            "max_by(a, a)")
-    )
-
-def test_reduction_with_minby_unique():
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
-            "min_by(a, b)")
-    )
-
-@pytest.mark.parametrize('data_gen', basic_gen_no_floats + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
-@ignore_order(local=True)
-def test_reduction_with_minby_same(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr(
-            "min_by(a, a)")
+            "min_by(a, a)", "max_by(a, a)")
     )
 
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
