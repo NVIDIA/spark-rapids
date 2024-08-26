@@ -2090,7 +2090,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   protected val cudfMaxMinByAggregate: CudfAggregate
 
-    private lazy val bufferOrdering: AttributeReference =
+  private lazy val bufferOrdering: AttributeReference = 
     AttributeReference("ordering", orderingExpr.dataType)()
 
   private lazy val bufferValue: AttributeReference =
