@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -297,8 +297,10 @@ case class GpuArrayContains(left: Expression, right: Expression)
     val containsKeyOrNotContainsNull = withResource(notContainsNull) {
       containsResult.or(_)
     }
-    withResource(containsKeyOrNotContainsNull) {
-      containsResult.copyWithBooleanColumnAsValidity(_)
+    withResource(containsKeyOrNotContainsNull) { lcnn =>
+      withResource(Scalar.fromNull(DType.BOOL8)) { NULL =>
+        lcnn.ifElse(containsResult, NULL)
+      }
     }
   }
 
