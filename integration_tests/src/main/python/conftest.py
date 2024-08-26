@@ -156,10 +156,6 @@ _inject_oom = None
 def get_inject_oom_conf():
     return _inject_oom
 
-_default_configs_path = None
-
-def get_default_configs_path():
-    return _default_configs_path
 
 # For datagen: we expect a seed to be provided by the environment, or default to 0.
 # Note that tests can override their seed when calling into datagen by setting seed= in their tests.
@@ -308,8 +304,6 @@ def pytest_configure(config):
         raise Exception("not supported test type {}".format(test_type))
     global _is_parquet_testing_tests_forced
     _is_parquet_testing_tests_forced = config.getoption("force_parquet_testing_tests")
-    global _default_configs_path
-    _default_configs_path = config.getoption("default_configs_path")
 
 # For OOM injection: we expect a seed to be provided by the environment, or default to 1.
 # This is done such that any worker started by the xdist plugin for pytest will

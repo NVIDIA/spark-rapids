@@ -68,16 +68,6 @@
             <!-- for hive udf test cases -->
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-hive_${scala.binary.version}</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-core</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-databind</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <!-- https://mvnrepository.com/artifact/com.github.scopt/scopt -->
         <dependency>
@@ -88,31 +78,6 @@
     </dependencies>
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>populate-default-configs-for-testing</id>
-                        <phase>generate-test-resources</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                <java classname="com.nvidia.spark.rapids.tests.DumpDefaultConfigs"
-                                    failonerror="true"
-                                    classpathref="maven.compile.classpath"
-                                    fork="true">
-                                    <arg value="json"/>
-                                    <arg value="${project.build.directory}/spark-rapids-default-configs.json"/>
-                                </java>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.6.0</version>
@@ -216,7 +181,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>run-pyspark-tests</id>
+                        <id>run pyspark tests</id>
                         <phase>verify</phase><!--run after packageing and collecting dependencies-->
                         <goals>
                             <goal>exec</goal>

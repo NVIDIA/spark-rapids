@@ -4666,8 +4666,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
             part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
           }
         }.getOrElse {
-          f.relation.inputFiles.exists { name =>
-            checkDeltaFunc(name)
+          f.relation.location.rootPaths.exists { path =>
+            checkDeltaFunc(path.toString)
           }
         }
         if (found) {

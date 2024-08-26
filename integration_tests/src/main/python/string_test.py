@@ -878,8 +878,7 @@ def test_format_number_supported(data_gen):
             'format_number(a, 10)',
             'format_number(a, 13)',
             'format_number(a, 30)',
-            'format_number(a, 100)'),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+            'format_number(a, 100)')
     )
 
 format_float_special_vals = [float('nan'), float('inf'), float('-inf'), 0.0, -0.0, 
