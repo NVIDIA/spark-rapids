@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{CountDownLatch, TimeUnit}
-
 import scala.collection.JavaConverters._
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -39,7 +37,6 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
     assert(semaphore.tryAcquire(1, 0))
 
-    val latch = new CountDownLatch(1)
     val t = new Thread(() => {
       try {
         semaphore.acquire(1, 1)
@@ -47,8 +44,6 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
       } catch {
         case _: InterruptedException =>
           semaphore.acquire(1, 1)
-      } finally {
-        latch.countDown()
       }
     })
     t.start()
@@ -58,48 +53,41 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
     semaphore.release(1)
 
-    latch.await(1, TimeUnit.SECONDS)
+    t.join(1000)
   }
 
   test("multiple threads should handle permits and priority correctly") {
     val semaphore = new TestPrioritySemaphore(0)
-    val latch = new CountDownLatch(3)
     val results = new java.util.ArrayList[Int]()
 
     def taskWithPriority(priority: Int) = new Runnable {
       override def run(): Unit = {
-        try {
-          semaphore.acquire(1, priority)
-          results.add(priority)
-          semaphore.release(1)
-        } finally {
-          latch.countDown()
-        }
+        semaphore.acquire(1, priority)
+        results.add(priority)
+        semaphore.release(1)
       }
     }
 
-    new Thread(taskWithPriority(2)).start()
-    new Thread(taskWithPriority(1)).start()
-    new Thread(taskWithPriority(3)).start()
+    val threads = List(
+      new Thread(taskWithPriority(2)),
+      new Thread(taskWithPriority(1)),
+      new Thread(taskWithPriority(3))
+    )
+    threads.foreach(_.start)
 
     Thread.sleep(100)
     semaphore.release(1)
 
-    latch.await(1, TimeUnit.SECONDS)
+    threads.foreach(_.join(1000))
     assert(results.asScala.toList == List(3, 2, 1))
   }
 
   test("low priority thread cannot surpass high priority thread") {
     val semaphore = new TestPrioritySemaphore(10)
-    val latch = new CountDownLatch(1)
     semaphore.acquire(5, 0)
     val t = new Thread(() => {
-      try {
-        semaphore.acquire(10, 2)
-      } finally {
-        semaphore.release(10)
-        latch.countDown()
-      }
+      semaphore.acquire(10, 2)
+      semaphore.release(10)
     })
     t.start()
     Thread.sleep(100)
@@ -108,7 +96,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
     // is waiting to acquire, therefore we should get rejected here
     assert(!semaphore.tryAcquire(5, 0))
     semaphore.release(5)
-    latch.await(1, TimeUnit.SECONDS)
+    t.join(1000)
     // After the high priority thread finishes, we can acquire with lower priority
     assert(semaphore.tryAcquire(5, 0))
   }

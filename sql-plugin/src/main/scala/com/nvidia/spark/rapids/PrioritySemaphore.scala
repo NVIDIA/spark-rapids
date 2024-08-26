@@ -77,6 +77,9 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     } catch {
       case e: Exception =>
         waitingQueue.remove(info)
+        if (info.signaled) {
+          release(numPermits)
+        }
         throw e
     } finally {
       lock.unlock()
