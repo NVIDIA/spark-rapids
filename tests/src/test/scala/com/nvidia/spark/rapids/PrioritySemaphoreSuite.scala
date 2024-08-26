@@ -88,4 +88,28 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
     latch.await(1, TimeUnit.SECONDS)
     assert(results.asScala.toList == List(3, 2, 1))
   }
+
+  test("low priority thread cannot surpass high priority thread") {
+    val semaphore = new TestPrioritySemaphore(10)
+    val latch = new CountDownLatch(1)
+    semaphore.acquire(5, 0)
+    val t = new Thread(() => {
+      try {
+        semaphore.acquire(10, 2)
+      } finally {
+        semaphore.release(10)
+        latch.countDown()
+      }
+    })
+    t.start()
+    Thread.sleep(100)
+
+    // Here, there should be 5 available permits, but a thread with higher priority (2)
+    // is waiting to acquire, therefore we should get rejected here
+    assert(!semaphore.tryAcquire(5, 0))
+    semaphore.release(5)
+    latch.await(1, TimeUnit.SECONDS)
+    // After the high priority thread finishes, we can acquire with lower priority
+    assert(semaphore.tryAcquire(5, 0))
+  }
 }
