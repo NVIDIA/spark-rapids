@@ -54,26 +54,26 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
 
   def acquire(numPermits: Int, priority: T): Unit = {
     lock.lock()
-    val condition = lock.newCondition()
-    val info = ThreadInfo(priority, condition, numPermits)
-    try {
-      if (canAcquire(numPermits)) {
-        commitAcquire(numPermits)
-      } else {
+    if (tryAcquire(numPermits, priority)) {
+      lock.unlock()
+    } else {
+      val condition = lock.newCondition()
+      val info = ThreadInfo(priority, condition, numPermits)
+      try {
         waitingQueue.add(info)
         while (!info.signaled) {
           info.condition.await()
         }
+      } catch {
+        case e: Exception =>
+          waitingQueue.remove(info)
+          if (info.signaled) {
+            release(numPermits)
+          }
+          throw e
+      } finally {
+        lock.unlock()
       }
-    } catch {
-      case e: Exception =>
-        waitingQueue.remove(info)
-        if (info.signaled) {
-          release(numPermits)
-        }
-        throw e
-    } finally {
-      lock.unlock()
     }
   }
 
