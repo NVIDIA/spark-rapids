@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.{Comparator, PriorityQueue}
+import java.util.PriorityQueue
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
 class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) {
@@ -31,13 +31,10 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     var signaled: Boolean = false
   }
 
-  private val threadComparator: Comparator[ThreadInfo] =
-    (o1: ThreadInfo, o2: ThreadInfo) => ordering.compare(o1.priority, o2.priority)
-
   // We expect a relatively small number of threads to be contending for this lock at any given
   // time, therefore we are not concerned with the insertion/removal time complexity.
   private val waitingQueue: PriorityQueue[ThreadInfo] =
-    new PriorityQueue[ThreadInfo](threadComparator.reversed())
+    new PriorityQueue[ThreadInfo](Ordering.by[ThreadInfo, T](_.priority).reverse)
 
   def tryAcquire(numPermits: Int, priority: T): Boolean = {
     lock.lock()
