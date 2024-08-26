@@ -19,9 +19,9 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.execution.datasources.parquet.ParquetDeltaByteArrayEncodingSuite
+import org.apache.spark.sql.execution.datasources.parquet.ParquetAvroCompatibilitySuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
-class RapidsParquetDeltaByteArrayEncodingSuite
-  extends ParquetDeltaByteArrayEncodingSuite
+class RapidsParquetAvroCompatibilitySuite
+  extends ParquetAvroCompatibilitySuite
     with RapidsSQLTestsBaseTrait {}
