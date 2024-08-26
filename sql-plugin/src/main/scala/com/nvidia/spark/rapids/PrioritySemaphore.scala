@@ -19,10 +19,6 @@ package com.nvidia.spark.rapids
 import java.util.{Comparator, PriorityQueue}
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
-object PrioritySemaphore {
-  private val DEFAULT_MAX_PERMITS = 1000
-}
-
 class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) {
   // This lock is used to generate condition variables, which affords us the flexibility to notify
   // specific threads at a time. If we use the regular synchronized pattern, we have to either
@@ -42,8 +38,6 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
   // time, therefore we are not concerned with the insertion/removal time complexity.
   private val waitingQueue: PriorityQueue[ThreadInfo] =
     new PriorityQueue[ThreadInfo](threadComparator.reversed())
-
-  def this()(implicit ordering: Ordering[T]) = this(PrioritySemaphore.DEFAULT_MAX_PERMITS)(ordering)
 
   def tryAcquire(numPermits: Int, priority: T): Boolean = {
     lock.lock()
