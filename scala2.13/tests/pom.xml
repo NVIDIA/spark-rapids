@@ -163,6 +163,12 @@
                     <scope>test</scope>
                     <classifier>tests</classifier>
                 </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-avro</artifactId>
+                    <version>1.12.2</version>
+                    <scope>test</scope>
+                </dependency>
             </dependencies>
         </profile>
     </profiles>
