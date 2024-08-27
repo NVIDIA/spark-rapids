@@ -63,10 +63,11 @@ trait GpuArrowOutput {
   protected def toBatch(table: Table): ColumnarBatch
 
   /**
-   * Default to "arrowMaxRecordsPerBatch".
+   * Default to minimum one between "arrowMaxRecordsPerBatch" and 10000.
    * Change it by calling `setMinReadTargetNumRows` before a reading.
    */
-  private var minReadTargetNumRows: Int = SQLConf.get.arrowMaxRecordsPerBatch
+  private var minReadTargetNumRows: Int = math.min(
+    SQLConf.get.arrowMaxRecordsPerBatch, 10000)
 
   def newGpuArrowReader: GpuArrowReader = new GpuArrowReader
 
