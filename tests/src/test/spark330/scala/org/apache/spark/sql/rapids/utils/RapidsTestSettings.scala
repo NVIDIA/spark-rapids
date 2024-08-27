@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetAvroCompatibilitySuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite,  RapidsParquetFieldIdIOSuite, RapidsParquetFieldIdSchemaSuite, RapidsParquetFileFormatSuite, RapidsParquetInteroperabilitySuite, RapidsParquetProtobufCompatibilitySuite, RapidsParquetQuerySuite, RapidsParquetRebaseDatetimeSuite, RapidsParquetSchemaSuite, RapidsParquetThriftCompatibilitySuite, RapidsParquetVectorizedSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetAvroCompatibilitySuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite,  RapidsParquetFieldIdIOSuite, RapidsParquetFieldIdSchemaSuite, RapidsParquetFileFormatSuite, RapidsParquetInteroperabilitySuite, RapidsParquetProtobufCompatibilitySuite, RapidsParquetQuerySuite, RapidsParquetRebaseDatetimeSuite, RapidsParquetSchemaPruningSuite, RapidsParquetSchemaSuite, RapidsParquetThriftCompatibilitySuite, RapidsParquetVectorizedSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
@@ -99,6 +99,11 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("TODO"))
     .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("TODO"))
     .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("TODO"))
+  enableSuite[RapidsParquetSchemaPruningSuite]
+    .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("TO be added"))
+    .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("TO be added"))
+    .excludeByPrefix("Case-insensitive parser", KNOWN_ISSUE("TO be added"))
+    .excludeByPrefix("Case-sensitive parser", KNOWN_ISSUE("TO be added"))
   enableSuite[RapidsParquetSchemaSuite]
     .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11380"))
     .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11380"))
