@@ -63,7 +63,7 @@ RUN conda init
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
-    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.9 cuda-version=${CUDA_VER} && \
+    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.10 cuda-version=${CUDA_VER} && \
     conda install -y spacy && python -m spacy download en_core_web_sm && \
     conda install -y -c anaconda pytest requests && \
     conda install -y -c conda-forge sre_yield && \
