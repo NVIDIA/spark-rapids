@@ -2033,12 +2033,14 @@ case class GpuReplaceNullmask(
   override def children: Seq[Expression] = Seq(input, mask)
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    val maskColumnNotNull = withResource(mask.columnarEval(batch)) { maskColumn =>
-      maskColumn.getBase.isNotNull
+    val maskColumnNullity = withResource(mask.columnarEval(batch)) { maskColumn =>
+      maskColumn.getBase.isNull
     }
-    val res = withResource(maskColumnNotNull) { _ =>
-      withResource(input.columnarEval(batch)) { inputColumn =>
-        inputColumn.getBase.copyWithBooleanColumnAsValidity(maskColumnNotNull)
+    val res = withResource(GpuScalar.from(null, dataType)) { nullScalar =>
+      withResource(maskColumnNullity) { _ =>
+        withResource(input.columnarEval(batch)) { inputColumn =>
+          maskColumnNullity.ifElse(nullScalar, inputColumn.getBase)
+        }
       }
     }
     GpuColumnVector.from(res, dataType)

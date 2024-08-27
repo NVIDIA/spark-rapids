@@ -1341,13 +1341,12 @@ def test_generic_reductions(data_gen):
 
 # min_by and max_by are supported for pyspark since 3.3.0 so tested with sql
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_basic_gens + struct_gens_sample_with_decimal128 + array_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + nested_gens_sample, ids=idfn)
 def test_hash_groupby_min_max_by_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, data_gen, UniqueLongGen()),
         "tbl",
         "SELECT a, min_by(b, c), max_by(b, c) FROM tbl GROUP BY a")
-
 
 # When the ordering column is not unique this gpu will always return the minimal/maximal value
 # while spark's result is non-deterministic. So we need to set the column b and c to be
@@ -1359,7 +1358,7 @@ def test_hash_groupby_min_max_by_same(data_gen):
         lambda spark: two_col_df(spark, byte_gen, data_gen),
         "tbl",
         "SELECT a, min_by(b, b), max_by(b, b) FROM tbl GROUP BY a")
-    
+
 def test_reduction_with_min_max_by_unique():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, int_gen, UniqueLongGen()).selectExpr(
