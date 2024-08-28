@@ -73,7 +73,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
     .exclude("SPARK-36229 conv should return result equal to -1 in base of toBase", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
   enableSuite[RapidsParquetAvroCompatibilitySuite]
-    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("TO be added"))
+    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11401"))
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
     .exclude("Create parquet table with compression", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11377"))
@@ -82,7 +82,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetFileFormatSuite]
-    .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("TO be added"))
+    .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11402"))
   enableSuite[RapidsParquetFieldIdIOSuite]
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
@@ -92,18 +92,18 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
     .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
   enableSuite[RapidsParquetQuerySuite]
-    .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", KNOWN_ISSUE("Todo"))
-    .exclude("SPARK-34212 Parquet should read decimals correctly", KNOWN_ISSUE("Todo"))
+    .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11403"))
+    .exclude("SPARK-34212 Parquet should read decimals correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11403"))
   enableSuite[RapidsParquetRebaseDatetimeSuite]
-    .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("TODO"))
-    .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("TODO"))
-    .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("TODO"))
-    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("TODO"))
+    .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
+    .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
+    .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
+    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
   enableSuite[RapidsParquetSchemaPruningSuite]
-    .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("TO be added"))
-    .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("TO be added"))
-    .excludeByPrefix("Case-insensitive parser", KNOWN_ISSUE("TO be added"))
-    .excludeByPrefix("Case-sensitive parser", KNOWN_ISSUE("TO be added"))
+    .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
+    .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
+    .excludeByPrefix("Case-insensitive parser", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
+    .excludeByPrefix("Case-sensitive parser", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
   enableSuite[RapidsParquetSchemaSuite]
     .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11380"))
     .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11380"))
