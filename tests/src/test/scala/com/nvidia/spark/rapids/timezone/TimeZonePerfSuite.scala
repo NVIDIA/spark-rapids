@@ -51,7 +51,7 @@ import org.apache.spark.sql.types._
  */
 class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   // perf test is disabled by default since it's a long running time in UT.
-  private val enablePerfTest = java.lang.Boolean.getBoolean("enableTimeZonePerf")
+  private val enablePerfTest = true // java.lang.Boolean.getBoolean("enableTimeZonePerf")
   private val timeZoneStrings = System.getProperty("TZs", "Asia/Shanghai")
 
   // rows for perf test
@@ -65,11 +65,13 @@ class TimeZonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAl
    * Create a Parquet file to test
    */
   override def beforeAll(): Unit = {
+    super.beforeAll()
     withCpuSparkSession(
       spark => createDF(spark).write.mode("overwrite").parquet(path))
   }
 
   override def afterAll(): Unit = {
+    super.afterAll()
     FileUtils.deleteRecursively(new File(path))
   }
 

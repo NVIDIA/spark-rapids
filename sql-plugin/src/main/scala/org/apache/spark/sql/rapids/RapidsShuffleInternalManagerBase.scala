@@ -1116,7 +1116,7 @@ class RapidsCachingWriter[K, V](
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
         if (batch.numRows > 0 && batch.numCols > 0) {
           // Add the table to the shuffle store
-          val handle = batch.column(0) match {
+          batch.column(0) match {
             case c: GpuPackedTableColumn =>
               val contigTable = c.getContiguousTable
               partSize = c.getTableBuffer.getLength
@@ -1124,23 +1124,14 @@ class RapidsCachingWriter[K, V](
               catalog.addContiguousTable(
                 blockId,
                 contigTable,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
-                // we don't need to sync here, because we sync on the cuda
-                // stream after sliceInternalOnGpu (contiguous_split)
-                needsSync = false)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c: GpuCompressedColumnVector =>
-              val buffer = c.getTableBuffer
-              partSize = buffer.getLength
-              val tableMeta = c.getTableMeta
-              uncompressedMetric += tableMeta.bufferMeta().uncompressedSize()
-              catalog.addBuffer(
+              partSize = c.getTableBuffer.getLength
+              uncompressedMetric += c.getTableMeta.bufferMeta().uncompressedSize()
+              catalog.addCompressedBatch(
                 blockId,
-                buffer,
-                tableMeta,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
-                // we don't need to sync here, because we sync on the cuda
-                // stream after compression.
-                needsSync = false)
+                batch,
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c =>
               throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
@@ -1154,21 +1145,18 @@ class RapidsCachingWriter[K, V](
           } else {
             sizes(partId) += partSize
           }
-          handle
         } else {
           // no device data, tracking only metadata
           val tableMeta = MetaUtils.buildDegenerateTableMeta(batch)
-          val handle =
-            catalog.addDegenerateRapidsBuffer(
-              blockId,
-              tableMeta)
+          catalog.addDegenerateRapidsBuffer(
+            blockId,
+            tableMeta)
 
           // ensure that we set the partition size to the default in this case if
           // we have non-zero rows, so this degenerate batch is shuffled.
           if (batch.numRows > 0) {
             sizes(partId) += DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT
           }
-          handle
         }
       }
       metricsReporter.incBytesWritten(bytesWritten)
@@ -1357,9 +1345,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     if (rapidsConf.isGPUShuffle && !isDriver) {
       val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
-        override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
-          val handle = catalog.getShuffleBufferHandle(tableId)
-          catalog.acquireBuffer(handle)
+        override def getShuffleHandle(tableId: Int): RapidsShuffleHandle = {
+          catalog.getShuffleBufferHandle(tableId)
         }
 
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {

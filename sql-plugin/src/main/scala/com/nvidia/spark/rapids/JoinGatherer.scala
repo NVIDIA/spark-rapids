@@ -307,7 +307,6 @@ class LazySpillableColumnarBatchImpl(
           spill = Some(SpillableColumnarBatch(cached.get,
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
         } finally {
-          // Putting data in a SpillableColumnarBatch takes ownership of it.
           cached = None
         }
       }

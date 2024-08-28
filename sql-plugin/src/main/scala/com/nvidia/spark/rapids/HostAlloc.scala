@@ -120,34 +120,26 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     require(retryCount >= 0,
       s"spillAndCheckRetry invoked with invalid retryCount $retryCount")
 
-    val store = RapidsBufferCatalog.getHostStorage
-    val storeSize = store.currentSize
-    val storeSpillableSize = store.currentSpillableSize
+    val store = SpillFramework.stores.hostStore
     val totalSize: Long = synchronized {
       currentPinnedAllocated + currentNonPinnedAllocated
     }
 
-    val attemptMsg = if (retryCount > 0) {
-      s"Attempt $retryCount"
-    } else {
-      "First attempt"
-    }
+    // TODO: AB fix this
+    //val attemptMsg = if (retryCount > 0) {
+    //  s"Attempt $retryCount"
+    //} else {
+    //  "First attempt"
+    //}
 
-    logInfo(s"Host allocation of $allocSize bytes failed, host store has " +
-        s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
-    if (storeSpillableSize == 0) {
+    val amountSpilled = store.spill(allocSize)
+
+    if (amountSpilled == 0) {
       logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
           s"Total host allocated is $totalSize bytes.")
       false
     } else {
-      val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-      logDebug(s"Targeting host store size of $targetSize bytes")
-      // We could not make it work so try and spill enough to make it work
-      val maybeAmountSpilled =
-        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
-      maybeAmountSpilled.foreach { amountSpilled =>
-        logInfo(s"Spilled $amountSpilled bytes from the host store")
-      }
+      logInfo(s"Spilled $amountSpilled bytes from the host store")
       true
     }
   }

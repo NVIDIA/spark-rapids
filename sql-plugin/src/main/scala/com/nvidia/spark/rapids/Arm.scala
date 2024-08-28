@@ -163,20 +163,6 @@ object Arm extends ArmScalaSpecificImpl {
     }
   }
 
-  /** Executes the provided code block, freeing the RapidsBuffer only if an exception occurs */
-  def freeOnExcept[T <: RapidsBuffer, V](r: T)(block: T => V): V = {
-    try {
-      block(r)
-    } catch {
-      case t: ControlThrowable =>
-        // Don't close for these cases..
-        throw t
-      case t: Throwable =>
-        r.safeFree(t)
-        throw t
-    }
-  }
-
   /** Executes the provided code block and then closes the resource */
   def withResource[T <: AutoCloseable, V](h: CloseableHolder[T])
       (block: CloseableHolder[T] => V): V = {

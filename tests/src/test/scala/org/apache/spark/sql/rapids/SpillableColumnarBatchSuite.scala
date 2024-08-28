@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,53 +16,29 @@
 
 package org.apache.spark.sql.rapids
 
-import java.util.UUID
-
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, SpillableColumnarBatchImpl, StorageTier}
-import com.nvidia.spark.rapids.StorageTier.StorageTier
-import com.nvidia.spark.rapids.format.TableMeta
+import ai.rapids.cudf.DeviceMemoryBuffer
+import com.nvidia.spark.rapids.{RapidsConf, SpillableBuffer, SpillFramework}
+import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.sql.types.{DataType, IntegerType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.storage.TempLocalBlockId
+import org.apache.spark.SparkConf
 
-class SpillableColumnarBatchSuite extends AnyFunSuite {
-
-  test("close updates catalog") {
-    val id = TempSpillBufferId(0, TempLocalBlockId(new UUID(1, 2)))
-    val mockBuffer = new MockBuffer(id)
-    val catalog = RapidsBufferCatalog.singleton
-    val oldBufferCount = catalog.numBuffers
-    catalog.registerNewBuffer(mockBuffer)
-    val handle = catalog.makeNewHandle(id, -1)
-    assertResult(oldBufferCount + 1)(catalog.numBuffers)
-    val spillableBatch = new SpillableColumnarBatchImpl(
-      handle,
-      5,
-      Array[DataType](IntegerType))
-    spillableBatch.close()
-    assertResult(oldBufferCount)(catalog.numBuffers)
+class SpillableColumnarBatchSuite extends AnyFunSuite with BeforeAndAfterAll {
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    SpillFramework.initialize(new RapidsConf(new SparkConf()))
   }
 
-  class MockBuffer(override val id: RapidsBufferId) extends RapidsBuffer {
-    override val memoryUsedBytes: Long = 123
-    override def meta: TableMeta = null
-    override val storageTier: StorageTier = StorageTier.DEVICE
-    override def getMemoryBuffer: MemoryBuffer = null
-    override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
-        length: Long, stream: Cuda.Stream): Unit = {}
-    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = null
-    override def getHostMemoryBuffer: HostMemoryBuffer = null
-    override def addReference(): Boolean = true
-    override def free(): Unit = {}
-    override def getSpillPriority: Long = 0
-    override def setSpillPriority(priority: Long): Unit = {}
-    override def close(): Unit = {}
-    override def getColumnarBatch(
-      sparkTypes: Array[DataType]): ColumnarBatch = null
-    override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = { body(null) }
-    override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = { body(null) }
+  override def afterAll(): Unit = {
+    super.afterAll()
+    SpillFramework.shutdown()
+  }
+
+  test("close updates catalog") {
+    assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
+    val deviceHandle = SpillableBuffer(DeviceMemoryBuffer.allocate(1234), -1)
+    assertResult(1)(SpillFramework.stores.deviceStore.numHandles)
+    deviceHandle.close()
+    assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
   }
 }

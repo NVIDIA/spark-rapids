@@ -1052,6 +1052,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
     long sum = 0;
+    if (batch.numCols() == 1 && batch.column(0) instanceof GpuPackedTableColumn) {
+      // this is a special case for a packed batch
+      return ((GpuPackedTableColumn) batch.column(0)).getTableBuffer().getLength();
+    }
     if (batch.numCols() > 0) {
       if (batch.column(0) instanceof WithTableBuffer) {
         WithTableBuffer wtb = (WithTableBuffer) batch.column(0);

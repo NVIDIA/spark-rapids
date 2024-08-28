@@ -1110,7 +1110,7 @@ class CudfSpillableHostConcatResult(
     val hmb: HostMemoryBuffer) extends SpillableHostConcatResult {
 
   override def toBatch: ColumnarBatch = {
-    closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+    closeOnExcept(buffer.getHostBuffer) { hostBuf =>
       SerializedTableColumn.from(header, hostBuf)
     }
   }

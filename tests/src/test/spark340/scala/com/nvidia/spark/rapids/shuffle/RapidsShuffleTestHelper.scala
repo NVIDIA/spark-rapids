@@ -35,7 +35,7 @@ import scala.collection
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsBufferHandle, RapidsConf, RapidsDeviceMemoryStore, RmmSparkRetrySuiteBase, ShuffleMetadata, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsConf, RapidsShuffleHandle, RmmSparkRetrySuiteBase, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
@@ -75,7 +75,6 @@ abstract class RapidsShuffleTestHelper
   var mockCopyExecutor: Executor = _
   var mockBssExecutor: Executor = _
   var mockHandler: RapidsShuffleFetchHandler = _
-  var mockStorage: RapidsDeviceMemoryStore = _
   var mockCatalog: ShuffleReceivedBufferCatalog = _
   var mockConf: RapidsConf = _
   var testMetricsUpdater: TestShuffleMetricsUpdater = _
@@ -156,11 +155,11 @@ abstract class RapidsShuffleTestHelper
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
 
     val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
-    when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any(), any()))
+    when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any()))
       .thenAnswer(_ => {
         val buffer = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
         buffersToClose.append(buffer)
-        mock[RapidsBufferHandle]
+        mock[RapidsShuffleHandle]
       })
 
     client = spy(new RapidsShuffleClient(
@@ -285,4 +284,3 @@ class MockClientConnection(mockTransaction: Transaction) extends ClientConnectio
 
   override def registerReceiveHandler(messageType: MessageType.Value): Unit = {}
 }
-

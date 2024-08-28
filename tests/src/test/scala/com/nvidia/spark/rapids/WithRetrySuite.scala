@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.{DataType, LongType}
 
@@ -52,19 +53,16 @@ class WithRetrySuite
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-    val deviceStorage = new RapidsDeviceMemoryStore()
-    val catalog = new RapidsBufferCatalog(deviceStorage)
-    RapidsBufferCatalog.setDeviceStorage(deviceStorage)
-    RapidsBufferCatalog.setCatalog(catalog)
+    SpillFramework.initialize(new RapidsConf(new SparkConf))
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
     RmmSpark.currentThreadIsDedicatedToTask(1)
   }
 
   override def afterEach(): Unit = {
+    SpillFramework.shutdown()
     RmmSpark.removeAllCurrentThreadAssociation()
     RmmSpark.clearEventHandler()
-    RapidsBufferCatalog.close()
     if (rmmWasInitialized) {
       Rmm.shutdown()
     }

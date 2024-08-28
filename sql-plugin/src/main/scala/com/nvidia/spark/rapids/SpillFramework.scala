@@ -1,0 +1,1606 @@
+/*
+ * Copyright (c) 2024, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.nvidia.spark.rapids
+
+import java.io.{DataOutputStream, File, FileInputStream, InputStream, OutputStream}
+import java.nio.ByteBuffer
+import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
+import java.nio.file.StandardOpenOption
+import java.util
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+
+import scala.collection.mutable
+
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
+import com.nvidia.spark.rapids.format.TableMeta
+import org.apache.commons.io.IOUtils
+
+import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
+import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
+import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.storage.BlockId
+
+/**
+ * Spark-RAPIDS Spill Framework
+ *
+ * The spill framework tracks device/host/disk object lifecycle in the RAPIDS Accelerator
+ * for Apache Spark. A set of stores is used to track these objects, which are wrapped in
+ * "handles" that describe the state of each to the user and to the framework.
+ *
+ * This file comment covers some pieces of the framework that are worth knowing up front.
+ *
+ * Ownership:
+ *
+ * Any object handed to the framework via the factory methods for each of the handles
+ * should not be used directly by the user. The framework takes ownership of all objects.
+ * To get a reference back, call the `materialize` method, and always close what the framework
+ * returns.
+ *
+ * CUDA/Host synchronization:
+ *
+ * We assume all device backed handles are completely materialized on the device (before adding
+ * to the store, the CUDA stream has been synchronized with the CPU thread creating the handle).
+ *
+ * We assume all host memory backed handles are completely materialized and not mutated by
+ * other CPU threads once handed to the framework.
+ *
+ * Spillability:
+ *
+ * An object is spillable (it will be copied to host or disk during OOM) if:
+ * - it has a sizeInBytes > 0
+ * - it is not actively being referenced by the user (call to `materialize`, or aliased)
+ * - it hasn't already spilled
+ * - it hasn't been closed
+ *
+ * Aliasing:
+ *
+ * We handle aliasing of objects, either in the spill framework or outside, by looking at the
+ * reference count. All objects added to the store should support a ref count.
+ * If the ref count is greater than the expected value, we assume it is being aliased,
+ * and therefore we don't waste time spilling the aliased object.
+ *
+ * Materialization:
+ *
+ * Every store handle supports a `materialize` method that isn't part of the interface.
+ * The reason is that to materialize certain objects, you may need some data (for example,
+ * spark schema descriptors). `materialize` incRefCounts the object if it's resident in the
+ * intended store (`DeviceSpillableHandle` incRefCounts an object if it is in the device store),
+ * and otherwise it will create a new copy from the spilled version and hand it to the user.
+ * Any time a user calls `materialize`, they are responsible for closing the returned object.
+ *
+ * Spilling:
+ *
+ * A `SpillableHandle` will track an object in a specific store (`DeviceSpillable` tracks
+ * device "intended" objects) for example. If the handle is asked to spill, it is the handle's
+ * responsibility to initiate that spill, and to track the spilled handle (a device spillable
+ * would have a `host` handle, which tracks the host spilled object).
+ *
+ * A cascade of spills can occur device -> host -> disk, given that host allocations can fail, or
+ * could not fit in the SpillableHostStore's limit (if defined). In this case, the call to spill
+ * will either create a host handle tracking an object on the host store (if we made room), or it
+ * will create a host handle that points to a disk handle, tracking a file on disk.
+ *
+ * If the disk is full, we do not handle this in any special way. We expect this to be a
+ * terminal state to the executor. Every handle spills to its own file on disk, identified
+ * as a "temporary block" `BlockId` from Spark.
+ *
+ * Notes on locking:
+ *
+ * All stores use a concurrent hash map to store instances of `StoreHandle`. The only store
+ * with extra locking is the `SpillableHostStore`, to maintain a `totalSize` number that is
+ * used to figure out cheaply when it is full.
+ *
+ * Handles hold a lock to protect the user against when it is either in the middle of
+ * spilling, or closed. Most handles, except for disk handles, hold a reference to an object
+ * in their respective store (`SpillableDeviceBufferHandle` has a `dev` reference that holds
+ * a `DeviceMemoryBuffer`, and a `host` reference to `SpillableHostBufferHandle` that is only
+ * set if spilled), and the handle guarantees that one of these will be set, or none if the handle
+ * is closed.
+ *
+ * We hold the handle lock when we are spilling (performing IO). That means that no other consumer
+ * can access this spillable device handle while it is being spilled, including a second thread
+ * trying to spill and asking each of the handles wether they are spillable or not, as that requires
+ * the handle lock. We will relax this likely in follow on work.
+ *
+ * We never hold a store-wide coarse grain lock in the stores when we do IO.
+ */
+
+/**
+ * Common interface for all handles in the spill framework.
+ */
+trait StoreHandle extends AutoCloseable {
+  /**
+   * Approximate size of this handle, used in two scenarios:
+   * - Used from the host store to figure out how much host memory total it is tracking.
+   * - If sizeInBytes is 0, the object is tracked by the stores so it can be
+   *   removed on shutdown, or by handle.close, but 0-byte handles are not spillable.
+   */
+  val sizeInBytes: Long
+}
+
+trait SpillableHandle extends StoreHandle {
+  /**
+   * Method called to spill this handle. It can be triggered from the spill store,
+   * or directly against the handle.
+   * @return sizeInBytes if spilled, 0 for any other reason (not spillable, closed)
+   */
+  def spill: Long
+
+  /**
+   * Method used to determine whether a handle tracks an object that could be spilled
+   * @note At the level of `SpillableHandle`, the only requirement of spillability
+   *       is that the size of the handle is > 0. `sizeInBytes` is known at construction, and
+   *       is a `val`.
+   * @return true if currently spillable, false otherwise
+   */
+  def spillable: Boolean = sizeInBytes > 0
+}
+
+/**
+ * Spillable handles that can be materialized on the device.
+ * @tparam T an auto closeable subclass. `dev` tracks an instance of this object,
+ *           on the device.
+ */
+trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
+  var dev: Option[T]
+
+  override def spillable: Boolean = synchronized {
+    super.spillable && dev.isDefined
+  }
+}
+
+/**
+ * Spillable handles that can be materialized on the host.
+ * @tparam T an auto closeable subclass. `host` tracks an instance of this object,
+ *           on the host.
+ */
+trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
+  var host: Option[T]
+
+  override def spillable: Boolean = synchronized {
+    super.spillable && host.isDefined
+  }
+}
+
+object SpillableHostBufferHandle extends Logging {
+  def apply(hmb: HostMemoryBuffer): SpillableHostBufferHandle = {
+    val handle = new SpillableHostBufferHandle(hmb.getLength, host = Some(hmb))
+    SpillFramework.stores.hostStore.track(handle)
+    // do we care if:
+    // handle didn't fit in the store as it is too large.
+    // we made memory for this so we are going to hold our noses and keep going
+    // we could spill `handle` at this point.
+    handle
+  }
+
+  def createHostHandleWithPacker(
+      chunkedPacker: ChunkedPacker): SpillableHostBufferHandle = {
+    val handle = new SpillableHostBufferHandle(chunkedPacker.getTotalContiguousSize)
+    withResource(
+      SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
+      SpillFramework.withChunkedPackBounceBuffer { bb =>
+        while (chunkedPacker.hasNext) {
+          withResource(chunkedPacker.next(bb)) { n =>
+            builder.copyNext(n, Cuda.DEFAULT_STREAM)
+            // we are calling chunked packer on `bb` again each time, we need
+            // to synchronize before we ask for the next chunk
+            Cuda.DEFAULT_STREAM.sync()
+          }
+        }
+      }
+      builder.build
+    }
+  }
+
+  def createHostHandleFromDeviceBuff(
+      buff: DeviceMemoryBuffer): SpillableHostBufferHandle = {
+    val handle = new SpillableHostBufferHandle(buff.getLength)
+    withResource(
+      SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
+      builder.copyNext(buff, Cuda.DEFAULT_STREAM)
+      Cuda.DEFAULT_STREAM.sync()
+      builder.build
+    }
+  }
+}
+
+class SpillableHostBufferHandle private (
+    override val sizeInBytes: Long,
+    override var host: Option[HostMemoryBuffer] = None,
+    var disk: Option[DiskHandle] = None)
+  extends HostSpillableHandle[HostMemoryBuffer] {
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      host.getOrElse {
+        throw new IllegalStateException(
+          s"$this is spillable but it doesn't have a materialized host buffer!")
+      }.getRefCount == 1
+    } else {
+      false
+    }
+  }
+
+  def materialize: HostMemoryBuffer = {
+    var materialized: HostMemoryBuffer = null
+    var diskHandle: DiskHandle = null
+    synchronized {
+      if (host.isDefined) {
+        materialized = host.get
+        materialized.incRefCount()
+      } else if (disk.isDefined) {
+        diskHandle = disk.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    if (materialized == null) {
+      materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
+        diskHandle.materializeToHostMemoryBuffer(hmb)
+        hmb
+      }
+    }
+    materialized
+  }
+
+  override def spill: Long = {
+    if (!spillable) {
+      0L
+    } else {
+      synchronized {
+        if (disk.isEmpty) {
+          withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+            val outputChannel = diskHandleBuilder.getChannel
+            GpuTaskMetrics.get.spillToDiskTime {
+              withResource(getHostBuffer.get) { hmb =>
+                val iter = new HostByteBufferIterator(hmb)
+                iter.foreach { bb =>
+                  try {
+                    while (bb.hasRemaining) {
+                      outputChannel.write(bb)
+                    }
+                  } finally {
+                    RapidsStorageUtils.dispose(bb)
+                  }
+                }
+              }
+            }
+            disk = Some(diskHandleBuilder.build)
+            disk
+          }
+        } else {
+          None
+        }
+      }
+      releaseHostResource()
+      sizeInBytes
+    }
+  }
+
+  private def releaseHostResource(): Unit = {
+    SpillFramework.removeFromHostStore(this)
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
+  }
+  
+  def getHostBuffer: Option[HostMemoryBuffer] = synchronized {
+    host.foreach(_.incRefCount())
+    host
+  }
+
+  override def close(): Unit = {
+    releaseHostResource()
+    synchronized {
+      disk.foreach(_.close())
+      disk = None
+    }
+  }
+
+  def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
+    var hostBuffer: HostMemoryBuffer = null
+    var diskHandle: DiskHandle = null
+    synchronized {
+      if (host.isDefined) {
+        hostBuffer = host.get
+        hostBuffer.incRefCount()
+      } else if (disk.isDefined) {
+        diskHandle = disk.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    if (hostBuffer != null) {
+      GpuTaskMetrics.get.readSpillFromHostTime {
+        withResource(hostBuffer) { _ =>
+          dmb.copyFromHostBuffer(
+            /*dstOffset*/ 0,
+            /*src*/ hostBuffer,
+            /*srcOffset*/ 0,
+            /*length*/ hostBuffer.getLength)
+        }
+      }
+    } else {
+      // cannot find a full host buffer, get chunked api
+      // from disk
+      diskHandle.materializeToDeviceMemoryBuffer(dmb)
+    }
+  }
+
+  def setHost(singleShotBuffer: HostMemoryBuffer): Unit = synchronized {
+    host = Some(singleShotBuffer)
+  }
+
+  def setDisk(handle: DiskHandle): Unit = synchronized {
+    disk = Some(handle)
+  }
+}
+
+object SpillableDeviceBufferHandle {
+  def apply(dmb: DeviceMemoryBuffer): SpillableDeviceBufferHandle = {
+    val handle = new SpillableDeviceBufferHandle(dmb.getLength, dev = Some(dmb))
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
+}
+
+class SpillableDeviceBufferHandle private (
+    override val sizeInBytes: Long,
+    override var dev: Option[DeviceMemoryBuffer],
+    var host: Option[SpillableHostBufferHandle] = None)
+    extends DeviceSpillableHandle[DeviceMemoryBuffer] {
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      dev.getOrElse {
+        throw new IllegalStateException(
+          s"$this is spillable but it doesn't have a dev buffer!")
+      }.getRefCount == 1
+    } else {
+      false
+    }
+  }
+
+  def materialize: DeviceMemoryBuffer = {
+    var materialized: DeviceMemoryBuffer = null
+    var hostHandle: SpillableHostBufferHandle = null
+    synchronized {
+      if (dev.isDefined) {
+        materialized = dev.get
+        materialized.incRefCount()
+      } else if (host.isDefined) {
+        // since we spilled, host must be set.
+        hostHandle = host.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    // if `materialized` is null, we spilled. This is a terminal
+    // state, as we are not allowing unspill, and we don't need
+    // to hold locks while we copy back from here.
+    if (materialized == null) {
+      materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
+        hostHandle.materializeToDeviceMemoryBuffer(dmb)
+        dmb
+      }
+    }
+    materialized
+  }
+
+  override def spill: Long = {
+    if (!spillable) {
+      0L
+    } else {
+      synchronized {
+        if (host.isEmpty) {
+          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
+        }
+      }
+      releaseDeviceResources()
+      sizeInBytes
+    }
+  }
+
+  private def releaseDeviceResources(): Unit = {
+    SpillFramework.removeFromDeviceStore(this)
+    synchronized {
+      dev.foreach(_.close())
+      dev = None
+    }
+  }
+
+  override def close(): Unit = {
+    releaseDeviceResources()
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
+  }
+}
+
+class SpillableColumnarBatchHandle private (
+    override val sizeInBytes: Long,
+    override var dev: Option[ColumnarBatch],
+    var host: Option[SpillableHostBufferHandle] = None)
+  extends DeviceSpillableHandle[ColumnarBatch] with Logging {
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      val dcvs = GpuColumnVector.extractBases(dev.get)
+      val colRepetition = mutable.HashMap[ColumnVector, Int]()
+      dcvs.foreach { hcv =>
+        colRepetition.put(hcv, colRepetition.getOrElse(hcv, 0) + 1)
+      }
+      dcvs.forall(dcv => {
+        colRepetition(dcv) == dcv.getRefCount
+      })
+    } else {
+      false
+    }
+  }
+
+  private var meta: Option[ByteBuffer] = None
+
+  def materialize(dt: Array[DataType]): ColumnarBatch = {
+    var materialized: ColumnarBatch = null
+    var hostHandle: SpillableHostBufferHandle = null
+    synchronized {
+      if (dev.isDefined) {
+        materialized = GpuColumnVector.incRefCounts(dev.get)
+      } else if (host.isDefined) {
+        hostHandle = host.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    if (materialized == null) {
+      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+        hostHandle.materializeToDeviceMemoryBuffer(dmb)
+        dmb
+      }
+      val cb = withResource(devBuffer) { _ =>
+        withResource(Table.fromPackedTable(meta.get, devBuffer)) { tbl =>
+          GpuColumnVector.from(tbl, dt)
+        }
+      }
+      materialized = cb
+    }
+    materialized
+  }
+
+  override def spill: Long = {
+    if (!spillable) {
+      0L
+    } else {
+      synchronized {
+        if (host.isEmpty) {
+          withChunkedPacker { chunkedPacker =>
+            meta = Some(chunkedPacker.getPackedMeta)
+            host = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
+          }
+        }
+      }
+      releaseDeviceResource()
+      // We return the size we were created with. This is not the actual size
+      // of this batch when it is packed, and it is used by the calling code
+      // to figure out more or less how much did we free in the device.
+      sizeInBytes
+    }
+  }
+
+  private def withChunkedPacker[T](body: ChunkedPacker => T): T = {
+    val tbl = synchronized {
+      if (dev.isEmpty) {
+        throw new IllegalStateException("cannot get copier without a batch")
+      }
+      GpuColumnVector.from(dev.get)
+    }
+    withResource(tbl) { _ =>
+      withResource(new ChunkedPacker(tbl, SpillFramework.chunkedPackBounceBufferSize)) { packer =>
+        body(packer)
+      }
+    }
+  }
+
+  private def releaseDeviceResource(): Unit = {
+    SpillFramework.removeFromDeviceStore(this)
+    synchronized {
+      dev.foreach(_.close())
+      dev = None
+    }
+  }
+
+  override def close(): Unit = {
+    releaseDeviceResource()
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
+  }
+}
+
+object SpillableColumnarBatchFromBufferHandle {
+  def apply(
+      ct: ContiguousTable,
+      dataTypes: Array[DataType]): SpillableColumnarBatchFromBufferHandle = {
+    withResource(ct) { _ =>
+      val sizeInBytes = ct.getBuffer.getLength
+      val cb = GpuColumnVectorFromBuffer.from(ct, dataTypes)
+      val handle = new SpillableColumnarBatchFromBufferHandle(
+        sizeInBytes, dev = Some(cb))
+      SpillFramework.stores.deviceStore.track(handle)
+      handle
+    }
+  }
+
+  def apply(cb: ColumnarBatch): SpillableColumnarBatchFromBufferHandle = {
+    require(GpuColumnVectorFromBuffer.isFromBuffer(cb),
+      "Columnar batch isn't a batch from buffer")
+    val sizeInBytes =
+      cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer].getBuffer.getLength
+    val handle = new SpillableColumnarBatchFromBufferHandle(
+      sizeInBytes, dev = Some(cb))
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
+}
+
+class SpillableColumnarBatchFromBufferHandle private (
+    override val sizeInBytes: Long,
+    override var dev: Option[ColumnarBatch],
+    var host: Option[SpillableHostBufferHandle] = None)
+  extends DeviceSpillableHandle[ColumnarBatch] {
+
+  private var meta: Option[TableMeta] = None
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      val dcvs = GpuColumnVector.extractBases(dev.get)
+      val colRepetition = mutable.HashMap[ColumnVector, Int]()
+      dcvs.foreach { hcv =>
+        colRepetition.put(hcv, colRepetition.getOrElse(hcv, 0) + 1)
+      }
+      dcvs.forall(dcv => {
+        colRepetition(dcv) == dcv.getRefCount
+      })
+    } else {
+      false
+    }
+  }
+
+  def materialize(dt: Array[DataType]): ColumnarBatch = {
+    var materialized: ColumnarBatch = null
+    var hostHandle: SpillableHostBufferHandle = null
+    synchronized {
+      if (dev.isDefined) {
+        materialized = GpuColumnVector.incRefCounts(dev.get)
+      } else if (host.isDefined) {
+        hostHandle = host.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    if (materialized == null) {
+      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+        hostHandle.materializeToDeviceMemoryBuffer(dmb)
+        dmb
+      }
+      val cb = withResource(devBuffer) { _ =>
+        withResource(Table.fromPackedTable(meta.get.packedMetaAsByteBuffer(), devBuffer)) { tbl =>
+          GpuColumnVector.from(tbl, dt)
+        }
+      }
+      materialized = cb
+    }
+    materialized
+  }
+
+  override def spill: Long = {
+    if (!spillable) {
+      0
+    } else {
+      synchronized {
+        if (host.isEmpty) {
+          val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
+          meta = Some(cvFromBuffer.getTableMeta)
+          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+            cvFromBuffer.getBuffer))
+        }
+      }
+      releaseDeviceResource()
+      sizeInBytes
+    }
+  }
+
+  private def releaseDeviceResource(): Unit = {
+    SpillFramework.removeFromDeviceStore(this)
+    synchronized {
+      dev.foreach(_.close())
+      dev = None
+    }
+  }
+
+  override def close(): Unit = {
+    releaseDeviceResource()
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
+  }
+}
+
+object SpillableCompressedColumnarBatchHandle {
+  def apply(cb: ColumnarBatch): SpillableCompressedColumnarBatchHandle = {
+    require(GpuCompressedColumnVector.isBatchCompressed(cb),
+      "Tried to track a compressed batch, but the batch wasn't compressed")
+    val compressedSize =
+      cb.column(0).asInstanceOf[GpuCompressedColumnVector].getTableBuffer.getLength
+    val handle = new SpillableCompressedColumnarBatchHandle(compressedSize, dev = Some(cb))
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
+}
+
+class SpillableCompressedColumnarBatchHandle private (
+    val compressedSizeInBytes: Long,
+    override var dev: Option[ColumnarBatch],
+    var host: Option[SpillableHostBufferHandle] = None)
+  extends DeviceSpillableHandle[ColumnarBatch] {
+
+  override val sizeInBytes: Long = compressedSizeInBytes
+
+  protected var meta: Option[TableMeta] = None
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      val cb = dev.get
+      val buff = cb.column(0).asInstanceOf[GpuCompressedColumnVector].getTableBuffer
+      buff.getRefCount == 1
+    } else {
+      false
+    }
+  }
+
+  def materialize: ColumnarBatch = {
+    var materialized: ColumnarBatch = null
+    var hostHandle: SpillableHostBufferHandle = null
+    synchronized {
+      if (dev.isDefined) {
+        materialized = GpuCompressedColumnVector.incRefCounts(dev.get)
+      } else if (host.isDefined) {
+        hostHandle = host.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    if (materialized == null) {
+      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+        hostHandle.materializeToDeviceMemoryBuffer(dmb)
+        dmb
+      }
+      materialized = withResource(devBuffer) { _ =>
+        GpuCompressedColumnVector.from(devBuffer, meta.get)
+      }
+    }
+    materialized
+  }
+
+  override def spill: Long = {
+    if (!spillable) {
+      0L
+    } else {
+      synchronized {
+        if (host.isEmpty) {
+          val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuCompressedColumnVector]
+          meta = Some(cvFromBuffer.getTableMeta)
+          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+            cvFromBuffer.getTableBuffer))
+        }
+      }
+      releaseDeviceResource()
+      compressedSizeInBytes
+    }
+  }
+
+  private def releaseDeviceResource(): Unit = {
+    SpillFramework.removeFromDeviceStore(this)
+    synchronized {
+      dev.foreach(_.close())
+      dev = None
+    }
+  }
+
+  override def close(): Unit = {
+    releaseDeviceResource()
+    synchronized {
+      host.foreach(_.close())
+      host = None
+      meta = None
+    }
+  }
+}
+
+object SpillableHostColumnarBatchHandle {
+  def apply(cb: ColumnarBatch): SpillableHostColumnarBatchHandle = {
+    val sizeInBytes = RapidsHostColumnVector.getTotalHostMemoryUsed(cb)
+    val handle = new SpillableHostColumnarBatchHandle(sizeInBytes, cb.numRows(), host = Some(cb))
+    SpillFramework.stores.hostStore.track(handle)
+    handle
+  }
+}
+
+class SpillableHostColumnarBatchHandle private (
+    val sizeInBytes: Long,
+    val numRows: Int,
+    override var host: Option[ColumnarBatch],
+    var disk: Option[DiskHandle] = None)
+  extends HostSpillableHandle[ColumnarBatch] {
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      val hcvs = RapidsHostColumnVector.extractBases(host.get)
+      val colRepetition = mutable.HashMap[HostColumnVector, Int]()
+      hcvs.foreach { hcv =>
+        colRepetition.put(hcv, colRepetition.getOrElse(hcv, 0) + 1)
+      }
+      hcvs.forall(hcv => {
+        colRepetition(hcv) == hcv.getRefCount
+      })
+    } else {
+      false
+    }
+  }
+
+  def materialize(sparkTypes: Array[DataType]): ColumnarBatch = {
+    var materialized: ColumnarBatch = null
+    var diskHandle: DiskHandle = null
+    synchronized {
+      if (host.isDefined) {
+        materialized = RapidsHostColumnVector.incRefCounts(host.get)
+      } else if (disk.isDefined) {
+        diskHandle = disk.get
+      } else {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      }
+    }
+    if (materialized == null) {
+      materialized = diskHandle.withInputWrappedStream { inputStream =>
+        val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(inputStream)
+        val hostCols = withResource(hostBuffer) { _ =>
+          SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+        }
+        new ColumnarBatch(hostCols.toArray, numRows)
+      }
+    }
+    materialized
+  }
+
+  override def spill: Long = {
+    if (!spillable) {
+      0L
+    } else {
+      synchronized {
+        if (disk.isEmpty) {
+          withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+            GpuTaskMetrics.get.spillToDiskTime {
+              val dos = diskHandleBuilder.getDataOutputStream
+              val columns = RapidsHostColumnVector.extractBases(host.get)
+              JCudfSerialization.writeToStream(columns, dos, 0, host.get.numRows())
+            }
+            disk = Some(diskHandleBuilder.build)
+            disk
+          }
+        } else {
+          None
+        }
+      }
+      releaseHostResource()
+      sizeInBytes
+    }
+  }
+
+  private def releaseHostResource(): Unit = {
+    SpillFramework.removeFromHostStore(this)
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
+  }
+
+  override def close(): Unit = {
+    releaseHostResource()
+    synchronized {
+      disk.foreach(_.close())
+      disk = None
+    }
+  }
+}
+
+object DiskHandle {
+  def apply(blockId: BlockId,
+            offset: Long,
+            diskSizeInBytes: Long): DiskHandle = {
+    val handle = new DiskHandle(
+      blockId, offset, diskSizeInBytes)
+    SpillFramework.stores.diskStore.track(handle)
+    handle
+  }
+}
+
+/**
+ * A disk buffer handle helps us track spill-framework originated data on disk.
+ * This type of handle isn't spillable, and therefore it just implements `StoreHandle`
+ * @param blockId - a spark `BlockId` obtained from the configured `BlockManager`
+ * @param offset - starting offset for the data within the file backing `blockId`
+ * @param sizeInBytes - amount of bytes on disk (usually compressed and could also be encrypted).
+ */
+class DiskHandle private(
+    val blockId: BlockId,
+    val offset: Long,
+    override val sizeInBytes: Long)
+  extends StoreHandle {
+
+  private def withInputChannel[T](body: FileChannel => T): T = synchronized {
+    val file = SpillFramework.stores.diskStore.diskBlockManager.getFile(blockId)
+    GpuTaskMetrics.get.readSpillFromDiskTime {
+      withResource(new FileInputStream(file)) { fs =>
+        withResource(fs.getChannel) { channel =>
+          body(channel)
+        }
+      }
+    }
+  }
+
+  def withInputWrappedStream[T](body: InputStream => T): T = synchronized {
+    val diskBlockManager = SpillFramework.stores.diskStore.diskBlockManager
+    val serializerManager = diskBlockManager.getSerializerManager()
+    GpuTaskMetrics.get.readSpillFromDiskTime {
+      withInputChannel { inputChannel =>
+        inputChannel.position(offset)
+        withResource(Channels.newInputStream(inputChannel)) { compressed =>
+          withResource(serializerManager.wrapStream(blockId, compressed)) { in =>
+            body(in)
+          }
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    SpillFramework.removeFromDiskStore(this)
+    SpillFramework.stores.diskStore.deleteFile(blockId)
+  }
+
+  def materializeToHostMemoryBuffer(mb: HostMemoryBuffer): Unit = {
+    withInputWrappedStream { in =>
+      withResource(new HostMemoryOutputStream(mb)) { out =>
+        IOUtils.copy(in, out)
+      }
+    }
+  }
+
+  def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
+    var copyOffset = 0L
+    withInputWrappedStream { in =>
+      SpillFramework.withHostSpillBounceBuffer { hmb =>
+        val bbLength = hmb.getLength.toInt
+        withResource(new HostMemoryOutputStream(hmb)) { out =>
+          var sizeRead = IOUtils.copyLarge(in, out, 0, bbLength)
+          while (sizeRead > 0) {
+            // this syncs at every copy, since for now we are
+            // reusing a single host spill bounce buffer
+            dmb.copyFromHostBuffer(
+              /*dstOffset*/ copyOffset,
+              /*src*/ hmb,
+              /*srcOffset*/ 0,
+              /*length*/ sizeRead)
+            out.seek(0) // start over
+            copyOffset += sizeRead
+            sizeRead = IOUtils.copyLarge(in, out, 0, bbLength)
+          }
+        }
+      }
+    }
+  }
+}
+
+trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
+  protected val handles = new ConcurrentHashMap[T, java.lang.Boolean]()
+
+  def numHandles: Int = {
+    handles.size()
+  }
+
+  def track(handle: T): Unit = {
+    doTrack(handle)
+  }
+
+  def remove(handle: T): Unit = {
+    doRemove(handle)
+  }
+
+  protected def doTrack(handle: T): Boolean = {
+    handles.put(handle, true) == null
+  }
+
+  protected def doRemove(handle: T): Boolean = {
+    handles.remove(handle) != null
+  }
+
+  override def close(): Unit = {
+    handles.forEach((handle, _ )=> {
+      handle.close()
+    })
+    handles.clear()
+  }
+}
+
+trait SpillableStore extends HandleStore[SpillableHandle] with Logging {
+  protected def spillNvtxRange: NvtxRange
+
+  def spill(spillNeeded: Long): Long = {
+    if (spillNeeded == 0) {
+      0L
+    } else {
+      withResource(spillNvtxRange) { _ =>
+        var amountSpilled = 0L
+        val spillables = new util.ArrayList[SpillableHandle]()
+        var amountToSpill = 0L
+        val allHandles = handles.keySet().iterator()
+        // two threads could be here trying to spill and creating a list of spillables
+        while (allHandles.hasNext && amountToSpill < spillNeeded) {
+          val handle = allHandles.next()
+          if (handle.spillable) {
+            amountToSpill += handle.sizeInBytes
+            spillables.add(handle)
+          }
+        }
+        val it = spillables.iterator()
+        var numSpilled = 0
+        while (it.hasNext) {
+          val handle = it.next()
+          val spilled = handle.spill
+          if (spilled > 0) {
+            // this thread was successful at spilling handle.
+            amountSpilled += spilled
+            numSpilled += 1
+          } // else, either:
+          // - this thread lost the race and the handle was closed
+          // - another thread spilled it
+          // - the handle isn't spillable anymore, due to ref count.
+        }
+
+        amountSpilled
+      }
+    }
+  }
+}
+
+class SpillableHostStore(val maxSize: Option[Long] = None)
+  extends SpillableStore
+    with Logging {
+
+  private var totalSize: Long = 0L
+
+  private def tryTrack(handle: SpillableHandle): Boolean = {
+    if (maxSize.isEmpty || handle.sizeInBytes == 0) {
+      super.doTrack(handle)
+      // for now, keep this totalSize part, we technically
+      // do not need to track `totalSize` if we don't have a limit
+      synchronized {
+        totalSize += handle.sizeInBytes
+      }
+      true
+    } else {
+      synchronized {
+        val storeMaxSize = maxSize.get
+        if (totalSize + handle.sizeInBytes > storeMaxSize) {
+          // we want to try to make room for this buffer
+          false
+        } else {
+          // it fits
+          if (super.doTrack(handle)) {
+            totalSize += handle.sizeInBytes
+          }
+          true
+        }
+      }
+    }
+  }
+
+  override def track(handle: SpillableHandle): Unit = {
+    trackInternal(handle)
+  }
+
+  private def trackInternal(handle: SpillableHandle): Boolean = {
+    // try to track the handle: in the case of no limits
+    // this should just be add to the store
+    var tracked = false
+    tracked = tryTrack(handle)
+    if (!tracked) {
+      // we only end up here if we have host store limits.
+      var numRetries = 0
+      // we are going to try to track again, in a loop,
+      // since we want to release
+      var canFit = true
+      val handleSize = handle.sizeInBytes
+      var amountSpilled = 0L
+      val hadHandlesToSpill = !handles.isEmpty
+      while (canFit && !tracked && numRetries < 5) {
+        // if we are trying to add a handle larger than our limit
+        if (maxSize.get < handleSize) {
+          // no point in checking how much is free, just spill all
+          // we have
+          amountSpilled += spill(maxSize.get)
+        } else {
+          // handleSize is within the limits
+          val freeAmount = synchronized {
+            maxSize.get - totalSize
+          }
+          val spillNeeded = handleSize - freeAmount
+          if (spillNeeded > 0) {
+            amountSpilled += spill(spillNeeded)
+          }
+        }
+        tracked = tryTrack(handle)
+        if (!tracked) {
+          // we tried to spill, and we still couldn't fit this buffer
+          // if we have a totalSize > 0, we could try some more
+          // the disk api
+          synchronized {
+            canFit = totalSize > 0
+          }
+        }
+        numRetries += 1
+      }
+      val taskId = Option(TaskContext.get()).map(_.taskAttemptId()).getOrElse(0)
+      if (hadHandlesToSpill) {
+        logInfo(s"Task $taskId spilled $amountSpilled bytes while trying to " +
+          s"track $handleSize bytes.")
+      }
+    }
+    tracked
+  }
+
+  override def remove(handle: SpillableHandle): Unit = {
+    synchronized {
+      if (doRemove(handle)) {
+        totalSize -= handle.sizeInBytes
+      }
+    }
+  }
+
+  /**
+   * Makes a builder object for `SpillableHostBufferHandle`. The builder will
+   * either copy ot host or disk, if the host buffer fits in the host store (if tracking
+   * is enabled).
+   *
+   * Host store locks and disk store locks will be taken/released during this call, but
+   * after the builder is created, no locks are held in the store.
+   *
+   * @param handle a host handle that only has a size set, and no backing store.
+   * @return the builder to be closed by caller
+   */
+  def makeBuilder(handle: SpillableHostBufferHandle): SpillableHostBufferHandleBuilder = {
+    var builder: Option[SpillableHostBufferHandleBuilder] = None
+    if (handle.sizeInBytes < maxSize.getOrElse(Long.MaxValue)) {
+      HostAlloc.tryAlloc(handle.sizeInBytes).foreach { hmb =>
+        withResource(hmb) { _ =>
+          if (trackInternal(handle)) {
+            hmb.incRefCount
+            // the host store made room or fit this buffer
+            builder = Some(new SpillableHostBufferHandleBuilderForHost(handle, hmb))
+          }
+        }
+      }
+    }
+    builder.getOrElse {
+      // the disk store will track this when we call .build
+      new SpillableHostBufferHandleBuilderForDisk(handle)
+    }
+  }
+
+  trait SpillableHostBufferHandleBuilder extends AutoCloseable {
+    /**
+     * Copy the entirety of `mb` (0 to getLength) to host or disk.
+     *
+     * We synchronize after each copy since we do not manage the lifetime
+     * of `mb`.
+     *
+     * @param mb buffer to copy from
+     * @param stream CUDA stream to use, and synchronize against
+     */
+    def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit
+
+    /**
+     * Returns a usable `SpillableHostBufferHandle` with either the
+     * `host` or `disk` set with the appropriate object.
+     *
+     * Note that if we are writing to disk, we are going to add a
+     * new `DiskHandle` in the disk store's concurrent collection.
+     *
+     * @return host handle with data in host or disk
+     */
+    def build: SpillableHostBufferHandle
+  }
+
+  private class SpillableHostBufferHandleBuilderForHost(
+    var handle: SpillableHostBufferHandle,
+    var singleShotBuffer: HostMemoryBuffer)
+      extends SpillableHostBufferHandleBuilder with Logging {
+    private var copied = 0L
+
+    override def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit = {
+      GpuTaskMetrics.get.spillToHostTime {
+        singleShotBuffer.copyFromMemoryBufferAsync(
+          copied,
+          mb,
+          0,
+          mb.getLength,
+          stream)
+        copied += mb.getLength
+      }
+    }
+
+    override def build: SpillableHostBufferHandle = {
+      // add some sort of setter method to Host Handle
+      require(handle != null, "Called build too many times")
+      require(copied == handle.sizeInBytes,
+        s"Expected ${handle.sizeInBytes} B but copied ${copied} B instead")
+      handle.setHost(singleShotBuffer)
+      singleShotBuffer = null
+      val res = handle
+      handle = null
+      res
+    }
+
+    override def close(): Unit = {
+      if (handle != null) {
+        handle.close()
+        handle = null
+      }
+      if (singleShotBuffer != null) {
+        singleShotBuffer.close()
+        singleShotBuffer = null
+      }
+    }
+  }
+
+  private class SpillableHostBufferHandleBuilderForDisk(
+    var handle: SpillableHostBufferHandle)
+      extends SpillableHostBufferHandleBuilder {
+    private var copied = 0L
+    private var diskHandleBuilder = DiskHandleStore.makeBuilder
+
+    override def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit = {
+      SpillFramework.withHostSpillBounceBuffer { hostSpillBounceBuffer =>
+        GpuTaskMetrics.get.spillToDiskTime {
+          val outputChannel = diskHandleBuilder.getChannel
+          val iter = new MemoryBufferToHostByteBufferIterator(
+            mb,
+            hostSpillBounceBuffer,
+            Cuda.DEFAULT_STREAM)
+          iter.foreach { byteBuff =>
+            try {
+              while (byteBuff.hasRemaining) {
+                outputChannel.write(byteBuff)
+              }
+              copied += byteBuff.capacity()
+            } finally {
+              RapidsStorageUtils.dispose(byteBuff)
+            }
+          }
+        }
+      }
+    }
+
+    override def build: SpillableHostBufferHandle = {
+      // add some sort of setter method to Host Handle
+      require(handle != null, "Called build too many times")
+      require(copied == handle.sizeInBytes,
+        s"Expected ${handle.sizeInBytes} B but copied ${copied} B instead")
+      handle.setDisk(diskHandleBuilder.build)
+      val res = handle
+      handle = null
+      res
+    }
+
+    override def close(): Unit = {
+      if (handle != null) {
+        handle.close()
+        handle = null
+      }
+      if (diskHandleBuilder!= null) {
+        diskHandleBuilder.close()
+        diskHandleBuilder = null
+      }
+    }
+  }
+
+  override protected def spillNvtxRange: NvtxRange =
+    new NvtxRange("disk spill", NvtxColor.RED)
+}
+
+class SpillableDeviceStore extends SpillableStore {
+  override protected def spillNvtxRange: NvtxRange =
+    new NvtxRange("device spill", NvtxColor.ORANGE)
+}
+
+class DiskHandleStore(conf: SparkConf)
+    extends HandleStore[DiskHandle] with Logging {
+  val diskBlockManager: RapidsDiskBlockManager = new RapidsDiskBlockManager(conf)
+
+  def getFile(blockId: BlockId): File = {
+    diskBlockManager.getFile(blockId)
+  }
+
+  def deleteFile(blockId: BlockId): Unit = {
+    val file = getFile(blockId)
+    file.delete()
+    if (file.exists()) {
+      logWarning(s"Unable to delete $file")
+    }
+  }
+
+  // TODO: AB: yeah GpuTaskMetrics are messed up
+  override def track(handle: DiskHandle): Unit = {
+    // protects the off chance that someone adds this handle twice..
+    if (doTrack(handle)) {
+      GpuTaskMetrics.get.incDiskBytesAllocated(handle.sizeInBytes)
+    }
+  }
+
+  override def remove(handle: DiskHandle): Unit = {
+    // protects the off chance that someone removes this handle twice..
+    if (doRemove(handle)) {
+      GpuTaskMetrics.get.decDiskBytesAllocated(handle.sizeInBytes)
+    }
+  }
+}
+
+object DiskHandleStore {
+  /**
+   * An object that knows how to write a block to disk in Spark.
+   * It supports
+   * @param blockId the BlockManager `BlockId` to use.
+   * @param startPos the position to start writing from, useful if we can
+   *                 share files
+   */
+  class DiskHandleBuilder(val blockId: BlockId,
+                          val startPos: Long = 0L) extends AutoCloseable {
+    private val file = SpillFramework.stores.diskStore.getFile(blockId)
+
+    private val serializerManager =
+      SpillFramework.stores.diskStore.diskBlockManager.getSerializerManager()
+
+    // this is just to make sure we use DiskWriter once and we are not leaking
+    // as it is, we could use `DiskWriter` to start writing at other offsets
+    private var closed = false
+
+    private var fc: FileChannel = null
+
+    private def getFileChannel: FileChannel = {
+      val options = Seq(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+      fc = FileChannel.open(file.toPath, options:_*)
+      // seek to the starting pos
+      fc.position(startPos)
+      fc
+    }
+
+    private def wrapChannel(channel: FileChannel): OutputStream = {
+      val os = Channels.newOutputStream(channel)
+      serializerManager.wrapStream(blockId, os)
+    }
+
+    private var outputChannel: WritableByteChannel = _
+    private var outputStream: DataOutputStream = _
+
+    def getChannel: WritableByteChannel = {
+      require(!closed, "Cannot write to closed DiskWriter")
+      require(outputStream == null,
+        "either channel or data output stream supported, but not both")
+      if (outputChannel != null) {
+        outputChannel
+      } else {
+        val fc = getFileChannel
+        val wrappedStream = closeOnExcept(fc)(wrapChannel)
+        outputChannel = closeOnExcept(wrappedStream)(Channels.newChannel)
+        outputChannel
+      }
+    }
+
+    def getDataOutputStream: DataOutputStream = {
+      require(!closed, "Cannot write to closed DiskWriter")
+      require(outputStream == null,
+        "either channel or data output stream supported, but not both")
+      if (outputStream != null) {
+        outputStream
+      } else {
+        val fc = getFileChannel
+        val wrappedStream = closeOnExcept(fc)(wrapChannel)
+        outputStream = new DataOutputStream(wrappedStream)
+        outputStream
+      }
+    }
+
+    override def close(): Unit = {
+      if (closed) {
+        throw new IllegalStateException("already closed DiskWriter")
+      }
+      if (outputStream != null) {
+        outputStream.close()
+        outputStream = null
+      }
+      if (outputChannel != null) {
+        outputChannel.close()
+        outputChannel = null
+      }
+      closed = true
+    }
+
+    def build: DiskHandle =
+      DiskHandle(
+        blockId,
+        startPos,
+        fc.position() - startPos)
+  }
+
+  def makeBuilder: DiskHandleBuilder = {
+    val blockId = BlockId(s"temp_local_${UUID.randomUUID().toString}")
+    new DiskHandleBuilder(blockId)
+  }
+}
+
+trait SpillableStores extends AutoCloseable {
+  var deviceStore: SpillableDeviceStore
+  var hostStore: SpillableHostStore
+  var diskStore: DiskHandleStore
+  override def close(): Unit = {
+    Seq(deviceStore, hostStore, diskStore).safeClose()
+  }
+}
+
+/**
+ * A spillable that is meant to be interacted with from the device.
+ */
+object SpillableColumnarBatchHandle {
+  def apply(tbl: Table, dataTypes: Array[DataType]): SpillableColumnarBatchHandle = {
+    withResource(tbl) { _ =>
+      SpillableColumnarBatchHandle(GpuColumnVector.from(tbl, dataTypes))
+    }
+  }
+
+  def apply(cb: ColumnarBatch): SpillableColumnarBatchHandle = {
+    require(!GpuColumnVectorFromBuffer.isFromBuffer(cb),
+      "A SpillableColumnarBatchHandle doesn't support cuDF packed batches")
+    require(!GpuCompressedColumnVector.isBatchCompressed(cb),
+      "A SpillableColumnarBatchHandle doesn't support comprssed batches")
+    val sizeInBytes = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+    val handle = new SpillableColumnarBatchHandle(sizeInBytes, dev = Some(cb))
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
+}
+
+object SpillFramework extends Logging {
+  // public for tests
+  var storesInternal: SpillableStores = _
+  
+  def stores = {
+    if (storesInternal == null) {
+      throw new IllegalStateException(
+        "Cannot use SpillFramework without calling SpillFramework.initialize first")
+    }
+    storesInternal
+  }
+
+  // used by the chunked packer to construct the cuDF-side packer object
+  var chunkedPackBounceBufferSize: Long = -1L
+
+  // TODO: these should be pools, instead of individual buffers
+  private var hostSpillBounceBuffer: HostMemoryBuffer = _
+  private var chunkedPackBounceBuffer: DeviceMemoryBuffer = _
+
+  private lazy val conf: SparkConf = {
+    val env = SparkEnv.get
+    if (env != null) {
+      env.conf
+    } else {
+      // For some unit tests
+      new SparkConf()
+    }
+  }
+  
+  def initialize(rapidsConf: RapidsConf): Unit = synchronized {
+    val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
+      // Disable the limit because it is handled by the RapidsHostMemoryStore
+      None
+    } else if (rapidsConf.hostSpillStorageSize == -1) {
+      // + 1 GiB by default to match backwards compatibility
+      Some(rapidsConf.pinnedPoolSize + (1024L * 1024 * 1024))
+    } else {
+      Some(rapidsConf.hostSpillStorageSize)
+    }
+    chunkedPackBounceBufferSize = rapidsConf.chunkedPackBounceBufferSize
+    // this should hopefully be pinned, but it would work without
+    hostSpillBounceBuffer = HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize)
+    chunkedPackBounceBuffer = DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize)
+    storesInternal = new SpillableStores {
+      override var deviceStore: SpillableDeviceStore = new SpillableDeviceStore
+      override var hostStore: SpillableHostStore = new SpillableHostStore(hostSpillStorageSize)
+      override var diskStore: DiskHandleStore = new DiskHandleStore(conf)
+    }
+    val hostSpillStorageSizeStr = hostSpillStorageSize.map(sz => s"$sz B").getOrElse("unlimited")
+    logInfo(s"Initialized SpillFramework. Host spill store max size is: $hostSpillStorageSizeStr.")
+  }
+
+  def shutdown(): Unit = {
+    if (hostSpillBounceBuffer != null) {
+      hostSpillBounceBuffer.close()
+      hostSpillBounceBuffer = null
+    }
+    if (chunkedPackBounceBuffer != null) {
+      chunkedPackBounceBuffer.close()
+      chunkedPackBounceBuffer = null
+    }
+    if (storesInternal != null) {
+      storesInternal.close()
+      storesInternal = null
+    }
+  }
+
+  def withHostSpillBounceBuffer[T](body: HostMemoryBuffer => T): T =
+    hostSpillBounceBuffer.synchronized {
+      body(hostSpillBounceBuffer)
+    }
+
+  def withChunkedPackBounceBuffer[T](body: DeviceMemoryBuffer => T): T =
+    chunkedPackBounceBuffer.synchronized {
+      body(chunkedPackBounceBuffer)
+    }
+
+  def removeFromDeviceStore(value: SpillableHandle): Unit = {
+    // if the stores have already shut down, we don't want to create them here
+    val deviceStore = synchronized {
+      Option(storesInternal).map(_.deviceStore)
+    }
+    deviceStore.foreach(_.remove(value))
+  }
+
+  def removeFromHostStore(value: SpillableHandle): Unit = {
+    // if the stores have already shut down, we don't want to create them here
+    val hostStore = synchronized {
+      Option(storesInternal).map(_.hostStore)
+    }
+    hostStore.foreach(_.remove(value))
+  }
+
+  def removeFromDiskStore(value: DiskHandle): Unit = {
+    // if the stores have already shut down, we don't want to create them here
+    val maybeStores = synchronized {
+      Option(storesInternal).map(_.diskStore)
+    }
+    maybeStores.foreach(_.remove(value))
+  }
+}
+
+/**
+ * ChunkedPacker is an Iterator-like class that uses a cudf::chunked_pack to copy a cuDF `Table`
+ * to a target buffer in chunks. It implements a next method that takes a DeviceMemoryBuffer
+ * as an argument to be used for the copy.
+ *
+ * Each chunk is sized at most `bounceBuffer.getLength`, and the caller should cudaMemcpy
+ * bytes from `bounceBuffer` to a target buffer after each call to `next()`.
+ *
+ * @note `ChunkedPacker` must be closed by the caller as it has GPU and host resources
+ *       associated with it.
+ *
+ * @param table cuDF Table to chunk_pack
+ * @param bounceBufferSize size of GPU memory to be used for packing. The buffer will be
+ *                         obtained during the iterator-like 'next(DeviceMemoryBuffer)'
+ */
+class ChunkedPacker(table: Table,
+                    bounceBufferSize: Long)
+  extends Logging with AutoCloseable {
+
+  private var closed: Boolean = false
+
+  // When creating cudf::chunked_pack use a pool if available, otherwise default to the
+  // per-device memory resource
+  private val chunkedPack = {
+    val pool = GpuDeviceManager.chunkedPackMemoryResource
+    val cudfChunkedPack = try {
+      pool.flatMap { chunkedPool =>
+        Some(table.makeChunkedPack(bounceBufferSize, chunkedPool))
+      }
+    } catch {
+      case _: OutOfMemoryError =>
+        if (!ChunkedPacker.warnedAboutPoolFallback) {
+          ChunkedPacker.warnedAboutPoolFallback = true
+          logWarning(
+            s"OOM while creating chunked_pack using pool sized ${pool.map(_.getMaxSize)}B. " +
+              "Falling back to the per-device memory resource.")
+        }
+        None
+    }
+
+    // if the pool is not configured, or we got an OOM, try again with the per-device pool
+    cudfChunkedPack.getOrElse {
+      table.makeChunkedPack(bounceBufferSize)
+    }
+  }
+
+  private val packedMeta = withResource(chunkedPack.buildMetadata()) { packedMeta =>
+    val tmpBB = packedMeta.getMetadataDirectBuffer
+    val metaCopy = ByteBuffer.allocateDirect(tmpBB.capacity())
+    metaCopy.put(tmpBB)
+    metaCopy.flip()
+    metaCopy
+  }
+
+  def getTotalContiguousSize: Long = chunkedPack.getTotalContiguousSize
+
+  def getPackedMeta: ByteBuffer = {
+    packedMeta
+  }
+
+  def hasNext: Boolean = {
+    if (closed) {
+      throw new IllegalStateException(s"ChunkedPacker is closed")
+    }
+    chunkedPack.hasNext
+  }
+
+  def next(bounceBuffer: DeviceMemoryBuffer): DeviceMemoryBuffer = {
+    require(bounceBuffer.getLength == bounceBufferSize,
+      s"Bounce buffer ${bounceBuffer} doesn't match size ${bounceBufferSize} B.")
+
+    if (closed) {
+      throw new IllegalStateException(s"ChunkedPacker is closed")
+    }
+    val bytesWritten = chunkedPack.next(bounceBuffer)
+    // we increment the refcount because the caller has no idea where
+    // this memory came from, so it should close it.
+    bounceBuffer.slice(0, bytesWritten)
+  }
+
+  override def close(): Unit = {
+    if (!closed) {
+      closed = true
+      chunkedPack.close()
+    }
+  }
+}
+
+object ChunkedPacker {
+  private var warnedAboutPoolFallback: Boolean = false
+}

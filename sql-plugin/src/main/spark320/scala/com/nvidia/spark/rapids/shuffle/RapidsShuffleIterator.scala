@@ -39,7 +39,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuSemaphore, RapidsConf, RapidsShuffleHandle, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -90,7 +90,7 @@ class RapidsShuffleIterator(
    * A result for a successful buffer received
    * @param handle - the shuffle received buffer handle as tracked in the catalog
    */
-  case class BufferReceived(handle: RapidsBufferHandle) extends ShuffleClientResult
+  case class BufferReceived(handle: RapidsShuffleHandle) extends ShuffleClientResult
 
   /**
    * A result for a failed attempt at receiving block metadata, or corresponding batches.
@@ -245,7 +245,7 @@ class RapidsShuffleIterator(
           def clientDone: Boolean = clientExpectedBatches > 0 &&
             clientExpectedBatches == clientResolvedBatches
 
-          override def batchReceived(handle: RapidsBufferHandle): Boolean = {
+          override def batchReceived(handle: RapidsShuffleHandle): Boolean = {
             resolvedBatches.synchronized {
               if (taskComplete) {
                 false
@@ -310,8 +310,7 @@ class RapidsShuffleIterator(
       logWarning(s"Iterator for task ${taskAttemptIdStr} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
       resolvedBatches.forEach {
-        case BufferReceived(handle) =>
-          GpuShuffleEnv.getReceivedCatalog.removeBuffer(handle)
+        case BufferReceived(handle) => handle.close()
         case _ =>
       }
       // tell the client to cancel pending requests
@@ -337,8 +336,6 @@ class RapidsShuffleIterator(
   }
 
   override def next(): ColumnarBatch = {
-    var cb: ColumnarBatch = null
-    var sb: RapidsBuffer = null
     val range = new NvtxRange(s"RapidshuffleIterator.next", NvtxColor.RED)
 
     // If N tasks downstream are accumulating memory we run the risk OOM
@@ -356,6 +353,7 @@ class RapidsShuffleIterator(
     // fetches and so it could produce device memory. Note this is not allowing for some external
     // thread to schedule the fetches for us, it may be something we consider in the future, given
     // memory pressure.
+    // No good way to get a metric in here for semaphore time.
     taskContext.foreach(GpuSemaphore.acquireIfNecessary)
 
     if (!started) {
@@ -379,16 +377,12 @@ class RapidsShuffleIterator(
         val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
           NvtxColor.PURPLE)
         try {
-          sb = catalog.acquireBuffer(handle)
-          cb = sb.getColumnarBatch(sparkTypes)
-          metricsUpdater.update(blockedTime, 1, sb.memoryUsedBytes, cb.numRows())
+          val (cb, memoryUsedBytes) = catalog.getColumnarBatchAndRemove(handle, sparkTypes)
+          metricsUpdater.update(blockedTime, 1, memoryUsedBytes, cb.numRows())
+          cb
         } finally {
           nvtxRangeAfterGettingBatch.close()
           range.close()
-          if (sb != null) {
-            sb.close()
-          }
-          catalog.removeBuffer(handle)
         }
       case Some(
         TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>
@@ -414,6 +408,5 @@ class RapidsShuffleIterator(
       case _ =>
         throw new IllegalStateException(s"Invalid result type $result")
     }
-    cb
   }
 }

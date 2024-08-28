@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
@@ -169,7 +170,9 @@ object GpuDeviceManager extends Logging {
     chunkedPackMemoryResource = None
     poolSizeLimit = 0L
 
-    RapidsBufferCatalog.close()
+    SpillFramework.shutdown()
+    RmmSpark.clearEventHandler()
+    Rmm.clearEventHandler()
     GpuShuffleEnv.shutdown()
     // try to avoid segfault on RMM shutdown
     val timeout = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
@@ -278,6 +281,8 @@ object GpuDeviceManager extends Logging {
     }
   }
 
+  private var memoryEventHandler: DeviceMemoryEventHandler = _
+
   private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     if (!Rmm.isInitialized) {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
@@ -385,8 +390,25 @@ object GpuDeviceManager extends Logging {
         }
       }
 
-      RapidsBufferCatalog.init(conf)
-      GpuShuffleEnv.init(conf, RapidsBufferCatalog.getDiskBlockManager())
+      SpillFramework.initialize(conf)
+
+      memoryEventHandler = new DeviceMemoryEventHandler(
+        SpillFramework.stores.deviceStore,
+        conf.gpuOomDumpDir,
+        conf.gpuOomMaxRetries)
+
+      if (conf.sparkRmmStateEnable) {
+        val debugLoc = if (conf.sparkRmmDebugLocation.isEmpty) {
+          null
+        } else {
+          conf.sparkRmmDebugLocation
+        }
+        RmmSpark.setEventHandler(memoryEventHandler, debugLoc)
+      } else {
+        logWarning("SparkRMM retry has been disabled")
+        Rmm.setEventHandler(memoryEventHandler)
+      }
+      GpuShuffleEnv.init(conf)
     }
   }
 

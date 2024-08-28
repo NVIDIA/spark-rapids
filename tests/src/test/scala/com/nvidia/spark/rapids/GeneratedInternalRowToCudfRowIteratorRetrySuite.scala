@@ -20,7 +20,7 @@ import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 import org.mockito.ArgumentMatchers.any
-import org.mockito.Mockito.{doAnswer, spy, times, verify}
+import org.mockito.Mockito.{doAnswer, spy}
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import org.scalatestplus.mockito.MockitoSugar
@@ -39,6 +39,14 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
     withResource(reductionTable) { tbl =>
       GpuColumnVector.from(tbl, Seq(LongType).toArray[DataType])
     }
+  }
+
+  override def beforeEach(): Unit = {
+    // some tests in this suite will want to perform `verify` calls on the device store
+    // so we close it and create a spy around one.
+    super.beforeEach()
+    SpillFramework.storesInternal.deviceStore.close()
+    SpillFramework.storesInternal.deviceStore = spy(new SpillableDeviceStore)
   }
 
   private def getAndResetNumRetryThrowCurrentTask: Int = {
@@ -65,26 +73,24 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       }
       assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
       assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
+      assertResult(0)(SpillFramework.stores.deviceStore.spill(1))
     }
   }
 
   test("a retry when converting to a table is handled") {
     val batch = buildBatch()
     val batchIter = Seq(batch).iterator
-    var rapidsBufferSpy: RapidsBuffer = null
-    doAnswer(new Answer[AnyRef]() {
-      override def answer(invocation: InvocationOnMock): AnyRef = {
-        val res = invocation.callRealMethod()
+    doAnswer(new Answer[Boolean]() {
+      override def answer(invocation: InvocationOnMock): Boolean = {
+        invocation.callRealMethod()
         // we mock things this way due to code generation issues with mockito.
         // when we add a table we have
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 3,
           RmmSpark.OomInjectionType.GPU.ordinal, 0)
-        rapidsBufferSpy = spy(res.asInstanceOf[RapidsBuffer])
-        rapidsBufferSpy
+        true
       }
-    }).when(deviceStorage)
-        .addTable(any(), any(), any(), any())
+    }).when(SpillFramework.stores.deviceStore)
+      .track(any())
 
     withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
       NoopMetric)) { ctriter =>
@@ -102,35 +108,27 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       }
       assertResult(6)(getAndResetNumRetryThrowCurrentTask)
       assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
-      // This is my wrap around of checking that we did retry the last part
-      // where we are converting the device column of rows into an actual column.
-      // Because we asked for 3 retries, we would ask the spill framework 4 times to materialize
-      // a batch.
-      verify(rapidsBufferSpy, times(4))
-          .getColumnarBatch(any())
+      assertResult(0)(SpillFramework.stores.deviceStore.spill(1))
     }
   }
 
   test("spilling the device column of rows works") {
     val batch = buildBatch()
     val batchIter = Seq(batch).iterator
-    var rapidsBufferSpy: RapidsBuffer = null
-    doAnswer(new Answer[AnyRef]() {
-      override def answer(invocation: InvocationOnMock): AnyRef = {
-        val res = invocation.callRealMethod()
+    doAnswer(new Answer[Boolean]() {
+      override def answer(invocation: InvocationOnMock): Boolean = {
+        val handle = invocation.getArgument(0).asInstanceOf[SpillableColumnarBatchHandle]
         // we mock things this way due to code generation issues with mockito.
         // when we add a table we have
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 3,
           RmmSpark.OomInjectionType.GPU.ordinal, 0)
-        rapidsBufferSpy = spy(res.asInstanceOf[RapidsBuffer])
         // at this point we have created a buffer in the Spill Framework
         // lets spill it
-        RapidsBufferCatalog.singleton.synchronousSpill(deviceStorage, 0)
-        rapidsBufferSpy
+        SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+        true
       }
-    }).when(deviceStorage)
-        .addTable(any(), any(), any(), any())
+    }).when(SpillFramework.stores.deviceStore)
+        .track(any())
 
     withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
       NoopMetric)) { ctriter =>
@@ -148,13 +146,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       }
       assertResult(6)(getAndResetNumRetryThrowCurrentTask)
       assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
-      // This is my wrap around of checking that we did retry the last part
-      // where we are converting the device column of rows into an actual column.
-      // Because we asked for 3 retries, we would ask the spill framework 4 times to materialize
-      // a batch.
-      verify(rapidsBufferSpy, times(4))
-          .getColumnarBatch(any())
+      assertResult(0)(SpillFramework.stores.deviceStore.spill(1))
     }
   }
 
@@ -173,7 +165,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       assertThrows[GpuSplitAndRetryOOM] {
         myIter.next()
       }
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
+      assertResult(0)(SpillFramework.stores.deviceStore.spill(1))
     }
   }
 
@@ -199,7 +191,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       }
       assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
       assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
+      assertResult(0)(SpillFramework.stores.deviceStore.spill(1))
     }
   }
 
@@ -225,7 +217,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       }
       assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
       assert(!myIter.hasNext)
-      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
+      assertResult(0)(SpillFramework.stores.deviceStore.spill(1))
     }
   }
 }

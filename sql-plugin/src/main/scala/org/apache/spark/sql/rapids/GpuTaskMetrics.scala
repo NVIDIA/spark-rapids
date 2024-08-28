@@ -130,12 +130,12 @@ class GpuTaskMetrics extends Serializable {
 
   def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
 
-  def incDiskBytesAllocated(bytes: Long): Unit = {
+  def incDiskBytesAllocated(bytes: Long): Unit = synchronized {
     diskBytesAllocated += bytes
     maxDiskBytesAllocated = maxDiskBytesAllocated.max(diskBytesAllocated)
   }
 
-  def decDiskBytesAllocated(bytes: Long): Unit = {
+  def decDiskBytesAllocated(bytes: Long): Unit = synchronized {
     diskBytesAllocated -= bytes
     // For some reason it's possible for the task to start out by releasing resources,
     // possibly from a previous task, in such case we probably should just ignore it.

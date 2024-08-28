@@ -63,7 +63,7 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
       }
     }
   }
-
+  
   test("GPU project retry with GPU rand") {
     def projectRand(): Seq[GpuExpression] = Seq(
       GpuAlias(GpuRand(GpuLiteral(RAND_SEED)), "rand")())
@@ -154,5 +154,4 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
       }
     }
   }
-
 }

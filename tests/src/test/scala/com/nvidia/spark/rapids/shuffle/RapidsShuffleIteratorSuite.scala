@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import com.nvidia.spark.rapids.{RapidsBuffer, RapidsBufferHandle}
+import com.nvidia.spark.rapids.{RapidsShuffleHandle, SpillableDeviceBufferHandle}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers._
@@ -214,13 +214,14 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any())).thenReturn(client)
       doNothing().when(client).doFetch(any(), ac.capture())
-      val mockBuffer = mock[RapidsBuffer]
+      val mockBuffer = RapidsShuffleHandle(mock[SpillableDeviceBufferHandle], null)
+      when(mockBuffer.spillable.sizeInBytes).thenReturn(123L)
 
       val cb = new ColumnarBatch(Array.empty, 10)
-      val handle = mock[RapidsBufferHandle]
-      when(mockBuffer.getColumnarBatch(Array.empty)).thenReturn(cb)
-      when(mockCatalog.acquireBuffer(any[RapidsBufferHandle]())).thenReturn(mockBuffer)
-      doNothing().when(mockCatalog).removeBuffer(any())
+      val handle = mock[RapidsShuffleHandle]
+      doAnswer(_ => (cb, 123L)).when(mockCatalog)
+        .getColumnarBatchAndRemove(any[RapidsShuffleHandle](), any())
+
       cl.start()
 
       val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
@@ -232,7 +233,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       assert(cl.hasNext)
       assertResult(cb)(cl.next())
       assertResult(1)(testMetricsUpdater.totalRemoteBlocksFetched)
-      assertResult(mockBuffer.memoryUsedBytes)(testMetricsUpdater.totalRemoteBytesRead)
+      assertResult(123L)(testMetricsUpdater.totalRemoteBytesRead)
       assertResult(10)(testMetricsUpdater.totalRowsFetched)
     } finally {
       RmmSpark.taskDone(taskId)
