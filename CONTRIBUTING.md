@@ -92,7 +92,7 @@ CodeCache: size=245760Kb used=236139Kb max_used=243799Kb free=9620Kb
  compilation: disabled (not enough contiguous free space left)
 ```
 
-It can be mitigated by increasing [ReservedCodeCacheSize](https://spark.apache.org/docs/3.3.1/building-spark.html#setting-up-mavens-memory-usage)
+It can be mitigated by increasing [ReservedCodeCacheSize](https://spark.apache.org/docs/latest/building-spark.html#setting-up-mavens-memory-usage)
 passed in the `MAVEN_OPTS` environment variable.
 
 ### Building a Distribution for Multiple Versions of Spark
