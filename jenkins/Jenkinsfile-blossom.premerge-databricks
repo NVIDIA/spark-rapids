@@ -209,9 +209,6 @@ void databricksBuild() {
 }
 
 void checkoutCode(String url, String sha) {
-    // try mitigate github degraded performance issue
-    sh 'git config --global http.lowSpeedLimit 1000'
-    sh 'git config --global http.lowSpeedTime 1800'
     retry(3) {
         checkout(
             changelog: false,
@@ -222,7 +219,7 @@ void checkoutCode(String url, String sha) {
                                         credentialsId: 'github-token',
                                         url          : url,
                                         refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
-                extensions      : [[$class: 'CloneOption', shallow: true, timeout: 30]]
+                extensions      : [[$class: 'CloneOption', shallow: true, timeout: 20]]
             ]
         )
     }
