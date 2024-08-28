@@ -402,18 +402,23 @@ void abortDupBuilds() {
 }
 
 void checkoutCode(String url, String sha) {
-    checkout(
-        changelog: false,
-        poll: true,
-        scm: [
-            $class           : 'GitSCM', branches: [[name: sha]],
-            userRemoteConfigs: [[
-                                    credentialsId: 'github-token',
-                                    url          : url,
-                                    refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
-             extensions      : [[$class: 'CloneOption', shallow: true]]
-        ]
-    )
+    // try mitigate github degraded performance issue
+    sh 'git config --global http.lowSpeedLimit 1000'
+    sh 'git config --global http.lowSpeedTime 1800'
+    retry(3) {
+        checkout(
+            changelog: false,
+            poll: true,
+            scm: [
+                $class           : 'GitSCM', branches: [[name: sha]],
+                userRemoteConfigs: [[
+                                        credentialsId: 'github-token',
+                                        url          : url,
+                                        refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
+                extensions      : [[$class: 'CloneOption', shallow: true, timeout: 30]]
+            ]
+        )
+    }
     sh "git submodule update --init"
     if (!common.isSubmoduleInit(this)) {
         error "Failed to clone submodule : thirdparty/parquet-testing"
