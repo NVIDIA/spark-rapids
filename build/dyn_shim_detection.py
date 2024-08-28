@@ -17,6 +17,9 @@ import os
 import xml.etree.ElementTree as ET
 import sys
 
+# This script is called by maven's antrun plugin. The project variable is set by antrun which contains all the
+# properties that are set in the pom.xml. For more details checkout the documentation of the `script` task
+# https://ant.apache.org/manual/Tasks/script.html
 _log = logging.getLogger("dyn-shim-detection")
 show_version_info = project.getProperty("dyn.shim.trace")
 _log.setLevel(logging.DEBUG if show_version_info else logging.INFO)
