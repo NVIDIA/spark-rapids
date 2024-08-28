@@ -92,7 +92,7 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
-  versionStr=$(mvn -B -q -pl . $2 -Dexpression=$1 -DforceStdout antrun:run@get-buildvers)
+  versionStr=$(python build/get_buildvers.py $1 $2)
   echo -n $versionStr
 }
 
@@ -182,19 +182,19 @@ echo "Collecting Spark versions..."
 case $DIST_PROFILE in
 
   snapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snapshots.buildvers" "-f scala2.13"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snapshots.buildvers" "scala2.13/pom.xml"))
     ;;
 
   noSnapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots.buildvers" "-f scala2.13"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots.buildvers" "scala2.13/pom.xml"))
     ;;
 
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snapshots.buildvers"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snapshots.buildvers" "pom.xml"))
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots.buildvers"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots.buildvers" "pom.xml"))
     ;;
 
   minimumFeatureVersionMix)
