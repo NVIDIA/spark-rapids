@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import xml.etree.ElementTree as ET
 import sys
 
 _log = logging.getLogger("dyn-shim-detection")
@@ -27,10 +26,10 @@ ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 _log.addHandler(ch)
 spark_rapids_source_basedir = project.getProperty("spark.rapids.source.basedir")
-multi_module_project_dir = project.getProperty("maven.multiModuleProjectDirectory")
-expression = project.getProperty("expression")
+multi_module_project_dir = project.getProperty("spark.rapids.project.basedir")
+buildvers = project.getProperty("buildvers")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
-from get_buildvers import _get_expression
-value = _get_expression(expression, "{}/pom.xml".format(multi_module_project_dir), _log)
-project.setProperty(expression, value)
+from get_buildvers import _get_buildvers
+value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log)
+project.setProperty(buildvers, value)
