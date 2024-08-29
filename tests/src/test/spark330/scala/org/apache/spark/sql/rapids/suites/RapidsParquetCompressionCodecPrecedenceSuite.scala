@@ -24,4 +24,6 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetCompressionCodecPrecedenceSuite
   extends ParquetCompressionCodecPrecedenceSuite
-  with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {
+
+}
