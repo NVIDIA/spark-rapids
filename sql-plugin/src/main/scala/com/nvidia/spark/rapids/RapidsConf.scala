@@ -1555,6 +1555,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValue(v => v >= 0 && v <= 1, "The ratio value must be in [0, 1].")
     .createWithDefault(1.0)
 
+  val AGG_OUTPUT_SIZE_RATIO = conf("spark.rapids.sql.agg.outputSizeRatioToBatchSize")
+    .doc("The ratio of the output size of an aggregation to the batch size. ")
+    .internal()
+    .doubleConf
+    .checkValue(v => v > 0 , "The ratio value must be greater than 0.")
+    .createWithDefault(1.0)
+
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
     .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
@@ -3164,6 +3171,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
   lazy val skipAggPassReductionRatio: Double = get(SKIP_AGG_PASS_REDUCTION_RATIO)
+
+  lazy val aggOutputSizeRatioToBatchSize: Double = get(AGG_OUTPUT_SIZE_RATIO)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 

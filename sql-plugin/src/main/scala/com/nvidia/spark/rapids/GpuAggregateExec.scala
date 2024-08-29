@@ -851,7 +851,9 @@ class GpuMergeAggregateIterator(
     conf: SQLConf,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    localInputRowsCount: LocalGpuMetric)
+    localInputRowsCount: LocalGpuMetric,
+    aggOutputSizeRatio: Double
+)
   extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
@@ -921,7 +923,9 @@ class GpuMergeAggregateIterator(
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
 
-          realIter = Some(ConcatIterator.apply(firstPassIter, configuredTargetBatchSize))
+          realIter = Some(ConcatIterator.apply(firstPassIter,
+            (aggOutputSizeRatio * configuredTargetBatchSize).toLong
+          ))
           return realIter.get.next()
         }
       }
@@ -941,7 +945,9 @@ class GpuMergeAggregateIterator(
       }
 
       realIter = Some(ConcatIterator.apply(
-        new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
+        new CloseableBufferedIterator(buildBucketIterator()),
+        (aggOutputSizeRatio * configuredTargetBatchSize).toLong
+      ))
       realIter.get.next()
     }
   }
@@ -1320,7 +1326,9 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       conf.forceSinglePassPartialSortAgg,
       allowSinglePassAgg,
       allowNonFullyAggregatedOutput,
-      conf.skipAggPassReductionRatio)
+      conf.skipAggPassReductionRatio,
+      conf.aggOutputSizeRatioToBatchSize
+    )
   }
 }
 
@@ -1407,6 +1415,7 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         forceSinglePassAgg = false,
         allowSinglePassAgg = false,
         allowNonFullyAggregatedOutput = false,
+        1,
         1)
     } else {
       super.convertToGpu()
@@ -1772,7 +1781,8 @@ case class GpuHashAggregateExec(
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
-    skipAggPassReductionRatio: Double
+    skipAggPassReductionRatio: Double,
+    aggOutputSizeRatio: Double
 ) extends ShimUnaryExecNode with GpuExec {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
@@ -1860,7 +1870,9 @@ case class GpuHashAggregateExec(
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
         postBoundReferences, targetBatchSize, aggMetrics, conf,
-        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio)
+        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio,
+        aggOutputSizeRatio
+      )
     }
   }
 
@@ -1980,7 +1992,8 @@ class DynamicGpuPartialAggregateIterator(
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
-    skipAggPassReductionRatio: Double
+    skipAggPassReductionRatio: Double,
+    aggOutputSizeRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
   private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
@@ -2081,7 +2094,9 @@ class DynamicGpuPartialAggregateIterator(
       conf,
       allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
-      localInputRowsMetrics)
+      localInputRowsMetrics,
+      aggOutputSizeRatio
+    )
 
     GpuAggFinalPassIterator.makeIter(mergeIter, postBoundReferences, metrics)
   }
