@@ -28,11 +28,12 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm._
 
 import org.apache.spark.sql.rapids.{AddOverflowChecks, SubtractOverflowChecks}
+import org.apache.spark.sql.rapids.shims.SequenceSizeError
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 
 object GetSequenceSize {
-  val TOO_LONG_SEQUENCE = "Unsuccessful try to create array with elements exceeding the array " +
-    s"size limit $MAX_ROUNDED_ARRAY_LENGTH"
+  def TOO_LONG_SEQUENCE(sequenceLength: Int, functionName: String): String =
+    SequenceSizeError.getTooLongSequenceErrorString(sequenceLength, functionName)
   /**
    * Compute the size of each sequence according to 'start', 'stop' and 'step'.
    * A row (Row[start, stop, step]) contains at least one null element will produce
