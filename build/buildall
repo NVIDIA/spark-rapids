@@ -182,7 +182,7 @@ echo "Collecting Spark versions..."
 case $DIST_PROFILE in
 
   snapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snapshots.buildvers" "scala2.13/pom.xml"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap.buildvers" "scala2.13/pom.xml"))
     ;;
 
   noSnapshotsScala213)
@@ -190,7 +190,7 @@ case $DIST_PROFILE in
     ;;
 
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snapshots.buildvers" "pom.xml"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap.buildvers" "pom.xml"))
     ;;
 
   noSnapshots?(WithDatabricks))

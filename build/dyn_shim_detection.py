@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import os
 import xml.etree.ElementTree as ET
 import sys
 

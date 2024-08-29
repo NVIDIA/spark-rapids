@@ -15,55 +15,54 @@
 import sys
 import xml.etree.ElementTree as ET
 
-def _get_expression(pomFile, expression, logger = None):
-    pom = ET.parse(pomFile)
+
+def _get_expression(pom_file, expression, logger=None):
+    pom = ET.parse(pom_file)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []
     release_prefix = "release"
     for profile in pom.findall(".//pom:profile/pom:id", ns):
-       if profile.text.startswith(release_prefix):
+        if profile.text.startswith(release_prefix):
             releases.append(profile.text[len(release_prefix):])
     snapshots = []
     no_snapshots = []
 
     for release in releases:
         spark_version = pom.find(".//pom:spark{}.version".format(release), ns)
-        if (spark_version.text.endswith("SNAPSHOT")):
+        if spark_version.text.endswith("SNAPSHOT"):
             snapshots.append(release)
         else:
             no_snapshots.append(release)
     excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns).text
-    if (excluded_shims):
+    if excluded_shims:
         for removed_shim in [x.strip() for x in excluded_shims.split(",")]:
-            if (removed_shim not in snapshots and removed_shim not in no_snapshots):
-                raise Exception("Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(removed_shim))
-            try:
+            if removed_shim in snapshots:
                 snapshots.remove(removed_shim)
-            except ValueError:
-                pass
-            try:
+            elif removed_shim in no_snapshots:
                 no_snapshots.remove(removed_shim)
-            except ValueError:
-                pass
+            else:
+                raise Exception(
+                    "Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(
+                        removed_shim))
 
-
-    if "scala2.13" in pomFile:
+    if "scala2.13" in pom_file:
         no_snapshots = list(filter(lambda x: not x.endswith("cdh"), no_snapshots))
+
     db_release = list(filter(lambda x: x.endswith("db"), no_snapshots))
     no_snapshots = list(filter(lambda x: not x.endswith("db"), no_snapshots))
     snap_and_no_snap = no_snapshots + snapshots
     all = snap_and_no_snap + db_release
-    release_dict={}
-    release_dict["databricks.buildvers"]=" ".join(db_release)
-    release_dict["snapshots.buildvers"]=" ".join(snapshots)
-    release_dict["no_snapshots.buildvers"]=" ".join(no_snapshots)
-    release_dict["snap_and_no_snap.buildvers"]=" ".join(snap_and_no_snap)
-    release_dict["all.buildvers"]=" ".join(all)
-    if (logger):
+    release_dict = {"databricks.buildvers": " ".join(db_release), "snapshots.buildvers": " ".join(snapshots),
+                    "no_snapshots.buildvers": " ".join(no_snapshots),
+                    "snap_and_no_snap.buildvers": " ".join(snap_and_no_snap), "all.buildvers": " ".join(all)}
+    if logger:
         logger.debug("release_dict: {}".format(release_dict))
-    if (expression):
+    if expression:
         return release_dict[expression]
 
 
 if __name__ == "__main__":
-    print(_get_expression(sys.argv[2], sys.argv[1]))
+    if len(sys.argv) != 3:
+        print("get_buildvers.py needs a pom_file location and an expression as arguments")
+    else:
+        print(_get_expression(sys.argv[2], sys.argv[1]))
