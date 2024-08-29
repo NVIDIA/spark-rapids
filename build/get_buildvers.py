@@ -16,7 +16,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 
-def _get_expression(pom_file, expression, logger=None):
+def _get_expression(expression, pom_file, logger=None):
     pom = ET.parse(pom_file)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []
@@ -65,4 +65,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("get_buildvers.py needs a pom_file location and an expression as arguments")
     else:
-        print(_get_expression(sys.argv[2], sys.argv[1]))
+        print(_get_expression(sys.argv[1], sys.argv[2]))

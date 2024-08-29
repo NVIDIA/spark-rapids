@@ -32,5 +32,5 @@ expression = project.getProperty("expression")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
 from get_buildvers import _get_expression
-value = _get_expression("{}/pom.xml".format(multi_module_project_dir), expression, _log)
+value = _get_expression(expression, "{}/pom.xml".format(multi_module_project_dir), _log)
 project.setProperty(expression, value)

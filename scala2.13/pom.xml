@@ -708,7 +708,6 @@
     <properties>
         <!-- start dyn.shim properties -->
         <dyn.shim.excluded.releases/>
-        <expression>all.buildvers</expression>
         <!-- #if scala-2.12 --><!--
         <dyn.shim.rundir>${maven.multiModuleProjectDirectory}</dyn.shim.rundir>
         --><!-- #endif scala-2.12 -->
@@ -1081,6 +1080,7 @@
                         <phase>generate-sources</phase>
                         <configuration>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
+                                <property name="expression" value="all.buildvers"/>
                                 <script language="jython" src="${dyn.shim.rundir}/build/dyn_shim_detection.py"/>
                                 <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
                                     <attribute name="if"/>

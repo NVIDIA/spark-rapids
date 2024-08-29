@@ -69,13 +69,13 @@ if [[ $SCALA_BINARY_VER == "2.13" ]]; then
     pom="scala2.13/pom.xml"
 fi
 
-# Psnapshots: snapshots + noSnapshots
+# snapshots: snapshots + noSnapshots
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snap_and_no_snap.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PnoSnapshots: noSnapshots only
+# noSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "no_snapshots.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PsnapshotOnly : snapshots only
+# snapshotOnly : snapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots.buildvers" "$pom"
 SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
