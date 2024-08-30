@@ -76,7 +76,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11401"))
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
-    //.exclude("Create parquet table with compression", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11377"))
+    .exclude("Create parquet table with compression", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11377"))
   enableSuite[RapidsParquetDeltaByteArrayEncodingSuite]
   enableSuite[RapidsParquetDeltaEncodingInteger]
   enableSuite[RapidsParquetDeltaEncodingLong]
