@@ -61,7 +61,7 @@
                             <execution>
                                 <id>set-included-buidlvers</id>
                                 <goals><goal>run</goal></goals>
-                                <phase>initialize</phase>
+                                <phase>generate-sources</phase>
                                 <configuration>
                                     <target xmlns:ac="antlib:net.sf.antcontrib">
                                         <exec executable="python" outputproperty="included_buildvers">
@@ -90,7 +90,7 @@
                             <execution>
                                 <id>set-included-buidlvers</id>
                                 <goals><goal>run</goal></goals>
-                                <phase>initialize</phase>
+                                <phase>generate-sources</phase>
                                 <configuration>
                                     <target xmlns:ac="antlib:net.sf.antcontrib">
                                         <exec executable="python" outputproperty="included_buildvers">
@@ -148,7 +148,7 @@
                             <execution>
                                 <id>set-included-buidlvers</id>
                                 <goals><goal>run</goal></goals>
-                                <phase>initialize</phase>
+                                <phase>generate-sources</phase>
                                 <configuration>
                                     <target xmlns:ac="antlib:net.sf.antcontrib">
                                         <exec executable="python" outputproperty="included_buildvers">
