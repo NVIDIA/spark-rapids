@@ -16,7 +16,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 
-def _get_buildvers(expression, pom_file, logger=None):
+def _get_buildvers(buildvers, pom_file, logger=None):
     pom = ET.parse(pom_file)
     ns = {"pom": "http://maven.apache.org/POM/4.0.0"}
     releases = []
@@ -33,9 +33,9 @@ def _get_buildvers(expression, pom_file, logger=None):
             snapshots.append(release)
         else:
             no_snapshots.append(release)
-    excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns).text
+    excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
     if excluded_shims:
-        for removed_shim in [x.strip() for x in excluded_shims.split(",")]:
+        for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
             if removed_shim in snapshots:
                 snapshots.remove(removed_shim)
             elif removed_shim in no_snapshots:
@@ -57,12 +57,12 @@ def _get_buildvers(expression, pom_file, logger=None):
                     "snap_and_no_snap": " ".join(snap_and_no_snap), "all.buildvers": " ".join(all_buildvers)}
     if logger:
         logger.debug("release_dict: {}".format(release_dict))
-    if expression:
-        return release_dict[expression]
+    if buildvers:
+        return release_dict[buildvers]
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("get_buildvers.py needs a pom_file location and an expression as arguments")
+        print("get_buildvers.py needs a pom_file location and an buildvers as arguments")
     else:
         print(_get_buildvers(sys.argv[1], sys.argv[2]))
