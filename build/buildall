@@ -92,7 +92,8 @@ function versionsFromDistProfile() {
 }
 
 function versionsFromReleaseProfiles() {
-  versionStr=$(python build/get_buildvers.py $1 $2)
+  versionRawStr=$(python build/get_buildvers.py $1 $2)
+  versionStr=${versionRawStr//[$'\n',]/}
   echo -n $versionStr
 }
 

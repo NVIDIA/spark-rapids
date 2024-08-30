@@ -51,9 +51,13 @@ def _get_buildvers(buildvers, pom_file, logger=None):
     db_release = list(filter(lambda x: x.endswith("db"), no_snapshots))
     no_snapshots = list(filter(lambda x: not x.endswith("db"), no_snapshots))
     snap_and_no_snap = no_snapshots + snapshots
+    snap_and_no_snap_with_db = snap_and_no_snap + db_release
+    no_snap_with_db = no_snapshots + db_release
     all_buildvers = snap_and_no_snap + db_release
     release_dict = {"databricks": " ".join(db_release), "snapshots": " ".join(snapshots),
                     "no_snapshots": " ".join(no_snapshots),
+                    "no_snap_with_databricks": " ".join(no_snap_with_db),
+                    "snap_and_no_snap_with_databricks": " ".join(snap_and_no_snap_with_db),
                     "snap_and_no_snap": " ".join(snap_and_no_snap), "all.buildvers": " ".join(all_buildvers)}
     if logger:
         logger.debug("release_dict: {}".format(release_dict))
@@ -65,4 +69,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("get_buildvers.py needs a pom_file location and an buildvers as arguments")
     else:
-        print(_get_buildvers(sys.argv[1], sys.argv[2]))
+        print(_get_buildvers(sys.argv[1], sys.argv[2]).replace(" ", ", "))

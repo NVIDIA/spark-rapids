@@ -50,6 +50,122 @@
     </properties>
     <profiles>
         <profile>
+            <id>noSnapshotsWithDatabricks</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>set-included-buidlvers</id>
+                                <goals><goal>run</goal></goals>
+                                <phase>initialize</phase>
+                                <configuration>
+                                    <target xmlns:ac="antlib:net.sf.antcontrib">
+                                        <exec executable="python" outputproperty="included_buildvers">
+                                            <arg value="${spark.rapids.source.basedir}/build/get_buildvers.py"/>
+                                            <arg value="no_snap_with_databricks"/>
+                                            <arg value="${spark.rapids.project.basedir}/pom.xml"/>
+                                        </exec>
+                                    </target>
+                                    <exportAntProperties>true</exportAntProperties>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>snapshotsWithDatabricks</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>set-included-buidlvers</id>
+                                <goals><goal>run</goal></goals>
+                                <phase>initialize</phase>
+                                <configuration>
+                                    <target xmlns:ac="antlib:net.sf.antcontrib">
+                                        <exec executable="python" outputproperty="included_buildvers">
+                                            <arg value="${spark.rapids.source.basedir}/build/get_buildvers.py"/>
+                                            <arg value="snap_and_no_snap_with_databricks"/>
+                                            <arg value="${spark.rapids.project.basedir}/pom.xml"/>
+                                        </exec>
+                                    </target>
+                                    <exportAntProperties>true</exportAntProperties>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>noSnapshots</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>set-included-buidlvers</id>
+                                <goals><goal>run</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <target xmlns:ac="antlib:net.sf.antcontrib">
+                                        <exec executable="python" outputproperty="included_buildvers">
+                                            <arg value="${spark.rapids.source.basedir}/build/get_buildvers.py"/>
+                                            <arg value="no_snapshots"/>
+                                            <arg value="${spark.rapids.project.basedir}/pom.xml"/>
+                                        </exec>
+                                    </target>
+                                    <exportAntProperties>true</exportAntProperties>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>snapshots</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>set-included-buidlvers</id>
+                                <goals><goal>run</goal></goals>
+                                <phase>initialize</phase>
+                                <configuration>
+                                    <target xmlns:ac="antlib:net.sf.antcontrib">
+                                        <exec executable="python" outputproperty="included_buildvers">
+                                            <arg value="${spark.rapids.source.basedir}/build/get_buildvers.py"/>
+                                            <arg value="snap_and_no_snap"/>
+                                            <arg value="${spark.rapids.project.basedir}/pom.xml"/>
+                                        </exec>
+                                    </target>
+                                    <exportAntProperties>true</exportAntProperties>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>premergeUT1</id>
             <properties>
                 <included_buildvers>
