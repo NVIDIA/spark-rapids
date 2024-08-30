@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.atomic.AtomicReference
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -252,6 +254,7 @@ case class GpuHashAggregateMetrics(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
     numTasksRepartitioned: GpuMetric,
+    numTasksSkippedAgg: GpuMetric,
     opTime: GpuMetric,
     computeAggTime: GpuMetric,
     concatTime: GpuMetric,
@@ -673,13 +676,21 @@ object GpuAggregateIterator extends Logging {
 object GpuAggFirstPassIterator {
   def apply(cbIter: Iterator[ColumnarBatch],
       aggHelper: AggHelper,
-      metrics: GpuHashAggregateMetrics
+      metrics: GpuHashAggregateMetrics,
+      firstPassAggToggle: AtomicReference[Boolean]
   ): Iterator[SpillableColumnarBatch] = {
     val preprocessProjectIter = cbIter.map { cb =>
       val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       aggHelper.preStepBound.projectAndCloseWithRetrySingleBatch(sb)
     }
-    computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper)
+
+    if (firstPassAggToggle.get()) {
+      computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper)
+    } else {
+      preprocessProjectIter.map { cb =>
+        SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      }
+    }
   }
 }
 
@@ -841,6 +852,7 @@ object GpuAggFinalPassIterator {
  */
 class GpuMergeAggregateIterator(
     firstPassIter: CloseableBufferedIterator[SpillableColumnarBatch],
+    firstPassAggToggle: AtomicReference[Boolean],
     inputAttributes: Seq[Attribute],
     groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
@@ -927,6 +939,8 @@ class GpuMergeAggregateIterator(
           realIter = Some(ConcatIterator.apply(firstPassIter,
             (aggOutputSizeRatio * configuredTargetBatchSize).toLong
           ))
+          firstPassAggToggle.set(false)
+          metrics.numTasksSkippedAgg += 1
           return realIter.get.next()
         } else {
           logWarning(s"The reduction ratio in first pass is not high enough to skip " +
@@ -1841,6 +1855,7 @@ case class GpuHashAggregateExec(
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_TASKS_REPARTITIONED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_REPARTITIONED),
+    NUM_TASKS_SKIPPED_AGG -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_SKIPPED_AGG),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     AGG_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_AGG_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
@@ -1873,6 +1888,7 @@ case class GpuHashAggregateExec(
       numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS),
       numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES),
       numTasksRepartitioned = gpuLongMetric(NUM_TASKS_REPARTITIONED),
+      numTasksSkippedAgg = gpuLongMetric(NUM_TASKS_SKIPPED_AGG),
       opTime = gpuLongMetric(OP_TIME),
       computeAggTime = gpuLongMetric(AGG_TIME),
       concatTime = gpuLongMetric(CONCAT_TIME),
@@ -2095,7 +2111,10 @@ class DynamicGpuPartialAggregateIterator(
       inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
       metrics.opTime, metrics.numPreSplits)
 
-    val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper, metrics)
+    val firstPassAggregateToggle = new AtomicReference[Boolean]
+    firstPassAggregateToggle.set(true)
+    val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper,
+      metrics, firstPassAggregateToggle)
 
     // Technically on a partial-agg, which this only works for, this last iterator should
     // be a noop except for some metrics. But for consistency between all of the
@@ -2114,16 +2133,20 @@ class DynamicGpuPartialAggregateIterator(
       metrics.opTime, metrics.numPreSplits)
 
     val localInputRowsMetrics = new LocalGpuMetric
+    val firstPassAggregateToggle = new AtomicReference[Boolean]
+    firstPassAggregateToggle.set(true)
+
     val firstPassIter = GpuAggFirstPassIterator(
       splitInputIter.map(cb => {
         localInputRowsMetrics += cb.numRows()
         cb
       }),
       preProcessAggHelper,
-      metrics)
+      metrics, firstPassAggregateToggle)
 
     val mergeIter = new GpuMergeAggregateIterator(
       new CloseableBufferedIterator(firstPassIter),
+      firstPassAggregateToggle,
       inputAttrs,
       groupingExprs,
       aggregateExprs,
