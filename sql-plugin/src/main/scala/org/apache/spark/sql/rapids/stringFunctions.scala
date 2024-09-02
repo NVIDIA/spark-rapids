@@ -438,7 +438,8 @@ case class GpuMultiContains(left: Expression, targets: Seq[UTF8String], output: 
     withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
       withResource(left.columnarEval(batch)) { lhs =>
         withResource(lhs.getBase.stringContains(targetsCv)) { boolCvs =>
-          GpuColumnVector.from(ColumnVector.makeStruct(batch.numRows(), boolCvs: _*), dataType)
+          val retView = ColumnView.makeStructView(batch.numRows(), boolCvs: _*)
+          GpuColumnVector.from(retView.copyToColumnVector(), dataType)
         }
       }
     }
