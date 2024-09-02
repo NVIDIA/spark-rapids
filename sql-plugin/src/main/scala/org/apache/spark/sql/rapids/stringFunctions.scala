@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.catalyst.expressions.{GpuCombinable, GpuExpressionCombiner, GpuExpressionEquals}
+import org.apache.spark.sql.rapids.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -391,11 +391,11 @@ case class GpuConcatWs(children: Seq[Expression])
 }
 
 case class GpuContains(left: Expression, right: Expression)
-  extends GpuBinaryExpressionArgsAnyScalar
-    with Predicate
-    with ImplicitCastInputTypes
-    with NullIntolerant
-    with GpuCombinable {
+    extends GpuBinaryExpressionArgsAnyScalar
+        with Predicate
+        with ImplicitCastInputTypes
+        with NullIntolerant
+        with GpuCombinable {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
@@ -423,7 +423,7 @@ case class GpuContains(left: Expression, right: Expression)
 }
 
 case class GpuMultiContains(left: Expression, targets: Seq[UTF8String], output: StructType)
-  extends GpuExpression with ShimExpression {
+    extends GpuExpression with ShimExpression {
 
   override def otherCopyArgs: Seq[AnyRef] = Nil
 
@@ -435,7 +435,7 @@ case class GpuMultiContains(left: Expression, targets: Seq[UTF8String], output: 
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val targetsBytes = targets.map(t => t.getBytes).toArray
-    withResource(ColumnVector.fromUTF8Strings(targetsBytes : _*)) { targetsCv =>
+    withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
       withResource(left.columnarEval(batch)) { lhs =>
         withResource(lhs.getBase.stringContains(targetsCv)) { boolCvs =>
           GpuColumnVector.from(ColumnVector.makeStruct(batch.numRows(), boolCvs: _*), dataType)
@@ -443,6 +443,7 @@ case class GpuMultiContains(left: Expression, targets: Seq[UTF8String], output: 
       }
     }
   }
+
   override def children: Seq[Expression] = Seq(left)
 }
 
@@ -468,7 +469,7 @@ class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombin
    */
   override def equals(o: Any): Boolean = o match {
     case other: ContainsCombiner => exp.left.semanticEquals(other.exp.left) &&
-      exp.right.isInstanceOf[GpuLiteral] && other.exp.right.isInstanceOf[GpuLiteral]
+        exp.right.isInstanceOf[GpuLiteral] && other.exp.right.isInstanceOf[GpuLiteral]
     case _ => false
   }
 
@@ -491,7 +492,7 @@ class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombin
     case l: GpuLiteral => l
     case a: Alias => extractLiteral(a.child)
     case other => throw new RuntimeException("Unsupported expression in contains combiner, " +
-      "should be a literal type, actual type is " + other.getClass.getName)
+        "should be a literal type, actual type is " + other.getClass.getName)
   }
 
   private lazy val multiContains: GpuMultiContains = {
