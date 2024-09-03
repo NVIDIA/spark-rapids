@@ -224,16 +224,15 @@ object NoopMetric extends GpuMetric {
   override def value: Long = 0
 }
 
-final case class WrappedGpuMetric(sqlMetric: SQLMetric, noCompanions: Boolean = false)
+final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: Boolean = false)
   extends GpuMetric {
 
-  //  SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private,
-  //  so we have to use the string directly
-  if (!noCompanions) {
+  if (withMetricsExclSemWait) {
+    //  SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private,
+    //  so we have to use the string directly
     if (sqlMetric.metricType == "nsTiming") {
       companionGpuMetric = Some(WrappedGpuMetric.apply(SQLMetrics.createNanoTimingMetric(
-        SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (excl. SemWait)"),
-        noCompanions = true))
+        SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (excl. SemWait)")))
     }
   }
 
@@ -317,7 +316,8 @@ trait GpuExec extends SparkPlan {
 
   private [this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
     if (level >= metricsConf) {
-      WrappedGpuMetric(f)
+      // only enable companion metrics (excluding semaphore wait time) for DEBUG_LEVEL
+      WrappedGpuMetric(f, withMetricsExclSemWait = GpuMetric.DEBUG_LEVEL >= metricsConf)
     } else {
       NoopMetric
     }
