@@ -298,8 +298,8 @@ case class GpuArrayContains(left: Expression, right: Expression)
       containsResult.or(_)
     }
     withResource(containsKeyOrNotContainsNull) { lcnn =>
-      withResource(Scalar.fromNull(DType.BOOL8)) { NULL =>
-        lcnn.ifElse(containsResult, NULL)
+      withResource(Scalar.fromNull(DType.BOOL8)) { nullVal =>
+        lcnn.ifElse(containsResult, nullVal)
       }
     }
   }
