@@ -385,9 +385,18 @@ def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
     data_gen = [("c1", string_gen)]
     sql =  """
             SELECT
-                    INSTR(c1, 'substring1') > 0,
-                    INSTR(c1, 'substring2') > 0, 
-                    INSTR(c1, 'substring3') > 0
+                CASE
+                     WHEN INSTR(c1, 'a') > 0 THEN 'a'
+                     WHEN INSTR(c1, 'b') > 0 THEN 'b'
+                     WHEN INSTR(c1, 'c') > 0 THEN 'c'
+                     ELSE ''
+                END as output_1,
+                CASE
+                     WHEN INSTR(c1, 'c') > 0 THEN 'c'
+                     WHEN INSTR(c1, 'd') > 0 THEN 'd'
+                     WHEN INSTR(c1, 'e') > 0 THEN 'e'
+                     ELSE ''
+                END as output_2
             from tab
             """
     # spark.rapids.sql.combined.expressions.enabled is true by default
