@@ -394,7 +394,9 @@ object GpuOrcScan {
               withResource(doubleMillis.add(half)) { doubleMillisPlusHalf =>
                 withResource(doubleMillisPlusHalf.floor()) { millis =>
                   withResource(getOverflowFlags(doubleMillis, millis)) { overflowFlags =>
-                    millis.copyWithBooleanColumnAsValidity(overflowFlags)
+                    withResource(Scalar.fromNull(millis.getType)) { NULL =>
+                      overflowFlags.ifElse(millis, NULL)
+                    }
                   }
                 }
               }
