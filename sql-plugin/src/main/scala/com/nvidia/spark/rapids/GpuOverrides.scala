@@ -3220,6 +3220,31 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
+    expr[ArrayJoin](
+      "Concatenates the elements of the given array using the delimiter and an optional " +
+        "string to replace nulls. If no value is set for nullReplacement, any null value " +
+        "is filtered.",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("array",
+          TypeSig.ARRAY.nested(TypeSig.STRING),
+          TypeSig.ARRAY.nested(TypeSig.STRING)),
+          ParamCheck("delimiter",
+            TypeSig.STRING,
+            TypeSig.STRING)),
+        repeatingParamCheck = Some(RepeatingParamCheck("nullReplacement",
+          TypeSig.lit(TypeEnum.STRING),
+          TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ArrayJoin](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.children.size > 3) {
+            willNotWorkOnGpu(s"array_join has more parameters than we expected " +
+              s"to see. Found ${a.children.size}")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuArrayJoin(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
         "string using a given separator",
