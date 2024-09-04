@@ -23,8 +23,4 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetSchemaSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetSchemaSuite extends ParquetSchemaSuite with RapidsSQLTestsBaseTrait {
-
-  override protected def testFile(fileName: String): String = {
-    getWorkspaceFilePath("sql", "core", "src", "test", "resources").toString + "/" + fileName
-  }
 }

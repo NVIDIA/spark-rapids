@@ -91,9 +91,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
     .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
     .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
-    .exclude("unannotated array of primitive type", ADJUST_UT("spark.test.home or SPARK_HOME is not set."))
-    .exclude("unannotated array of struct",ADJUST_UT("spark.test.home or SPARK_HOME is not set."))
-    .exclude("unannotated array of string", ADJUST_UT("spark.test.home or SPARK_HOME is not set."))
   enableSuite[RapidsParquetQuerySuite]
     .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11403"))
     .exclude("SPARK-34212 Parquet should read decimals correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11403"))
