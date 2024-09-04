@@ -101,6 +101,9 @@ The output of signature verify:
 * Improve UCX shuffle 
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
 
+Note: There is a known issue in the 24.08.1 release when decompressing gzip files on H100 GPUs.  
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
