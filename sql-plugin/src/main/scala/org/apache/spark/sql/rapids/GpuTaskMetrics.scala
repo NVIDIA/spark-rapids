@@ -78,6 +78,35 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   override def value: NanoTime = NanoTime(_sum)
 }
 
+class WatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
+  private var _value = 0L
+  override def isZero: Boolean = _value == 0
+
+  override def copy(): WatermarkAccumulator = {
+    val newAcc = new WatermarkAccumulator
+    newAcc._value = this._value
+    newAcc
+  }
+
+  override def reset(): Unit = {
+    _value = 0
+  }
+
+  override def add(v: jl.Long): Unit = {
+    _value += v
+  }
+
+  override def merge(other: AccumulatorV2[jl.Long, Long]): Unit = other match {
+    case wa: WatermarkAccumulator =>
+      _value = _value.max(wa._value)
+    case _ =>
+      throw new UnsupportedOperationException(
+        s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
+  }
+
+  override def value: Long = _value
+}
+
 class GpuTaskMetrics extends Serializable {
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
@@ -91,6 +120,8 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromHostTimeNs = new NanoSecondAccumulator
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
+  private val maxDeviceMemoryBytes = new WatermarkAccumulator
+
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
     "gpuRetryCount" -> retryCount,
@@ -100,7 +131,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillToHostTime" -> spillToHostTimeNs,
     "gpuSpillToDiskTime" -> spillToDiskTimeNs,
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
-    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs
+    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
+    "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes
   )
 
   def register(sc: SparkContext): Unit = {
@@ -176,6 +208,13 @@ class GpuTaskMetrics extends Serializable {
     val compNs = RmmSpark.getAndResetComputeTimeLostToRetryNs(taskAttemptId)
     if (compNs > 0) {
       retryComputationTime.add(compNs)
+    }
+  }
+
+  def updateMaxMemory(taskAttemptId: Long): Unit = {
+    val maxMem = RmmSpark.getAndResetGpuMaxMemoryAllocated(taskAttemptId)
+    if (maxMem > 0) {
+      maxDeviceMemoryBytes.add(maxMem)
     }
   }
 }
