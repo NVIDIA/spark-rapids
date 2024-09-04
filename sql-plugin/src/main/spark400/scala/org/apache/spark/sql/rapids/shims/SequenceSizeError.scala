@@ -23,6 +23,7 @@ import org.apache.spark.sql.errors.QueryExecutionErrors
 
 object SequenceSizeError {
   def getTooLongSequenceErrorString(sequenceSize: Int, functionName: String): String = {
-    QueryExecutionErrors.createArrayWithElementsExceedLimitError(functionName, sequenceSize).getMessage
+    QueryExecutionErrors.createArrayWithElementsExceedLimitError(functionName, sequenceSize)
+                        .getMessage
   }
 }
