@@ -478,6 +478,8 @@ class HashJoinIterator(
           case LeftOuter if buildStats.isDistinct =>
             Array(leftKeys.leftDistinctJoinGatherMap(rightKeys, compareNullsEqual))
           case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+          case RightOuter if buildStats.isDistinct =>
+            Array(rightKeys.leftDistinctJoinGatherMap(leftKeys, compareNullsEqual))
           case RightOuter =>
             // Reverse the output of the join, because we expect the right gather map to
             // always be on the right

@@ -288,7 +288,7 @@ private final class SemaphoreTaskInfo() extends Logging {
     } else {
       if (blockedThreads.size() == 0) {
         // No other threads for this task are waiting, so we might be able to grab this directly
-        val ret = semaphore.tryAcquire(numPermits)
+        val ret = semaphore.tryAcquire(numPermits, lastHeld)
         if (ret) {
           hasSemaphore = true
           activeThreads.add(t)
