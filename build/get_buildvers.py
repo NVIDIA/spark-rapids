@@ -54,11 +54,11 @@ def _get_buildvers(buildvers, pom_file, logger=None):
     snap_and_no_snap_with_db = snap_and_no_snap + db_release
     no_snap_with_db = no_snapshots + db_release
     all_buildvers = snap_and_no_snap + db_release
-    release_dict = {"databricks": " ".join(db_release), "snapshots": " ".join(snapshots),
-                    "no_snapshots": " ".join(no_snapshots),
-                    "no_snap_with_databricks": " ".join(no_snap_with_db),
-                    "snap_and_no_snap_with_databricks": " ".join(snap_and_no_snap_with_db),
-                    "snap_and_no_snap": " ".join(snap_and_no_snap), "all.buildvers": " ".join(all_buildvers)}
+    release_dict = {"databricks": " ".join(db_release), "snapshots": ", ".join(snapshots),
+                    "no_snapshots": ", ".join(no_snapshots),
+                    "no_snap_with_databricks": ", ".join(no_snap_with_db),
+                    "snap_and_no_snap_with_databricks": ", ".join(snap_and_no_snap_with_db),
+                    "snap_and_no_snap": ", ".join(snap_and_no_snap), "all.buildvers": ", ".join(all_buildvers)}
     if logger:
         logger.debug("release_dict: {}".format(release_dict))
     if buildvers:
@@ -67,6 +67,7 @@ def _get_buildvers(buildvers, pom_file, logger=None):
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("get_buildvers.py needs a pom_file location and an buildvers as arguments")
+        print("usage: get_buildvers.py <pom_file> <buildvers>")
+        print("  supported buildvers: databricks, no_snapshots, ...")
     else:
-        print(_get_buildvers(sys.argv[1], sys.argv[2]).replace(" ", ", "))
+        print(_get_buildvers(sys.argv[1], sys.argv[2]))

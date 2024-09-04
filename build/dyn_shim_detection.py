@@ -27,9 +27,9 @@ ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 _log.addHandler(ch)
 spark_rapids_source_basedir = project.getProperty("spark.rapids.source.basedir")
 multi_module_project_dir = project.getProperty("spark.rapids.project.basedir")
-buildvers = project.getProperty("buildvers")
+buildvers = project.getProperty("dyn.shim.buildver")
 
 sys.path.append("{}/build/".format(spark_rapids_source_basedir))
 from get_buildvers import _get_buildvers
 value = _get_buildvers(buildvers, "{}/pom.xml".format(multi_module_project_dir), _log)
-project.setProperty(buildvers, value)
+project.setProperty("included_buildvers", value)

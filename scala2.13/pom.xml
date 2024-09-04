@@ -1074,7 +1074,7 @@
                         <phase>generate-sources</phase>
                         <configuration>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
-                                <property name="buildvers" value="all.buildvers"/>
+                                <property name="dyn.shim.buildver" value="all.buildvers"/>
                                 <script language="jython" src="${spark.rapids.source.basedir}/build/dyn_shim_detection.py"/>
                                 <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
                                     <attribute name="if"/>

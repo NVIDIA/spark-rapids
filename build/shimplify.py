@@ -192,7 +192,7 @@ __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
 __ch = logging.StreamHandler()
 __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
-__all_shims_arr = sorted(__ant_proj_prop("all.buildvers").split(" "))
+__all_shims_arr = sorted(__ant_proj_prop("included_buildvers").split(", "))
 __shims_arr = __all_shims_arr if not __shims_arr else __shims_arr
 
 __shim_dir_pattern = re.compile(r'spark\d{3}')
@@ -495,7 +495,7 @@ def __update_files2bv(files2bv, path, buildver_arr):
 
 def __add_new_shim_to_file_map(files2bv):
     if __add_shim_buildver not in __all_shims_arr:
-        __log.warning("Update pom.xml to add %s to all.buildvers", __add_shim_buildver)
+        __log.warning("all.buildvers doesn't contain %s please look at build/get_buildvers.py", __add_shim_buildver)
     if __add_shim_buildver not in __shims_arr:
         # TODO  should we just bail and ask the user to add to all.buildvers manually first?
         __shims_arr.append(__add_shim_buildver)
