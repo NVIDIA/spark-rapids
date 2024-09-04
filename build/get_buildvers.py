@@ -54,7 +54,7 @@ def _get_buildvers(buildvers, pom_file, logger=None):
     snap_and_no_snap_with_db = snap_and_no_snap + db_release
     no_snap_with_db = no_snapshots + db_release
     all_buildvers = snap_and_no_snap + db_release
-    release_dict = {"databricks": " ".join(db_release), "snapshots": ", ".join(snapshots),
+    release_dict = {"databricks": ", ".join(db_release), "snapshots": ", ".join(snapshots),
                     "no_snapshots": ", ".join(no_snapshots),
                     "no_snap_with_databricks": ", ".join(no_snap_with_db),
                     "snap_and_no_snap_with_databricks": ", ".join(snap_and_no_snap_with_db),
