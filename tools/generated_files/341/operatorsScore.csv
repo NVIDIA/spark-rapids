@@ -56,6 +56,7 @@ ArrayExcept,4
 ArrayExists,4
 ArrayFilter,4
 ArrayIntersect,4
+ArrayJoin,4
 ArrayMax,4
 ArrayMin,4
 ArrayRemove,4
