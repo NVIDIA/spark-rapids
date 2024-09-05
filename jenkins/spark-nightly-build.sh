@@ -17,6 +17,8 @@
 
 set -ex
 
+. jenkins/version-def.sh
+
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
     # Run scala2.13 build and test against JDK17
@@ -27,8 +29,6 @@ if [ $SCALA_BINARY_VER == "2.13" ]; then
     cd scala2.13
     ln -sf ../jenkins jenkins
 fi
-
-. jenkins/version-def.sh
 
 WORKSPACE=${WORKSPACE:-$(pwd)}
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
