@@ -15,6 +15,7 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
