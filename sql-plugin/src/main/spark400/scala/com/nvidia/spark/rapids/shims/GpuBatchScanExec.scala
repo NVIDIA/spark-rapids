@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowComparabl
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, StoragePartitionJoinParams}
+import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.internal.SQLConf
 
 case class GpuBatchScanExec(
@@ -47,7 +47,7 @@ case class GpuBatchScanExec(
   @transient override lazy val batch: Batch = if (scan == null) null else scan.toBatch
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
-    case other: GpuBatchScanExec =>
+    case other: BatchScanExec =>
       this.batch != null && this.batch == other.batch &&
         this.runtimeFilters == other.runtimeFilters &&
         this.spjParams == other.spjParams
@@ -137,6 +137,7 @@ case class GpuBatchScanExec(
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   override lazy val inputRDD: RDD[InternalRow] = {
+    scan.metrics = allMetrics
     val rdd = if (filteredPartitions.isEmpty && outputPartitioning == SinglePartition) {
       // return an empty RDD with 1 partition if dynamic filtering removed the only split
       sparkContext.parallelize(Array.empty[InternalRow], 1)
