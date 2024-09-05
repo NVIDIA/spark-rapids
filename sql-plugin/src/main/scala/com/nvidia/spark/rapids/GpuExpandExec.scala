@@ -20,7 +20,6 @@ import scala.util.Random
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuExpressionsUtils.NullVecCache
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -56,7 +55,6 @@ class GpuExpandExecMeta(
     GpuExpandExec(projections, expand.output, childPlans.head.convertIfNeeded())(
       useTieredProject = conf.isTieredProjectEnabled,
       preprojectEnabled = conf.isExpandPreprojectEnabled,
-      cacheNullMaxCount = conf.expandCachingNullVecMaxCount,
       coalesceAfter = conf.isCoalesceAfterExpandEnabled)
   }
 }
@@ -69,6 +67,7 @@ class GpuExpandExecMeta(
  *                    output the same schema specified bye the parameter `output`
  * @param output      Attribute references to Output
  * @param child       Child operator
+ * @param coalesceAfter Whether to insert Coalesce after Expand
  */
 case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
@@ -76,14 +75,12 @@ case class GpuExpandExec(
     child: SparkPlan)(
     useTieredProject: Boolean = false,
     preprojectEnabled: Boolean = false,
-    cacheNullMaxCount: Int = 0,
     override val coalesceAfter: Boolean = true
 ) extends ShimUnaryExecNode with GpuExec {
 
   override def otherCopyArgs: Seq[AnyRef] = Seq[AnyRef](
     useTieredProject.asInstanceOf[java.lang.Boolean],
     preprojectEnabled.asInstanceOf[java.lang.Boolean],
-    cacheNullMaxCount.asInstanceOf[java.lang.Integer],
     coalesceAfter.asInstanceOf[java.lang.Boolean]
   )
 
@@ -136,7 +133,7 @@ case class GpuExpandExec(
     }
 
     child.executeColumnar().mapPartitions { it =>
-      new GpuExpandIterator(boundProjections, metricsMap, preprojectIter(it), cacheNullMaxCount)
+      new GpuExpandIterator(boundProjections, metricsMap, preprojectIter(it))
     }
   }
 
@@ -200,8 +197,7 @@ case class GpuExpandExec(
 class GpuExpandIterator(
     boundProjections: Seq[GpuTieredProject],
     metrics: Map[String, GpuMetric],
-    it: Iterator[ColumnarBatch],
-    cacheNullMaxCount: Int)
+    it: Iterator[ColumnarBatch])
   extends Iterator[ColumnarBatch] {
 
   private var sb: Option[SpillableColumnarBatch] = None
@@ -216,19 +212,8 @@ class GpuExpandIterator(
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
       sb.foreach(_.close())
-
-      if (cacheNullMaxCount > 0) {
-        import scala.collection.JavaConverters._
-        GpuExpressionsUtils.cachedNullVectors.get().values().asScala.foreach(_.close())
-        GpuExpressionsUtils.cachedNullVectors.get().clear()
-      }
     }
   }
-
-  if (cacheNullMaxCount > 0 && GpuExpressionsUtils.cachedNullVectors.get() == null) {
-    GpuExpressionsUtils.cachedNullVectors.set(new NullVecCache(cacheNullMaxCount))
-  }
-
 
   override def hasNext: Boolean = sb.isDefined || it.hasNext
 

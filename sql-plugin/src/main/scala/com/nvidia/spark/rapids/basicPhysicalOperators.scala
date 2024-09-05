@@ -107,8 +107,13 @@ object GpuProjectExec {
       // This can help avoid contiguous splits in some cases when the input data is also contiguous
       GpuColumnVector.incRefCounts(cb)
     } else {
-      val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
-      new ColumnarBatch(newColumns, cb.numRows())
+      try {
+        GpuExpressionsUtils.cachedNullVectors.get.clear()
+        val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
+        new ColumnarBatch(newColumns, cb.numRows())
+      } finally {
+        GpuExpressionsUtils.cachedNullVectors.get.clear()
+      }
     }
   }
 
