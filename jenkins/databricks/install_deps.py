@@ -162,7 +162,7 @@ def define_deps(spark_version, scala_version):
 
 
     # log4j-core
-    if spark_version.startswith('3.3') or spark_version.startswith('3.4'):
+    if spark_version.startswith('3.3') or spark_version.startswith('3.4') or spark_version.startswith('3.5'):
         deps += Artifact('org.apache.logging.log4j', 'log4j-core',
                          f'{prefix_ws_sp_mvn_hadoop}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__*.jar'),
 
@@ -172,7 +172,7 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-parser-combinators_{scala_version}-*.jar')
     ]
 
-    if spark_version.startswith('3.4'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5'):
         deps += [
         # Spark Internal Logging
         Artifact('org.apache.spark', f'spark-common-utils_{scala_version}', f'{spark_prefix}--common--utils--common-utils-hive-2.3__hadoop-3.2_2.12_deploy.jar'),
