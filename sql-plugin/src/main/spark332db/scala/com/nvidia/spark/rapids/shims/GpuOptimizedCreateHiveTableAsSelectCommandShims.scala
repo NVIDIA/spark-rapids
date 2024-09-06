@@ -23,6 +23,7 @@
 {"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "352"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -199,7 +200,8 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
 
     val outputColumns =
       DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
-    GpuBucketingUtils.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns, false)
+    BucketingUtilsShim.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns,
+      conf.isForceHiveHashForBucketedWrite)
 
     val serde = tableDesc.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)
     if (serde.contains("parquet")) {

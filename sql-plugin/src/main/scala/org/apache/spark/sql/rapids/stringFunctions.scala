@@ -22,11 +22,12 @@ import java.util.{Locale, Optional}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
@@ -1584,63 +1585,16 @@ class SubstringIndexMeta(
     override val parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
-  private var regexp: String = _
 
-  override def tagExprForGpu(): Unit = {
-    val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
-    if (delim == null || delim.length != 1) {
-      willNotWorkOnGpu("only a single character deliminator is supported")
-    }
-
-    val count = GpuOverrides.extractLit(expr.countExpr)
-    if (canThisBeReplaced) {
-      val c = count.get.value.asInstanceOf[Integer]
-      this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
-    }
-  }
 
   override def convertToGpu(
       column: Expression,
       delim: Expression,
-      count: Expression): GpuExpression = GpuSubstringIndex(column, this.regexp, delim, count)
+      count: Expression): GpuExpression = GpuSubstringIndex(column, delim, count)
 }
 
-object GpuSubstringIndex {
-  def makeExtractRe(delim: String, count: Integer): String = {
-    if (delim.length != 1) {
-      throw new IllegalStateException("NOT SUPPORTED")
-    }
-    val quotedDelim = CudfRegexp.cudfQuote(delim.charAt(0))
-    val notDelim = CudfRegexp.notCharSet(delim.charAt(0))
-    // substring_index has a deliminator and a count.  If the count is positive then
-    // you get back a substring from 0 until the Nth deliminator is found
-    // If the count is negative it goes in reverse
-    if (count == 0) {
-      // Count is zero so return a null regexp as a special case
-      null
-    } else if (count == 1) {
-      // If the count is 1 we want to match everything from the beginning of the string until we
-      // find the first occurrence of the deliminator or the end of the string
-      "\\A(" + notDelim + "*)"
-    } else if (count > 0) {
-      // If the count is > 1 we first match 0 up to count - 1 occurrences of the patten
-      // `not the deliminator 0 or more times followed by the deliminator`
-      // After that we go back to matching everything until we find the deliminator or the end of
-      // the string
-      "\\A((?:" + notDelim + "*" + quotedDelim + "){0," + (count - 1) + "}" + notDelim + "*)"
-    } else if (count == -1) {
-      // A -1 looks like 1 but we start looking at the end of the string
-      "(" + notDelim + "*)\\Z"
-    } else { //count < 0
-      // All others look like a positive count, but again we are matching starting at the end of
-      // the string instead of the beginning
-      "((?:" + notDelim + "*" + quotedDelim + "){0," + ((-count) - 1) + "}" + notDelim + "*)\\Z"
-    }
-  }
-}
 
 case class GpuSubstringIndex(strExpr: Expression,
-    regexp: String,
     ignoredDelimExpr: Expression,
     ignoredCountExpr: Expression)
   extends GpuTernaryExpressionArgsAnyScalarScalar with ImplicitCastInputTypes {
@@ -1654,22 +1608,13 @@ case class GpuSubstringIndex(strExpr: Expression,
 
   override def prettyName: String = "substring_index"
 
-  // This is a bit hacked up at the moment. We are going to use a regular expression to extract
-  // a single value. It only works if the delim is a single character. A full version of
-  // substring_index for the GPU has been requested at https://github.com/rapidsai/cudf/issues/5158
-  // spark-rapids plugin issue https://github.com/NVIDIA/spark-rapids/issues/8750
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
-    if (regexp == null) {
-      withResource(str.getBase.isNull) { isNull =>
-        withResource(Scalar.fromString("")) { emptyString =>
-          isNull.ifElse(str.getBase, emptyString)
-        }
-      }
+    if (delim.isValid && count.isValid) {
+      GpuSubstringIndexUtils.substringIndex(str.getBase, delim.getBase,
+          count.getValue.asInstanceOf[Int])
     } else {
-      withResource(str.getBase.extractRe(new RegexProgram(regexp))) { table: Table =>
-        table.getColumn(0).incRefCount()
-      }
+      GpuColumnVector.columnVectorFromNull(str.getRowCount.toInt, StringType)
     }
   }
 
@@ -1857,11 +1802,10 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
       case 1 =>
         // Short circuit GPU and just return a list containing the original input string
         withResource(str.getBase.isNull) { isNull =>
-          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) {
-            nullStringList =>
-              withResource(ColumnVector.makeList(str.getBase)) { list =>
-                  isNull.ifElse(nullStringList, list)
-              }
+          withResource(GpuScalar.from(null, dataType)) { nullStringList =>
+            withResource(ColumnVector.makeList(str.getBase)) { list =>
+              isNull.ifElse(nullStringList, list)
+            }
           }
         }
       case n =>

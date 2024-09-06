@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
 import org.apache.hadoop.fs.Path
@@ -322,8 +323,9 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   private var fileFormat: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpuInternal(): Unit = {
-    if (GpuBucketingUtils.isHiveHashBucketing(cmd.options)) {
-      GpuBucketingUtils.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns, false)
+    if (BucketingUtilsShim.isHiveHashBucketing(cmd.options)) {
+      BucketingUtilsShim.tagForHiveBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns,
+        conf.isForceHiveHashForBucketedWrite)
     } else {
       BucketIdMetaUtils.tagForBucketingWrite(this, cmd.bucketSpec, cmd.outputColumns)
     }
@@ -1146,8 +1148,11 @@ object GpuOverrides extends Logging {
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.gpuNumeric + GpuTypeShims.additionalArithmeticSupportedTypes,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
+      (a, conf, p, r) => new ExprMeta[UnaryPositive](a, conf, p, r) {
+        override val isFoldableNonLitAllowed: Boolean = true
+        override def convertToGpu(): GpuExpression =
+          GpuUnaryPositive(childExprs.head.convertToGpu())
+        
       }),
     expr[Year](
       "Returns the year from a date or timestamp",
@@ -2023,7 +2028,7 @@ object GpuOverrides extends Logging {
           } else {
             None
           }
-          GpuCaseWhen(branches, elseValue)
+          GpuCaseWhen(branches, elseValue, this.conf.caseWhenFuseEnabled)
         }
       }),
     expr[If](
@@ -2262,6 +2267,64 @@ object GpuOverrides extends Logging {
           GpuLast(childExprs.head, a.ignoreNulls)
 
         // Last does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
+    expr[MaxBy](
+      "MaxBy aggregate operator. It may produce different results than CPU when " +
+        "multiple rows in a group have same minimum value in the ordering column and " +
+        "different associated values in the value column.",
+      ExprChecks.reductionAndGroupByAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
+            + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+            TypeSig.all),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + 
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.orderable))
+      ),
+      (maxBy, conf, p, r) => new AggExprMeta[MaxBy](maxBy, conf, p, r) {
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          // Only two children (value expression, ordering expression)
+          require(childExprs.length == 2)
+          GpuMaxBy(childExprs.head, childExprs.last)
+        }
+
+        // MaxBy does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
+    expr[MinBy](
+      "MinBy aggregate operator. It may produce different results than CPU when " +
+        "multiple rows in a group have same minimum value in the ordering column and " +
+        "different associated values in the value column.",
+      ExprChecks.reductionAndGroupByAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
+            + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+            TypeSig.all),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + 
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.orderable))
+      ),
+      (minBy, conf, p, r) => new AggExprMeta[MinBy](minBy, conf, p, r) {
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          // Only two children (value expression, ordering expression)
+          require(childExprs.length == 2)
+          GpuMinBy(childExprs.head, childExprs.last)
+        }
+
+        // MinBy does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[BRound](
@@ -2858,6 +2921,23 @@ object GpuOverrides extends Logging {
           GpuArrayRemove(lhs, rhs)
       }
     ),
+    expr[MapFromArrays](
+      "Creates a new map from two arrays",
+      ExprChecks.binaryProject(
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+        ("keys",
+          TypeSig.ARRAY.nested(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.all - TypeSig.MAP)),
+        ("values",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.all))),
+      GpuMapFromArraysMeta
+    ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -2961,8 +3041,7 @@ object GpuOverrides extends Logging {
       "substring_index operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
+          ParamCheck("delim", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
@@ -3141,6 +3220,31 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
+    expr[ArrayJoin](
+      "Concatenates the elements of the given array using the delimiter and an optional " +
+        "string to replace nulls. If no value is set for nullReplacement, any null value " +
+        "is filtered.",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("array",
+          TypeSig.ARRAY.nested(TypeSig.STRING),
+          TypeSig.ARRAY.nested(TypeSig.STRING)),
+          ParamCheck("delimiter",
+            TypeSig.STRING,
+            TypeSig.STRING)),
+        repeatingParamCheck = Some(RepeatingParamCheck("nullReplacement",
+          TypeSig.lit(TypeEnum.STRING),
+          TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ArrayJoin](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.children.size > 3) {
+            willNotWorkOnGpu(s"array_join has more parameters than we expected " +
+              s"to see. Found ${a.children.size}")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuArrayJoin(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
         "string using a given separator",
@@ -3199,6 +3303,15 @@ object GpuOverrides extends Logging {
 
         def convertToGpu(): GpuExpression =
           GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
+      }),
+    expr[HiveHash](
+      "hive hash operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
+        def convertToGpu(): GpuExpression =
+          GpuHiveHash(childExprs.map(_.convertToGpu()))
       }),
     expr[Contains](
       "Contains",
@@ -3649,8 +3762,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)).disabledByDefault(
-      "Experimental feature that could be unstable or have performance issues."),
+      (a, conf, p, r) => new GpuGetJsonObjectMeta(a, conf, p, r)),
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
@@ -4163,7 +4275,7 @@ object GpuOverrides extends Logging {
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
           condition.map(c => GpuFilterExec(c.convertToGpu(),
-            joinExec)(useTieredProject = this.conf.isTieredProjectEnabled)).getOrElse(joinExec)
+            joinExec)()).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](
@@ -4632,8 +4744,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
 
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        val found = f.relation.inputFiles.exists { name =>
-          checkDeltaFunc(name)
+        val found = StaticPartitionShims.getStaticPartitions(f.relation).map { parts =>
+          parts.exists { part =>
+            part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
+          }
+        }.getOrElse {
+          f.relation.location.rootPaths.exists { path =>
+            checkDeltaFunc(path.toString)
+          }
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")
@@ -4708,7 +4826,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           }
         }
       }
-      GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      val convertedPlan = GpuOverrides.doConvertPlan(wrap, conf, optimizations)
+      if (conf.isTagLoreIdEnabled) {
+        GpuLore.tagForLore(convertedPlan, conf)
+      } else {
+        convertedPlan
+      }
     }
   }
 }

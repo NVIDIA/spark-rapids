@@ -24,6 +24,7 @@
 {"spark": "343"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "352"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -50,7 +51,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   protected def allowPrecisionLoss = SQLConf.get.decimalOperationsAllowPrecisionLoss
 
   // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   def dataTypeInternal(lhs: Expression, rhs: Expression) = (lhs.dataType, rhs.dataType) match {
     case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>

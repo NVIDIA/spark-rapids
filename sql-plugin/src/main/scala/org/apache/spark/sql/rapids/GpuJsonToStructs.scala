@@ -20,13 +20,19 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.MapUtils
+import com.nvidia.spark.rapids.jni.JSONUtils
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+
+/**
+ *  Exception thrown when cudf cannot parse the JSON data because some Json to Struct cases are not
+ *  currently supported.
+ */
+class JsonParsingException(s: String, cause: Throwable) extends RuntimeException(s, cause) {}
 
 class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
   lazy val data: BaseDeviceMemoryBuffer = combined.getData
@@ -159,7 +165,7 @@ case class GpuJsonToStructs(
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
       case _: MapType =>
-        MapUtils.extractRawMapFromJsonString(input.getBase)
+        JSONUtils.extractRawMapFromJsonString(input.getBase)
       case struct: StructType => {
         // if we ever need to support duplicate keys we need to keep track of the duplicates
         //  and make the first one null, but I don't think this will ever happen in practice
@@ -176,7 +182,14 @@ case class GpuJsonToStructs(
           // Step 3: setup a datasource
           val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
             // Step 4: Have cudf parse the JSON data
-            cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+            try {
+              cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+            } catch {
+              case e : RuntimeException =>
+                throw new JsonParsingException("Currently some Json to Struct cases " +
+                  "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
+                  "=false", e)
+            }
           }
 
           // process duplicated field names in input struct schema

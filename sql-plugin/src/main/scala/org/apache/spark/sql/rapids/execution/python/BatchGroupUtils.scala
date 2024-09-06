@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -403,23 +403,37 @@ class CombiningIterator(
   private var pendingInput: Option[SpillableColumnarBatch] = None
   Option(TaskContext.get()).foreach(onTaskCompletion(_)(pendingInput.foreach(_.close())))
 
-  // The Python output should line up row for row so we only look at the Python output
-  // iterator and no need to check the `inputPending` who will be consumed when draining
-  // the Python output.
-  override def hasNext: Boolean = pythonOutputIter.hasNext
+  private var nextReadRowsNum: Option[Int] = None
 
-  override def next(): ColumnarBatch = {
+  private def initRowsNumForNextRead(): Unit = if (nextReadRowsNum.isEmpty){
     val numRows = inputBatchQueue.peekBatchNumRows()
     // Updates the expected batch size for next read
     pythonArrowReader.setMinReadTargetNumRows(numRows)
+    nextReadRowsNum = Some(numRows)
+  }
+
+  // The Python output should line up row for row so we only look at the Python output
+  // iterator and no need to check the `pendingInput` who will be consumed when draining
+  // the Python output.
+  override def hasNext: Boolean = {
+    // pythonOutputIter.hasNext may trigger a read, so init the read rows number here.
+    initRowsNumForNextRead()
+    pythonOutputIter.hasNext
+  }
+
+  override def next(): ColumnarBatch = {
+    initRowsNumForNextRead()
     // Reads next batch from Python and combines it with the input batch by the left side.
     withResource(pythonOutputIter.next()) { cbFromPython =>
+      // nextReadRowsNum should be set here after a read.
+      val nextRowsNum = nextReadRowsNum.get
+      nextReadRowsNum = None
       // Here may get a batch has a larger rows number than the current input batch.
-      assert(cbFromPython.numRows() >= numRows,
-        s"Expects >=$numRows rows but got ${cbFromPython.numRows()} from the Python worker")
+      assert(cbFromPython.numRows() >= nextRowsNum,
+        s"Expects >=$nextRowsNum rows but got ${cbFromPython.numRows()} from the Python worker")
       withResource(concatInputBatch(cbFromPython.numRows())) { concated =>
         numOutputBatches += 1
-        numOutputRows += numRows
+        numOutputRows += concated.numRows()
         GpuColumnVector.combineColumns(concated, cbFromPython)
       }
     }

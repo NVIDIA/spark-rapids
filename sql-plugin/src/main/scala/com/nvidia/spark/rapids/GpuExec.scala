@@ -16,10 +16,15 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.immutable.TreeMap
+
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.filecache.FileCacheConf
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
@@ -80,6 +85,8 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_MISSES_SIZE = "filecacheDataRangeMissesSize"
   val FILECACHE_FOOTER_READ_TIME = "filecacheFooterReadTime"
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
+  val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
+  val DELETION_VECTOR_SIZE = "deletionVectorSize"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -114,15 +121,26 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES_SIZE = "cached data misses size"
   val DESCRIPTION_FILECACHE_FOOTER_READ_TIME = "cached footer read time"
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
+  val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
+  val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
     case i => throw new IllegalArgumentException(s"found unsupported GpuMetric ${i.getClass}")
   }
 
-  def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = input.collect {
-    // remove the metrics that are not registered
-    case (k, w) if w != NoopMetric => (k, unwrap(w))
+  def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = {
+    val ret = input.collect {
+      // remove the metrics that are not registered
+      case (k, w) if w != NoopMetric => (k, unwrap(w))
+    }
+    val companions = input.collect {
+      // add the companions
+      case (k, w) if w.companionGpuMetric.isDefined =>
+        (k + "_exSemWait", unwrap(w.companionGpuMetric.get))
+    }
+
+    TreeMap.apply((ret ++ companions).toSeq: _*)
   }
 
   def wrap(input: SQLMetric): GpuMetric = WrappedGpuMetric(input)
@@ -154,9 +172,15 @@ sealed abstract class GpuMetric extends Serializable {
 
   private var isTimerActive = false
 
+  // For timing GpuMetrics, we additionally create a companion GpuMetric to track elapsed time
+  // excluding semaphore wait time
+  var companionGpuMetric: Option[GpuMetric] = None
+  private var semWaitTimeWhenActivated = 0L
+
   final def tryActivateTimer(): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
+      semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
       true
     } else {
       false
@@ -166,6 +190,9 @@ sealed abstract class GpuMetric extends Serializable {
   final def deactivateTimer(duration: Long): Unit = {
     if (isTimerActive) {
       isTimerActive = false
+      companionGpuMetric.foreach(c =>
+        c.add(duration - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)))
+      semWaitTimeWhenActivated = 0L
       add(duration)
     }
   }
@@ -191,7 +218,18 @@ object NoopMetric extends GpuMetric {
   override def value: Long = 0
 }
 
-final case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
+final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: Boolean = false)
+  extends GpuMetric {
+
+  if (withMetricsExclSemWait) {
+    //  SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private,
+    //  so we have to use the string directly
+    if (sqlMetric.metricType == "nsTiming") {
+      companionGpuMetric = Some(WrappedGpuMetric.apply(SQLMetrics.createNanoTimingMetric(
+        SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (excl. SemWait)")))
+    }
+  }
+
   def +=(v: Long): Unit = sqlMetric.add(v)
   def add(v: Long): Unit = sqlMetric.add(v)
   override def set(v: Long): Unit = sqlMetric.set(v)
@@ -272,7 +310,8 @@ trait GpuExec extends SparkPlan {
 
   private [this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
     if (level >= metricsConf) {
-      WrappedGpuMetric(f)
+      // only enable companion metrics (excluding semaphore wait time) for DEBUG_LEVEL
+      WrappedGpuMetric(f, withMetricsExclSemWait = GpuMetric.DEBUG_LEVEL >= metricsConf)
     } else {
       NoopMetric
     }
@@ -385,7 +424,8 @@ trait GpuExec extends SparkPlan {
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val orig = internalDoExecuteColumnar()
+    this.dumpLoreMetaInfo()
+    val orig = this.dumpLoreRDD(internalDoExecuteColumnar())
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
@@ -394,6 +434,30 @@ trait GpuExec extends SparkPlan {
         iter
       }
     }.getOrElse(orig)
+  }
+
+  override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs
+
+  protected def loreArgs: Iterator[String] = {
+    val loreIdStr = loreIdOf(this).map(id => s"[loreId=$id]")
+    val lorePathStr = getTagValue(LORE_DUMP_PATH_TAG).map(path => s"[lorePath=$path]")
+    val loreRDDInfoStr = getTagValue(LORE_DUMP_RDD_TAG).map(info => s"[loreRDDInfo=$info]")
+
+    List(loreIdStr, lorePathStr, loreRDDInfoStr).flatten.iterator
+  }
+
+  private def dumpLoreMetaInfo(): Unit = {
+    getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
+      GpuLore.dumpPlan(this, new Path(rootPath))
+    }
+  }
+
+  protected def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
+    getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd
+    }.getOrElse(inner)
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]

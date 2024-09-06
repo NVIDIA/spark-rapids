@@ -29,7 +29,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftSemi}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -70,8 +70,24 @@ class GpuShuffledHashJoinMeta(
       (None, condition)
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
+      join.leftKeys, join.rightKeys)
     val joinExec = join.joinType match {
-      case Inner | FullOuter if conf.useShuffledSymmetricHashJoin =>
+      case LeftOuter | RightOuter if useSizedJoin =>
+        GpuShuffledAsymmetricHashJoinExec(
+          join.joinType,
+          leftKeys.map(_.convertToGpu()),
+          rightKeys.map(_.convertToGpu()),
+          joinCondition,
+          left,
+          right,
+          conf.isGPUShuffle,
+          conf.gpuTargetBatchSizeBytes,
+          isSkewJoin = false)(
+          join.leftKeys,
+          join.rightKeys,
+          conf.joinOuterMagnificationThreshold)
+      case Inner | FullOuter if useSizedJoin =>
         GpuShuffledSymmetricHashJoinExec(
           join.joinType,
           leftKeys.map(_.convertToGpu()),
@@ -100,7 +116,7 @@ class GpuShuffledHashJoinMeta(
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c,
-      joinExec)(useTieredProject = conf.isTieredProjectEnabled)).getOrElse(joinExec)
+      joinExec)()).getOrElse(joinExec)
   }
 }
 

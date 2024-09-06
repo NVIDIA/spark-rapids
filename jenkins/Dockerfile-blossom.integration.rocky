@@ -33,7 +33,7 @@ ARG URM_URL
 # Install jdk-8, jdk-11, maven, docker image
 RUN yum update -y && \
     yum install epel-release -y && \
-    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect rsync zip unzip procps
+    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel java-17-openjdk-devel wget expect rsync zip unzip procps
 
 # The plugin: net.alchim31.maven requires a higher mvn version.
 ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"
@@ -51,13 +51,13 @@ RUN conda init
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
-    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.9 cuda-version=${CUDA_VER} && \
+    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.10 cuda-version=${CUDA_VER} && \
     conda install -y spacy && python -m spacy download en_core_web_sm && \
     conda install -y -c anaconda pytest requests && \
     conda install -y -c conda-forge sre_yield && \
     conda clean -ay
 # install pytest plugins for xdist parallel run
-RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==0.8.3
+RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0
 
 # Set default java as 1.8.0
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
