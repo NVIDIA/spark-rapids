@@ -387,7 +387,7 @@ test_my_new_added_case_for_sequence_operator()
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
-the [event log enabled](https://spark.apache.org/docs/3.1.1/monitoring.html) by default. You can opt
+the [event log enabled](https://spark.apache.org/docs/latest/monitoring.html) by default. You can opt
 out by setting the environment variable `SPARK_EVENTLOG_ENABLED` to `false`.
 
 Compressed event logs will appear under the run directories of the form
@@ -404,7 +404,7 @@ SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=integration_tests/target/run
 By default, integration tests write event logs using [Zstandard](https://facebook.github.io/zstd/)
 (`zstd`) compression codec. It can be changed by setting the environment variable `PYSP_TEST_spark_eventLog_compression_codec` to one of
 the SHS supported values for the config key
-[`spark.eventLog.compression.codec`](https://spark.apache.org/docs/3.1.1/configuration.html#spark-ui)
+[`spark.eventLog.compression.codec`](https://spark.apache.org/docs/latest/configuration.html#spark-ui)
 
 With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
 even without the SHS webUI.

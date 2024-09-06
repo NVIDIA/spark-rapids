@@ -1212,7 +1212,7 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable
               "spark.rapids.sql.input." + scan_name: False})
 
 @ignore_order(local=True)
-@pytest.mark.parametrize("join_type", ["Inner", "LeftOuter"], ids=idfn)
+@pytest.mark.parametrize("join_type", ["Inner", "LeftOuter", "RightOuter"], ids=idfn)
 @pytest.mark.parametrize("batch_size", ["500", "1g"], ids=idfn)
 def test_distinct_join(join_type, batch_size):
     join_conf = {

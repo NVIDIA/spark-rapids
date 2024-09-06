@@ -38,3 +38,19 @@
 {"data": "\u0031\u0034\u002E\u0030\u0031"}
 {"data": "\'TESTING\'"}
 {"\u0064\u0061t\u0061": "TEST"}
+{"data": "This is a simple string"}
+{"data": "This string contains a newline character\n"}
+{"data": "This string contains a tab character\t"}
+{"data": "This string contains a backslash \\"}
+{"data": "This string contains a double quote \""}
+{"data": "This string contains a unicode character \u00A9"}
+{"data": "This string contains a smiley face \u263A"}
+{"data": "This string contains a backspace character\b"}
+{"data": "This string contains a form feed character\f"}
+{"data": "This string contains a form feed character\u000C"}
+{"data": "This string contains a carriage return\r"}
+{"data": "This string contains a carriage return\u000D"}
+{"data": "This string contains an illegal control character \u0007 (bell)"}
+{"data": "This string contains an illegal character \u001F (unit separator)"}
+{"data": "This string contains a mix of normal and escaped characters: \n \" \t \u0041"}
+{"data": "This string contains an illegal control character directly: \u0001"}

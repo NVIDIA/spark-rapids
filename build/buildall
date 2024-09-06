@@ -91,6 +91,12 @@ function versionsFromDistProfile() {
   echo -n $versionStr
 }
 
+function versionsFromReleaseProfiles() {
+  versionRawStr=$(python build/get_buildvers.py $1 $2)
+  versionStr=${versionRawStr//[$'\n',]/}
+  echo -n $versionStr
+}
+
 FINAL_OP="package"
 
 while [[ "$1" != "" ]] ; do
@@ -173,22 +179,23 @@ fi
 
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
+echo "Collecting Spark versions..."
 case $DIST_PROFILE in
 
   snapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshotsScala213"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" "scala2.13/pom.xml"))
     ;;
 
   noSnapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshotsScala213"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" "scala2.13/pom.xml"))
     ;;
 
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshots"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" "pom.xml"))
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshots"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" "pom.xml"))
     ;;
 
   minimumFeatureVersionMix)
@@ -214,8 +221,6 @@ if [[ "$GEN_BLOOP" == "true" ]]; then
   bloopInstall
   exit 0
 fi
-
-[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
 
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
 export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
@@ -300,7 +305,7 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dmaven.scaladoc.skip
 )

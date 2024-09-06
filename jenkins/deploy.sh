@@ -70,11 +70,9 @@ DEPLOY_TYPES=$(echo $CLASSIFIERS | sed -e 's;[^,]*;jar;g')
 DEPLOY_FILES=$(echo $CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
 
 # dist does not have javadoc and sources jars, use 'sql-plugin' instead
-source jenkins/version-def.sh >/dev/null 2>&1
-echo $SPARK_BASE_SHIM_VERSION
 SQL_ART_ID=$(mvnEval $SQL_PL project.artifactId)
 SQL_ART_VER=$(mvnEval $SQL_PL project.version)
-JS_FPATH="${SQL_PL}/target/spark${SPARK_BASE_SHIM_VERSION}/${SQL_ART_ID}-${SQL_ART_VER}"
+JS_FPATH="$(echo -n ${SQL_PL}/target/spark*)/${SQL_ART_ID}-${SQL_ART_VER}"
 cp $JS_FPATH-sources.jar $FPATH-sources.jar
 cp $JS_FPATH-javadoc.jar $FPATH-javadoc.jar
 

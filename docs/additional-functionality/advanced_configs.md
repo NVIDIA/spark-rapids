@@ -191,6 +191,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.ArrayExists"></a>spark.rapids.sql.expression.ArrayExists|`exists`|Return true if any element satisfies the predicate LambdaFunction|true|None|
 <a name="sql.expression.ArrayFilter"></a>spark.rapids.sql.expression.ArrayFilter|`filter`|Filter an input array using a given predicate|true|None|
 <a name="sql.expression.ArrayIntersect"></a>spark.rapids.sql.expression.ArrayIntersect|`array_intersect`|Returns an array of the elements in the intersection of array1 and array2, without duplicates|true|This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+|
+<a name="sql.expression.ArrayJoin"></a>spark.rapids.sql.expression.ArrayJoin|`array_join`|Concatenates the elements of the given array using the delimiter and an optional string to replace nulls. If no value is set for nullReplacement, any null value is filtered.|true|None|
 <a name="sql.expression.ArrayMax"></a>spark.rapids.sql.expression.ArrayMax|`array_max`|Returns the maximum value in the array|true|None|
 <a name="sql.expression.ArrayMin"></a>spark.rapids.sql.expression.ArrayMin|`array_min`|Returns the minimum value in the array|true|None|
 <a name="sql.expression.ArrayRemove"></a>spark.rapids.sql.expression.ArrayRemove|`array_remove`|Returns the array after removing all elements that equal to the input element (right) from the input array (left)|true|None|
@@ -403,7 +404,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.First"></a>spark.rapids.sql.expression.First|`first_value`, `first`|first aggregate operator|true|None|
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last_value`, `last`|last aggregate operator|true|None|
 <a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|`max`|Max aggregate operator|true|None|
+<a name="sql.expression.MaxBy"></a>spark.rapids.sql.expression.MaxBy|`max_by`|MaxBy aggregate operator. It may produce different results than CPU when multiple rows in a group have same minimum value in the ordering column and different associated values in the value column.|true|None|
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|`min`|Min aggregate operator|true|None|
+<a name="sql.expression.MinBy"></a>spark.rapids.sql.expression.MinBy|`min_by`|MinBy aggregate operator. It may produce different results than CPU when multiple rows in a group have same minimum value in the ordering column and different associated values in the value column.|true|None|
 <a name="sql.expression.Percentile"></a>spark.rapids.sql.expression.Percentile|`percentile`|Aggregation computing exact percentile|true|None|
 <a name="sql.expression.PivotFirst"></a>spark.rapids.sql.expression.PivotFirst| |PivotFirst operator|true|None|
 <a name="sql.expression.StddevPop"></a>spark.rapids.sql.expression.StddevPop|`stddev_pop`|Aggregation computing population standard deviation|true|None|
