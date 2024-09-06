@@ -42,6 +42,9 @@ def define_deps(spark_version, scala_version):
     elif spark_version.startswith('3.4'):
         spark_prefix = '----ws_3_4'
         mvn_prefix = '--mvn'
+    elif spark_version.startswith('3.5'):
+        spark_prefix = '----ws_3_5'
+        mvn_prefix = '--mvn'
 
     spark_suffix = f'hive-{hive_version}__hadoop-{hadoop_version}_{scala_version}'
 
@@ -122,7 +125,7 @@ def define_deps(spark_version, scala_version):
         Artifact('com.fasterxml.jackson.core', 'jackson-annotations',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__*.jar'),
         Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                 f'{spark_prefix}--vendor--avro--avro-*.jar'),
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro*.jar'),
         Artifact('org.apache.avro', 'avro-mapred',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__*.jar'),
         Artifact('org.apache.avro', 'avro',
@@ -130,7 +133,7 @@ def define_deps(spark_version, scala_version):
     ]
 
     # Parquet
-    if spark_version.startswith('3.4'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5'):
         deps += [
         Artifact('org.apache.parquet', 'parquet-hadoop', 
              f'{spark_prefix}--third_party--parquet-mr--parquet-hadoop--parquet-hadoop-shaded--*--libparquet-hadoop-internal.jar'),
