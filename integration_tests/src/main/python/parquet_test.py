@@ -35,10 +35,10 @@ def read_parquet_df(data_path):
 def read_parquet_sql(data_path):
     return lambda spark : spark.sql('select * from parquet.`{}`'.format(data_path))
 
-datetimeRebaseModeInWriteKey = 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite' if is_before_spark_400() else 'spark.sql.parquet.datetimeRebaseModeInWrite'
-int96RebaseModeInWriteKey = 'spark.sql.legacy.parquet.int96RebaseModeInWrite' if is_before_spark_400() else 'spark.sql.parquet.int96RebaseModeInWrite'
-datetimeRebaseModeInReadKey = 'spark.sql.legacy.parquet.datetimeRebaseModeInRead' if is_before_spark_400() else 'spark.sql.parquet.datetimeRebaseModeInRead'
-int96RebaseModeInReadKey = 'spark.sql.legacy.parquet.int96RebaseModeInRead' if is_before_spark_400() else 'spark.sql.parquet.int96RebaseModeInRead'
+datetimeRebaseModeInWriteKey = 'spark.sql.parquet.datetimeRebaseModeInWrite'
+int96RebaseModeInWriteKey = 'spark.sql.parquet.int96RebaseModeInWrite'
+datetimeRebaseModeInReadKey = 'spark.sql.parquet.datetimeRebaseModeInRead'
+int96RebaseModeInReadKey = 'spark.sql.parquet.int96RebaseModeInRead'
 
 rebase_write_corrected_conf = {
     datetimeRebaseModeInWriteKey : 'CORRECTED',

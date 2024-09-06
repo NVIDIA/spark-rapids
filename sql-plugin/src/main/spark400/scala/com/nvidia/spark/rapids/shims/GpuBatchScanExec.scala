@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowComparabl
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
-import org.apache.spark.sql.execution.datasources.v2._
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, StoragePartitionJoinParams}
 import org.apache.spark.sql.internal.SQLConf
 
 case class GpuBatchScanExec(
@@ -47,7 +47,7 @@ case class GpuBatchScanExec(
   @transient override lazy val batch: Batch = if (scan == null) null else scan.toBatch
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
-    case other: BatchScanExec =>
+    case other: GpuBatchScanExec =>
       this.batch != null && this.batch == other.batch &&
         this.runtimeFilters == other.runtimeFilters &&
         this.spjParams == other.spjParams
