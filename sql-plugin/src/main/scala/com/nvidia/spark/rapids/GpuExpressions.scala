@@ -54,6 +54,7 @@ object GpuExpressionsUtils {
 
   case class NullVecKey(d: DataType, n: Int)
 
+  // accessOrder = true makes it LRU
   class NullVecCache
     extends java.util.LinkedHashMap[NullVecKey, GpuColumnVector](100, 0.75f, true) {
 
