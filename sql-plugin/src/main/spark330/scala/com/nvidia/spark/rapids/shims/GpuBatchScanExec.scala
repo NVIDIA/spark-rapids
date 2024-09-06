@@ -35,7 +35,6 @@ import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
 import org.apache.spark.sql.catalyst.util.InternalRowSet
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
-import org.apache.spark.sql.execution.datasources.v2._
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
