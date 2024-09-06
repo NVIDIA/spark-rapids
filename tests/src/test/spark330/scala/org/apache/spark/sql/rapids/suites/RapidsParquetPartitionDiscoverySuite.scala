@@ -19,8 +19,12 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetV1PartitionDiscoverySuite, ParquetV2PartitionDiscoverySuite}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetPartitionDiscoverySuite, ParquetV1PartitionDiscoverySuite, ParquetV2PartitionDiscoverySuite}
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
+
+class RapidsParquetPartitionDiscoverySuite
+  extends ParquetPartitionDiscoverySuite
+  with RapidsSQLTestsBaseTrait {}
 
 class RapidsParquetV1PartitionDiscoverySuite
   extends ParquetV1PartitionDiscoverySuite

@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.utils
 
-import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetAvroCompatibilitySuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite,  RapidsParquetFieldIdIOSuite, RapidsParquetFieldIdSchemaSuite, RapidsParquetFileFormatSuite, RapidsParquetInteroperabilitySuite, RapidsParquetProtobufCompatibilitySuite, RapidsParquetQuerySuite, RapidsParquetRebaseDatetimeSuite, RapidsParquetSchemaPruningSuite, RapidsParquetSchemaSuite, RapidsParquetThriftCompatibilitySuite, RapidsParquetVectorizedSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
+import org.apache.spark.sql.rapids.suites.{RapidsCastSuite, RapidsDataFrameAggregateSuite, RapidsJsonExpressionsSuite, RapidsJsonFunctionsSuite, RapidsJsonSuite, RapidsMathFunctionsSuite, RapidsParquetAvroCompatibilitySuite, RapidsParquetColumnIndexSuite, RapidsParquetCompressionCodecPrecedenceSuite, RapidsParquetDeltaByteArrayEncodingSuite, RapidsParquetDeltaEncodingInteger, RapidsParquetDeltaEncodingLong, RapidsParquetDeltaLengthByteArrayEncodingSuite,  RapidsParquetFieldIdIOSuite, RapidsParquetFieldIdSchemaSuite, RapidsParquetFileFormatSuite, RapidsParquetInteroperabilitySuite, RapidsParquetPartitionDiscoverySuite, RapidsParquetProtobufCompatibilitySuite, RapidsParquetQuerySuite, RapidsParquetRebaseDatetimeSuite, RapidsParquetSchemaPruningSuite, RapidsParquetSchemaSuite, RapidsParquetThriftCompatibilitySuite, RapidsParquetVectorizedSuite, RapidsRegexpExpressionsSuite, RapidsStringExpressionsSuite, RapidsStringFunctionsSuite}
 
 // Some settings' line length exceeds 100
 // scalastyle:off line.size.limit
@@ -84,10 +84,14 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetFileFormatSuite]
     .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11402"))
   enableSuite[RapidsParquetFieldIdIOSuite]
+    .exclude("read parquet file without ids", ADJUST_UT("Showing that the test has passed, but there is RuntimeException thrown"))
+    .exclude("global read/write flag should work correctly", ADJUST_UT("Showing that the test has passed, but there is RuntimeException thrown"))
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
     .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11378"))
     .exclude("parquet timestamp conversion", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11378"))
+  enableSuite[RapidsParquetPartitionDiscoverySuite]
+    .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11430"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
     .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
     .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
