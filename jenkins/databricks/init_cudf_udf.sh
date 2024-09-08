@@ -28,13 +28,12 @@ export PATH=/databricks/conda/bin:$PATH
 # Set Python for the running instance
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-# Rapids 23.06+ drops python 3.8 conda packages. ref: https://docs.rapids.ai/notices/rsn0029/
-if [[ "$(printf '%s\n' "3.9" "${PYTHON_VERSION}" | sort -V | head -n1)" = "3.9" ]]; then
+# Rapids 24.10+ drops python 3.9 or below conda packages. ref: https://docs.rapids.ai/notices/rsn0040/
+if [[ "$(printf '%s\n' "3.10" "${PYTHON_VERSION}" | sort -V | head -n1)" != "3.10" ]]; then
+    echo "Change the python verson from $PYTHON_VERSION to 3.10, as Rapids v24.10 and above only supports Python 3.10 and later."
+    PYTHON_VERSION="3.10"
     # To fix "'lsb_release -a' returned non-zero". ref: https://github.com/pypa/pip/issues/4924
     [[ -n "$(which lsb_release)" ]] && mv $(which lsb_release) $(which lsb_release)"-bak"
-else
-    echo "Rapids 23.06+ drops python 3.8 or below versions of conda packages"
-    exit -1
 fi
 
 base=$(conda info --base)
