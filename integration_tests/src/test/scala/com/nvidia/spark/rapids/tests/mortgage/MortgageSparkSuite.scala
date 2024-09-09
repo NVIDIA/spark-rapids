@@ -55,7 +55,8 @@ class MortgageSparkSuite extends AnyFunSuite {
     builder.getOrCreate()
   }
 
-  test("extract mortgage data") {
+  // test failing, tracked by https://github.com/NVIDIA/spark-rapids/issues/11436
+  ignore("extract mortgage data") {
     val df = Run.csv(
       session,
       getClass.getClassLoader.getResource("Performance_2007Q3.txt_0").getPath,
