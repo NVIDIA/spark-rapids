@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-08-12
+Generated on 2024-08-18
 
 ## Release 24.08
 
@@ -88,6 +88,10 @@ Generated on 2024-08-12
 ### PRs
 |||
 |:---|:---|
+|[#11353](https://github.com/NVIDIA/spark-rapids/pull/11353)|Update download doc for v24.08.1 [skip ci]|
+|[#11352](https://github.com/NVIDIA/spark-rapids/pull/11352)|Update version to 24.08.1-SNAPSHOT [skip ci]|
+|[#11335](https://github.com/NVIDIA/spark-rapids/pull/11335)|Fix Delta Lake truncation of min/max string values|
+|[#11304](https://github.com/NVIDIA/spark-rapids/pull/11304)|Update changelog for v24.08.0 release [skip ci]|
 |[#11303](https://github.com/NVIDIA/spark-rapids/pull/11303)|Update rapids JNI and private dependency to 24.08.0|
 |[#11296](https://github.com/NVIDIA/spark-rapids/pull/11296)|[DOC] update doc for 2408 release [skip CI]|
 |[#11309](https://github.com/NVIDIA/spark-rapids/pull/11309)|[Doc ]Update lore doc about the range [skip ci]|

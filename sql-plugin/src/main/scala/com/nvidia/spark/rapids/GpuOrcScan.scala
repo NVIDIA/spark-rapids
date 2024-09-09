@@ -200,7 +200,11 @@ object GpuOrcScan {
       }
       // Replace values that cause overflow with nulls, same with CPU ORC.
       withResource(overflowFlags) { _ =>
-        casted.copyWithBooleanColumnAsValidity(overflowFlags)
+        // This is an integer type so we don't have to worry about
+        // nested DTypes here.
+        withResource(Scalar.fromNull(toType)) { nullVal =>
+          overflowFlags.ifElse(casted, nullVal)
+        }
       }
     }
   }
@@ -334,7 +338,9 @@ object GpuOrcScan {
         //   next convert to long,
         //   then down cast long to the target integral type.
         val longDoubles = withResource(doubleCanFitInLong(col)) { fitLongs =>
-          col.copyWithBooleanColumnAsValidity(fitLongs)
+          withResource(Scalar.fromNull(fromDt)) { nullVal =>
+            fitLongs.ifElse(col, nullVal)
+          }
         }
         withResource(longDoubles) { _ =>
           withResource(longDoubles.castTo(DType.INT64)) { longs =>
@@ -388,7 +394,9 @@ object GpuOrcScan {
               withResource(doubleMillis.add(half)) { doubleMillisPlusHalf =>
                 withResource(doubleMillisPlusHalf.floor()) { millis =>
                   withResource(getOverflowFlags(doubleMillis, millis)) { overflowFlags =>
-                    millis.copyWithBooleanColumnAsValidity(overflowFlags)
+                    withResource(Scalar.fromNull(millis.getType)) { nullVal =>
+                      overflowFlags.ifElse(millis, nullVal)
+                    }
                   }
                 }
               }

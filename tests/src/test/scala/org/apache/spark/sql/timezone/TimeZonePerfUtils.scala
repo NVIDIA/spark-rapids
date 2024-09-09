@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,7 @@ case class StringGenFunc(strings: Array[String]) extends DefaultGeneratorFunctio
 
 object TimeZonePerfUtils {
   def createColumn(idCol: Column, t: DataType, func: GeneratorFunction): Column = {
-    Column(DataGenExpr(idCol.expr, t, false, func))
+    val expr = DataGenExprShims.columnToExpr(idCol)
+    DataGenExprShims.exprToColumn(DataGenExpr(expr, t, false, func))
   }
 }

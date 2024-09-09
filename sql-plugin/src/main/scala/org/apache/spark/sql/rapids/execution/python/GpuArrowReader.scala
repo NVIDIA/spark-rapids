@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -62,10 +63,11 @@ trait GpuArrowOutput {
   protected def toBatch(table: Table): ColumnarBatch
 
   /**
-   * Default to `Int.MaxValue` to try to read as many as possible.
+   * Default to minimum one between "arrowMaxRecordsPerBatch" and 10000.
    * Change it by calling `setMinReadTargetNumRows` before a reading.
    */
-  private var minReadTargetNumRows: Int = Int.MaxValue
+  private var minReadTargetNumRows: Int = math.min(
+    SQLConf.get.arrowMaxRecordsPerBatch, 10000)
 
   def newGpuArrowReader: GpuArrowReader = new GpuArrowReader
 

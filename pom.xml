@@ -90,12 +90,11 @@
         <module>jdk-profiles</module>
     </modules>
     <profiles>
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release320</id>
             <activation>
-                <!-- #if scala-2.12 -->
                 <activeByDefault>true</activeByDefault>
-                <!-- #endif scala-2.12 -->
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -111,6 +110,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release321</id>
             <activation>
@@ -129,6 +130,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release321cdh</id>
             <activation>
@@ -143,8 +146,10 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
+                <!-- #endif scala-2.12 -->
                 <!-- Keeping the scala plugin version 4.3.0 for details
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
+                <!-- #if scala-2.12 -->
                 <scala.plugin.version>4.3.0</scala.plugin.version>
             </properties>
             <modules>
@@ -152,6 +157,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release322</id>
             <activation>
@@ -170,6 +177,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release323</id>
             <activation>
@@ -188,6 +197,8 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
+        <!-- #if scala-2.12 -->
         <profile>
             <id>release324</id>
             <activation>
@@ -206,6 +217,7 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
+        <!-- #endif scala-2.12 -->
         <profile>
             <id>release330</id>
             <activation>
@@ -557,6 +569,26 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release352</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>352</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>352</buildver>
+                <spark.version>${spark352.version}</spark.version>
+                <spark.test.version>${spark352.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 --><!--
         <profile>
             <id>release400</id>
@@ -674,6 +706,10 @@
     </profiles>
 
     <properties>
+        <!-- start dyn.shim properties -->
+        <dyn.shim.excluded.releases/>
+        <!-- end dyn.shim properties -->
+
         <rapids.module>.</rapids.module>
         <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
@@ -747,6 +783,7 @@
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
+        <spark352.version>3.5.2</spark352.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
@@ -777,34 +814,6 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
-        <noSnapshot.buildvers>
-            320,
-            321,
-            321cdh,
-            322,
-            323,
-            324,
-            330,
-            331,
-            332,
-            333,
-            334,
-            330cdh,
-            332cdh,
-            340,
-            341,
-            342,
-            343,
-            350,
-            351
-        </noSnapshot.buildvers>
-        <snapshot.buildvers>
-        </snapshot.buildvers>
-        <databricks.buildvers>
-            330db,
-            332db,
-            341db
-        </databricks.buildvers>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
           Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
@@ -836,32 +845,7 @@
             330,
             400
         </jdk17.scala213.buildvers>
-        <all.buildvers>
-            ${noSnapshot.buildvers},
-            ${snapshot.buildvers},
-            ${databricks.buildvers}
-        </all.buildvers>
-        <noSnapshotScala213.buildvers>
-            330,
-            331,
-            332,
-            333,
-            334,
-            340,
-            341,
-            342,
-            343,
-            350,
-            351
-        </noSnapshotScala213.buildvers>
-        <snapshotScala213.buildvers>
-            400
-        </snapshotScala213.buildvers>
-        <allScala213.buildvers>
-            ${noSnapshotScala213.buildvers},
-            ${snapshotScala213.buildvers}
-        </allScala213.buildvers>
-        <shimplify.shims>${all.buildvers}</shimplify.shims>
+        <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>
         <!-- SPARK-36796 for JDK-17 test-->
         <extraJavaTestArgs>
@@ -1090,6 +1074,8 @@
                         <phase>generate-sources</phase>
                         <configuration>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
+                                <property name="dyn.shim.buildver" value="all.buildvers"/>
+                                <script language="jython" src="${spark.rapids.source.basedir}/build/dyn_shim_detection.py"/>
                                 <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
                                     <attribute name="if"/>
                                 </scriptdef>
@@ -1188,7 +1174,7 @@ This will force full Scala code rebuild in downstream modules.
                             </target>
                         </configuration>
                     </execution>
-                  </executions>
+                </executions>
                 <dependencies>
                     <dependency>
                         <groupId>org.apache.ant</groupId>

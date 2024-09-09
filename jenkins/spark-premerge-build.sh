@@ -70,7 +70,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
         echo "Spark version (regex): $version"
-        env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
+        env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version package $MVN_BUILD_ARGS \
           -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done

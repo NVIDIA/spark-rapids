@@ -2269,6 +2269,64 @@ object GpuOverrides extends Logging {
         // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
+    expr[MaxBy](
+      "MaxBy aggregate operator. It may produce different results than CPU when " +
+        "multiple rows in a group have same minimum value in the ordering column and " +
+        "different associated values in the value column.",
+      ExprChecks.reductionAndGroupByAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
+            + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+            TypeSig.all),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + 
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.orderable))
+      ),
+      (maxBy, conf, p, r) => new AggExprMeta[MaxBy](maxBy, conf, p, r) {
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          // Only two children (value expression, ordering expression)
+          require(childExprs.length == 2)
+          GpuMaxBy(childExprs.head, childExprs.last)
+        }
+
+        // MaxBy does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
+    expr[MinBy](
+      "MinBy aggregate operator. It may produce different results than CPU when " +
+        "multiple rows in a group have same minimum value in the ordering column and " +
+        "different associated values in the value column.",
+      ExprChecks.reductionAndGroupByAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
+            + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+            TypeSig.all),
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + 
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.orderable))
+      ),
+      (minBy, conf, p, r) => new AggExprMeta[MinBy](minBy, conf, p, r) {
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          // Only two children (value expression, ordering expression)
+          require(childExprs.length == 2)
+          GpuMinBy(childExprs.head, childExprs.last)
+        }
+
+        // MinBy does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
@@ -3162,6 +3220,31 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
+    expr[ArrayJoin](
+      "Concatenates the elements of the given array using the delimiter and an optional " +
+        "string to replace nulls. If no value is set for nullReplacement, any null value " +
+        "is filtered.",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("array",
+          TypeSig.ARRAY.nested(TypeSig.STRING),
+          TypeSig.ARRAY.nested(TypeSig.STRING)),
+          ParamCheck("delimiter",
+            TypeSig.STRING,
+            TypeSig.STRING)),
+        repeatingParamCheck = Some(RepeatingParamCheck("nullReplacement",
+          TypeSig.lit(TypeEnum.STRING),
+          TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ArrayJoin](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.children.size > 3) {
+            willNotWorkOnGpu(s"array_join has more parameters than we expected " +
+              s"to see. Found ${a.children.size}")
+          }
+        }
+        override def convertToGpu(): GpuExpression =
+          GpuArrayJoin(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
         "string using a given separator",
@@ -4666,8 +4749,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
             part.files.exists(partFile => checkDeltaFunc(partFile.filePath.toString))
           }
         }.getOrElse {
-          f.relation.inputFiles.exists { name =>
-            checkDeltaFunc(name)
+          f.relation.location.rootPaths.exists { path =>
+            checkDeltaFunc(path.toString)
           }
         }
         if (found) {

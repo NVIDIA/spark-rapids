@@ -137,6 +137,8 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
+  def getSemWaitTime(): Long = semWaitTimeNs.value.value
+
   def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, "Acquire GPU", NvtxColor.RED, f)
 
   def spillToHostTime[A](f: => A): A = {
