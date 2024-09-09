@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_are_equal_sql
 from conftest import is_utc, is_supported_time_zone, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
@@ -458,6 +458,15 @@ def test_to_timestamp(parser_policy):
         lambda spark : unary_op_df(spark, gen)
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
+
+
+def test_to_timestamp_legacy_mode_yyyyMMdd_format():
+    gen = StringGen("[0-9]{3}[1-9](0[1-9]|1[0-2])(0[1-9]|[1-2][0-9])")
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, gen).select(f.to_timestamp(f.col("a"), "yyyyMMdd")),
+        {
+                'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+                'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 
 @tz_sensitive_test

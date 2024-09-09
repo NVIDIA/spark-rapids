@@ -651,6 +651,7 @@ guaranteed to produce the same results as the CPU:
 - `dd/MM/yyyy`
 - `yyyy/MM/dd`
 - `yyyy-MM-dd`
+- `yyyyMMdd`
 - `yyyy/MM/dd HH:mm:ss`
 - `yyyy-MM-dd HH:mm:ss`
 
@@ -659,6 +660,8 @@ LEGACY timeParserPolicy support has the following limitations when running on th
 - Only 4 digit years are supported
 - The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar
   that Spark uses in legacy mode
+- When format is `yyyyMMdd`, GPU only supports 8 digit strings. Spark supports like 7 digit
+  `2024101` string while GPU does not support.
 
 ## Formatting dates and timestamps as strings
 
