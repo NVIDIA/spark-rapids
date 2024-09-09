@@ -364,11 +364,20 @@ object GpuJsonReadCommon {
 
   def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
     ai.rapids.cudf.JSONOptions.builder()
-    .withRecoverWithNull(true)
-    .withMixedTypesAsStrings(true)
-    .withNormalizeWhitespace(true)
-    .withKeepQuotes(true)
-    .withNormalizeSingleQuotes(options.allowSingleQuotes)
-    .build()
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(true)
+      .withNormalizeWhitespace(true)
+      .withKeepQuotes(true)
+      .withNormalizeSingleQuotes(options.allowSingleQuotes)
+      .build()
+  }
+
+  def cudfJsonOptionBuilder(options: JSONOptions): ai.rapids.cudf.JSONOptions.Builder = {
+    ai.rapids.cudf.JSONOptions.builder()
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(true)
+      .withNormalizeWhitespace(true)
+      .withKeepQuotes(true)
+      .withNormalizeSingleQuotes(options.allowSingleQuotes)
   }
 }

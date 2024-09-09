@@ -17,11 +17,10 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
+import ai.rapids.cudf.{Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, TableDebug}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
-import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
@@ -34,8 +33,8 @@ import org.apache.spark.sql.types._
  */
 class JsonParsingException(s: String, cause: Throwable) extends RuntimeException(s, cause) {}
 
-class JsonDeviceDataSource(combined: ColumnVector) extends DataSource {
-  lazy val data: BaseDeviceMemoryBuffer = combined.getData
+class JsonDeviceDataSource(combined: DeviceMemoryBuffer) extends DataSource {
+  lazy val data: DeviceMemoryBuffer = combined
   lazy val totalSize: Long = data.getLength
   override def size(): Long = totalSize
 
@@ -80,87 +79,13 @@ case class GpuJsonToStructs(
         with NullIntolerant {
   import GpuJsonReadCommon._
 
-  private lazy val emptyRowStr = constructEmptyRow(schema)
-
-  private def constructEmptyRow(schema: DataType): String = {
-    schema match {
-      case struct: StructType if struct.fields.nonEmpty =>
-        s"""{"${StringEscapeUtils.escapeJson(struct.head.name)}":null}"""
-      case other =>
-        throw new IllegalArgumentException(s"$other is not supported as a top level type")    }
-  }
-
-  private def cleanAndConcat(input: cudf.ColumnVector): (cudf.ColumnVector, cudf.ColumnVector) = {
-    val stripped = if (input.getData == null) {
-      input.incRefCount
-    } else {
-      withResource(cudf.Scalar.fromString(" ")) { space =>
-        input.strip(space)
-      }
-    }
-
-    withResource(stripped) { stripped =>
-      val isEmpty = withResource(stripped.getByteCount) { lengths =>
-        withResource(cudf.Scalar.fromInt(0)) { zero =>
-          lengths.lessOrEqualTo(zero)
-        }
-      }
-      val isNullOrEmptyInput = withResource(isEmpty) { _ =>
-        withResource(input.isNull) { isNull =>
-          isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
-        }
-      }
-      closeOnExcept(isNullOrEmptyInput) { _ =>
-        withResource(cudf.Scalar.fromString(emptyRowStr)) { emptyRow =>
-          // TODO is it worth checking if any are empty or null and then skipping this?
-          withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { nullsReplaced =>
-            val isLiteralNull = withResource(Scalar.fromString("null")) { literalNull =>
-              nullsReplaced.equalTo(literalNull)
-            }
-            withResource(isLiteralNull) { _ =>
-              withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
-                checkForNewline(cleaned, "\n", "line separator")
-                checkForNewline(cleaned, "\r", "carriage return")
-
-                // add a newline to each JSON line
-                val withNewline = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-                  withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
-                    newLineCol =>
-                      ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
-                  }
-                }
-
-                // We technically don't need to join the strings together as we just want the buffer
-                // which should be the same either way.
-                (isNullOrEmptyInput, withNewline)
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  private def checkForNewline(cleaned: ColumnVector, newlineStr: String, name: String): Unit = {
-    withResource(cudf.Scalar.fromString(newlineStr)) { newline =>
-      withResource(cleaned.stringContains(newline)) { hasNewline =>
-        withResource(hasNewline.any()) { anyNewline =>
-          if (anyNewline.isValid && anyNewline.getBoolean) {
-            throw new IllegalArgumentException(
-              s"We cannot currently support parsing JSON that contains a $name in it")
-          }
-        }
-      }
-    }
-  }
-
   private lazy val parsedOptions = new JSONOptions(
     options,
     timeZoneId.get,
     SQLConf.get.columnNameOfCorruptRecord)
 
-  private lazy val jsonOptions =
-    GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
+  private lazy val jsonOptionBuilder =
+    GpuJsonReadCommon.cudfJsonOptionBuilder(parsedOptions)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
@@ -177,13 +102,17 @@ case class GpuJsonToStructs(
 
         // Step 1: verify and preprocess the data to clean it up and normalize a few things
         // Step 2: Concat the data into a single buffer
-        val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
-        withResource(isNullOrEmpty) { isNullOrEmpty =>
+        val concatenateInput = JSONUtils.concatenateJsonStrings(input.getBase)
+        withResource(concatenateInput.isValid) { isValid =>
           // Step 3: setup a datasource
-          val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
+          val table = withResource(new JsonDeviceDataSource(concatenateInput.data)) { ds =>
             // Step 4: Have cudf parse the JSON data
             try {
-              cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+              TableDebug.get.debug("input", input.getBase)
+              TableDebug.get.debug("isValid", isValid)
+
+              cudf.Table.readJSON(cudfSchema,
+                jsonOptionBuilder.withDelimiter(concatenateInput.delimiter).build, ds)
             } catch {
               case e : RuntimeException =>
                 throw new JsonParsingException("Currently some Json to Struct cases " +
@@ -205,9 +134,16 @@ case class GpuJsonToStructs(
             // Step 7: turn the data into a Struct
             withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
               withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
+
+//                TableDebug.get.debug("input", input.getBase)
+                TableDebug.get.debug("structData", structData)
+
+
                 // Step 8: put nulls back in for nulls and empty strings
                 withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  isNullOrEmpty.ifElse(nullVal, structData)
+                  val out = isValid.ifElse(structData, nullVal)
+                  TableDebug.get.debug("out", out)
+                  out
                 }
               }
             }
