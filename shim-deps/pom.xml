@@ -197,6 +197,12 @@
                     <artifactId>shaded-parquet-thrift_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
+	        </dependency>
+                <dependency>
+                    <groupId>org.apache.avro</groupId>
+                    <artifactId>avro-connector</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
