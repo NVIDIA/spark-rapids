@@ -19,9 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark330db
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
-
-import org.apache.spark.SparkEnv
+import com.nvidia.spark.rapids._
 
 object SparkShimServiceProvider {
   val VERSION = DatabricksShimVersion(3, 3, 0)
