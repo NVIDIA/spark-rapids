@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_are_equal_sql 
 from conftest import is_utc, is_supported_time_zone, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
@@ -671,3 +671,14 @@ micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), 
 def test_timestamp_micros(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))
+
+
+@pytest.mark.parametrize('parser_policy', ["LEGACY", "CORRECTED", "EXCEPTION"], ids=idfn)
+def test_date_to_timestamp(parser_policy):
+    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
+    incompatible_dic = {"spark.rapids.sql.incompatibleDateFormats.enabled": True}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, date_gen),
+        "tab",
+        "SELECT cast(a as timestamp) from tab",
+        conf=copy_and_update(parser_policy_dic, incompatible_dic))

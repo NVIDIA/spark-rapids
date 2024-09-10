@@ -90,6 +90,7 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   override def isTimeZoneSupported: Boolean = {
     (fromType, toType) match {
       case (TimestampType, DateType) => true // this is for to_date(...)
+      case (DateType, TimestampType) => true
       case _ => false
     }
   }
@@ -630,6 +631,11 @@ object GpuCast {
         withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.asInstanceOf[ColumnVector],
             zoneId.normalized())) {
           shifted => shifted.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
+      case (DateType, TimestampType) if options.timeZoneId.isDefined =>
+        val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
+        withResource(input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))) { cv =>
+          GpuTimeZoneDB.fromTimestampToUtcTimestamp(cv, zoneId.normalized())
         }
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
