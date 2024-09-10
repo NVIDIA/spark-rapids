@@ -661,8 +661,8 @@ def test_from_json_longs(std_input_path, input_file):
 @pytest.mark.parametrize('dt', [DecimalType(38,0), DecimalType(38,10), DecimalType(10,2)], ids=idfn)
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
+    "float_formatted.json",
+    "sci_formatted.json",
     "int_formatted_strings.json",
     "float_formatted_strings.json",
     "sci_formatted_strings.json",
@@ -690,8 +690,8 @@ def test_scan_json_decs(std_input_path, read_func, spark_tmp_table_factory, inpu
 @pytest.mark.parametrize('dt', [DecimalType(38,0), DecimalType(38,10), DecimalType(10,2)], ids=idfn)
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
+    "float_formatted.json",
+    "sci_formatted.json",
     "int_formatted_strings.json",
     "float_formatted_strings.json",
     "sci_formatted_strings.json",
@@ -888,7 +888,7 @@ def test_from_json_bools(std_input_path, input_file):
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
+    "sci_formatted.json",
     "int_formatted_strings.json",
     pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
@@ -916,7 +916,7 @@ def test_scan_json_floats(std_input_path, read_func, spark_tmp_table_factory, in
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
+    "sci_formatted.json",
     "int_formatted_strings.json",
     pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
@@ -943,7 +943,7 @@ def test_from_json_floats(std_input_path, input_file):
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
+    "sci_formatted.json",
     "int_formatted_strings.json",
     pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
@@ -971,7 +971,7 @@ def test_scan_json_doubles(std_input_path, read_func, spark_tmp_table_factory, i
 @pytest.mark.parametrize('input_file', [
     "int_formatted.json",
     pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10481')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15280')),
+    "sci_formatted.json",
     "int_formatted_strings.json",
     pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060')),
     "sci_formatted_strings.json",
