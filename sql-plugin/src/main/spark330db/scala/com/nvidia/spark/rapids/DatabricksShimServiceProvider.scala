@@ -31,18 +31,22 @@ object DatabricksShimServiceProvider {
       val databricksBuildInfo = com.databricks.BuildInfo
       val matchRes = sparkBuildInfo.dbrVersion.startsWith(dbrVersion)
       val matchStatus = if (matchRes) "SUCCESS" else "FAILURE"
-      log.warn(s"""Databricks Runtime Build Info match: {}
-                  |\tDBR_VERSION: {}
-                  |\tspark.gitHash: {}
-                  |\tdatabricks.gitHash: {}""".stripMargin,
-        matchStatus,
-        sparkBuildInfo.dbrVersion,
-        sparkBuildInfo.gitHash,
-        databricksBuildInfo.gitHash)
+      val logMessage =
+        s"""Databricks Runtime Build Info match: $matchStatus
+           |\tDBR_VERSION: ${sparkBuildInfo.dbrVersion}
+           |\tspark.BuildInfo.gitHash: ${sparkBuildInfo.gitHash}
+           |\tdatabricks.BuildInfo.gitHash: ${databricksBuildInfo.gitHash}
+           |\tdatabricks.BuildInfo.gitTimestamp: ${databricksBuildInfo.gitTimestamp}"""
+           .stripMargin
+      if (matchRes) {
+        log.warn(logMessage)
+      } else {
+        log.debug(logMessage)
+      }
       matchRes
     }.recover {
       case x: Throwable =>
-        log.warn("Databricks detection failed: " + x, x)
+        log.debug("Databricks detection failed: " + x, x)
         false
     }.getOrElse(false)
   }
