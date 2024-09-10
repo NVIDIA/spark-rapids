@@ -30,6 +30,6 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
-    DatabricksShimServiceProvider.matchesVersion("13.3.x-gpu-ml-scala2.12")
+    DatabricksShimServiceProvider.matchesVersion("13.3.x")
   }
 }

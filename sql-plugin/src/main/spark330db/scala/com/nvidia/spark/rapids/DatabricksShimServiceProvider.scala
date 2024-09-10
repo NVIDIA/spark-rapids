@@ -28,15 +28,22 @@ object DatabricksShimServiceProvider {
   def matchesVersion(dbrVersion: String): Boolean = {
     Try {
       val sparkBuildInfo = org.apache.spark.BuildInfo
-      val matchRes = sparkBuildInfo.dbrVersion == dbrVersion
-      if (sparkBuildInfo.dbrVersion == dbrVersion) {
-        val databricksBuildInfo = com.databricks.BuildInfo
-        log.warn("Databricks Runtime Build Info matched SUCCESS\n,\t{}\n\t{}\n\t{}",
-          sparkBuildInfo.dbrVersion,
-          sparkBuildInfo.gitHash,
-          databricksBuildInfo.gitHash)
-      }
+      val databricksBuildInfo = com.databricks.BuildInfo
+      val matchRes = sparkBuildInfo.dbrVersion.startsWith(dbrVersion)
+      val matchStatus = if (matchRes) "SUCCESS" else "FAILURE"
+      log.warn(s"""Databricks Runtime Build Info match: {}
+                  |\tDBR_VERSION: {}
+                  |\tspark.gitHash: {}
+                  |\tdatabricks.gitHash: {}""".stripMargin,
+        matchStatus,
+        sparkBuildInfo.dbrVersion,
+        sparkBuildInfo.gitHash,
+        databricksBuildInfo.gitHash)
       matchRes
+    }.recover {
+      case x: Throwable =>
+        log.warn("Databricks detection failed: " + x, x)
+        false
     }.getOrElse(false)
   }
 }
