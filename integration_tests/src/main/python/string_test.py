@@ -506,6 +506,31 @@ def test_concat_ws_sql_arrays_all_null_col_sep():
                 'concat_ws(c, a, array(null), b, array()), ' +
                 'concat_ws(c, b, b, array(b)) from concat_ws_table')
 
+def test_array_join():
+    ar_gen = ArrayGen(StringGen("a{0,10}", nullable=True), max_length=3, nullable=True)
+    sep_gen = StringGen("b{0,2}", nullable=True)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: two_col_df(spark, ar_gen, sep_gen).selectExpr("*",
+                "array_join(a, '*')",
+                "array_join(a, b)",
+                "array_join(a, '**', 'WAS NULL')",
+                "array_join(a, b, 'WAS NULL')",
+                "array_join(a, null, 'WAS NULL')",
+                "array_join(a, b, null)",
+                "array_join(array('1', null, '3'), '*')",
+                "array_join(array('1', null, '3'), b)",
+                "array_join(array('1', null, '3'), '**', 'WAS NULL')",
+                "array_join(array('1', null, '3'), b, 'WAS NULL')",
+                "array_join(array('1', null, '3'), null, 'WAS NULL')",
+                "array_join(array('1', null, '3'), b, null)",
+                "array_join(null, '*')",
+                "array_join(null, b)",
+                "array_join(null, '**', 'WAS NULL')",
+                "array_join(null, b, 'WAS NULL')",
+                "array_join(null, null, 'WAS NULL')",
+                "array_join(null, b, null)",
+                "array_join(null, null, null)"))
+
 def test_substring():
     gen = mk_str_gen('.{0,30}')
     assert_gpu_and_cpu_are_equal_collect(
