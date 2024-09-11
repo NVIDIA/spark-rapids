@@ -675,10 +675,10 @@ def test_timestamp_micros(data_gen):
 
 @pytest.mark.parametrize('parser_policy', ["LEGACY", "CORRECTED", "EXCEPTION"], ids=idfn)
 def test_date_to_timestamp(parser_policy):
-    parser_policy_dic = {"spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy)}
-    incompatible_dic = {"spark.rapids.sql.incompatibleDateFormats.enabled": True}
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, date_gen),
         "tab",
         "SELECT cast(a as timestamp) from tab",
-        conf=copy_and_update(parser_policy_dic, incompatible_dic))
+        conf = {
+            "spark.sql.legacy.timeParserPolicy": "{}".format(parser_policy),
+            "spark.rapids.sql.incompatibleDateFormats.enabled": True})
