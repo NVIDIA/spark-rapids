@@ -72,7 +72,7 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.spark', f'spark-core_{scala_version}',
                  f'{spark_prefix}--core--core-{spark_suffix}_deploy.jar'),
         Artifact('org.apache.spark', f'spark-versions_{scala_version}',
-                 f'spark--versions--*--shim_{scala_version}_deploy.jar'),
+                 f'spark--versions--*--shim*_{scala_version}_deploy.jar'),
         Artifact('org.apache.spark', f'databricks-versions_{scala_version}',
                  f'common--build-info--build-info-spark_*_{scala_version}_deploy.jar'),
         # Spark Hive Patches
@@ -189,7 +189,7 @@ def define_deps(spark_version, scala_version):
              f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-collection-compat_{scala_version}--org.scala-lang.modules__scala-collection-compat_{scala_version}__2.11.0.jar'), 
         Artifact('org.apache.avro', f'avro-connector', f'----ws_3_5--connector--avro--avro-hive-2.3__hadoop-3.2_2.12_shaded---606136534--avro-unshaded-hive-2.3__hadoop-3.2_2.12_deploy.jar')
         ]
-    #/databricks/jars/----ws_3_5--connector--avro--avro-hive-2.3__hadoop-3.2_2.12_shaded---606136534--avro-unshaded-hive-2.3__hadoop-3.2_2.12_deploy.jar
+
     return deps
 
 def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir, file):
