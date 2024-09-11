@@ -47,7 +47,7 @@ object GpuJsonReadCommon {
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
     case ShortType | IntegerType | LongType | FloatType | DoubleType | ByteType |
-         _: DecimalType =>
+         DateType | TimestampType | _: DecimalType =>
       builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name)
     case _ =>
       builder.addColumn(DType.STRING, name)
@@ -91,13 +91,15 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def undoKeepQuotes(input: ColumnView): ColumnVector = {
-    withResource(isQuotedString(input)) { iq =>
-      withResource(stripFirstAndLastChar(input)) { stripped =>
-        iq.ifElse(stripped, input)
-      }
-    }
-  }
+//  private def undoKeepQuotes(input: ColumnView): ColumnVector = {
+//    TableDebug.get.debug("input", input)
+//
+//    withResource(isQuotedString(input)) { iq =>
+//      withResource(stripFirstAndLastChar(input)) { stripped =>
+//        iq.ifElse(stripped, input)
+//      }
+//    }
+//  }
 
   private def fixupQuotedStrings(input: ColumnView): ColumnVector = {
     withResource(isQuotedString(input)) { iq =>
@@ -342,8 +344,8 @@ object GpuJsonReadCommon {
           GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
             DType.TIMESTAMP_MICROSECONDS)
         }
-      case (cv, Some(StringType)) if cv.getType == DType.STRING =>
-        undoKeepQuotes(cv)
+//      case (cv, Some(StringType)) if cv.getType == DType.STRING => cv.copyToColumnVector()
+//        undoKeepQuotes(cv)
       case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
         withResource(sanitizeDecimal(cv, options)) { tmp =>
           castStringToDecimal(tmp, dt)
