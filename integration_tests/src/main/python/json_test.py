@@ -23,6 +23,8 @@ from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order, datagen_overrides
 from spark_session import *
 
+TEXT_INPUT_EXEC='FileSourceScanExec'
+
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
     # This would require multiLine reads to work correctly, so we avoid these chars
@@ -349,6 +351,53 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
                   spark_tmp_table_factory,
                   options),
         conf=updated_conf)
+
+@approximate_float
+@pytest.mark.parametrize('filename', [
+    'boolean.json',
+    'boolean_invalid.json',
+    'ints.json',
+    pytest.param('ints_invalid.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4940')), # This fails for dates, as not all are invalid
+    'nan_and_inf.json',
+    pytest.param('nan_and_inf_strings.json', marks=pytest.mark.skipif(is_before_spark_330(), reason='https://issues.apache.org/jira/browse/SPARK-38060 fixed in Spark 3.3.0')),
+    'nan_and_inf_invalid.json',
+    'floats.json',
+    'floats_leading_zeros.json',
+    'floats_invalid.json',
+    'floats_edge_cases.json',
+    'decimals.json',
+    'dates.json',
+    'dates_invalid.json',
+])
+@pytest.mark.parametrize('schema', [_bool_schema, _byte_schema, _short_schema, _int_schema, _long_schema, \
+                                    _float_schema, _double_schema, _decimal_10_2_schema, _decimal_10_3_schema, \
+                                    _date_schema], ids=idfn)
+@pytest.mark.parametrize('allow_non_numeric_numbers', ['true', 'false'])
+@pytest.mark.parametrize('allow_numeric_leading_zeros', [
+    'true',
+    'false'
+])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@allow_non_gpu(TEXT_INPUT_EXEC, *not_utc_allow_for_test_json_scan)
+@pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'])
+def test_basic_from_json(std_input_path, filename, schema, allow_non_numeric_numbers, \
+        allow_numeric_leading_zeros, ansi_enabled, date_format):
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.ansi.enabled': ansi_enabled,
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+    options = {"allowNonNumericNumbers": allow_non_numeric_numbers,
+           "allowNumericLeadingZeros": allow_numeric_leading_zeros,
+           }
+
+    if date_format:
+        options['dateFormat'] = date_format
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.text(std_input_path + '/' + filename).
+          selectExpr("value as json").
+          select(f.col("json"), f.from_json(f.col("json"), schema, options)),
+        conf=updated_conf)
+
 
 @ignore_order
 @pytest.mark.parametrize('filename', [
