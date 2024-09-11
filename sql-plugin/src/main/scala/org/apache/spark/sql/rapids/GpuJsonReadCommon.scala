@@ -18,11 +18,13 @@
 package org.apache.spark.sql.rapids
 
 import java.util.Locale
+
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.{ColumnCastUtil, DecimalUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
+import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.CastStrings
+
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
 import org.apache.spark.sql.types.{DataType, _}
@@ -32,8 +34,8 @@ import org.apache.spark.sql.types.{DataType, _}
  * ScanJson
  */
 object GpuJsonReadCommon {
-  private def populateSchema(dt: DataType,
-      name: String, builder: Schema.Builder): Unit = dt match {
+  private def populateSchema(dt: DataType, name: String, builder: Schema.Builder): Unit =
+    dt match {
     case at: ArrayType =>
       val child = builder.addColumn(DType.LIST, name)
       populateSchema(at.elementType, "element", child)
@@ -44,8 +46,9 @@ object GpuJsonReadCommon {
       }
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
-    case dt: DecimalType =>
-      builder.addColumn(DecimalUtil.createCudfDecimal(dt), name)
+    case ShortType | IntegerType | LongType | FloatType | DoubleType | ByteType |
+         _: DecimalType =>
+      builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name)
     case _ =>
       builder.addColumn(DType.STRING, name)
   }
