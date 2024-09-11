@@ -21,8 +21,6 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import scala.util.Try
-
 object DatabricksShimServiceProvider {
   val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
   def matchesVersion(dbrVersion: String): Boolean = {
