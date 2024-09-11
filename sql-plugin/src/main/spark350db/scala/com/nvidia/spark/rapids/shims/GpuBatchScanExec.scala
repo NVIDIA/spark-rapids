@@ -137,6 +137,7 @@ case class GpuBatchScanExec(
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   override lazy val inputRDD: RDD[InternalRow] = {
+    scan.metrics = allMetrics
     val rdd = if (filteredPartitions.isEmpty && outputPartitioning == SinglePartition) {
       // return an empty RDD with 1 partition if dynamic filtering removed the only split
       sparkContext.parallelize(Array.empty[InternalRow], 1)
