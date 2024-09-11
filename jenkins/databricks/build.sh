@@ -152,11 +152,15 @@ else
 fi
 
 if [[ "$WITH_BLOOP" == "1" ]]; then
-    MVN_OPT="ch.epfl.scala:bloop-maven-plugin:bloopInstall $MVN_OPT"
+    MVN_OPT="-DbloopInstall $MVN_OPT"
+    MVN_PHASES="clean install"
+    export JAVA_HOME="/usr/lib/jvm/zulu11"
+else
+    MVN_PHASES="clean package"
 fi
 
 # Build the RAPIDS plugin by running package command for databricks
-$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
+$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER $MVN_PHASES -DskipTests $MVN_OPT
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creating a two-shim dist jar"
