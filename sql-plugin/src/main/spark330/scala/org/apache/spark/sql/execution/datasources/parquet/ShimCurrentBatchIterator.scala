@@ -157,6 +157,7 @@ class ShimCurrentBatchIterator(
         val reader = new VectorizedColumnReader(
           column.descriptor.get,
           column.required,
+          false,
           pages,
           null,
           LegacyBehaviorPolicyShim.CORRECTED_STR,

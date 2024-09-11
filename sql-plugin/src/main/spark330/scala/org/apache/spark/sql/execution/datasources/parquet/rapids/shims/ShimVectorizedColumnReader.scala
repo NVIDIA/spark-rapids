@@ -43,7 +43,7 @@ import org.apache.parquet.schema.{GroupType, Type}
 
 import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
+import org.apache.spark.sql.internal.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
 class ShimParquetRowConverter(
@@ -79,6 +79,7 @@ class ShimVectorizedColumnReader(
 ) extends VectorizedColumnReader(
       columns.get(index),
       true,
+      false,
       pageReadStore,
       convertTz,
       datetimeRebaseMode,

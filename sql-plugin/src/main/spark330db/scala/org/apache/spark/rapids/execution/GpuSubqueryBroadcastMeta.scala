@@ -18,7 +18,6 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
-{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 

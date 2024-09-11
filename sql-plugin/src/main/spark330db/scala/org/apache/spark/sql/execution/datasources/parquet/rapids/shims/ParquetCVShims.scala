@@ -46,6 +46,6 @@ object ParquetCVShims {
       getExistenceDefaultValues(sparkSchema)
     } else null
     new ParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel,
-      defaultValue)
+      defaultValue, "")
   }
 }

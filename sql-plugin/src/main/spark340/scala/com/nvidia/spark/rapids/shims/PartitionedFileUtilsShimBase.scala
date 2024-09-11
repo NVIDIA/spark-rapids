@@ -20,6 +20,7 @@
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "350"}
+{"spark": "350db"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "400"}
@@ -41,6 +42,6 @@ trait PartitionedFileUtilsShimBase {
     SparkPath.fromPathString(filePath), start, length)
 
   def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
-    pf.copy(locations = locations.toArray)
+    pf.copy(locations = locations.toSeq)
   }
 }
