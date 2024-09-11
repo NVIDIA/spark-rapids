@@ -46,7 +46,7 @@ object GpuJsonReadCommon {
       }
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
-    case ShortType | IntegerType | LongType | FloatType | DoubleType | ByteType |
+    case ShortType | IntegerType | LongType | FloatType | DoubleType | ByteType | BooleanType |
          DateType | TimestampType | _: DecimalType =>
       builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name)
     case _ =>
