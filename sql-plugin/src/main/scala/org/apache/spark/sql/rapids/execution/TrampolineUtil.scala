@@ -176,7 +176,7 @@ object TrampolineUtil {
   }
 
   def getSparkConf(spark: SparkSession): SQLConf = {
-    spark.sqlContext.conf
+    spark.sessionState.conf
   }
 
   def setExecutorEnv(sc: SparkContext, key: String, value: String): Unit = {
