@@ -183,11 +183,11 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.spark', f'spark-sql-api_{scala_version}', f'{spark_prefix}--sql--api--sql-api-hive-2.3__hadoop-3.2_2.12_deploy.jar')
         ]
 
-    # 350db
-    deps += [
+    if spark_version.startswith('3.5'):
+        deps += [
         Artifact('org.scala-lang.modules', f'scala-collection-compat_{scala_version}',
              f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-collection-compat_{scala_version}--org.scala-lang.modules__scala-collection-compat_{scala_version}__2.11.0.jar'), 
-        Artifact('org.apache.avro', f'avro-connector', f'----ws_3_5--connector--avro--avro-hive-2.3__hadoop-3.2_2.12_shaded---606136534--avro-unshaded-hive-2.3__hadoop-3.2_2.12_deploy.jar')
+        Artifact('org.apache.avro', f'avro-connector', f'{spark_prefix}--connector--avro--avro-hive-2.3__hadoop-3.2_2.12_shaded---606136534--avro-unshaded-hive-2.3__hadoop-3.2_2.12_deploy.jar')
         ]
 
     return deps
