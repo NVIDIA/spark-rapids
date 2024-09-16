@@ -41,15 +41,15 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, PythonUDF}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python.PythonMapInArrowExec
+import org.apache.spark.sql.execution.python.MapInArrowExec
 import org.apache.spark.sql.rapids.execution.python.GpuMapInBatchExec
 
 class GpuPythonMapInArrowExecMetaBase(
-    mapArrow: PythonMapInArrowExec,
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends SparkPlanMeta[PythonMapInArrowExec](mapArrow, conf, parent, rule) {
+  extends SparkPlanMeta[MapInArrowExec](mapArrow, conf, parent, rule) {
 
   override def replaceMessage: String = "partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =

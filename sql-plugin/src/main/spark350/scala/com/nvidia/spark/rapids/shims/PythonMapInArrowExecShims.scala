@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
+{"spark": "350db"}
 {"spark": "351"}
 {"spark": "352"}
 spark-rapids-shim-json-lines ***/
@@ -24,7 +25,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python.PythonMapInArrowExec
+import org.apache.spark.sql.execution.python.MapInArrowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.GpuPythonMapInArrowExecMeta
@@ -33,7 +34,7 @@ import org.apache.spark.sql.types.{BinaryType, StringType}
 object PythonMapInArrowExecShims {
 
   def execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-      GpuOverrides.exec[PythonMapInArrowExec](
+      GpuOverrides.exec[MapInArrowExec](
         "The backend for Map Arrow Iterator UDF. Accelerates the data transfer between the" +
           " Java process and the Python process. It also supports scheduling GPU resources" +
           " for the Python process when enabled.",

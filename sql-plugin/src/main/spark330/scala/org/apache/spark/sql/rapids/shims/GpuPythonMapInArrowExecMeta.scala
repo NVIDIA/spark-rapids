@@ -38,7 +38,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.execution.python._
 
 class GpuPythonMapInArrowExecMeta(
-    mapArrow: PythonMapInArrowExec,
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
