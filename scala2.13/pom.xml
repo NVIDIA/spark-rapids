@@ -550,6 +550,31 @@
             </modules>
         </profile>
         <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=350db -->
+            <id>release350db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>350db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <spark.version.classifier>spark350db</spark.version.classifier>
+                <spark.version>${spark350db.version}</spark.version>
+                <spark.test.version>${spark350db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>shim-deps/databricks</module>
+                <module>delta-lake/delta-spark341db</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release351</id>
             <activation>
                 <property>
@@ -781,6 +806,7 @@
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
+        <spark350db.version>3.5.0-databricks</spark350db.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
