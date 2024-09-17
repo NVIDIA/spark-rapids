@@ -344,9 +344,10 @@ class JsonPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric])
-  extends GpuTextBasedPartitionReader[HostLineBufferer, HostLineBuffererFactory.type](conf,
+  extends GpuTextBasedPartitionReader[HostLineBufferer,
+    FilterEmptyHostLineBuffererFactory.type](conf,
     partFile, dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
-    maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
+    maxBytesPerChunk, execMetrics, FilterEmptyHostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions =
     GpuJsonReadCommon.cudfJsonOptions(parsedOptions)

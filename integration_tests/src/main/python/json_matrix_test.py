@@ -589,7 +589,10 @@ COMMON_TEST_FILES=[
     "timestamp_formatted_strings.json",
     "timestamp_tz_formatted_strings.json"]
 
-@pytest.mark.parametrize('input_file', COMMON_TEST_FILES)
+COMMON_SCAN_TEST_FILES = COMMON_TEST_FILES + [
+    "scan_emtpy_lines.json"]
+
+@pytest.mark.parametrize('input_file', COMMON_SCAN_TEST_FILES)
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_bytes(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -606,7 +609,7 @@ def test_from_json_bytes(std_input_path, input_file):
         lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").select(f.col('json'), f.from_json(f.col('json'), schema)),
         conf =_enable_json_to_structs_conf)
 
-@pytest.mark.parametrize('input_file', COMMON_TEST_FILES)
+@pytest.mark.parametrize('input_file', COMMON_SCAN_TEST_FILES)
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_shorts(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -623,7 +626,7 @@ def test_from_json_shorts(std_input_path, input_file):
         lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").select(f.col('json'), f.from_json(f.col('json'), schema)),
         conf =_enable_json_to_structs_conf)
 
-@pytest.mark.parametrize('input_file', COMMON_TEST_FILES)
+@pytest.mark.parametrize('input_file', COMMON_SCAN_TEST_FILES)
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_ints(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -640,7 +643,7 @@ def test_from_json_ints(std_input_path, input_file):
         lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").select(f.col('json'), f.from_json(f.col('json'), schema)),
         conf =_enable_json_to_structs_conf)
 
-@pytest.mark.parametrize('input_file', COMMON_TEST_FILES)
+@pytest.mark.parametrize('input_file', COMMON_SCAN_TEST_FILES)
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_longs(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -678,7 +681,8 @@ def test_from_json_longs(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
-    "timestamp_tz_formatted_strings.json"])
+    "timestamp_tz_formatted_strings.json",
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_decs(std_input_path, read_func, spark_tmp_table_factory, input_file, dt):
     assert_gpu_and_cpu_are_equal_collect(
@@ -737,7 +741,8 @@ def test_from_json_decs(std_input_path, input_file, dt):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
-    "timestamp_tz_formatted_strings.json"])
+    "timestamp_tz_formatted_strings.json",
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df])
 def test_scan_json_strings(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -873,7 +878,7 @@ def test_json_tuple_formats(std_input_path, input_file):
             '''json_tuple(json, 'user.profile.username', 'user.skills[0]', 'user.projects[1].name') AS (username, first_skill, second_project_name)'''),
         conf =_enable_json_tuple_conf)
 
-@pytest.mark.parametrize('input_file', COMMON_TEST_FILES)
+@pytest.mark.parametrize('input_file', COMMON_SCAN_TEST_FILES)
 @pytest.mark.parametrize('read_func', [read_json_df])
 def test_scan_json_bools(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -910,7 +915,8 @@ def test_from_json_bools(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
-    "timestamp_tz_formatted_strings.json"])
+    "timestamp_tz_formatted_strings.json",
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df])
 def test_scan_json_floats(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -967,7 +973,8 @@ def test_from_json_floats(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
-    "timestamp_tz_formatted_strings.json"])
+    "timestamp_tz_formatted_strings.json",
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df])
 def test_scan_json_doubles(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1023,7 +1030,8 @@ def test_from_json_doubles(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://github.com/NVIDIA/spark-rapids/issues/11391')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://github.com/NVIDIA/spark-rapids/issues/11391'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(condition=is_before_spark_330(), reason='https://github.com/NVIDIA/spark-rapids/issues/11391')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df])
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_scan_json_corrected_dates(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1081,7 +1089,8 @@ def test_from_json_corrected_dates(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6846'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6846')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df])
 @allow_non_gpu(*non_utc_allow)
 def test_scan_json_corrected_timestamps(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1139,7 +1148,8 @@ def test_from_json_corrected_timestamps(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_long_arrays(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1194,7 +1204,8 @@ def test_from_json_long_arrays(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_string_arrays(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1249,7 +1260,8 @@ def test_from_json_string_arrays(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_long_structs(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1304,7 +1316,8 @@ def test_from_json_long_structs(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_string_structs(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1359,7 +1372,8 @@ def test_from_json_string_structs(std_input_path, input_file):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_dec_arrays(std_input_path, read_func, spark_tmp_table_factory, input_file, dt):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1415,7 +1429,8 @@ def test_from_json_dec_arrays(std_input_path, input_file, dt):
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
     "mixed_objects.json",
     pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_mixed_struct(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
