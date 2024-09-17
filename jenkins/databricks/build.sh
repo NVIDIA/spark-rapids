@@ -57,6 +57,7 @@ initialize()
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
         wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /tmp
         tar xf /tmp/apache-maven-3.6.3-bin.tar.gz -C $HOME
+        rm -f /tmp/apache-maven-3.6.3-bin.tar.gz
         sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
     fi
 

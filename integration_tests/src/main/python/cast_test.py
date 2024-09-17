@@ -322,7 +322,6 @@ def _assert_cast_to_string_equal (data_gen, conf):
     )
 
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/11437")
 @pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @allow_non_gpu(*non_utc_allow)
@@ -358,7 +357,6 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     )
 
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/11437")
 @pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
 @allow_non_gpu(*non_utc_allow)
