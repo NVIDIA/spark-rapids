@@ -132,7 +132,7 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def sanitizeInts(input: ColumnView, options: JSONOptions): ColumnVector = {
+  private def sanitizeInts(input: ColumnView): ColumnVector = {
     // Integer numbers cannot look like a float, so no `.` or e The rest of the parsing should
     // handle this correctly. The rest of the validation is in CUDF itself
 
@@ -292,7 +292,7 @@ object GpuJsonReadCommon {
       case (cv, Some(dt))
         if (dt == ByteType || dt == ShortType || dt == IntegerType || dt == LongType ) &&
             cv.getType == DType.STRING =>
-        withResource(sanitizeInts(cv, options)) { tmp =>
+        withResource(sanitizeInts(cv)) { tmp =>
           CastStrings.toInteger(tmp, false, GpuColumnVector.getNonNestedRapidsType(dt))
         }
       case (cv, Some(dt)) if cv.getType == DType.STRING =>

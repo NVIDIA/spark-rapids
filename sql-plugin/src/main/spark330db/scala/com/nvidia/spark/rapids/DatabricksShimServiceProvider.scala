@@ -21,12 +21,10 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import scala.util.Try
-
 object DatabricksShimServiceProvider {
   val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
   def matchesVersion(dbrVersion: String): Boolean = {
-    Try {
+    try {
       val sparkBuildInfo = org.apache.spark.BuildInfo
       val databricksBuildInfo = com.databricks.BuildInfo
       val matchRes = sparkBuildInfo.dbrVersion.startsWith(dbrVersion)
@@ -44,10 +42,10 @@ object DatabricksShimServiceProvider {
         log.debug(logMessage)
       }
       matchRes
-    }.recover {
+    } catch {
       case x: Throwable =>
         log.debug("Databricks detection failed: " + x, x)
         false
-    }.getOrElse(false)
+    }
   }
 }
