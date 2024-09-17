@@ -27,6 +27,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 import com.databricks.sql.io.skipping.MultiDimClustering
+import org.apache.spark.sql.delta.skipping.clustering.{ClusteredTableUtils, ClusteringColumnInfo}
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.Operation
 import com.databricks.sql.transaction.tahoe.actions.{Action, AddFile, FileAction, RemoveFile}
@@ -181,6 +182,18 @@ class GpuOptimizeExecutor(
     }
   }
 
+  private val isClusteredTable = ClusteredTableUtils.isSupported(txn.snapshot.protocol)
+
+  private val clusteringColumns: Seq[String] = {
+    if (zOrderByColumns.nonEmpty) {
+      zOrderByColumns
+    } else if (isClusteredTable) {
+      ClusteringColumnInfo.extractLogicalNames(txn.snapshot)
+    } else {
+      Nil
+    }
+  }
+
   /**
    * Utility method to run a Spark job to compact the files in given bin
    *
@@ -203,6 +216,7 @@ class GpuOptimizeExecutor(
       MultiDimClustering.cluster(
         input,
         approxNumFiles,
+        clusteringColumns,
         zOrderByColumns)
     } else {
       val useRepartition = sparkSession.sessionState.conf.getConf(

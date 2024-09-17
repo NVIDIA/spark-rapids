@@ -898,8 +898,8 @@ case class GpuMergeIntoCommand(
         deleteRowOutput = deleteRowOutput)
       Dataset.ofRows(spark, processedJoinPlan)
     } else {
-      val joinedRowEncoder = RowEncoder(joinedPlan.schema)
-      val outputRowEncoder = RowEncoder(outputRowSchema).resolveAndBind()
+      val joinedRowEncoder = ExpressionEncoder(RowEncoder.encoderFor(joinedPlan.schema))
+      val outputRowEncoder = ExpressionEncoder(RowEncoder.encoderFor(outputRowSchema)).resolveAndBind()
 
       val processor = new JoinedRowProcessor(
         targetRowHasNoMatch = targetRowHasNoMatch,

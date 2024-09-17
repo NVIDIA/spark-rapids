@@ -337,7 +337,7 @@ class DeltaCreatableRelationProviderMeta(
     }
     val path = saveCmd.options.get("path")
     if (path.isDefined) {
-      val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
+      val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
       RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
         saveCmd.options, SparkSession.active)
     } else {

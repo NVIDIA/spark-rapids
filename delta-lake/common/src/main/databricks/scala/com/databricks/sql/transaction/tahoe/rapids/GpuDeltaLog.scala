@@ -68,7 +68,7 @@ object GpuDeltaLog {
       dataPath: String,
       options: Map[String, String],
       rapidsConf: RapidsConf): GpuDeltaLog = {
-    val deltaLog = DeltaLog.forTable(spark, dataPath, options)
+    val deltaLog = DeltaLog.forTable(spark, new Path(dataPath), options)
     new GpuDeltaLog(deltaLog, rapidsConf)
   }
 
