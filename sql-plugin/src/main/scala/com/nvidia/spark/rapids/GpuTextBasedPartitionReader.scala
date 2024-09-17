@@ -80,15 +80,23 @@ trait LineBuffererFactory[BUFF <: LineBufferer] {
 
 object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
   override def createBufferer(estimatedSize: Long,
+                              lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, false)
+}
+
+object FilterEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
       lineSeparatorInRead: Array[Byte]): HostLineBufferer =
-    new HostLineBufferer(estimatedSize, lineSeparatorInRead)
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, true)
 }
 
 /**
  * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
  * the lines.
  */
-class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
+class HostLineBufferer(size: Long,
+                       separator: Array[Byte],
+                       filterEmpty: Boolean) extends LineBufferer {
   private var buffer = HostMemoryBuffer.allocate(size)
   private var location: Long = 0
   private var numLines: Int = 0
@@ -108,7 +116,7 @@ class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer 
 
   override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
     // Empty lines are filtered out
-    if (!isEmpty(line, lineOffset, lineLen)) {
+    if (!filterEmpty || !isEmpty(line, lineOffset, lineLen)) {
       numLines += 1
       val newTotal = location + lineLen + separator.length
       if (newTotal > buffer.getLength) {
@@ -159,31 +167,28 @@ class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBuff
   override def getNumLines: Int = numRows
 
   override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
-    // Empty lines are filtered out
-    if (!isEmpty(line, lineOffset, lineLen)) {
-      if (numRows + 1 > rowsAllocated) {
-        val newRowsAllocated = math.min(rowsAllocated * 2, Int.MaxValue - 1)
-        val tmpBuffer =
-          HostMemoryBuffer.allocate((newRowsAllocated + 1) * DType.INT32.getSizeInBytes)
-        tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
-        offsetsBuffer.close()
-        offsetsBuffer = tmpBuffer
-        rowsAllocated = newRowsAllocated
-      }
-
-      if (dataLocation + lineLen > dataBuffer.getLength) {
-        val newSize = math.max(dataBuffer.getLength * 2, lineLen)
-        closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
-          newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
-          dataBuffer.close()
-          dataBuffer = newBuff
-        }
-      }
-      dataBuffer.setBytes(dataLocation, line, lineOffset, lineLen)
-      offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
-      dataLocation += lineLen
-      numRows += 1
+    if (numRows + 1 > rowsAllocated) {
+      val newRowsAllocated = math.min(rowsAllocated * 2, Int.MaxValue - 1)
+      val tmpBuffer =
+        HostMemoryBuffer.allocate((newRowsAllocated + 1) * DType.INT32.getSizeInBytes)
+      tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
+      offsetsBuffer.close()
+      offsetsBuffer = tmpBuffer
+      rowsAllocated = newRowsAllocated
     }
+
+    if (dataLocation + lineLen > dataBuffer.getLength) {
+      val newSize = math.max(dataBuffer.getLength * 2, lineLen)
+      closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
+        newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
+        dataBuffer.close()
+        dataBuffer = newBuff
+      }
+    }
+    dataBuffer.setBytes(dataLocation, line, lineOffset, lineLen)
+    offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    dataLocation += lineLen
+    numRows += 1
   }
 
   def getColumnAndRelease: ColumnVector = {
