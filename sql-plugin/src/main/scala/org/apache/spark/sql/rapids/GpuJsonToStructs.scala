@@ -183,7 +183,7 @@ case class GpuJsonToStructs(
           val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
             // Step 4: Have cudf parse the JSON data
             try {
-              cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+              cudf.Table.readJSON(cudfSchema, jsonOptions, ds, numRows)
             } catch {
               case e : RuntimeException =>
                 throw new JsonParsingException("Currently some Json to Struct cases " +
