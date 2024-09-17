@@ -38,7 +38,7 @@ import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.scheduler.MapStatusWithStats
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
@@ -247,7 +247,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       extends ShuffleWriter[K, V]
         with RapidsShuffleWriterShimHelper
         with Logging {
-  private var myMapStatus: Option[MapStatus] = None
+  private var myMapStatus: Option[MapStatusWithStats] = None
   private val metrics = handle.metrics
   private val serializationTimeMetric =
     metrics.get("rapidsShuffleSerializationTime")
@@ -451,7 +451,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
             pl
           }
-          myMapStatus = Some(MapStatus(blockManager.shuffleServerId, partLengths, mapId))
+          myMapStatus = Some(MapStatusWithStats(blockManager.shuffleServerId, partLengths, mapId))
         } catch {
           // taken directly from BypassMergeSortShuffleWriter
           case e: Exception =>
@@ -536,7 +536,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     }
   }
 
-  override def stop(success: Boolean): Option[MapStatus] = {
+  override def stop(success: Boolean): Option[MapStatusWithStats] = {
     if (stopping) {
       None
     } else {
@@ -1184,7 +1184,7 @@ class RapidsCachingWriter[K, V](
     catalog.removeCachedHandles()
   }
 
-  override def stop(success: Boolean): Option[MapStatus] = {
+  override def stop(success: Boolean): Option[MapStatusWithStats] = {
     val nvtxRange = new NvtxRange("RapidsCachingWriter.close", NvtxColor.CYAN)
     try {
       if (!success) {
@@ -1206,7 +1206,7 @@ class RapidsCachingWriter[K, V](
         }
         logInfo(s"Done caching shuffle success=$success, server_id=$shuffleServerId, "
             + s"map_id=$mapId, sizes=${sizes.mkString(",")}")
-        Some(MapStatus(shuffleServerId, sizes, mapId))
+        Some(MapStatusWithStats(shuffleServerId, sizes, mapId))
       }
     } finally {
       nvtxRange.close()

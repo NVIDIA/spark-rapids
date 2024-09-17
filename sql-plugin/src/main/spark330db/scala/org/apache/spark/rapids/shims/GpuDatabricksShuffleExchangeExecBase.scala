@@ -56,4 +56,12 @@ abstract class GpuDatabricksShuffleExchangeExecBase(
   }
 
   override def shuffleId: Int = shuffleDependencyColumnar.shuffleId
+
+  def adaptiveRepartitioningStatus(): org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  }
+  
+  def repartition(numPartitions: Int,updatedRepartitioningStatus: org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus): org.apache.spark.sql.execution.exchange.ShuffleExchangeLike = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  }
 }

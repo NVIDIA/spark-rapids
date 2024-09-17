@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
+{"spark": "350db"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ExprRule, GpuOverrides}
-import com.nvidia.spark.rapids.{ExprChecks, GpuExpression, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.ExprRule
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, RaiseError}
+import org.apache.spark.sql.catalyst.expressions.Expression
 
 object RaiseErrorShim {
   val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty

@@ -188,6 +188,18 @@ abstract class CudfUnsafeRowBase(
     throw new IllegalArgumentException("NOT IMPLEMENTED YET")
   }
 
+  def getGeography(x: Int): org.apache.spark.unsafe.types.geo.GeographyVal = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  }
+
+  def getGeometry(x: Int): org.apache.spark.unsafe.types.geo.GeometryVal = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  }
+
+  def getVariant(x: Int): org.apache.spark.unsafe.types.VariantVal = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  }
+
   override def hashCode(): Int = {
     Murmur3_x86_32.hashUnsafeWords(null, address, sizeInBytes, 42)
   }
