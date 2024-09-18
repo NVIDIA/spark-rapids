@@ -24,4 +24,4 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetFieldIdSchemaSuite
   extends ParquetFieldIdSchemaSuite
-    with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {}

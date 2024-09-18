@@ -24,4 +24,4 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetDeltaByteArrayEncodingSuite
   extends ParquetDeltaByteArrayEncodingSuite
-    with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {}

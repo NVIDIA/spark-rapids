@@ -28,4 +28,4 @@ class RapidsParquetDeltaEncodingInteger
 
 class RapidsParquetDeltaEncodingLong
   extends ParquetDeltaEncodingLong
-    with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {}

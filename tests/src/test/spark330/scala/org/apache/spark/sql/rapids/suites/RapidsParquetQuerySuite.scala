@@ -24,4 +24,4 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetQuerySuite
   extends ParquetQuerySuite
-    with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {}

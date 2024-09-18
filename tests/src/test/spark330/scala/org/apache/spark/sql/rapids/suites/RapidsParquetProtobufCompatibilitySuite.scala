@@ -25,7 +25,7 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetProtobufCompatibilitySuite
   extends ParquetProtobufCompatibilitySuite
-    with RapidsSQLTestsBaseTrait {
+  with RapidsSQLTestsBaseTrait {
     override protected def readResourceParquetFile(name: String): DataFrame = {
       spark.read.parquet(testFile(name))
     }

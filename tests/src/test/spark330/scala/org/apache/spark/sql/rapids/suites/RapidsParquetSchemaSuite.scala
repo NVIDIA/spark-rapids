@@ -22,5 +22,4 @@ package org.apache.spark.sql.rapids.suites
 import org.apache.spark.sql.execution.datasources.parquet.ParquetSchemaSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
-class RapidsParquetSchemaSuite extends ParquetSchemaSuite with RapidsSQLTestsBaseTrait {
-}
+class RapidsParquetSchemaSuite extends ParquetSchemaSuite with RapidsSQLTestsBaseTrait {}

@@ -24,4 +24,4 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetFileFormatSuite
   extends ParquetFileFormatSuite
-    with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {}

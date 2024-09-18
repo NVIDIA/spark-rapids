@@ -100,7 +100,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
     .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
     .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
+    //.exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
   enableSuite[RapidsParquetSchemaPruningSuite]
     .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
     .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
