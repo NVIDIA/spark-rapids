@@ -27,7 +27,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 import com.databricks.sql.io.skipping.MultiDimClustering
-import org.apache.spark.sql.delta.skipping.clustering.{ClusteredTableUtils, ClusteringColumnInfo}
+import com.databricks.sql.io.skipping.liquid.{ClusteredTableUtils, ClusteringColumnInfo}
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.Operation
 import com.databricks.sql.transaction.tahoe.actions.{Action, AddFile, FileAction, RemoveFile}
@@ -40,6 +40,7 @@ import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext.SPARK_JOB_GROUP_ID
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.execution.metric.SQLMetrics.createMetric
@@ -217,7 +218,7 @@ class GpuOptimizeExecutor(
         input,
         approxNumFiles,
         clusteringColumns,
-        zOrderByColumns)
+        "zorder")
     } else {
       val useRepartition = sparkSession.sessionState.conf.getConf(
         DeltaSQLConf.DELTA_OPTIMIZE_REPARTITION_ENABLED)
@@ -366,7 +367,7 @@ class GpuOptimizeExecutor(
       txn.commit(actions, optimizeOperation)
     } catch {
       case e: ConcurrentModificationException =>
-        val newTxn = txn.deltaLog.startTransaction()
+        val newTxn = txn.deltaLog.startTransaction(Option.empty[CatalogTable])
         if (f(newTxn)) {
           logInfo("Retrying commit after checking for semantic conflicts with concurrent updates.")
           commitAndRetry(newTxn, optimizeOperation, actions, metrics)(f)

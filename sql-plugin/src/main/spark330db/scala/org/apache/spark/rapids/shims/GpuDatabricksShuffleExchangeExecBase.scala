@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.GpuPartitioning
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBaseWithMetrics
 
@@ -57,11 +58,12 @@ abstract class GpuDatabricksShuffleExchangeExecBase(
 
   override def shuffleId: Int = shuffleDependencyColumnar.shuffleId
 
-  def adaptiveRepartitioningStatus(): org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus = {
+  def adaptiveRepartitioningStatus(): AdaptiveRepartitioningStatus = {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET")
   }
   
-  def repartition(numPartitions: Int,updatedRepartitioningStatus: org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus): org.apache.spark.sql.execution.exchange.ShuffleExchangeLike = {
+  def repartition(numPartitions: Int,updatedRepartitioningStatus: AdaptiveRepartitioningStatus): 
+    ShuffleExchangeLike = {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET")
   }
 }
