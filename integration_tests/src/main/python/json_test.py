@@ -25,6 +25,12 @@ from spark_session import *
 
 TEXT_INPUT_EXEC='FileSourceScanExec'
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_file_source_scan_allow = ['FileSourceScanExec'] if is_not_utc() else []
+
+non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
+
+
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
     # This would require multiLine reads to work correctly, so we avoid these chars
@@ -378,7 +384,7 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
     'false'
 ])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-@allow_non_gpu(TEXT_INPUT_EXEC, *not_utc_allow_for_test_json_scan)
+@allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_project_allow)
 @pytest.mark.parametrize('date_format', [None, 'yyyy-MM-dd'])
 def test_basic_from_json(std_input_path, filename, schema, allow_non_numeric_numbers, \
         allow_numeric_leading_zeros, ansi_enabled, date_format):
@@ -581,11 +587,6 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
             conf=updated_conf)
     else:
         assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
-
-# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
-non_utc_file_source_scan_allow = ['FileSourceScanExec'] if is_not_utc() else []
-
-non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
 
 @approximate_float
 @pytest.mark.parametrize('filename', [
@@ -817,9 +818,6 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
         'ProjectExec',
         conf=conf)
-
-# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
-non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
 
 @pytest.mark.parametrize('timestamp_gen', [
     # "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
