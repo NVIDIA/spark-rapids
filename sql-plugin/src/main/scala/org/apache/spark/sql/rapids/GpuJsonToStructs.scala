@@ -182,8 +182,9 @@ case class GpuJsonToStructs(
 
           val convertedStructs =
             withResource(table) { _ =>
-              withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
-                cudf.ColumnVector.makeStruct(columns: _*)
+              withResource(convertTableToDesiredType(table, struct, parsedOptions,
+                removeQuotes = false)) {
+                columns => cudf.ColumnVector.makeStruct(columns: _*)
               }
             }
 

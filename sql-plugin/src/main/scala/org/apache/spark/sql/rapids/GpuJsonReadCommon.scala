@@ -91,15 +91,15 @@ object GpuJsonReadCommon {
     }
   }
 
-//  private def undoKeepQuotes(input: ColumnView): ColumnVector = {
+  private def undoKeepQuotes(input: ColumnView): ColumnVector = {
 //    TableDebug.get.debug("input", input)
-//
-//    withResource(isQuotedString(input)) { iq =>
-//      withResource(stripFirstAndLastChar(input)) { stripped =>
-//        iq.ifElse(stripped, input)
-//      }
-//    }
-//  }
+
+    withResource(isQuotedString(input)) { iq =>
+      withResource(stripFirstAndLastChar(input)) { stripped =>
+        iq.ifElse(stripped, input)
+      }
+    }
+  }
 
   private def fixupQuotedStrings(input: ColumnView): ColumnVector = {
     withResource(isQuotedString(input)) { iq =>
@@ -329,7 +329,8 @@ object GpuJsonReadCommon {
 
   private def convertToDesiredType(inputCv: ColumnVector,
       topLevelType: DataType,
-      options: JSONOptions): ColumnVector = {
+      options: JSONOptions,
+      removeQuotes: Boolean): ColumnVector = {
     ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
       Some(nestedColumnViewMismatchTransform)) {
       case (cv, Some(BooleanType)) if cv.getType == DType.STRING =>
@@ -344,8 +345,9 @@ object GpuJsonReadCommon {
           GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
             DType.TIMESTAMP_MICROSECONDS)
         }
-//      case (cv, Some(StringType)) if cv.getType == DType.STRING => cv.copyToColumnVector()
-//        undoKeepQuotes(cv)
+      case (cv, Some(StringType)) if cv.getType == DType.STRING && removeQuotes =>
+        cv.copyToColumnVector()
+        undoKeepQuotes(cv)
       case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
         withResource(sanitizeDecimal(cv, options)) { tmp =>
           castStringToDecimal(tmp, dt)
@@ -373,11 +375,12 @@ object GpuJsonReadCommon {
    */
   def convertTableToDesiredType(table: Table,
       desired: StructType,
-      options: JSONOptions): Array[ColumnVector] = {
+      options: JSONOptions,
+      removeQuotes: Boolean = true): Array[ColumnVector] = {
     val dataTypes = desired.fields.map(_.dataType)
     dataTypes.zipWithIndex.safeMap {
       case (dt, i) =>
-        convertToDesiredType(table.getColumn(i), dt, options)
+        convertToDesiredType(table.getColumn(i), dt, options, removeQuotes)
     }
   }
 
