@@ -35,7 +35,6 @@
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "350"}
-{"spark": "350db"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "400"}
@@ -185,18 +184,6 @@ abstract class CudfUnsafeRowBase(
   }
 
   override def copy(): CudfUnsafeRow = {
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
-  }
-
-  def getGeography(x: Int): org.apache.spark.unsafe.types.geo.GeographyVal = {
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
-  }
-
-  def getGeometry(x: Int): org.apache.spark.unsafe.types.geo.GeometryVal = {
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
-  }
-
-  def getVariant(x: Int): org.apache.spark.unsafe.types.VariantVal = {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET")
   }
 

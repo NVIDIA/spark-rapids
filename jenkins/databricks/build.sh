@@ -148,7 +148,7 @@ then
     echo "!!!! SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping install-file for dependencies."
 else
     echo "!!!! Installing dependendecies. Set SKIP_DEP_INSTALL=1 to speed up reruns of build.sh"# Install required dependencies.
-    install_dependencies
+    #install_dependencies
 fi
 
 if [[ "$WITH_BLOOP" == "1" ]]; then
@@ -156,7 +156,7 @@ if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_PHASES="clean install"
     export JAVA_HOME="/usr/lib/jvm/zulu11"
 else
-    MVN_PHASES="clean package"
+    MVN_PHASES="install"
 fi
 
 # Build the RAPIDS plugin by running package command for databricks

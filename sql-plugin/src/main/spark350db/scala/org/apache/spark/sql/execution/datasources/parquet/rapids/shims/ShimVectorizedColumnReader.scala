@@ -15,20 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
@@ -42,7 +29,7 @@ import org.apache.parquet.schema.{GroupType, Type}
 
 import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
+import org.apache.spark.sql.internal.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
 class ShimParquetRowConverter(
@@ -78,6 +65,7 @@ class ShimVectorizedColumnReader(
 ) extends VectorizedColumnReader(
       columns.get(index),
       true,
+      false,
       pageReadStore,
       convertTz,
       datetimeRebaseMode,

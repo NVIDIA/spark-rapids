@@ -38,7 +38,7 @@ import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.scheduler.MapStatusWithStats
+import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
@@ -235,6 +235,57 @@ trait RapidsShuffleWriterShimHelper {
   def doCommitAllPartitions(writer: ShuffleMapOutputWriter, emptyChecksums: Boolean): Array[Long]
 }
 
+abstract class RapidsShuffleThreadedWriterBaseBase[K, V]()
+      extends ShuffleWriter[K, V]
+        with Logging {
+  protected var myMapStatus: Option[MapStatus] = None
+  protected val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
+  /**
+   * Are we in the process of stopping? Because map tasks can call stop() with success = true
+   * and then call stop() with success = false if they get an exception, we want to make sure
+   * we don't try deleting files, etc twice.
+   */
+  private var stopping = false
+
+  def getMapStatus(
+    loc: BlockManagerId,
+    uncompressedSizes: Array[Long],
+    mapTaskId: Long): MapStatus = {
+    MapStatus(loc, uncompressedSizes, mapTaskId)
+  }
+
+  override def stop(success: Boolean): Option[MapStatus] = {
+    if (stopping) {
+      None
+    } else {
+      stopping = true
+      if (success) {
+        if (myMapStatus.isEmpty) {
+          // should not happen, but adding it just in case (this differs from Spark)
+          cleanupTempData()
+          throw new IllegalStateException("Cannot call stop(true) without having called write()");
+        }
+        myMapStatus
+      } else {
+        cleanupTempData()
+        None
+      }
+    }
+  }
+
+  private def cleanupTempData(): Unit = {
+    // The map task failed, so delete our output data.
+    try {
+      diskBlockObjectWriters.values.foreach { case (_, writer) =>
+        val file = writer.revertPartialWritesAndClose()
+        if (!file.delete()) logError(s"Error while deleting file ${file.getAbsolutePath()}")
+      }
+    } finally {
+      diskBlockObjectWriters.clear()
+    }
+  }
+}
+
 abstract class RapidsShuffleThreadedWriterBase[K, V](
     blockManager: BlockManager,
     handle: ShuffleHandleWithMetrics[K, V, V],
@@ -244,10 +295,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     maxBytesInFlight: Long,
     shuffleExecutorComponents: ShuffleExecutorComponents,
     numWriterThreads: Int)
-      extends ShuffleWriter[K, V]
-        with RapidsShuffleWriterShimHelper
-        with Logging {
-  private var myMapStatus: Option[MapStatusWithStats] = None
+      extends RapidsShuffleThreadedWriterBaseBase[K, V]
+        with RapidsShuffleWriterShimHelper {
   private val metrics = handle.metrics
   private val serializationTimeMetric =
     metrics.get("rapidsShuffleSerializationTime")
@@ -265,14 +314,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private val transferToEnabled = sparkConf.getBoolean("spark.file.transferTo", true)
   private val fileBufferSize = sparkConf.get(config.SHUFFLE_FILE_BUFFER_SIZE).toInt * 1024
   private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
-  /**
-   * Are we in the process of stopping? Because map tasks can call stop() with success = true
-   * and then call stop() with success = false if they get an exception, we want to make sure
-   * we don't try deleting files, etc twice.
-   */
-  private var stopping = false
-
-  private val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
 
   /**
    * Simple wrapper that tracks the time spent iterating the given iterator.
@@ -451,7 +492,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
             pl
           }
-          myMapStatus = Some(MapStatusWithStats(blockManager.shuffleServerId, partLengths, mapId))
+          myMapStatus = Some(getMapStatus(blockManager.shuffleServerId, partLengths, mapId))
         } catch {
           // taken directly from BypassMergeSortShuffleWriter
           case e: Exception =>
@@ -536,36 +577,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     }
   }
 
-  override def stop(success: Boolean): Option[MapStatusWithStats] = {
-    if (stopping) {
-      None
-    } else {
-      stopping = true
-      if (success) {
-        if (myMapStatus.isEmpty) {
-          // should not happen, but adding it just in case (this differs from Spark)
-          cleanupTempData()
-          throw new IllegalStateException("Cannot call stop(true) without having called write()");
-        }
-        myMapStatus
-      } else {
-        cleanupTempData()
-        None
-      }
-    }
-  }
 
-  private def cleanupTempData(): Unit = {
-    // The map task failed, so delete our output data.
-    try {
-      diskBlockObjectWriters.values.foreach { case (_, writer) =>
-        val file = writer.revertPartialWritesAndClose()
-        if (!file.delete()) logError(s"Error while deleting file ${file.getAbsolutePath()}")
-      }
-    } finally {
-      diskBlockObjectWriters.clear()
-    }
-  }
 
   def getBytesInFlight: Long = limiter.getBytesInFlight
 }
@@ -1075,6 +1087,55 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   }
 }
 
+abstract class RapidsCachingWriterBase[K, V](
+   blockManager: BlockManager,
+   handle: GpuShuffleHandle[K, V],
+   mapId: Long,
+   rapidsShuffleServer: Option[RapidsShuffleServer],
+   catalog: ShuffleBufferCatalog)
+  extends ShuffleWriter[K, V]
+    with Logging {
+  protected val numParts = handle.dependency.partitioner.numPartitions
+  protected val sizes = new Array[Long](numParts)
+
+  /**
+   * Used to remove shuffle buffers when the writing task detects an error, calling `stop(false)`
+   */
+  private def cleanStorage(): Unit = {
+    catalog.removeCachedHandles()
+  }
+
+  override def stop(success: Boolean): Option[MapStatus] = {
+    val nvtxRange = new NvtxRange("RapidsCachingWriter.close", NvtxColor.CYAN)
+    try {
+      if (!success) {
+        cleanStorage()
+        None
+      } else {
+        // upon seeing this port, the other side will try to connect to the port
+        // in order to establish an UCX endpoint (on demand), if the topology has "rapids" in it.
+        val shuffleServerId = if (rapidsShuffleServer.isDefined) {
+          val originalShuffleServerId = rapidsShuffleServer.get.originalShuffleServerId
+          val server = rapidsShuffleServer.get
+          BlockManagerId(
+            originalShuffleServerId.executorId,
+            originalShuffleServerId.host,
+            originalShuffleServerId.port,
+            Some(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}=${server.getPort}"))
+        } else {
+          blockManager.shuffleServerId
+        }
+        logInfo(s"Done caching shuffle success=$success, server_id=$shuffleServerId, "
+          + s"map_id=$mapId, sizes=${sizes.mkString(",")}")
+        Some(MapStatus(shuffleServerId, sizes, mapId))
+      }
+    } finally {
+      nvtxRange.close()
+    }
+  }
+
+}
+
 class RapidsCachingWriter[K, V](
     blockManager: BlockManager,
     // Never keep a reference to the ShuffleHandle in the cache as it being GCed triggers
@@ -1085,10 +1146,7 @@ class RapidsCachingWriter[K, V](
     catalog: ShuffleBufferCatalog,
     rapidsShuffleServer: Option[RapidsShuffleServer],
     metrics: Map[String, SQLMetric])
-  extends ShuffleWriter[K, V]
-    with Logging {
-  private val numParts = handle.dependency.partitioner.numPartitions
-  private val sizes = new Array[Long](numParts)
+  extends RapidsCachingWriterBase[K, V](blockManager, handle, mapId, rapidsShuffleServer, catalog) {
 
   private val uncompressedMetric: SQLMetric = metrics("dataSize")
 
@@ -1177,41 +1235,6 @@ class RapidsCachingWriter[K, V](
     }
   }
 
-  /**
-   * Used to remove shuffle buffers when the writing task detects an error, calling `stop(false)`
-   */
-  private def cleanStorage(): Unit = {
-    catalog.removeCachedHandles()
-  }
-
-  override def stop(success: Boolean): Option[MapStatusWithStats] = {
-    val nvtxRange = new NvtxRange("RapidsCachingWriter.close", NvtxColor.CYAN)
-    try {
-      if (!success) {
-        cleanStorage()
-        None
-      } else {
-        // upon seeing this port, the other side will try to connect to the port
-        // in order to establish an UCX endpoint (on demand), if the topology has "rapids" in it.
-        val shuffleServerId = if (rapidsShuffleServer.isDefined) {
-          val originalShuffleServerId = rapidsShuffleServer.get.originalShuffleServerId
-          val server = rapidsShuffleServer.get
-          BlockManagerId(
-            originalShuffleServerId.executorId,
-            originalShuffleServerId.host,
-            originalShuffleServerId.port,
-            Some(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}=${server.getPort}"))
-        } else {
-          blockManager.shuffleServerId
-        }
-        logInfo(s"Done caching shuffle success=$success, server_id=$shuffleServerId, "
-            + s"map_id=$mapId, sizes=${sizes.mkString(",")}")
-        Some(MapStatusWithStats(shuffleServerId, sizes, mapId))
-      }
-    } finally {
-      nvtxRange.close()
-    }
-  }
 
   def getPartitionLengths(): Array[Long] = {
     throw new UnsupportedOperationException("TODO")

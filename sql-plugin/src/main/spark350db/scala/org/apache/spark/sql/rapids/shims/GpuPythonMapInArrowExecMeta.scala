@@ -15,20 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -37,7 +24,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.execution.python._
 
 class GpuPythonMapInArrowExecMeta(
-    mapArrow: PythonMapInArrowExec,
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)

@@ -29,18 +29,39 @@
 {"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "350"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package org.apache.spark.sql.execution.datasources.parquet
 
-import com.nvidia.spark.rapids._
+import java.time.ZoneId
 
-import org.apache.spark.sql.execution.python._
+import org.apache.parquet.VersionParser.ParsedVersion
+import org.apache.parquet.column.ColumnDescriptor
+import org.apache.parquet.column.page.PageReadStore
 
-class GpuPythonMapInArrowExecMeta(
-    mapArrow: PythonMapInArrowExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends GpuPythonMapInArrowExecMetaBase(mapArrow, conf, parent, rule) {
-
+object ShimVectorizedColumnReader {
+  def apply(descriptor: ColumnDescriptor,
+      isRequired: Boolean,
+      boolean: Boolean,
+      pageReadStore: PageReadStore,
+      convertTz: ZoneId,
+      datetimeRebaseMode: String,
+      datetimeRebaseTz: String,
+      int96RebaseMode: String,
+      int96RebaseTz: String,
+      writerVersion: ParsedVersion) = {
+    new VectorizedColumnReader(
+      descriptor,
+      isRequired,
+      pageReadStore,
+      null,
+      datetimeRebaseMode,
+      datetimeRebaseTz,
+      int96RebaseMode,
+      null,
+      writerVersion)
+  }
 }

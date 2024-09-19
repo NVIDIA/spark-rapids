@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
-{"spark": "341db"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.GpuPartitioning
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.rapids.execution.ShuffledBatchRDD
 
@@ -48,5 +49,14 @@ case class GpuShuffleExchangeExec(
   // DB SPECIFIC - throw if called since we don't know how its used
   override def targetOutputPartitioning: Partitioning = {
     throw new UnsupportedOperationException
+  }
+
+  def adaptiveRepartitioningStatus(): AdaptiveRepartitioningStatus = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+  }
+
+  def repartition(numPartitions: Int,updatedRepartitioningStatus: AdaptiveRepartitioningStatus):
+     ShuffleExchangeLike = {
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
   }
 }
