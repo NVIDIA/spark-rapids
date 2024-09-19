@@ -28,11 +28,11 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatches}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
+import com.nvidia.spark.rapids.RapidsConf.AggFallbackAlgorithm
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
-import com.nvidia.spark.rapids.RapidsConf.AggFallbackAlgorithm
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -153,10 +153,64 @@ object AggregateUtils extends Logging {
   }
 
   /**
+   * Try to concat and merge neighbour input batches to reduce the number of output batches.
+   * For some cases where input is highly aggregate-able, we can merge multiple input batches
+   * into a single output batch. In such cases we can skip repartition at all.
+   */
+  def streamAggregateNeighours(
+      aggregatedBatches: CloseableBufferedIterator[SpillableColumnarBatch],
+      metrics: GpuHashAggregateMetrics,
+      targetMergeBatchSize: Long,
+      configuredTargetBatchSize: Long,
+      helper: AggHelper
+  ): Iterator[SpillableColumnarBatch] = {
+    new Iterator[SpillableColumnarBatch] {
+
+      override def hasNext: Boolean = aggregatedBatches.hasNext
+
+      override def next(): SpillableColumnarBatch = {
+        closeOnExcept(new ArrayBuffer[SpillableColumnarBatch]) { stagingBatches => {
+          var currentSize = 0L
+          while (aggregatedBatches.hasNext) {
+            val nextBatch = aggregatedBatches.head
+            if (currentSize + nextBatch.sizeInBytes > targetMergeBatchSize) {
+              if (stagingBatches.size == 1) {
+                return stagingBatches.head
+              } else if (stagingBatches.isEmpty) {
+                aggregatedBatches.next
+                return nextBatch
+              }
+              val merged = concatenateAndMerge(stagingBatches, metrics, helper)
+              stagingBatches.clear
+              currentSize = 0L
+              if (merged.sizeInBytes < configuredTargetBatchSize * 0.5) {
+                stagingBatches += merged
+                currentSize += merged.sizeInBytes
+              } else {
+                return merged
+              }
+            } else {
+              stagingBatches.append(nextBatch)
+              currentSize += nextBatch.sizeInBytes
+              aggregatedBatches.next
+            }
+          }
+
+          if (stagingBatches.size == 1) {
+            return stagingBatches.head
+          }
+          concatenateAndMerge(stagingBatches, metrics, helper)
+        }
+        }
+      }
+    }
+  }
+
+  /**
    * Read the input batches and repartition them into buckets.
    */
   def iterateAndRepartition(
-      aggregatedBatches: CloseableBufferedIterator[SpillableColumnarBatch],
+      aggregatedBatches: Iterator[SpillableColumnarBatch],
       metrics: GpuHashAggregateMetrics,
       targetMergeBatchSize: Long,
       helper: AggHelper,
@@ -830,10 +884,11 @@ object GpuAggFinalPassIterator {
  * (1) The iterator starts by pulling all batches from the input iterator, performing an initial
  * projection and aggregation on each individual batch via `GpuAggFirstPassIterator`, we call it
  * "First Pass Aggregate".
- * (2) Then the batches after first pass agg is sent to "streamMergeAndRepartition", where it tries
- * to merge & aggregate the neighbour batches into a single batch, and repartition the batch into
- * fixed size buckets. Recursive repartition will be applied on over-sized buckets until each bucket
- * is within the target size. We call this phase "Second Pass Aggregate".
+ * (2) Then the batches after first pass agg is sent to "streamAggregateNeighours", where it tries
+ * to concat & merge the neighbour batches into fewer batches, then "iterateAndRepartition"
+ * repartition the batch into fixed size buckets. Recursive repartition will be applied on
+ * over-sized buckets until each bucket * is within the target size.
+ * We call this phase "Second Pass Aggregate".
  * (3) At "Third Pass Aggregate", we take each bucket and perform a final aggregation on all batches
  * in the bucket, check "RepartitionAggregateIterator" for details.
  *
@@ -957,7 +1012,13 @@ class GpuMergeAggregateIterator(
         GpuBindReferences.bindGpuReferences(groupingAttributes, aggBufferAttributes.toSeq)
 
       val repartitionHappened = AggregateUtils.iterateAndRepartition(
-        firstPassIter, metrics, targetMergeBatchSize, concatAndMergeHelper,
+        AggregateUtils.streamAggregateNeighours(
+          firstPassIter,
+          metrics,
+          targetMergeBatchSize,
+          configuredTargetBatchSize,
+          concatAndMergeHelper)
+        , metrics, targetMergeBatchSize, concatAndMergeHelper,
         hashKeys, defaultHashBucketNum, defaultHashSeed, batchesByBucket)
       if (repartitionHappened) {
         metrics.numTasksRepartitioned += 1
@@ -1024,13 +1085,22 @@ class GpuMergeAggregateIterator(
       withResource(new NvtxWithMetrics("RepartitionAggregateIterator.next",
         NvtxColor.BLUE, opTime)) { _ =>
 
-        withResource(batchesByBucket.remove(batchesByBucket.size - 1)) { oneBucket =>
-          if (oneBucket.size > 1) {
-            AggregateUtils.concatenateAndMerge(oneBucket.data, metrics, concatAndMergeHelper)
-          } else if (oneBucket.size() == 1) {
-            oneBucket.removeLast()
-          } else {
-            throw new IllegalStateException("Empty bucket found")
+        if (batchesByBucket.last.size() == 1) {
+          batchesByBucket.remove(batchesByBucket.size - 1).removeLast()
+        } else {
+          // put as many buckets as possible together to aggregate, to reduce agg times
+          closeOnExcept(new ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]) {
+            toAggregateBuckets =>
+              var currentSize = 0L
+              while (batchesByBucket.nonEmpty &&
+                batchesByBucket.last.size() + currentSize < targetMergeBatchSize) {
+                val bucket = batchesByBucket.remove(batchesByBucket.size - 1)
+                currentSize += bucket.map(_.sizeInBytes).sum
+                toAggregateBuckets += bucket
+              }
+
+              AggregateUtils.concatenateAndMerge(
+                toAggregateBuckets.flatMap(_.data), metrics, concatAndMergeHelper)
           }
         }
       }
