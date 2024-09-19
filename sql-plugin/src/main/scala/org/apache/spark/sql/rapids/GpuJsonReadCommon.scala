@@ -346,8 +346,7 @@ object GpuJsonReadCommon {
             DType.TIMESTAMP_MICROSECONDS)
         }
       case (cv, Some(StringType)) if cv.getType == DType.STRING && removeQuotes =>
-        cv.copyToColumnVector()
-        undoKeepQuotes(cv)
+          undoKeepQuotes(cv)
       case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
         withResource(sanitizeDecimal(cv, options)) { tmp =>
           castStringToDecimal(tmp, dt)
