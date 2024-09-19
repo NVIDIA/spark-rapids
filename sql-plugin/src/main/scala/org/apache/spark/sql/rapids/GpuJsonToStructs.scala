@@ -162,64 +162,29 @@ case class GpuJsonToStructs(
   private lazy val jsonOptions =
     GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
 
+  private def hasArrayOfArray(dt: DataType, foundArray: Boolean = false): Boolean =
+    dt match {
+      case at: ArrayType =>
+        if(foundArray) {
+          true // return true only when ArrayType is found twice
+        } else {
+          hasArrayOfArray(at.elementType, foundArray = true)
+        }
+      case st: StructType =>
+        st.fields.exists(f => hasArrayOfArray(f.dataType, foundArray))
+      case _ => false
+    }
+
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
       case _: MapType =>
         JSONUtils.extractRawMapFromJsonString(input.getBase)
-      case struct: StructType => {
+      case struct: StructType =>
         // if we ever need to support duplicate keys we need to keep track of the duplicates
         //  and make the first one null, but I don't think this will ever happen in practice
         val cudfSchema = makeSchema(struct)
 
-        if (!cudfSchema.getFlattenedTypes.contains(cudf.DType.LIST)) {
-//       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
-          val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
-            parsedOptions.allowNumericLeadingZeros, parsedOptions.allowNonNumericNumbers)
-          TableDebug.get.debug("input.getBase", input.getBase)
-          TableDebug.get.debug("table from json", table)
-
-
-
-          val convertedStructs =
-            withResource(table) { _ =>
-              withResource(convertTableToDesiredType(table, struct, parsedOptions,
-                removeQuotes = false)) {
-                columns => cudf.ColumnVector.makeStruct(columns: _*)
-              }
-            }
-
-//          TableDebug.get.debug("convertedStructs", convertedStructs)
-
-          withResource(convertedStructs) { converted =>
-            val stripped = if (input.getBase.getData == null) {
-              input.getBase.incRefCount
-            } else {
-              withResource(cudf.Scalar.fromString(" ")) { space =>
-                input.getBase.strip(space)
-              }
-            }
-
-            withResource(stripped) { stripped =>
-              val isEmpty = withResource(stripped.getByteCount) { lengths =>
-                withResource(cudf.Scalar.fromInt(0)) { zero =>
-                  lengths.lessOrEqualTo(zero)
-                }
-              }
-              val isNullOrEmpty = withResource(isEmpty) { _ =>
-                withResource(input.getBase.isNull) { isNull =>
-                  isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
-                }
-              }
-              withResource(isNullOrEmpty) { nullOrEmpty =>
-                withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  val out = nullOrEmpty.ifElse(nullVal, converted)
-                  TableDebug.get.debug("out from json", out)
-                  out
-                }
-              }
-            }
-          }
-        } else {
+        if (hasArrayOfArray(struct)) {
           // We cannot handle all corner cases with this right now. The parser just isn't
           // good enough, but we will try to handle a few common ones.
           val numRows = input.getRowCount.toInt
@@ -267,8 +232,55 @@ case class GpuJsonToStructs(
               }
             }
           }
+        } else {
+          //       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
+          val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
+            parsedOptions.allowNumericLeadingZeros, parsedOptions.allowNonNumericNumbers)
+          TableDebug.get.debug("input.getBase", input.getBase)
+          TableDebug.get.debug("table from json", table)
+
+
+
+          val convertedStructs =
+            withResource(table) { _ =>
+              withResource(convertTableToDesiredType(table, struct, parsedOptions,
+                removeQuotes = false)) {
+                columns => cudf.ColumnVector.makeStruct(columns: _*)
+              }
+            }
+
+          //          TableDebug.get.debug("convertedStructs", convertedStructs)
+
+          withResource(convertedStructs) { converted =>
+            val stripped = if (input.getBase.getData == null) {
+              input.getBase.incRefCount
+            } else {
+              withResource(cudf.Scalar.fromString(" ")) { space =>
+                input.getBase.strip(space)
+              }
+            }
+
+            withResource(stripped) { stripped =>
+              val isEmpty = withResource(stripped.getByteCount) { lengths =>
+                withResource(cudf.Scalar.fromInt(0)) { zero =>
+                  lengths.lessOrEqualTo(zero)
+                }
+              }
+              val isNullOrEmpty = withResource(isEmpty) { _ =>
+                withResource(input.getBase.isNull) { isNull =>
+                  isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
+                }
+              }
+              withResource(isNullOrEmpty) { nullOrEmpty =>
+                withResource(GpuScalar.from(null, struct)) { nullVal =>
+                  val out = nullOrEmpty.ifElse(nullVal, converted)
+                  TableDebug.get.debug("out from json", out)
+                  out
+                }
+              }
+            }
+          }
         }
-      }
       case _ => throw new IllegalArgumentException(
         s"GpuJsonToStructs currently does not support schema of type $schema.")
     }
