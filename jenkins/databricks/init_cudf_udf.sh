@@ -47,7 +47,8 @@ REQUIRED_PACKAGES=(
   requests
   sre_yield
 )
-if base=$(conda info --base); then
+if command -v conda >/dev/null 2>&1; then
+  base=$(conda info --base)
   # Create and activate 'cudf-udf' conda env for cudf-udf tests
   sudo chmod a+w ${base}/envs && conda config --add envs_dirs ${base}/envs
   conda create -y -n cudf-udf -c conda-forge python=$PYTHON_VERSION mamba && \
