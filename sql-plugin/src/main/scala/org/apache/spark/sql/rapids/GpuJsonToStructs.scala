@@ -17,10 +17,11 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, TableDebug}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar, TableDebug}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
+import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
@@ -79,12 +80,87 @@ case class GpuJsonToStructs(
         with NullIntolerant {
   import GpuJsonReadCommon._
 
+  private lazy val emptyRowStr = constructEmptyRow(schema)
+
+  private def constructEmptyRow(schema: DataType): String = {
+    schema match {
+      case struct: StructType if struct.fields.nonEmpty =>
+        s"""{"${StringEscapeUtils.escapeJson(struct.head.name)}":null}"""
+      case other =>
+        throw new IllegalArgumentException(s"$other is not supported as a top level type")    }
+  }
+
+  private def cleanAndConcat(input: cudf.ColumnVector): (cudf.ColumnVector, cudf.ColumnVector) = {
+    val stripped = if (input.getData == null) {
+      input.incRefCount
+    } else {
+      withResource(cudf.Scalar.fromString(" ")) { space =>
+        input.strip(space)
+      }
+    }
+
+    withResource(stripped) { stripped =>
+      val isEmpty = withResource(stripped.getByteCount) { lengths =>
+        withResource(cudf.Scalar.fromInt(0)) { zero =>
+          lengths.lessOrEqualTo(zero)
+        }
+      }
+      val isNullOrEmptyInput = withResource(isEmpty) { _ =>
+        withResource(input.isNull) { isNull =>
+          isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
+        }
+      }
+      closeOnExcept(isNullOrEmptyInput) { _ =>
+        withResource(cudf.Scalar.fromString(emptyRowStr)) { emptyRow =>
+          // TODO is it worth checking if any are empty or null and then skipping this?
+          withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { nullsReplaced =>
+            val isLiteralNull = withResource(Scalar.fromString("null")) { literalNull =>
+              nullsReplaced.equalTo(literalNull)
+            }
+            withResource(isLiteralNull) { _ =>
+              withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
+                checkForNewline(cleaned, "\n", "line separator")
+                checkForNewline(cleaned, "\r", "carriage return")
+
+                // add a newline to each JSON line
+                val withNewline = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                  withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
+                    newLineCol =>
+                      ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
+                  }
+                }
+
+                // We technically don't need to join the strings together as we just want the buffer
+                // which should be the same either way.
+                (isNullOrEmptyInput, withNewline)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private def checkForNewline(cleaned: ColumnVector, newlineStr: String, name: String): Unit = {
+    withResource(cudf.Scalar.fromString(newlineStr)) { newline =>
+      withResource(cleaned.stringContains(newline)) { hasNewline =>
+        withResource(hasNewline.any()) { anyNewline =>
+          if (anyNewline.isValid && anyNewline.getBoolean) {
+            throw new IllegalArgumentException(
+              s"We cannot currently support parsing JSON that contains a $name in it")
+          }
+        }
+      }
+    }
+  }
 
   private lazy val parsedOptions = new JSONOptions(
     options,
     timeZoneId.get,
     SQLConf.get.columnNameOfCorruptRecord)
 
+  private lazy val jsonOptions =
+    GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
@@ -95,53 +171,103 @@ case class GpuJsonToStructs(
         //  and make the first one null, but I don't think this will ever happen in practice
         val cudfSchema = makeSchema(struct)
 
-        //       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
-        val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
-          parsedOptions.allowNumericLeadingZeros, parsedOptions.allowNonNumericNumbers)
-        TableDebug.get.debug("input.getBase", input.getBase)
-        TableDebug.get.debug("table from json", table)
+        if (!cudfSchema.getFlattenedTypes.contains(cudf.DType.LIST)) {
+//       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
+          val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
+            parsedOptions.allowNumericLeadingZeros, parsedOptions.allowNonNumericNumbers)
+          TableDebug.get.debug("input.getBase", input.getBase)
+          TableDebug.get.debug("table from json", table)
 
 
-        val convertedStructs =
-          withResource(table) { _ =>
-            withResource(convertTableToDesiredType(table, struct, parsedOptions,
-              removeQuotes = false)) {
-              columns => cudf.ColumnVector.makeStruct(columns: _*)
-            }
-          }
 
-        //          TableDebug.get.debug("convertedStructs", convertedStructs)
-
-        withResource(convertedStructs) { converted =>
-          val stripped = if (input.getBase.getData == null) {
-            input.getBase.incRefCount
-          } else {
-            withResource(cudf.Scalar.fromString(" ")) { space =>
-              input.getBase.strip(space)
-            }
-          }
-
-          withResource(stripped) { stripped =>
-            val isEmpty = withResource(stripped.getByteCount) { lengths =>
-              withResource(cudf.Scalar.fromInt(0)) { zero =>
-                lengths.lessOrEqualTo(zero)
+          val convertedStructs =
+            withResource(table) { _ =>
+              withResource(convertTableToDesiredType(table, struct, parsedOptions,
+                removeQuotes = false)) {
+                columns => cudf.ColumnVector.makeStruct(columns: _*)
               }
             }
-            val isNullOrEmpty = withResource(isEmpty) { _ =>
-              withResource(input.getBase.isNull) { isNull =>
-                isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
+
+//          TableDebug.get.debug("convertedStructs", convertedStructs)
+
+          withResource(convertedStructs) { converted =>
+            val stripped = if (input.getBase.getData == null) {
+              input.getBase.incRefCount
+            } else {
+              withResource(cudf.Scalar.fromString(" ")) { space =>
+                input.getBase.strip(space)
               }
             }
-            withResource(isNullOrEmpty) { nullOrEmpty =>
-              withResource(GpuScalar.from(null, struct)) { nullVal =>
-                val out = nullOrEmpty.ifElse(nullVal, converted)
-                TableDebug.get.debug("out from json", out)
-                out
+
+            withResource(stripped) { stripped =>
+              val isEmpty = withResource(stripped.getByteCount) { lengths =>
+                withResource(cudf.Scalar.fromInt(0)) { zero =>
+                  lengths.lessOrEqualTo(zero)
+                }
+              }
+              val isNullOrEmpty = withResource(isEmpty) { _ =>
+                withResource(input.getBase.isNull) { isNull =>
+                  isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
+                }
+              }
+              withResource(isNullOrEmpty) { nullOrEmpty =>
+                withResource(GpuScalar.from(null, struct)) { nullVal =>
+                  val out = nullOrEmpty.ifElse(nullVal, converted)
+                  TableDebug.get.debug("out from json", out)
+                  out
+                }
+              }
+            }
+          }
+        } else {
+          // We cannot handle all corner cases with this right now. The parser just isn't
+          // good enough, but we will try to handle a few common ones.
+          val numRows = input.getRowCount.toInt
+
+          // Step 1: verify and preprocess the data to clean it up and normalize a few things
+          // Step 2: Concat the data into a single buffer
+          val (isNullOrEmpty, combined) = cleanAndConcat(input.getBase)
+          withResource(isNullOrEmpty) { isNullOrEmpty =>
+            // Step 3: setup a datasource
+            val table = withResource(new JsonDeviceDataSource(combined)) { ds =>
+              // Step 4: Have cudf parse the JSON data
+              try {
+                cudf.Table.readJSON(cudfSchema, jsonOptions, ds)
+              } catch {
+                case e: RuntimeException =>
+                  throw new JsonParsingException("Currently some Json to Struct cases " +
+                    "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
+                    "=false", e)
+              }
+            }
+
+            // process duplicated field names in input struct schema
+
+            TableDebug.get.debug("table", table)
+
+            withResource(table) { _ =>
+              // Step 5: verify that the data looks correct
+              if (table.getRowCount != numRows) {
+                throw new IllegalStateException("The input data didn't parse correctly " +
+                  "and we read a different number of rows than was expected. " +
+                  s"Expected $numRows, but got ${table.getRowCount}")
+              }
+
+              // Step 6: turn the data into a Struct
+              withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
+                withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
+                  TableDebug.get.debug("structData", structData)
+                  // Step 7: put nulls back in for nulls and empty strings
+                  withResource(GpuScalar.from(null, struct)) { nullVal =>
+                    val out = isNullOrEmpty.ifElse(nullVal, structData)
+                    TableDebug.get.debug("out", out)
+                    out
+                  }
+                }
               }
             }
           }
         }
-
       }
       case _ => throw new IllegalArgumentException(
         s"GpuJsonToStructs currently does not support schema of type $schema.")
