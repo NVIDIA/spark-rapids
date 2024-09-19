@@ -90,7 +90,7 @@ object GpuLore {
 
   def dumpObject[T: ClassTag](obj: T, path: Path, hadoopConf: Configuration): Unit = {
     withResource(path.getFileSystem(hadoopConf)) { fs =>
-      withResource(fs.create(path, false)) { fout =>
+      withResource(fs.create(path, true)) { fout =>
         val serializerStream = SparkEnv.get.serializer.newInstance().serializeStream(fout)
         withResource(serializerStream) { ser =>
           ser.writeObject(obj)
