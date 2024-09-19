@@ -58,27 +58,26 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
 
+function set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES() {
+   versionStr=$(python build/get_buildvers.py $1 $2)
+   SPARK_SHIM_VERSIONS_STR=$(echo -n $versionStr)
+   IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
+}
+
+pom="pom.xml"
 if [[ $SCALA_BINARY_VER == "2.13" ]]; then
-    # Psnapshots: snapshots + noSnapshots
-    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotsScala213
-    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    # PnoSnapshots: noSnapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshotsScala213
-    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    # PsnapshotOnly : snapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotScala213Only
-    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-else
-    # Psnapshots: snapshots + noSnapshots
-    set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
-    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    # PnoSnapshots: noSnapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
-    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-    # PsnapshotOnly : snapshots only
-    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
-    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    pom="scala2.13/pom.xml"
 fi
+
+# snapshots: snapshots + noSnapshots
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snap_and_no_snap" "$pom"
+SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# noSnapshots: noSnapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "no_snapshots" "$pom"
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# snapshotOnly : snapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "snapshots" "$pom"
+SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
@@ -127,7 +126,7 @@ SPARK_SHIM_VERSIONS_JDK17=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk17-scala213-test
 SPARK_SHIM_VERSIONS_JDK17_SCALA213=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # databricks shims
-set_env_var_SPARK_SHIM_VERSIONS_ARR -Pdatabricks
+set_env_var_SPARK_SHIM_VERSIONS_ARR_FROM_PROFILES "databricks" "$pom"
 SPARK_SHIM_VERSIONS_DATABRICKS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

@@ -109,7 +109,7 @@ case class GpuJsonToStructs(
             // Step 4: Have cudf parse the JSON data
             try {
               cudf.Table.readJSON(cudfSchema,
-                jsonOptionBuilder.withDelimiter(concatenateInput.delimiter).build, ds)
+                jsonOptionBuilder.withDelimiter(concatenateInput.delimiter).build, ds, numRows)
             } catch {
               case e : RuntimeException =>
                 throw new JsonParsingException("Currently some Json to Struct cases " +
