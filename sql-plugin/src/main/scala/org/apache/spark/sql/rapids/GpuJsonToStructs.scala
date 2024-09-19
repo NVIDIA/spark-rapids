@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, TableDebug}
+import ai.rapids.cudf.{Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
@@ -108,9 +108,6 @@ case class GpuJsonToStructs(
           val table = withResource(new JsonDeviceDataSource(concatenateInput.data)) { ds =>
             // Step 4: Have cudf parse the JSON data
             try {
-              TableDebug.get.debug("input", input.getBase)
-              TableDebug.get.debug("isValid", isValid)
-
               cudf.Table.readJSON(cudfSchema,
                 jsonOptionBuilder.withDelimiter(concatenateInput.delimiter).build, ds)
             } catch {
@@ -134,16 +131,9 @@ case class GpuJsonToStructs(
             // Step 7: turn the data into a Struct
             withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
               withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-
-//                TableDebug.get.debug("input", input.getBase)
-                TableDebug.get.debug("structData", structData)
-
-
                 // Step 8: put nulls back in for nulls and empty strings
                 withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  val out = isValid.ifElse(structData, nullVal)
-                  TableDebug.get.debug("out", out)
-                  out
+                  isValid.ifElse(structData, nullVal)
                 }
               }
             }
