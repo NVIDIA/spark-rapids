@@ -203,11 +203,10 @@ object GpuLore {
 
       val spark = SparkShimImpl.sessionFromPlan(sparkPlan)
 
-      val path = new Path(loreOutputRootPath)
-      val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
-
       Option(spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)).foreach { executionId =>
         loreOutputRootPathChecked.computeIfAbsent(executionId, _ => {
+          val path = new Path(loreOutputRootPath)
+          val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
           if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
             throw new IllegalArgumentException(s"LORE dump path $loreOutputRootPath already exists and is not empty.")
           }
