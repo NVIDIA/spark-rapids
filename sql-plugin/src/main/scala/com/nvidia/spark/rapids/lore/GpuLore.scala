@@ -197,6 +197,17 @@ object GpuLore {
           s"when ${RapidsConf.LORE_DUMP_IDS.key} is set."))
 
       val spark = SparkShimImpl.sessionFromPlan(sparkPlan)
+
+      Option(spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)).foreach { executionId =>
+        if (!idGen.containsKey(executionId)) {
+          val path = new Path(loreOutputRootPath)
+          val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
+          if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
+            throw new IllegalArgumentException(s"LORE dump path $loreOutputRootPath already exists and is not empty.")
+          }
+        }
+      }
+
       val hadoopConf = {
         val sc = spark.sparkContext
         sc.broadcast(new SerializableConfiguration(sc.hadoopConfiguration))
