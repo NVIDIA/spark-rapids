@@ -186,6 +186,11 @@ object GpuLore {
         idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
       }
   }
+  /**
+   * Executions that have checked the lore output root path. Key is [[SQLExecution.EXECUTION_ID_KEY]].
+   */
+  private val loreOutputRootPathChecked: ConcurrentHashMap[String, Boolean] =
+    new ConcurrentHashMap[String, Boolean]()
 
   def tagForLore(sparkPlan: SparkPlan, rapidsConf: RapidsConf): SparkPlan = {
     val loreDumpIds = rapidsConf.loreDumpIds
@@ -198,14 +203,16 @@ object GpuLore {
 
       val spark = SparkShimImpl.sessionFromPlan(sparkPlan)
 
+      val path = new Path(loreOutputRootPath)
+      val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
+
       Option(spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)).foreach { executionId =>
-        if (!idGen.containsKey(executionId)) {
-          val path = new Path(loreOutputRootPath)
-          val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
+        loreOutputRootPathChecked.computeIfAbsent(executionId, _ => {
           if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
             throw new IllegalArgumentException(s"LORE dump path $loreOutputRootPath already exists and is not empty.")
           }
-        }
+          true
+        })
       }
 
       val hadoopConf = {
