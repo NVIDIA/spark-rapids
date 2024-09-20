@@ -66,6 +66,8 @@ class GpuExpandExecMeta(
  *                    output the same schema specified bye the parameter `output`
  * @param output      Attribute references to Output
  * @param child       Child operator
+ * @param preprojectEnabled Whether to enable pre-project before expanding
+ * @param coalesceAfter Whether to coalesce the output batches
  */
 case class GpuExpandExec(
     projections: Seq[Seq[Expression]],

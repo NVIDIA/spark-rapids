@@ -89,7 +89,7 @@ object GpuExpressionsUtils {
       case c: GpuColumnVector => c.incRefCount()
       case s: GpuScalar =>
         if (!s.isValid) {
-          val key = NullVecKey.apply(s.dataType, numRows)
+          val key = NullVecKey(s.dataType, numRows)
           if (!cachedNullVectors.get.containsKey(key)) {
             cachedNullVectors.get.put(key,
               GpuColumnVector.from(s, numRows, s.dataType))
