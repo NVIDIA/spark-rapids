@@ -45,7 +45,6 @@ import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BasePredicate, Expression, Literal, NamedExpression, PredicateHelper, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
 import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeIntoClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoMatchedDeleteClause, DeltaMergeIntoMatchedUpdateClause, DeltaMergeIntoNotMatchedBySourceClause, DeltaMergeIntoNotMatchedClause, LogicalPlan, Project}
-import org.apache.spark.sql.catalyst.types.DataTypeUtils.toAttributes
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
@@ -886,7 +885,7 @@ case class GpuMergeIntoCommand(
     if (canReplace) {
       val processedJoinPlan = RapidsProcessDeltaMergeJoin(
         joinedPlan,
-        toAttributes(outputRowSchema),
+        outputRowSchema.toAttributes,
         targetRowHasNoMatch = targetRowHasNoMatch,
         sourceRowHasNoMatch = sourceRowHasNoMatch,
         matchedConditions = matchedConditions,
@@ -899,9 +898,8 @@ case class GpuMergeIntoCommand(
         deleteRowOutput = deleteRowOutput)
       Dataset.ofRows(spark, processedJoinPlan)
     } else {
-      val joinedRowEncoder = ExpressionEncoder(RowEncoder.encoderFor(joinedPlan.schema))
-      val outputRowEncoder = ExpressionEncoder(RowEncoder.encoderFor(outputRowSchema)).
-        resolveAndBind()
+      val joinedRowEncoder = RowEncoder(joinedPlan.schema)
+      val outputRowEncoder = RowEncoder(outputRowSchema).resolveAndBind()
 
       val processor = new JoinedRowProcessor(
         targetRowHasNoMatch = targetRowHasNoMatch,

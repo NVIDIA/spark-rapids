@@ -30,6 +30,7 @@ import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
@@ -55,7 +56,7 @@ import org.apache.spark.util.Clock
 abstract class GpuOptimisticTransactionBase
     (deltaLog: DeltaLog, snapshot: Snapshot, val rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends OptimisticTransaction(deltaLog, snapshot)(clock)
+  extends OptimisticTransaction(deltaLog, Option.empty[CatalogTable], snapshot)
   with DeltaLogging {
 
   /**

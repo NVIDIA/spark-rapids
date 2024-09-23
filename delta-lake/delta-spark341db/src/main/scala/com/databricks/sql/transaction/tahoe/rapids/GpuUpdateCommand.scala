@@ -73,8 +73,7 @@ case class GpuUpdateCommand(
     "changeFileBytes" -> createMetric(sc, "total size of change data capture files generated"),
     "numTouchedRows" -> createMetric(sc, "number of rows touched (copied + updated)"),
     "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
-    "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed."),
-    "numDeletionVectorsUpdated" -> createMetric(sc, "number of deletion vectors updated.")
+    "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed.")
   )
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {
@@ -209,7 +208,6 @@ case class GpuUpdateCommand(
       }
       metrics("numDeletionVectorsAdded").set(0)
       metrics("numDeletionVectorsRemoved").set(0)
-      metrics("numDeletionVectorsUpdated").set(0)
       txn.registerSQLMetrics(sparkSession, metrics)
       val tags = DMLUtils.TaggedCommitData.EMPTY
         .withTag(PreservedRowTrackingTag, RowTracking.isEnabled(txn.protocol, txn.metadata))
@@ -232,7 +230,7 @@ case class GpuUpdateCommand(
         numAddedChangeFiles,
         changeFileBytes,
         scanTimeMs,
-        rewriteTimeMs, 0, 0, 0)
+        rewriteTimeMs)
     )
   }
 
