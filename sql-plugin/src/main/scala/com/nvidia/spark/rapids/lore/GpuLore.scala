@@ -187,7 +187,8 @@ object GpuLore {
       }
   }
   /**
-   * Executions that have checked the lore output root path. Key is [[SQLExecution.EXECUTION_ID_KEY]].
+   * Executions that have checked the lore output root path.
+   * Key is [[SQLExecution.EXECUTION_ID_KEY]].
    */
   private val loreOutputRootPathChecked: ConcurrentHashMap[String, Boolean] =
     new ConcurrentHashMap[String, Boolean]()
