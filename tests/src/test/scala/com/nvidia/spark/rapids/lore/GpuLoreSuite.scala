@@ -147,6 +147,25 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("Non-empty lore dump path") {
+    withGpuSparkSession{ spark =>
+      spark.conf.set(RapidsConf.LORE_DUMP_PATH.key, TEST_FILES_ROOT.getAbsolutePath)
+      spark.conf.set(RapidsConf.LORE_DUMP_IDS.key, "3[*]")
+
+      //Create a file in the root path
+      val path = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/test")
+      path.getFileSystem(spark.sparkContext.hadoopConfiguration).create(path)
+      println("Lore dump path is not empty")
+
+      val df = spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id % 100 as value")
+
+      assertThrows[IllegalArgumentException] {
+        df.collect()
+      }
+    }
+  }
+
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
     val loreId = OutputLoreId.parse(loreDumpIds).head._1
     withGpuSparkSession { spark =>
