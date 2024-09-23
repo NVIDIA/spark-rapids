@@ -35,7 +35,6 @@ import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
 import org.apache.spark.sql.catalyst.util.InternalRowSet
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
-import org.apache.spark.sql.execution.datasources.v2._
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
@@ -46,7 +45,7 @@ case class GpuBatchScanExec(
 
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
-    case other: BatchScanExec =>
+    case other: GpuBatchScanExec =>
       this.batch == other.batch && this.runtimeFilters == other.runtimeFilters
     case _ =>
       false
