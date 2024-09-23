@@ -45,7 +45,7 @@ object ParquetCVShims {
     val defaultValue = if (sparkSchema != null) {
       getExistenceDefaultValues(sparkSchema)
     } else null
-    ShimParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel,
+    ShimParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel, 
       defaultValue)
   }
 }
