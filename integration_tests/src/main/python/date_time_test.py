@@ -684,3 +684,15 @@ micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), 
 def test_timestamp_micros(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))
+
+
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.parametrize('parser_policy', ['LEGACY', 'CORRECTED', 'EXCEPTION'], ids=idfn)
+def test_date_to_timestamp(parser_policy):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, date_gen),
+        "tab",
+        "SELECT cast(a as timestamp) from tab",
+        conf = {
+            "spark.sql.legacy.timeParserPolicy": parser_policy,
+            "spark.rapids.sql.incompatibleDateFormats.enabled": True})
