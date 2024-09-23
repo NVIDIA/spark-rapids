@@ -41,7 +41,7 @@ value of which should point to a directory. All dumped data of a query will live
 directory.
 
 > **Note:**
-> The directory may either not exist, in which case it will be created, or it may exist but contain no files.
+> The directory may either not exist, in which case it will be created, or it should be empty.
 > If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data.
 
 A typical directory hierarchy would look like this:
