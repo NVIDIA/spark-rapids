@@ -23,12 +23,10 @@ jobs:
   signoff-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: sigoff-check job
-        uses: ./.github/workflows/signoff-check
-        env:
-          OWNER: NVIDIA
-          REPO_NAME: spark-rapids
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PULL_NUMBER: ${{ github.event.number }}
+      - name: signoff
+        uses: NVIDIA/spark-rapids-common/signoff-check@main
+        with:
+          owner: ${{ github.repository_owner }}
+          repo: spark-rapids
+          pull_number: ${{ github.event.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
