@@ -148,7 +148,7 @@ then
     echo "!!!! SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping install-file for dependencies."
 else
     echo "!!!! Installing dependendecies. Set SKIP_DEP_INSTALL=1 to speed up reruns of build.sh"# Install required dependencies.
-    #install_dependencies
+    install_dependencies
 fi
 
 if [[ "$WITH_BLOOP" == "1" ]]; then

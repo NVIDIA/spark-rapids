@@ -20,9 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
 
 import org.apache.spark.memory.MemoryMode
-import org.apache.spark.sql.catalyst.util.ResolveDefaultColumns.getExistenceDefaultValues
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
-import org.apache.spark.sql.types.StructType
 
 object ShimParquetColumnVector {
   def apply(
@@ -30,7 +28,7 @@ object ShimParquetColumnVector {
     vector: WritableColumnVector,
     capacity: Int,
     memoryMode: MemoryMode,
-    missingColumns: Set[ParquetColumn],
+    missingColumns: java.util.Set[ParquetColumn],
     isTopLevel: Boolean,
     defaultValue: Any): ParquetColumnVector = {
     new ParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel,
