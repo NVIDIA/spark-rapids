@@ -216,8 +216,8 @@ class GpuTaskMetrics extends Serializable {
     if (maxMem > 0) {
       // This metric tracks the max amount of memory that is allocated on the gpu during
       // the lifespan of a task. However, this update function only gets called once on task
-      // completion, whereas the actual logic tracking of the max value  during memory allocations
-      // lives in the JNI. Therefore we can stick the convention here of calling the add method
+      // completion, whereas the actual logic tracking of the max value during memory allocations
+      // lives in the JNI. Therefore, we can stick the convention here of calling the add method
       // instead of adding a dedicated max method to the accumulator.
       maxDeviceMemoryBytes.add(maxMem)
     }
