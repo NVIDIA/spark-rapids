@@ -208,10 +208,11 @@ object GpuLore {
         executionId =>
         loreOutputRootPathChecked.computeIfAbsent(executionId, _ => {
           val path = new Path(loreOutputRootPath)
-          val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
-          if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
-            throw new IllegalArgumentException(
-              s"LORE dump path $loreOutputRootPath already exists and is not empty.")
+          withResource(path.getFileSystem(spark.sparkContext.hadoopConfiguration)) { fs =>
+            if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
+              throw new IllegalArgumentException(
+                s"LORE dump path $loreOutputRootPath already exists and is not empty.")
+            }
           }
           true
         })

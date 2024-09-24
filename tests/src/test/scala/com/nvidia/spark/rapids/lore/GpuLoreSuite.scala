@@ -154,8 +154,10 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
       //Create a file in the root path
       val path = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/test")
-      path.getFileSystem(spark.sparkContext.hadoopConfiguration).create(path)
-      println("Lore dump path is not empty")
+      withResource(path.getFileSystem(spark.sparkContext.hadoopConfiguration)) { fs =>
+        withResource(fs.create(path, true)) { _ =>
+        }
+      }
 
       val df = spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
