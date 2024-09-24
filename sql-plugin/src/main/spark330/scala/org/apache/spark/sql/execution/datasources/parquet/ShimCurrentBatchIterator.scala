@@ -154,7 +154,7 @@ class ShimCurrentBatchIterator(
     if (!missingColumns.contains(cv.getColumn)) {
       if (cv.getColumn.isPrimitive) {
         val column = cv.getColumn
-        val reader = ShimVectorizedColumnReader(
+        val reader = RapidsVectorizedColumnReader(
           column.descriptor.get,
           column.required,
           false,

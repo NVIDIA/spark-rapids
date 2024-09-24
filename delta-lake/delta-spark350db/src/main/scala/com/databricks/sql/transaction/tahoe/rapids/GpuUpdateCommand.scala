@@ -232,7 +232,11 @@ case class GpuUpdateCommand(
         numAddedChangeFiles,
         changeFileBytes,
         scanTimeMs,
-        rewriteTimeMs, 0, 0, 0)
+        rewriteTimeMs,
+        // We don't support deletion vectors
+        numDeletionVectorsAdded = 0,
+        numDeletionVectorsRemoved = 0,
+        numDeletionVectorsUpdated = 0)
     )
   }
 

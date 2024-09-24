@@ -25,7 +25,7 @@ import org.apache.parquet.VersionParser.ParsedVersion
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.column.page.PageReadStore
 
-object ShimVectorizedColumnReader {
+object RapidsVectorizedColumnReader {
   def apply(descriptor: ColumnDescriptor,
       isRequired: Boolean,
       boolean: Boolean,
