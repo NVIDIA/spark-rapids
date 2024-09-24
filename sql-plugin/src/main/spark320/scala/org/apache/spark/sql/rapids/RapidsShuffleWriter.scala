@@ -43,39 +43,17 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids
 
-import java.io.{File, FileInputStream}
-import java.util.Optional
-import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
-
-import scala.collection
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
+import com.nvidia.spark.rapids.shuffle.{RapidsShuffleServer, RapidsShuffleTransport}
 
-import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.executor.ShuffleWriteMetrics
-import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.io.CompressionCodec
-import org.apache.spark.network.buffer.ManagedBuffer
+import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.MapStatus
-import org.apache.spark.serializer.SerializerManager
-import org.apache.spark.shuffle.{ShuffleWriter, _}
-import org.apache.spark.shuffle.api._
-import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
-import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
-import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
-import org.apache.spark.util.{CompletionIterator, Utils}
-import org.apache.spark.util.collection.{ExternalSorter, OpenHashSet}
+import org.apache.spark.shuffle.ShuffleWriter
+import org.apache.spark.storage._
+
 
 abstract class RapidsShuffleWriter[K, V]()
       extends ShuffleWriter[K, V]
