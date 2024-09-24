@@ -45,7 +45,6 @@ import org.apache.parquet.column.page.PageReadStore
 object RapidsVectorizedColumnReader {
   def apply(descriptor: ColumnDescriptor,
       isRequired: Boolean,
-      boolean: Boolean,
       pageReadStore: PageReadStore,
       convertTz: ZoneId,
       datetimeRebaseMode: String,
