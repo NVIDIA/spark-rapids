@@ -78,12 +78,12 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   override def value: NanoTime = NanoTime(_sum)
 }
 
-class WatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
+class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
   private var _value = 0L
   override def isZero: Boolean = _value == 0
 
-  override def copy(): WatermarkAccumulator = {
-    val newAcc = new WatermarkAccumulator
+  override def copy(): HighWatermarkAccumulator = {
+    val newAcc = new HighWatermarkAccumulator
     newAcc._value = this._value
     newAcc
   }
@@ -97,7 +97,7 @@ class WatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
   }
 
   override def merge(other: AccumulatorV2[jl.Long, Long]): Unit = other match {
-    case wa: WatermarkAccumulator =>
+    case wa: HighWatermarkAccumulator =>
       _value = _value.max(wa._value)
     case _ =>
       throw new UnsupportedOperationException(
@@ -120,7 +120,7 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromHostTimeNs = new NanoSecondAccumulator
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
-  private val maxDeviceMemoryBytes = new WatermarkAccumulator
+  private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
@@ -211,7 +211,7 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
-  def updateMaxMemory(taskAttemptId: Long): Unit = {
+  def updateMaxGpuMemory(taskAttemptId: Long): Unit = {
     val maxMem = RmmSpark.getAndResetGpuMaxMemoryAllocated(taskAttemptId)
     if (maxMem > 0) {
       maxDeviceMemoryBytes.add(maxMem)
