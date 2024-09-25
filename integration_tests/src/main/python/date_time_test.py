@@ -462,9 +462,10 @@ def test_to_timestamp(parser_policy):
 # mm: minute; MM: month
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
-def test_formats_for_legacy_mode(format):
-    # this regexp excludes zero year, python does not like zero year
-    gen = StringGen("([0-9]{3}[1-9])([0-5][0-9])([0-3][0-9])")
+# these regexps exclude zero year, python does not like zero year
+@pytest.mark.parametrize("data_gen_regexp", ['([0-9]{3}[1-9])([0-5][0-9])([0-3][0-9])', '([0-9]{3}[1-9])([0-9]{4})'], ids=idfn)
+def test_formats_for_legacy_mode(format, data_gen_regexp):
+    gen = StringGen(data_gen_regexp)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
