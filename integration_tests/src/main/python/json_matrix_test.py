@@ -564,6 +564,38 @@ def test_json_tuple_dec_locale_non_aribic(std_input_path):
         lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_NON_ARIBIC_FILE, "json").selectExpr('''json_tuple(json, "data")'''),
         conf =_enable_json_tuple_conf)
 
+def json_df_with_whitespace(spark):
+    return spark.createDataFrame([
+        ["""{"a":\n100}"""],
+        ["""{"a":\r101}"""],
+        ["""{"a":\t102}"""],
+        ["""{"a": 102}"""],
+        ["""\n"""],
+        ["""\r"""],
+        ["""\t"""],
+        [""" """],
+        ["""\r\n\t """],
+        ["""{"a":"\r200"}"""],
+        ["""{"a":"\n201"}"""],
+        ["""{"a":"\t202"}"""],
+        ["""{"a":" 202"}"""]],
+        StructType([StructField("json", StringType())]))
+
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/16915')
+def test_from_json_with_whitespace():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : json_df_with_whitespace(spark).selectExpr('*', 'from_json(json, "a STRING")'),
+        conf =_enable_json_to_structs_conf)
+
+def test_get_json_object_with_whitespace():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : json_df_with_whitespace(spark).selectExpr('*', 'get_json_object(json, "$.a")'))
+
+def test_json_tuple_with_whitespace():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : json_df_with_whitespace(spark).selectExpr('*', 'json_tuple(json, "a")'),
+        conf =_enable_json_tuple_conf)
+
 # These are common files used by most of the tests. A few files are for specific types, but these are very targeted tests
 COMMON_TEST_FILES=[
     "int_formatted.json",

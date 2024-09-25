@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, RegexProgram, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
@@ -81,6 +81,9 @@ case class GpuJsonToStructs(
   import GpuJsonReadCommon._
 
   private lazy val emptyRowStr = constructEmptyRow(schema)
+  // the nul char should be very rare and make it so we never really have to worry
+  // about it showing up in real world data.
+  private val lineDelimiter = '\u0000'
 
   private def constructEmptyRow(schema: DataType): String = {
     schema match {
@@ -94,8 +97,10 @@ case class GpuJsonToStructs(
     val stripped = if (input.getData == null) {
       input.incRefCount
     } else {
-      withResource(cudf.Scalar.fromString(" ")) { space =>
-        input.strip(space)
+      // TODO is there a way to do this without a regexp
+      withResource(cudf.Scalar.fromString("")) { empty =>
+        val prog = new RegexProgram("(?:^[ \t\r\n]+)|(?:[ \t\r\n]+$)")
+        input.replaceRegex(prog, empty)
       }
     }
 
@@ -119,11 +124,11 @@ case class GpuJsonToStructs(
             }
             withResource(isLiteralNull) { _ =>
               withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
-                checkForNewline(cleaned, "\n", "line separator")
-                checkForNewline(cleaned, "\r", "carriage return")
+                checkForLineDelimiter(cleaned)
 
                 // add a newline to each JSON line
-                val withNewline = withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                val withNewline = withResource(
+                  cudf.Scalar.fromString("" + lineDelimiter)) { lineSep =>
                   withResource(ColumnVector.fromScalar(lineSep, cleaned.getRowCount.toInt)) {
                     newLineCol =>
                       ColumnVector.stringConcatenate(Array[ColumnView](cleaned, newLineCol))
@@ -141,13 +146,13 @@ case class GpuJsonToStructs(
     }
   }
 
-  private def checkForNewline(cleaned: ColumnVector, newlineStr: String, name: String): Unit = {
-    withResource(cudf.Scalar.fromString(newlineStr)) { newline =>
-      withResource(cleaned.stringContains(newline)) { hasNewline =>
-        withResource(hasNewline.any()) { anyNewline =>
-          if (anyNewline.isValid && anyNewline.getBoolean) {
+  private def checkForLineDelimiter(cleaned: ColumnVector): Unit = {
+    withResource(cudf.Scalar.fromString("" + lineDelimiter)) { delimiter =>
+      withResource(cleaned.stringContains(delimiter)) { hasDelimiter =>
+        withResource(hasDelimiter.any()) { anyDelimiter =>
+          if (anyDelimiter.isValid && anyDelimiter.getBoolean) {
             throw new IllegalArgumentException(
-              s"We cannot currently support parsing JSON that contains a $name in it")
+              s"We cannot currently support parsing JSON that contains a NUL character in it")
           }
         }
       }
@@ -160,7 +165,7 @@ case class GpuJsonToStructs(
     SQLConf.get.columnNameOfCorruptRecord)
 
   private lazy val jsonOptions =
-    GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
+    GpuJsonReadCommon.cudfJsonOptions(parsedOptions, Some(lineDelimiter))
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {

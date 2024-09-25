@@ -318,7 +318,8 @@ object GpuJsonReadCommon {
     }
   }
 
-  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
+  def cudfJsonOptions(options: JSONOptions,
+                      delimOverride: Option[Char]): ai.rapids.cudf.JSONOptions = {
     // This is really ugly, but options.allowUnquotedControlChars is marked as private
     // and this is the only way I know to get it without even uglier tricks
     @scala.annotation.nowarn("msg=Java enum ALLOW_UNQUOTED_CONTROL_CHARS in " +
@@ -326,6 +327,14 @@ object GpuJsonReadCommon {
     val allowUnquotedControlChars =
       options.buildJsonFactory()
         .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
+    val lineDelimiter = delimOverride.getOrElse {
+      options.lineSeparatorInRead.map { sep =>
+        if (sep.length > 1) {
+          throw new IllegalArgumentException("Only 1 byte separators are supported")
+        }
+        sep(0).toChar
+      } .getOrElse('\n')
+    }
     ai.rapids.cudf.JSONOptions.builder()
     .withRecoverWithNull(true)
     .withMixedTypesAsStrings(true)
@@ -336,6 +345,7 @@ object GpuJsonReadCommon {
     .withLeadingZeros(options.allowNumericLeadingZeros)
     .withNonNumericNumbers(options.allowNonNumericNumbers)
     .withUnquotedControlChars(allowUnquotedControlChars)
+    .withLineDelimiter(lineDelimiter)
     .build()
   }
 }

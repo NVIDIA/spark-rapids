@@ -350,7 +350,7 @@ class JsonPartitionReader(
     maxBytesPerChunk, execMetrics, FilterEmptyHostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions =
-    GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
+    GpuJsonReadCommon.cudfJsonOptions(parsedOptions, None)
 
   /**
    * Read the host buffer to GPU table
