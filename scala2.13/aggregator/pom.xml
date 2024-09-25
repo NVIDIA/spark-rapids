@@ -722,7 +722,7 @@
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-spark341db_${scala.binary.version}</artifactId>
+                    <artifactId>rapids-4-spark-delta-spark350db_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <classifier>${spark.version.classifier}</classifier>
                 </dependency>

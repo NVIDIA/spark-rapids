@@ -571,7 +571,7 @@
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
-                <module>delta-lake/delta-spark341db</module>
+                <module>delta-lake/delta-spark350db</module>
             </modules>
         </profile>
         <profile>
