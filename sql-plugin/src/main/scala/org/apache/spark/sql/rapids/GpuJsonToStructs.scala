@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar, TableDebug}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
@@ -208,7 +208,7 @@ case class GpuJsonToStructs(
 
             // process duplicated field names in input struct schema
 
-            TableDebug.get.debug("table", table)
+//            TableDebug.get.debug("table", table)
 
             withResource(table) { _ =>
               // Step 5: verify that the data looks correct
@@ -221,11 +221,11 @@ case class GpuJsonToStructs(
               // Step 6: turn the data into a Struct
               withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
                 withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-                  TableDebug.get.debug("structData", structData)
+//                  TableDebug.get.debug("structData", structData)
                   // Step 7: put nulls back in for nulls and empty strings
                   withResource(GpuScalar.from(null, struct)) { nullVal =>
                     val out = isNullOrEmpty.ifElse(nullVal, structData)
-                    TableDebug.get.debug("out", out)
+//                    TableDebug.get.debug("out", out)
                     out
                   }
                 }
@@ -236,8 +236,8 @@ case class GpuJsonToStructs(
           //       System.out.println("GpuJsonToStructs: cudfSchema.getFlattenedTypes does not contain LIST")
           val table = JSONUtils.fromJsonToStructs(input.getBase, cudfSchema,
             parsedOptions.allowNumericLeadingZeros, parsedOptions.allowNonNumericNumbers)
-          TableDebug.get.debug("input.getBase", input.getBase)
-          TableDebug.get.debug("table from json", table)
+//          TableDebug.get.debug("input.getBase", input.getBase)
+//          TableDebug.get.debug("table from json", table)
 
 
 
@@ -252,31 +252,11 @@ case class GpuJsonToStructs(
           //          TableDebug.get.debug("convertedStructs", convertedStructs)
 
           withResource(convertedStructs) { converted =>
-            val stripped = if (input.getBase.getData == null) {
-              input.getBase.incRefCount
-            } else {
-              withResource(cudf.Scalar.fromString(" ")) { space =>
-                input.getBase.strip(space)
-              }
-            }
-
-            withResource(stripped) { stripped =>
-              val isEmpty = withResource(stripped.getByteCount) { lengths =>
-                withResource(cudf.Scalar.fromInt(0)) { zero =>
-                  lengths.lessOrEqualTo(zero)
-                }
-              }
-              val isNullOrEmpty = withResource(isEmpty) { _ =>
-                withResource(input.getBase.isNull) { isNull =>
-                  isNull.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, isEmpty, cudf.DType.BOOL8)
-                }
-              }
-              withResource(isNullOrEmpty) { nullOrEmpty =>
-                withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  val out = nullOrEmpty.ifElse(nullVal, converted)
-                  TableDebug.get.debug("out from json", out)
-                  out
-                }
+            withResource(JSONUtils.isNullOrEmpty(input.getBase)) { isNullOrEmpty =>
+              withResource(GpuScalar.from(null, struct)) { nullVal =>
+                val out = isNullOrEmpty.ifElse(nullVal, converted)
+                //                  TableDebug.get.debug("out from json", out)
+                out
               }
             }
           }
