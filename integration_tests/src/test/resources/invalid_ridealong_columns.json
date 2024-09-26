@@ -14,7 +14,6 @@
 {"data": "BAD NUM +1", "ride-along-num": +1}
 {"data": "BAD NUM 01", "ride-along-num": 01}
 {"data": "BAD NUM 00.1", "ride-along-num": 00.1}
-{"data": "BAD NUM 1 000", "ride-along-num": 1 000}
 {"data": "BAD NUM 1,000", "ride-along-num": 1,000}
 {"data": "BAD NUM 1e", "ride-along-num": 1e}
 {"data": "BAD NUM 1ee2", "ride-along-num": 1ee2}

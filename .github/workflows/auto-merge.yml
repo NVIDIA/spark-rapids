@@ -18,24 +18,16 @@ name: auto-merge HEAD to BASE
 on:
   pull_request_target:
     branches:
-    - branch-24.08
+      - branch-*
     types: [closed]
 
 jobs:
   auto-merge:
     if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: branch-24.08 # force to fetch from latest upstream instead of PR ref
-
-      - name: auto-merge job
-        uses: ./.github/workflows/auto-merge
-        env:
-          OWNER: NVIDIA
-          REPO_NAME: spark-rapids
-          HEAD: branch-24.08
-          BASE: branch-24.10
-          AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }} # use to merge PR
+    uses: NVIDIA/spark-rapids-common/.github/workflows/auto-merge.yml@main
+    with:
+      owner: ${{ github.repository_owner }}
+      repo: spark-rapids
+      branch: ${{ github.event.pull_request.base.ref }}
+    secrets:
+      token: ${{ secrets.AUTOMERGE_TOKEN }}
