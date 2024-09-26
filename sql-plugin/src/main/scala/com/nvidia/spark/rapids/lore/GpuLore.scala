@@ -89,23 +89,21 @@ object GpuLore {
   }
 
   def dumpObject[T: ClassTag](obj: T, path: Path, hadoopConf: Configuration): Unit = {
-    withResource(path.getFileSystem(hadoopConf)) { fs =>
-      withResource(fs.create(path, true)) { fout =>
-        val serializerStream = SparkEnv.get.serializer.newInstance().serializeStream(fout)
-        withResource(serializerStream) { ser =>
-          ser.writeObject(obj)
-        }
+    val fs = path.getFileSystem(hadoopConf)
+    withResource(fs.create(path, true)) { fout =>
+      val serializerStream = SparkEnv.get.serializer.newInstance().serializeStream(fout)
+      withResource(serializerStream) { ser =>
+        ser.writeObject(obj)
       }
     }
   }
 
   def loadObject[T: ClassTag](path: Path, hadoopConf: Configuration): T = {
-    withResource(path.getFileSystem(hadoopConf)) { fs =>
-      withResource(fs.open(path)) { fin =>
-        val serializerStream = SparkEnv.get.serializer.newInstance().deserializeStream(fin)
-        withResource(serializerStream) { ser =>
-          ser.readObject().asInstanceOf[T]
-        }
+    val fs = path.getFileSystem(hadoopConf)
+    withResource(fs.open(path)) { fin =>
+      val serializerStream = SparkEnv.get.serializer.newInstance().deserializeStream(fin)
+      withResource(serializerStream) { ser =>
+        ser.readObject().asInstanceOf[T]
       }
     }
   }
@@ -208,11 +206,10 @@ object GpuLore {
         executionId =>
         loreOutputRootPathChecked.computeIfAbsent(executionId, _ => {
           val path = new Path(loreOutputRootPath)
-          withResource(path.getFileSystem(spark.sparkContext.hadoopConfiguration)) { fs =>
-            if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
-              throw new IllegalArgumentException(
-                s"LORE dump path $loreOutputRootPath already exists and is not empty.")
-            }
+          val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
+          if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
+            throw new IllegalArgumentException(
+              s"LORE dump path $loreOutputRootPath already exists and is not empty.")
           }
           true
         })

@@ -155,9 +155,8 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
       //Create a file in the root path
       val path = new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/test")
-      withResource(path.getFileSystem(spark.sparkContext.hadoopConfiguration)) { fs =>
-        withResource(fs.create(path, true)) { _ =>
-        }
+      val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
+      withResource(fs.create(path, true)) { _ =>
       }
 
       val df = spark.range(0, 1000, 1, 100)
