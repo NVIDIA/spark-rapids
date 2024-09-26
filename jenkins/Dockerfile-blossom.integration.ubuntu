@@ -34,40 +34,32 @@ ARG UBUNTU_VER
 # https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
 RUN UB_VER=$(echo ${UBUNTU_VER} | tr -d '.') && \
     apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UB_VER}/x86_64/3bf863cc.pub || true
-# Install jdk-8, jdk-11, jdk-17, docker image
+
 RUN apt-get update -y && \
     apt-get install -y software-properties-common rsync zip unzip
 
+ENV DEBIAN_FRONTEND "noninteractive"
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
-    DEBIAN_FRONTEND="noninteractive" apt-get install -y \
+    apt-get install -y \
     openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk tzdata git wget
+
+RUN apt-get install -y python3.10 python3.10-distutils
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+RUN wget -q https://bootstrap.pypa.io/get-pip.py && python get-pip.py && rm -f get-pip.py
+RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0 pytest requests sre_yield
+RUN export CUDA_V=`echo ${CUDA_VER} | cut -d '.' -f 1` && pip install \
+        --extra-index-url=https://pypi.anaconda.org/rapidsai-wheels-nightly/simple \
+        "cudf-cu${CUDA_V}>=${CUDF_VER}.0a0,<=${CUDF_VER}"
 
 # Install maven 3.8+ to be compatible with JDK17 on Ubuntu
 ARG MAVEN_VERSION=3.8.4
-RUN wget https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz && \
+RUN wget -q https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz && \
     tar xf apache-maven-$MAVEN_VERSION-bin.tar.gz -C /usr/local/ && \
     rm -rf apache-maven-$MAVEN_VERSION-bin.tar.gz && \
     ln -sf /usr/local/apache-maven-$MAVEN_VERSION/bin/mvn /usr/bin/mvn
-
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
-
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
-    /bin/bash ~/miniconda.sh -b -p /opt/conda && \
-    rm -f ~/miniconda.sh
-ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
-RUN conda init && conda config --set solver classic
-
-# 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
-RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
-    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.10 cuda-version=${CUDA_VER} && \
-    conda install -y spacy && python -m spacy download en_core_web_sm && \
-    conda install -y -c anaconda pytest requests && \
-    conda install -y -c conda-forge sre_yield && \
-    conda clean -ay
-# install pytest plugins for xdist parallel run
-RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0
 
 RUN apt install -y inetutils-ping expect
 

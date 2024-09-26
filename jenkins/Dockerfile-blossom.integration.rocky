@@ -35,27 +35,25 @@ RUN yum update -y && \
     yum install epel-release -y && \
     yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel java-17-openjdk-devel wget expect rsync zip unzip procps
 
+RUN yum install -y gcc openssl-devel bzip2-devel libffi-devel zlib-devel make
+ARG PY_VER=3.10.15
+RUN wget -q https://www.python.org/ftp/python/${PY_VER}/Python-${PY_VER}.tgz && tar xzf Python-${PY_VER}.tgz
+RUN cd /Python-${PY_VER} && ./configure && make -j 4 \
+    && make altinstall && rm -rf /Python-${PY_VER} Python-${PY_VER}.tgz
+RUN ln -s /usr/local/bin/python3.10 /usr/bin/python
+
+RUN wget -q https://bootstrap.pypa.io/get-pip.py && python get-pip.py && rm -f get-pip.py
+# install pytest plugins for xdist parallel run
+RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0 pytest requests sre_yield
+RUN export CUDA_V=`echo ${CUDA_VER} | cut -d '.' -f 1` && pip install \
+        --extra-index-url=https://pypi.anaconda.org/rapidsai-wheels-nightly/simple \
+        "cudf-cu${CUDA_V}>=${CUDF_VER}.0a0,<=${CUDF_VER}"
+
 # The plugin: net.alchim31.maven requires a higher mvn version.
 ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"
-RUN wget ${URM_URL}/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
+RUN wget -q ${URM_URL}/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
     tar xzvf $MAVEN_HOME-bin.tar.gz -C /usr/local && \
     rm -f $MAVEN_HOME-bin.tar.gz
-
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
-    /bin/bash ~/miniconda.sh -b -p /opt/conda && \
-    rm -f ~/miniconda.sh
-ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
-RUN conda init && conda config --set solver classic
-
-# 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
-RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
-    conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.10 cuda-version=${CUDA_VER} && \
-    conda install -y spacy && python -m spacy download en_core_web_sm && \
-    conda install -y -c anaconda pytest requests && \
-    conda install -y -c conda-forge sre_yield && \
-    conda clean -ay
-# install pytest plugins for xdist parallel run
-RUN python -m pip install findspark pytest-xdist pytest-order fastparquet==2024.5.0
 
 # Set default java as 1.8.0
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
