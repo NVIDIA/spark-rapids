@@ -24,39 +24,27 @@ nvidia-smi
 WORKSPACE=${WORKSPACE:-`pwd`}
 
 ARTF_ROOT="$WORKSPACE/jars"
-MVN_GET_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
-    -Dmaven.repo.local=$WORKSPACE/.m2 \
-    $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
+WGET_CMD="wget -q -P $ARTF_ROOT -t 3"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
-
-# TODO remove -Dtransitive=false workaround once pom is fixed
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
-    -Dtransitive=false \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
+$WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-${SHUFFLE_SPARK_SHIM}.jar
 
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 if [ "$CLASSIFIER"x == x ];then
-    $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
-    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+    $WGET_CMD $PROJECT_REPO/com/nvidia/rapids-4-spark_$SCALA_BINARY_VER/$PROJECT_VER/rapids-4-spark_$SCALA_BINARY_VER-${PROJECT_VER}.jar
+    export RAPIDS_PLUGIN_JAR=$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-${PROJECT_VER}.jar
 else
-    $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CLASSIFIER
+    $WGET_CMD $PROJECT_REPO/com/nvidia/rapids-4-spark_$SCALA_BINARY_VER/$PROJECT_VER/rapids-4-spark_$SCALA_BINARY_VER-$PROJECT_VER-${CLASSIFIER}.jar
     export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CLASSIFIER}.jar"
 fi
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
 export INCLUDE_SPARK_AVRO_JAR=${INCLUDE_SPARK_AVRO_JAR:-"true"}
 if [[ "${INCLUDE_SPARK_AVRO_JAR}" == "true" ]]; then
-  $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-      -DgroupId=org.apache.spark -DartifactId=spark-avro_$SCALA_BINARY_VER -Dversion=$SPARK_VER
+  $WGET_CMD $PROJECT_REPO/org/apache/spark/spark-avro_$SCALA_BINARY_VER/$SPARK_VER/spark-avro_$SCALA_BINARY_VER-${SPARK_VER}.jar
 fi
 
-# TODO remove -Dtransitive=false workaround once pom is fixed
-$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
-    -Dtransitive=false \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=pytest -Dpackaging=tar.gz
+$WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-pytest.tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
 # The version of pytest.tar.gz that is uploaded is the one built against spark320 but its being pushed without classifier for now
@@ -101,13 +89,12 @@ fi
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 . jenkins/hadoop-def.sh $SPARK_VER ${SCALA_BINARY_VER}
-wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
+$WGET_CMD $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 # Download parquet-hadoop jar for parquet-read encryption tests
 PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
 if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
-  $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-      -DgroupId=org.apache.parquet -DartifactId=parquet-hadoop -Dversion=$PARQUET_HADOOP_VER -Dclassifier=tests
+  $WGET_CMD $PROJECT_REPO/org/apache/parquet/parquet-hadoop/$PARQUET_HADOOP_VER/parquet-hadoop-$PARQUET_HADOOP_VER-tests.jar
 fi
 
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
