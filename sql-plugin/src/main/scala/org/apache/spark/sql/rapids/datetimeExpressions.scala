@@ -642,6 +642,8 @@ object GpuToTimestamp {
     "yyyy/MM/dd HH:mm:ss" -> ParseFormatMeta(Option('/'), isTimestamp = true,
       raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
     "yyyyMMdd" -> ParseFormatMeta(None, isTimestamp = false,
+      raw"\A\d{8}(\D|\s|\Z)"),
+    "yyyymmdd" -> ParseFormatMeta(None, isTimestamp = false,
       raw"\A\d{8}(\D|\s|\Z)")
   )
 
