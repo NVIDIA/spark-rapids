@@ -89,23 +89,21 @@ object GpuLore {
   }
 
   def dumpObject[T: ClassTag](obj: T, path: Path, hadoopConf: Configuration): Unit = {
-    withResource(path.getFileSystem(hadoopConf)) { fs =>
-      withResource(fs.create(path, false)) { fout =>
-        val serializerStream = SparkEnv.get.serializer.newInstance().serializeStream(fout)
-        withResource(serializerStream) { ser =>
-          ser.writeObject(obj)
-        }
+    val fs = path.getFileSystem(hadoopConf)
+    withResource(fs.create(path, true)) { fout =>
+      val serializerStream = SparkEnv.get.serializer.newInstance().serializeStream(fout)
+      withResource(serializerStream) { ser =>
+        ser.writeObject(obj)
       }
     }
   }
 
   def loadObject[T: ClassTag](path: Path, hadoopConf: Configuration): T = {
-    withResource(path.getFileSystem(hadoopConf)) { fs =>
-      withResource(fs.open(path)) { fin =>
-        val serializerStream = SparkEnv.get.serializer.newInstance().deserializeStream(fin)
-        withResource(serializerStream) { ser =>
-          ser.readObject().asInstanceOf[T]
-        }
+    val fs = path.getFileSystem(hadoopConf)
+    withResource(fs.open(path)) { fin =>
+      val serializerStream = SparkEnv.get.serializer.newInstance().deserializeStream(fin)
+      withResource(serializerStream) { ser =>
+        ser.readObject().asInstanceOf[T]
       }
     }
   }
@@ -186,6 +184,12 @@ object GpuLore {
         idGen.computeIfAbsent(executionId, _ => new AtomicInteger(0)).getAndIncrement()
       }
   }
+  /**
+   * Executions that have checked the lore output root path.
+   * Key is [[SQLExecution.EXECUTION_ID_KEY]].
+   */
+  private val loreOutputRootPathChecked: ConcurrentHashMap[String, Boolean] =
+    new ConcurrentHashMap[String, Boolean]()
 
   def tagForLore(sparkPlan: SparkPlan, rapidsConf: RapidsConf): SparkPlan = {
     val loreDumpIds = rapidsConf.loreDumpIds
@@ -197,6 +201,20 @@ object GpuLore {
           s"when ${RapidsConf.LORE_DUMP_IDS.key} is set."))
 
       val spark = SparkShimImpl.sessionFromPlan(sparkPlan)
+
+      Option(spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)).foreach {
+        executionId =>
+        loreOutputRootPathChecked.computeIfAbsent(executionId, _ => {
+          val path = new Path(loreOutputRootPath)
+          val fs = path.getFileSystem(spark.sparkContext.hadoopConfiguration)
+          if (fs.exists(path) && fs.listStatus(path).nonEmpty) {
+            throw new IllegalArgumentException(
+              s"LORE dump path $loreOutputRootPath already exists and is not empty.")
+          }
+          true
+        })
+      }
+
       val hadoopConf = {
         val sc = spark.sparkContext
         sc.broadcast(new SerializableConfiguration(sc.hadoopConfiguration))
