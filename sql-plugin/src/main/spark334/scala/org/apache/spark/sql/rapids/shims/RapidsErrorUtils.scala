@@ -15,15 +15,10 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "400"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
+object RapidsErrorUtils extends RapidsErrorUtils330To334Base
+                        with    SequenceSizeTooLongUnsuccessfulErrorBuilder
 
-object SequenceSizeError {
-  def getTooLongSequenceErrorString(sequenceSize: Int, functionName: String): String = {
-    QueryExecutionErrors.createArrayWithElementsExceedLimitError(functionName, sequenceSize)
-                        .getMessage
-  }
-}

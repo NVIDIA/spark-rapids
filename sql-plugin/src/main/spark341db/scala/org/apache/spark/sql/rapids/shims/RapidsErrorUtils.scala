@@ -21,7 +21,9 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.errors.QueryExecutionErrors
 
-object RapidsErrorUtils extends RapidsErrorUtilsBase with RapidsQueryErrorUtils {
+object RapidsErrorUtils extends RapidsErrorUtilsBase
+                        with    RapidsQueryErrorUtils
+                        with    SequenceSizeTooLongErrorBuilder {
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }

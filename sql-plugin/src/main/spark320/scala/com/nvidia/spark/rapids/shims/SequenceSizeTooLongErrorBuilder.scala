@@ -15,21 +15,34 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "334"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "351"}
-{"spark": "352"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 
-object SequenceSizeError {
+trait SequenceSizeTooLongErrorBuilder {
+
   def getTooLongSequenceErrorString(sequenceSize: Int, functionName: String): String = {
-    // The errant function's name does not feature in the exception message
-    // prior to Spark 4.0.  Neither does the attempted allocation size.
-    "Unsuccessful try to create array with elements exceeding the array " +
-      s"size limit $MAX_ROUNDED_ARRAY_LENGTH"
+    // For these Spark versions, the sequence length and function name
+    // do not appear in the exception message.
+    s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH"
   }
 }

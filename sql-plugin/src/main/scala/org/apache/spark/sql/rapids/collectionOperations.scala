@@ -1676,8 +1676,9 @@ object GpuSequenceUtil {
         withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
           withResource(sizeAsLong.reduce(ReductionAggregation.max())) { maxSizeScalar =>
             require(isAllValidTrue(allValid),
-              GetSequenceSize.TOO_LONG_SEQUENCE(maxSizeScalar.getLong.asInstanceOf[Int],
-                                                functionName))
+              RapidsErrorUtils.getTooLongSequenceErrorString(
+                maxSizeScalar.getLong.asInstanceOf[Int],
+                functionName))
           }
         }
       }

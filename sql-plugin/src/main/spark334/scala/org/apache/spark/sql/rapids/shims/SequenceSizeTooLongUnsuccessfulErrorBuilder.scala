@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
+{"spark": "334"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "351"}
+{"spark": "352"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
 
-object RapidsErrorUtils extends RapidsErrorUtilsBase
-                        with    RapidsQueryErrorUtils
-                        with    SequenceSizeTooLongErrorBuilder {
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
+trait SequenceSizeTooLongUnsuccessfulErrorBuilder {
+  def getTooLongSequenceErrorString(sequenceSize: Int, functionName: String): String = {
+    // The errant function's name does not feature in the exception message
+    // prior to Spark 4.0.  Neither does the attempted allocation size.
+    "Unsuccessful try to create array with elements exceeding the array " +
+      s"size limit $MAX_ROUNDED_ARRAY_LENGTH"
   }
 }

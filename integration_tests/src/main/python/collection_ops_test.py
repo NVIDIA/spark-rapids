@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
 from data_gen import *
 from pyspark.sql.types import *
 
-from src.main.python.spark_session import is_before_spark_400
+from spark_session import is_before_spark_400
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
 import pyspark.sql.utils
