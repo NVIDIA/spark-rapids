@@ -20,8 +20,7 @@
 
 set -ex
 
-# TODO: https://github.com/NVIDIA/spark-rapids/issues/11492
-CUDF_VER=${CUDF_VER:-24.10}
+CUDF_VER=${CUDF_VER:-24.12
 CUDA_VER=${CUDA_VER:-11.8}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
