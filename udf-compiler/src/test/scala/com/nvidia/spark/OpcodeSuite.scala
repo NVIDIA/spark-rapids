@@ -36,6 +36,7 @@ class OpcodeSuite extends AnyFunSuite {
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")
     .set("spark.rapids.sql.udfCompiler.enabled", "true")
+    .set("spark.sql.ansi.enabled", "false")
     .set(RapidsConf.EXPLAIN.key, "true")
 
   val spark: SparkSession =
@@ -2384,7 +2385,8 @@ class OpcodeSuite extends AnyFunSuite {
       run(20)
     } catch {
       case e: RuntimeException =>
-        assert(e.getMessage == "Fold number must be in range [0, 20), but got 20.")
+        // in new versions of spark, the message has extra information, so we use contains.
+        assert(e.getMessage.contains("Fold number must be in range [0, 20), but got 20."))
     }
   }
 
