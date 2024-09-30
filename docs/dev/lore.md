@@ -38,7 +38,10 @@ partitions.
 
 You also need to set `spark.rapids.sql.lore.dumpPath` to tell LORE where to dump the data, the 
 value of which should point to a directory. All dumped data of a query will live in this 
-directory. A typical directory hierarchy would look like this:
+directory. Note, the directory may either not exist, in which case it will be created, or it should be empty.
+If the directory exists and contains files, an `IllegalArgumentException` will be thrown to prevent overwriting existing data.
+
+A typical directory hierarchy would look like this:
 
 ```console
 + loreId-10/

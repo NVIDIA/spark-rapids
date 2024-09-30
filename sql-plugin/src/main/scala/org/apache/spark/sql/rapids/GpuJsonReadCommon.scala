@@ -340,5 +340,7 @@ object GpuJsonReadCommon {
     .withLeadingZeros(options.allowNumericLeadingZeros)
     .withNonNumericNumbers(options.allowNonNumericNumbers)
     .withUnquotedControlChars(allowUnquotedControlChars)
+    .withCudfPruneSchema(true)
+    .withExperimental(true)
   }
 }
