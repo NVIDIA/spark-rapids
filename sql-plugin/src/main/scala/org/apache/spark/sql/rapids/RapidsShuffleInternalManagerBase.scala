@@ -448,7 +448,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
             // we add all three here because this metric is meant to show the time
             // we are blocked on writes
-            shuffleWriteTimeMetric.foreach(_ += (openTimeNs + writeTimeNs + combineTimeNs))
+            shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
             shuffleCombineTimeMetric.foreach(_ += combineTimeNs)
             pl
           }
