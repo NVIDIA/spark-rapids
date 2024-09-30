@@ -326,8 +326,7 @@ object GpuJsonReadCommon {
     // and this is the only way I know to get it without even uglier tricks
     @scala.annotation.nowarn("msg=Java enum ALLOW_UNQUOTED_CONTROL_CHARS in " +
       "Java enum Feature is deprecated")
-    val allowUnquotedControlChars =
-    options.buildJsonFactory()
+    val allowUnquotedControlChars = options.buildJsonFactory()
       .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
 
     ai.rapids.cudf.JSONOptions.builder()
