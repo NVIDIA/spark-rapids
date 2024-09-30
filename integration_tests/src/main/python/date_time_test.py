@@ -461,6 +461,7 @@ def test_to_timestamp(parser_policy):
 
 # mm: minute; MM: month
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.skip(reason="blocked by https://github.com/NVIDIA/spark-rapids/issues/11539, https://github.com/NVIDIA/spark-rapids/issues/11543")
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
 # these regexps exclude zero year, python does not like zero year
 @pytest.mark.parametrize("data_gen_regexp", ['([0-9]{3}[1-9])([0-5][0-9])([0-3][0-9])', '([0-9]{3}[1-9])([0-9]{4})'], ids=idfn)
