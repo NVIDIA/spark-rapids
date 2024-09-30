@@ -33,8 +33,7 @@ import org.apache.spark.sql.types._
  */
 class JsonParsingException(s: String, cause: Throwable) extends RuntimeException(s, cause) {}
 
-class JsonDeviceDataSource(combined: DeviceMemoryBuffer) extends DataSource {
-  lazy val data: DeviceMemoryBuffer = combined
+class JsonDeviceDataSource(data: DeviceMemoryBuffer) extends DataSource {
   lazy val totalSize: Long = data.getLength
   override def size(): Long = totalSize
 
@@ -63,11 +62,6 @@ class JsonDeviceDataSource(combined: DeviceMemoryBuffer) extends DataSource {
     dest.copyFromDeviceBufferAsync(0, data, offset, length, stream)
     length
   }
-
-  override def close(): Unit = {
-    combined.close()
-    super.close()
-  }
 }
 
 case class GpuJsonToStructs(
@@ -89,8 +83,7 @@ case class GpuJsonToStructs(
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
-      case _: MapType =>
-        JSONUtils.extractRawMapFromJsonString(input.getBase)
+      case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase)
       case struct: StructType => {
         // if we ever need to support duplicate keys we need to keep track of the duplicates
         //  and make the first one null, but I don't think this will ever happen in practice
@@ -100,16 +93,15 @@ case class GpuJsonToStructs(
         // good enough, but we will try to handle a few common ones.
         val numRows = input.getRowCount.toInt
 
-        // Step 1: verify and preprocess the data to clean it up and normalize a few things
-        // Step 2: Concat the data into a single buffer
+        // Step 1: Concat the data into a single buffer, with verifying nulls/empty strings
         val concatenateInput = JSONUtils.concatenateJsonStrings(input.getBase)
-        withResource(concatenateInput.isValid) { isValid =>
-          // Step 3: setup a datasource
+        withResource(concatenateInput) { _ =>
+          // Step 2: setup a datasource from the concatenated JSON strings
           val table = withResource(new JsonDeviceDataSource(concatenateInput.data)) { ds =>
-            // Step 4: Have cudf parse the JSON data
+            // Step 3: Have cudf parse the JSON data
             try {
               cudf.Table.readJSON(cudfSchema,
-                jsonOptionBuilder.withDelimiter(concatenateInput.delimiter).build, ds, numRows)
+                jsonOptionBuilder.withLineDelimiter(concatenateInput.delimiter).build, ds, numRows)
             } catch {
               case e : RuntimeException =>
                 throw new JsonParsingException("Currently some Json to Struct cases " +
@@ -118,22 +110,20 @@ case class GpuJsonToStructs(
             }
           }
 
-          // process duplicated field names in input struct schema
-
           withResource(table) { _ =>
-            // Step 5: verify that the data looks correct
+            // Step 4: verify that the data looks correct
             if (table.getRowCount != numRows) {
               throw new IllegalStateException("The input data didn't parse correctly and we read " +
                   s"a different number of rows than was expected. Expected $numRows, " +
                   s"but got ${table.getRowCount}")
             }
 
-            // Step 7: turn the data into a Struct
+            // Step 5: turn the data into a Struct
             withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
               withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-                // Step 8: put nulls back in for nulls and empty strings
+                // Step 6: put nulls back in for nulls and empty strings
                 withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  isValid.ifElse(structData, nullVal)
+                  concatenateInput.isNullOrEmpty.ifElse(structData, nullVal)
                 }
               }
             }
