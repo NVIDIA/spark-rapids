@@ -308,6 +308,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
   private def write(records: TimeTrackingIterator): Unit = {
     withResource(new NvtxRange("ThreadedWriter.write", NvtxColor.RED)) { _ =>
       withResource(new NvtxRange("compute", NvtxColor.GREEN)) { _ =>
+        // Timestamp when the main processing begins
+        val processingStart: Long = System.nanoTime()
         val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
           shuffleId,
           mapId,
@@ -342,8 +344,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             var waitTimeOnLimiterNs: Long = 0L
             // Time spent computing ColumnarBatch sizes
             var batchSizeComputeTimeNs: Long = 0L
-            // Timestamp when the main processing begins
-            val processingStart: Long = System.nanoTime()
+
             try {
               while (records.hasNext) {
                 // get the record
