@@ -460,8 +460,9 @@ def test_to_timestamp(parser_policy):
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+# Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 def test_yyyyMMdd_format_for_legacy_mode():
-    gen = StringGen("[0-9]{3}[1-9](0[1-9]|1[0-2])(0[1-9]|[1-2][0-9])")
+    gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
@@ -470,8 +471,8 @@ def test_yyyyMMdd_format_for_legacy_mode():
                   date_format(to_timestamp(a, 'yyyyMMdd'), 'yyyyMMdd')
            from tab
         ''',
-        {  'spark.sql.legacy.timeParserPolicy': 'LEGACY',
-           'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 @tz_sensitive_test
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
