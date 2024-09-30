@@ -798,6 +798,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(8 * 1024 * 1024)
 
+  val PROFILE_TASK_LIMIT_PER_STAGE = conf("spark.rapids.profile.taskLimitPerStage")
+    .doc("Limit the number of tasks to profile per stage. A value <= 0 will profile all tasks.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
   // ENABLE/DISABLE PROCESSING
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
@@ -2590,6 +2596,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val profileFlushPeriodMillis: Int = get(PROFILE_FLUSH_PERIOD_MILLIS)
 
   lazy val profileWriteBufferSize: Long = get(PROFILE_WRITE_BUFFER_SIZE)
+
+  lazy val profileTaskLimitPerStage: Int = get(PROFILE_TASK_LIMIT_PER_STAGE)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 

@@ -50,10 +50,13 @@ object ProfilerOnExecutor extends Logging {
   private var isProfileActive = false
   private var currentContextMethod: Method = null
   private var getContextMethod: Method = null
+  private val stageTaskCount = mutable.HashMap[Int, Int]()
+  private var taskLimit = 0
 
   def init(pluginCtx: PluginContext, conf: RapidsConf): Unit = {
     require(writer.isEmpty, "Already initialized")
     timeRanges = conf.profileTimeRangesSeconds.map(parseTimeRanges)
+    taskLimit = conf.profileTaskLimitPerStage
     jobRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_JOBS)
     stageRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_STAGES)
     driverPollMillis = conf.profileDriverPollMillis
@@ -119,9 +122,21 @@ object ProfilerOnExecutor extends Logging {
       val stageId = taskCtx.stageId
       if (stageRanges.contains(stageId)) {
         synchronized {
-          activeStages.add(taskCtx.stageId)
-          enable()
-          startPollingDriver()
+          if (taskLimit <= 0) {
+            // Unlimited tasks per stage
+            activeStages.add(taskCtx.stageId)
+            enable()
+            startPollingDriver()
+          } else {
+            val currentCount = stageTaskCount.getOrElse(stageId, 0)
+            // Check if the task limit has been reached
+            if (currentCount < taskLimit) {
+              stageTaskCount(taskCtx.stageId) = currentCount + 1
+              activeStages.add(taskCtx.stageId)
+              enable()
+              startPollingDriver()
+            }
+          }
         }
       }
     }
