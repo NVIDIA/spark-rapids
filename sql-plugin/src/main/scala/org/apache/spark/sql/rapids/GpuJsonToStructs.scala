@@ -94,16 +94,16 @@ case class GpuJsonToStructs(
         val numRows = input.getRowCount.toInt
 
         // Step 1: Concat the data into a single buffer, with verifying nulls/empty strings
-        val concatenateInput = JSONUtils.concatenateJsonStrings(input.getBase)
-        withResource(concatenateInput) { _ =>
+        val concatenated = JSONUtils.concatenateJsonStrings(input.getBase)
+        withResource(concatenated) { _ =>
           // Step 2: setup a datasource from the concatenated JSON strings
-          val table = withResource(new JsonDeviceDataSource(concatenateInput.data)) { ds =>
+          val table = withResource(new JsonDeviceDataSource(concatenated.data)) { ds =>
             // Step 3: Have cudf parse the JSON data
             try {
               cudf.Table.readJSON(cudfSchema,
-                jsonOptionBuilder.withLineDelimiter(concatenateInput.delimiter).build, ds, numRows)
+                jsonOptionBuilder.withLineDelimiter(concatenated.delimiter).build, ds, numRows)
             } catch {
-              case e : RuntimeException =>
+              case e: RuntimeException =>
                 throw new JsonParsingException("Currently some Json to Struct cases " +
                   "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
                   "=false", e)
@@ -114,8 +114,8 @@ case class GpuJsonToStructs(
             // Step 4: verify that the data looks correct
             if (table.getRowCount != numRows) {
               throw new IllegalStateException("The input data didn't parse correctly and we read " +
-                  s"a different number of rows than was expected. Expected $numRows, " +
-                  s"but got ${table.getRowCount}")
+                s"a different number of rows than was expected. Expected $numRows, " +
+                s"but got ${table.getRowCount}")
             }
 
             // Step 5: turn the data into a Struct
@@ -123,7 +123,7 @@ case class GpuJsonToStructs(
               withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
                 // Step 6: put nulls back in for nulls and empty strings
                 withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  concatenateInput.isNullOrEmpty.ifElse(nullVal, structData)
+                  concatenated.isNullOrEmpty.ifElse(nullVal, structData)
                 }
               }
             }
