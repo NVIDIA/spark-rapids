@@ -279,10 +279,22 @@ def test_ansi_cast_failures_decimal_to_decimal(data_gen, to_type):
     DecimalType(10, 2),
     DecimalType(18, 0),
     DecimalType(18, 2)], ids=idfn)
-def test_cast_integral_to_decimal(data_gen, to_type):
+def test_cast_integral_to_decimal_ansi_off(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(
-            f.col('a').cast(to_type)))
+            f.col('a').cast(to_type)),
+        conf=ansi_disabled_conf)
+
+
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('to_type', [DecimalType(2, 0)], ids=idfn)
+def test_cast_integral_to_decimal_ansi_on(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+        # lambda spark : unary_op_df(spark, data_gen).select(
+        lambda spark : gen_and_persist(spark, data_gen).select(
+                f.col('a').cast(to_type)),
+        conf=ansi_enabled_conf)
 
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
