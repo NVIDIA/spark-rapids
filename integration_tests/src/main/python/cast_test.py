@@ -28,13 +28,32 @@ from src.main.python.marks import disable_ansi_mode
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
-def test_cast_empty_string_to_int():
+#  TODO: DELETEME!
+def gen_and_persist(spark, data_gen):
+    df = unary_op_df(spark, data_gen)
+    df.limit(10).repartition(1).write.mode("overwrite").parquet("/tmp/myth/test_input")
+    return df
+
+def test_cast_empty_string_to_int_ansi_off():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
                 'CAST(a as BYTE)',
                 'CAST(a as SHORT)',
                 'CAST(a as INTEGER)',
-                'CAST(a as LONG)'))
+                'CAST(a as LONG)'),
+                conf=ansi_disabled_conf)
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11552")
+def test_cast_empty_string_to_int_ansi_on():
+    assert_gpu_and_cpu_error(
+        lambda spark : gen_and_persist(spark, StringGen(pattern="")).selectExpr(
+            'CAST(a as BYTE)',
+            'CAST(a as SHORT)',
+            'CAST(a as INTEGER)',
+            'CAST(a as LONG)').collect(),
+        conf=ansi_enabled_conf,
+        error_message="cannot be cast to ")
 
 # These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
 # just about everything for non-nested values. This is intended to check that the
