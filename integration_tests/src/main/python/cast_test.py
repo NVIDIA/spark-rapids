@@ -18,20 +18,18 @@ from asserts import *
 from conftest import is_not_utc, is_supported_time_zone, is_dataproc_serverless_runtime
 from data_gen import *
 from spark_session import *
-from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
+from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
 import math
 
-from src.main.python.marks import disable_ansi_mode
-
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
 #  TODO: DELETEME!
 def gen_and_persist(spark, data_gen):
-    df = unary_op_df(spark, data_gen)
-    df.limit(10).repartition(1).write.mode("overwrite").parquet("/tmp/myth/test_input")
+    df = unary_op_df(spark, data_gen, length=10)
+    df.repartition(1).write.mode("overwrite").parquet("/tmp/myth/test_input")
     return df
 
 def test_cast_empty_string_to_int_ansi_off():
@@ -184,20 +182,34 @@ def test_cast_string_ts_valid_format(data_gen):
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
-def test_cast_string_date_fallback():
+def test_cast_string_date_fallback_ansi_off():
+    """
+    This tests that STRING->DATE conversion is run on CPU, via a fallback.
+    The point of this test is to exercise the fallback, and not to examine any errors in casting.
+    There is no change in behaviour between Apache Spark and the plugin, since they're both
+    exercising the CPU implementation.  Therefore, this needn't be tested with ANSI enabled.
+    """
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
             lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(DateType()).cast(StringType())),
-            'Cast')
+            'Cast',
+            conf=ansi_disabled_conf)
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
 def test_cast_string_timestamp_fallback():
+    """
+    This tests that STRING->TIMESTAMP conversion is run on CPU, via a fallback.
+    The point of this test is to exercise the fallback, and not to examine any errors in casting.
+    There is no change in behaviour between Apache Spark and the plugin, since they're both
+    exercising the CPU implementation.  Therefore, this needn't be tested with ANSI enabled.
+    """
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
             lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
             'Cast',
-            conf = {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+            conf = copy_and_update(ansi_disabled_conf,
+                                   {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}))
 
 
 @disable_ansi_mode  # In ANSI mode, there are restrictions to casting DECIMAL to other types.
@@ -608,11 +620,18 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
                         "cast(value as float)", "cast(value as double)"),
         conf=ansi_enabled_conf)
 
+
+@pytest.mark.skipif(not is_before_spark_400(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
 def test_cast_timestamp_to_numeric_non_ansi():
+    """
+    Test timestamp->numeric conversions with ANSI off.
+    """
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
-                        "cast(a as float)", "cast(a as double)"))
+                        "cast(a as float)", "cast(a as double)"),
+        conf=ansi_disabled_conf)
 
 @allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_string():
