@@ -123,7 +123,7 @@ case class GpuJsonToStructs(
               withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
                 // Step 6: put nulls back in for nulls and empty strings
                 withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  concatenateInput.isNullOrEmpty.ifElse(structData, nullVal)
+                  concatenateInput.isNullOrEmpty.ifElse(nullVal, structData)
                 }
               }
             }
