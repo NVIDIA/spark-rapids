@@ -291,8 +291,7 @@ def test_cast_integral_to_decimal_ansi_off(data_gen, to_type):
 @pytest.mark.parametrize('to_type', [DecimalType(2, 0)], ids=idfn)
 def test_cast_integral_to_decimal_ansi_on(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
-        # lambda spark : unary_op_df(spark, data_gen).select(
-        lambda spark : gen_and_persist(spark, data_gen).select(
+        lambda spark : unary_op_df(spark, data_gen).select(
                 f.col('a').cast(to_type)),
         conf=ansi_enabled_conf)
 
