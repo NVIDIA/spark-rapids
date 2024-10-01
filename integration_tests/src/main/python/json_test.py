@@ -1457,7 +1457,7 @@ def test_spark_from_json_invalid_json():
 
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_input_wrapped_in_whitespaces():
-    json_string_gen = StringGen(r'[ \r\n\t]{0,5}({"key": "[A-z]{0,5}"}|null|invalid|)[ \r\n\t]{0,5}')
+    json_string_gen = StringGen(r'[ \r\n\t]{0,5}({"key":( |\r|\n|\t|)"[A-z]{0,5}"}|null|invalid|)[ \r\n\t]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', 'struct<key:string>')),
