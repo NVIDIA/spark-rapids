@@ -520,13 +520,17 @@ def test_cast_float_to_timestamp_side_effect():
 # non ansi mode, will get null
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_cast_float_to_timestamp_for_nan_inf(type):
+def test_with_ansi_off_cast_float_to_timestamp_for_nan_inf(type):
+    """
+    Tests the behaviour of floats when cast to timestamp, with ANSI disabled.
+    ANSI mode tests are covered in test_cast_float_to_timestamp_ansi_for_nan_inf.
+    """
     def fun(spark):
         data = [(float("inf"),), (float("-inf"),), (float("nan"),)]
         schema = StructType([StructField("value", type, True)])
         df = spark.createDataFrame(data, schema)
         return df.select(f.col('value').cast(TimestampType()))
-    assert_gpu_and_cpu_are_equal_collect(fun)
+    assert_gpu_and_cpu_are_equal_collect(fun, conf=ansi_disabled_conf)
 
 # gen for casting long to timestamp, range is about in [0000, 9999]
 long_gen_to_timestamp = LongGen(max_val=math.floor((9999-1970) * 365 * 86400),
