@@ -24,6 +24,8 @@ from spark_init_internal import spark_version
 from datetime import date, datetime
 import math
 
+from src.main.python.marks import disable_ansi_mode
+
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
 def test_cast_empty_string_to_int():
@@ -179,6 +181,8 @@ def test_cast_string_timestamp_fallback():
             conf = {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
 
+@disable_ansi_mode  # In ANSI mode, there are restrictions to casting DECIMAL to other types.
+                    # ANSI mode behaviour is tested in test_ansi_cast_decimal_to.
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
     decimal_gen_32bit,
@@ -191,7 +195,7 @@ def test_cast_string_timestamp_fallback():
     DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),
     DecimalGen(precision=38, scale=-10)], ids=meta_idfn('from:'))
 @pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType(), StringType()], ids=meta_idfn('to:'))
-def test_cast_decimal_to(data_gen, to_type):
+def test_with_ansi_disabled_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
             conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
@@ -210,6 +214,8 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
             conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True,
                 'spark.sql.ansi.enabled': True})
 
+
+@disable_ansi_mode  # With ANSI enabled, casting from wider to narrower types will fail.
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(7, 1),
@@ -226,9 +232,23 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
     DecimalType(30, -4),
     DecimalType(38, -10),
     DecimalType(1, -1)], ids=meta_idfn('to:'))
-def test_cast_decimal_to_decimal(data_gen, to_type):
+def test_with_ansi_disabled_cast_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11550")
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
+@pytest.mark.parametrize('data_gen', [
+    DecimalGen(3, 0)], ids=meta_idfn('from:'))
+@pytest.mark.parametrize('to_type', [
+    DecimalType(1, -1)], ids=meta_idfn('to:'))
+def test_ansi_cast_failures_decimal_to_decimal(data_gen, to_type):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')).collect(),
+        conf=ansi_enabled_conf,
+        error_message="overflow occurred")
+
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('to_type', [
