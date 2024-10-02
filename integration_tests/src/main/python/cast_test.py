@@ -175,6 +175,7 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf=copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': 'false'}))
 
+
 @pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
                                       StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
                                       StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')
@@ -182,13 +183,30 @@ def test_cast_string_date_non_ansi():
                         ids=idfn)
 @tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
-def test_cast_string_ts_valid_format(data_gen):
+def test_cast_string_ts_valid_format_ansi_off(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
-            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
-                'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+            conf = copy_and_update(ansi_disabled_conf,
+                                   {'spark.rapids.sql.hasExtendedYearValues': 'false',
+                                    'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}))
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
+@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1)],
+                         ids=idfn)
+@tz_sensitive_test
+@allow_non_gpu(*non_utc_allow)
+def test_cast_string_ts_valid_format_ansi_on(data_gen):
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
+        conf = copy_and_update(ansi_enabled_conf,
+                               {'spark.rapids.sql.hasExtendedYearValues': 'false',
+                                'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}))
+
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
