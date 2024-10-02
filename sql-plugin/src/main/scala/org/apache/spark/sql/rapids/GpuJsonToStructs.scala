@@ -17,8 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression, HostAlloc}
+import ai.rapids.cudf.{ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
 
@@ -96,7 +96,7 @@ case class GpuJsonToStructs(
         // Step 1: Concat the data into a single buffer, with verifying nulls/empty strings
         val concatenated = JSONUtils.concatenateJsonStrings(input.getBase)
         withResource(concatenated) { _ =>
-          // Step 2: setup a datasource from the concatenated JSON strings
+          // Step 2: Setup a datasource from the concatenated JSON strings
           val table = withResource(new JsonDeviceDataSource(concatenated.data)) { ds =>
             // Step 3: Have cudf parse the JSON data
             try {
@@ -111,21 +111,18 @@ case class GpuJsonToStructs(
           }
 
           withResource(table) { _ =>
-            // Step 4: verify that the data looks correct
+            // Step 4: Verify that the data looks correct
             if (table.getRowCount != numRows) {
               throw new IllegalStateException("The input data didn't parse correctly and we read " +
                 s"a different number of rows than was expected. Expected $numRows, " +
                 s"but got ${table.getRowCount}")
             }
 
-            // Step 5: turn the data into a Struct
+            // Step 5: Convert the read table into columns of desired types.
             withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
-              withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-                // Step 6: put nulls back in for nulls and empty strings
-                withResource(GpuScalar.from(null, struct)) { nullVal =>
-                  concatenated.isNullOrEmpty.ifElse(nullVal, structData)
-                }
-              }
+              // Step 6: Turn the data into structs.
+              JSONUtils.makeStructs(columns.asInstanceOf[Array[ColumnView]],
+                concatenated.isNullOrEmpty)
             }
           }
         }
