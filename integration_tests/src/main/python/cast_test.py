@@ -26,11 +26,6 @@ import math
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
-#  TODO: DELETEME!
-def gen_and_persist(spark, data_gen):
-    df = unary_op_df(spark, data_gen, length=10)
-    df.repartition(1).write.mode("overwrite").parquet("/tmp/myth/test_input")
-    return df
 
 def test_cast_empty_string_to_int_ansi_off():
     assert_gpu_and_cpu_are_equal_collect(
@@ -45,7 +40,7 @@ def test_cast_empty_string_to_int_ansi_off():
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11552")
 def test_cast_empty_string_to_int_ansi_on():
     assert_gpu_and_cpu_error(
-        lambda spark : gen_and_persist(spark, StringGen(pattern="")).selectExpr(
+        lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
             'CAST(a as BYTE)',
             'CAST(a as SHORT)',
             'CAST(a as INTEGER)',
@@ -93,7 +88,7 @@ def test_cast_string_date_valid_format_ansi_on():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all formats.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_error(
-        lambda spark : gen_and_persist(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())).collect(),
+        lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())).collect(),
         conf = copy_and_update(ansi_enabled_conf, {'spark.rapids.sql.hasExtendedYearValues': 'false'}),
         error_message="One or more values could not be converted to DateType")
 
