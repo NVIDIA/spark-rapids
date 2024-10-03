@@ -19,13 +19,12 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.CastStrings
-
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
 import org.apache.spark.sql.types.{DataType, _}
@@ -311,10 +310,12 @@ object GpuJsonReadCommon {
   def convertTableToDesiredType(table: Table,
       desired: StructType,
       options: JSONOptions): Array[ColumnVector] = {
-    val dataTypes = desired.fields.map(_.dataType)
-    dataTypes.zipWithIndex.safeMap {
-      case (dt, i) =>
-        convertToDesiredType(table.getColumn(i), dt, options)
+    withResource(new NvtxRange("convertTableToDesiredType", NvtxColor.RED)) { _ =>
+      val dataTypes = desired.fields.map(_.dataType)
+      dataTypes.zipWithIndex.safeMap {
+        case (dt, i) =>
+          convertToDesiredType(table.getColumn(i), dt, options)
+      }
     }
   }
 

@@ -17,11 +17,10 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer}
+import ai.rapids.cudf.{ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
-
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
@@ -82,53 +81,58 @@ case class GpuJsonToStructs(
     GpuJsonReadCommon.cudfJsonOptionBuilder(parsedOptions)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    schema match {
-      case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase)
-      case struct: StructType => {
-        // if we ever need to support duplicate keys we need to keep track of the duplicates
-        //  and make the first one null, but I don't think this will ever happen in practice
-        val cudfSchema = makeSchema(struct)
+    withResource(new NvtxRange("GpuJsonToStructs", NvtxColor.YELLOW)) { _ =>
+      schema match {
+        case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase)
+        case struct: StructType =>
+          // if we ever need to support duplicate keys we need to keep track of the duplicates
+          //  and make the first one null, but I don't think this will ever happen in practice
+          val cudfSchema = makeSchema(struct)
 
-        // We cannot handle all corner cases with this right now. The parser just isn't
-        // good enough, but we will try to handle a few common ones.
-        val numRows = input.getRowCount.toInt
+          // We cannot handle all corner cases with this right now. The parser just isn't
+          // good enough, but we will try to handle a few common ones.
+          val numRows = input.getRowCount.toInt
 
-        // Step 1: Concat the data into a single buffer, with verifying nulls/empty strings
-        val concatenated = JSONUtils.concatenateJsonStrings(input.getBase)
-        withResource(concatenated) { _ =>
-          // Step 2: Setup a datasource from the concatenated JSON strings
-          val table = withResource(new JsonDeviceDataSource(concatenated.data)) { ds =>
-            // Step 3: Have cudf parse the JSON data
-            try {
-              cudf.Table.readJSON(cudfSchema,
-                jsonOptionBuilder.withLineDelimiter(concatenated.delimiter).build, ds, numRows)
-            } catch {
-              case e: RuntimeException =>
-                throw new JsonParsingException("Currently some Json to Struct cases " +
-                  "are not supported. Consider to set spark.rapids.sql.expression.JsonToStructs" +
-                  "=false", e)
+          // Step 1: Concat the data into a single buffer, with verifying nulls/empty strings
+          val concatenated = JSONUtils.concatenateJsonStrings(input.getBase)
+          withResource(concatenated) { _ =>
+            // Step 2: Setup a datasource from the concatenated JSON strings
+            val table = withResource(new JsonDeviceDataSource(concatenated.data)) { ds =>
+              withResource(new NvtxRange("Table.readJSON", NvtxColor.RED)) { _ =>
+                // Step 3: Have cudf parse the JSON data
+                try {
+                  cudf.Table.readJSON(cudfSchema,
+                    jsonOptionBuilder.withLineDelimiter(concatenated.delimiter).build(),
+                    ds,
+                    numRows)
+                } catch {
+                  case e: RuntimeException =>
+                    throw new JsonParsingException("Currently some JsonToStructs cases " +
+                      "are not supported. " +
+                      "Consider to set spark.rapids.sql.expression.JsonToStructs=false", e)
+                }
+              }
+            }
+
+            withResource(table) { _ =>
+              // Step 4: Verify that the data looks correct
+              if (table.getRowCount != numRows) {
+                throw new IllegalStateException("The input data didn't parse correctly and " +
+                  s"we read a different number of rows than was expected. Expected $numRows, " +
+                  s"but got ${table.getRowCount}")
+              }
+
+              // Step 5: Convert the read table into columns of desired types.
+              withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
+                // Step 6: Turn the data into structs.
+                JSONUtils.makeStructs(columns.asInstanceOf[Array[ColumnView]],
+                  concatenated.isNullOrEmpty)
+              }
             }
           }
-
-          withResource(table) { _ =>
-            // Step 4: Verify that the data looks correct
-            if (table.getRowCount != numRows) {
-              throw new IllegalStateException("The input data didn't parse correctly and we read " +
-                s"a different number of rows than was expected. Expected $numRows, " +
-                s"but got ${table.getRowCount}")
-            }
-
-            // Step 5: Convert the read table into columns of desired types.
-            withResource(convertTableToDesiredType(table, struct, parsedOptions)) { columns =>
-              // Step 6: Turn the data into structs.
-              JSONUtils.makeStructs(columns.asInstanceOf[Array[ColumnView]],
-                concatenated.isNullOrEmpty)
-            }
-          }
-        }
+        case _ => throw new IllegalArgumentException(
+          s"GpuJsonToStructs currently does not support schema of type $schema.")
       }
-      case _ => throw new IllegalArgumentException(
-        s"GpuJsonToStructs currently does not support schema of type $schema.")
     }
   }
 
