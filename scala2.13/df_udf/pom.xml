@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2023-2024 NVIDIA CORPORATION.
+  Copyright (c) 2024 NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -20,47 +20,39 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
+        <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
         <version>24.10.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
-    <artifactId>datagen_2.12</artifactId>
-    <name>Data Generator</name>
-    <description>Tools for generating large amounts of data</description>
+    <artifactId>df_udf_plugin</artifactId>
+    <name>UDFs implemented in SQL/Dataframe</name>
+    <description>UDFs for Apache Spark implemented in SQL/Dataframe</description>
     <version>24.10.0-SNAPSHOT</version>
+
     <properties>
-        <rapids.module>datagen</rapids.module>
+        <rapids.module>df_udf</rapids.module>
         <target.classifier/>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
-        <build.info.path>${project.build.outputDirectory}/datagen-version-info.properties</build.info.path>
     </properties>
+
     <dependencies>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jul-to-slf4j</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jcl-over-slf4j</artifactId>
-            <!-- runtime scope is appropriate, but causes SBT build problems -->
-        </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.test.version}</version>
         </dependency>
-        <!-- https://mvnrepository.com/artifact/com.github.scopt/scopt -->
-        <dependency>
-            <groupId>com.github.scopt</groupId>
-            <artifactId>scopt_${scala.binary.version}</artifactId>
-            <version>3.7.1</version>
-        </dependency>
     </dependencies>
+
     <build>
         <plugins>
             <!-- disable surefire as we are using scalatest only -->
@@ -74,6 +66,10 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>
