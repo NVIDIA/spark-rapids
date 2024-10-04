@@ -1381,8 +1381,9 @@ def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
-
-@pytest.mark.skipif(condition=not is_before_spark_400(),
+@pytest.mark.skipif(condition=is_databricks_runtime() and is_databricks_version_or_later(14,3),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11512")
+@pytest.mark.skipif(condition=is_spark_400_or_later(),
                     reason="https://github.com/NVIDIA/spark-rapids/issues/11512")
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
