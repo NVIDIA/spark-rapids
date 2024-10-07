@@ -459,18 +459,21 @@ def test_to_timestamp(parser_policy):
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
+# mm: minute; MM: month
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
-def test_yyyyMMdd_format_for_legacy_mode():
-    gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
+@pytest.mark.parametrize("data_gen_regexp", ['(19[0-9]{2})([0-5][0-9])([0-3][0-9])', '(19[0-9]{2})([0-9]{4})'], ids=idfn)
+def test_formats_for_legacy_mode(format, data_gen_regexp):
+    gen = StringGen(data_gen_regexp)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
-        '''select unix_timestamp(a, 'yyyyMMdd'),
-                  from_unixtime(unix_timestamp(a, 'yyyyMMdd'), 'yyyyMMdd'),
-                  date_format(to_timestamp(a, 'yyyyMMdd'), 'yyyyMMdd')
+        '''select unix_timestamp(a, '{}'),
+                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
+                  date_format(to_timestamp(a, '{}'), '{}')
            from tab
-        ''',
+        '''.format(format, format, format, format, format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
