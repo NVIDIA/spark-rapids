@@ -235,11 +235,11 @@ class GpuTaskMetrics extends Serializable {
   def updateMaxMemory(taskAttemptId: Long): Unit = {
     val maxMem = RmmSpark.getAndResetGpuMaxMemoryAllocated(taskAttemptId)
     if (maxMem > 0) {
-      // These metrics track the max amount of memory that is allocated on the gpu during
-      // the lifespan of a task. However, this update function only gets called once on task
-      // completion, whereas the actual logic tracking of the max value during memory allocations
-      // lives in the JNI. Therefore, we can stick the convention here of calling the add method
-      // instead of adding a dedicated max method to the accumulator.
+      // These metrics track the max amount of memory that is allocated on the gpu and disk,
+      // respectively, during the lifespan of a task. However, this update function only gets called
+      // once on task completion, whereas the actual logic tracking of the max value during memory
+      // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
+      // add method instead of adding a dedicated max method to the accumulator.
       maxDeviceMemoryBytes.add(maxMem)
     }
     if (maxDiskBytesAllocated > 0) {
