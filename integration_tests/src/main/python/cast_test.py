@@ -80,7 +80,7 @@ def test_cast_string_date_valid_format_ansi_off():
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())),
-            conf = copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': 'false'}))
+            conf = copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}))
 
 
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
@@ -89,7 +89,7 @@ def test_cast_string_date_valid_format_ansi_on():
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())).collect(),
-        conf = copy_and_update(ansi_enabled_conf, {'spark.rapids.sql.hasExtendedYearValues': 'false'}),
+        conf = copy_and_update(ansi_enabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}),
         error_message="One or more values could not be converted to DateType")
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
@@ -118,8 +118,8 @@ def test_cast_string_date_invalid_ansi_before_320():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'}, )
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True}, )
 
 # test Spark versions >= 320 and databricks, ANSI mode, valid values
 @pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
@@ -127,8 +127,8 @@ def test_cast_string_date_valid_ansi():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'})
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True})
 
 # test Spark versions >= 320, ANSI mode
 @pytest.mark.skipif(is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
@@ -136,8 +136,8 @@ def test_cast_string_date_valid_ansi():
 def test_cast_string_date_invalid_ansi(invalid):
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'},
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True},
         error_message="DateTimeException")
 
 
@@ -168,7 +168,7 @@ def test_cast_string_date_non_ansi():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf=copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': 'false'}))
+        conf=copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}))
 
 
 @pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
@@ -184,8 +184,8 @@ def test_cast_string_ts_valid_format_ansi_off(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
             conf = copy_and_update(ansi_disabled_conf,
-                                   {'spark.rapids.sql.hasExtendedYearValues': 'false',
-                                    'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}))
+                                   {'spark.rapids.sql.hasExtendedYearValues': False,
+                                    'spark.rapids.sql.castStringToTimestamp.enabled': True}))
 
 
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
@@ -199,8 +199,8 @@ def test_cast_string_ts_valid_format_ansi_on(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
         conf = copy_and_update(ansi_enabled_conf,
-                               {'spark.rapids.sql.hasExtendedYearValues': 'false',
-                                'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}))
+                               {'spark.rapids.sql.hasExtendedYearValues': False,
+                                'spark.rapids.sql.castStringToTimestamp.enabled': True}))
 
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
@@ -232,7 +232,7 @@ def test_cast_string_timestamp_fallback():
             lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
             'Cast',
             conf = copy_and_update(ansi_disabled_conf,
-                                   {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}))
+                                   {'spark.rapids.sql.castStringToTimestamp.enabled': True}))
 
 
 @disable_ansi_mode  # In ANSI mode, there are restrictions to casting DECIMAL to other types.
@@ -252,7 +252,7 @@ def test_cast_string_timestamp_fallback():
 def test_with_ansi_disabled_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
-            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True})
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -369,7 +369,7 @@ def test_cast_floating_point_to_decimal_ansi_off(data_gen, to_type):
             f.col('a'), f.col('a').cast(to_type)),
         conf=copy_and_update(
                ansi_disabled_conf,
-               {'spark.rapids.sql.castFloatToDecimal.enabled': 'true'}))
+               {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
 
 
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
@@ -382,7 +382,7 @@ def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
                          f.col('a').cast(to_type)).collect(),
         conf=copy_and_update(
             ansi_enabled_conf,
-            {'spark.rapids.sql.castFloatToDecimal.enabled': 'true'}),
+            {'spark.rapids.sql.castFloatToDecimal.enabled': True}),
         error_message="[NUMERIC_VALUE_OUT_OF_RANGE.WITH_SUGGESTION]")
 
 
@@ -425,7 +425,7 @@ def _assert_cast_to_string_equal (data_gen, conf):
 
 
 @pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @allow_non_gpu(*non_utc_allow)
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -449,7 +449,7 @@ def test_cast_double_to_string():
     assert from_cpu_float == from_gpu_float
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @pytest.mark.xfail(reason='casting this type to string is not exact match')
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -460,7 +460,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 
 
 @pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @allow_non_gpu(*non_utc_allow)
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -469,7 +469,7 @@ def test_cast_map_to_string(data_gen, legacy):
 
 
 @pytest.mark.parametrize('data_gen', not_matched_map_gens_for_cast_to_string, ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @pytest.mark.xfail(reason='casting this type to string is not exact match')
 def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -480,7 +480,7 @@ def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @allow_non_gpu(*non_utc_allow)
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -502,7 +502,7 @@ def test_one_nested_null_field_legacy_cast(cast_conf):
 
     assert_gpu_and_cpu_are_equal_collect(
         was_broken_for_nested_null,
-        {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": True if cast_conf == 'LEGACY' else False}
     )
 
 # https://github.com/NVIDIA/spark-rapids/issues/2315
@@ -519,11 +519,11 @@ def test_two_col_struct_legacy_cast(cast_conf):
 
     assert_gpu_and_cpu_are_equal_collect(
         broken_df,
-        {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": True if cast_conf == 'LEGACY' else False}
     )
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @pytest.mark.xfail(reason='casting this type to string is not an exact match')
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
