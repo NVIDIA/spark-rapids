@@ -24,7 +24,7 @@
         <version>24.10.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
-    <artifactId>df_udf_plugin</artifactId>
+    <artifactId>df_udf_plugin_2.12</artifactId>
     <name>UDFs implemented in SQL/Dataframe</name>
     <description>UDFs for Apache Spark implemented in SQL/Dataframe</description>
     <version>24.10.0-SNAPSHOT</version>

@@ -4,10 +4,10 @@ User Defined Functions (UDFs) are used for a number of reasons in Apache Spark. 
 logic that is either very difficult or impossible to implement using existing SQL/Dataframe APIs directly. But they
 are also used as a way to standardize processing logic across an organization or for code reused.
 
-But UDFs come with some downsides. The biggest one is visibility into the processing being done. SQL language that
+But UDFs come with some downsides. The biggest one is visibility into the processing being done. SQL is a language that
 can be highly optimized. But a UDF in most cases is a black box, that the SQL optimizer cannot do anything about.
 This can result in less than ideal query planning. Additionally, accelerated execution environments, like the
-RAPIDS Accelerator for Apache Spark have not easy way to replace UDFs with accelerated versions, which can result in
+RAPIDS Accelerator for Apache Spark have no easy way to replace UDFs with accelerated versions, which can result in
 slow performance.
 
 This attempts to add visibility to the code reuse use case by providing a way to implement a UDF in terms of dataframe
@@ -68,7 +68,7 @@ Project [aggregate(data#46, 0, lambdafunction((cast(coalesce(lambda x_9#49L, 0) 
   at org.apache.spark.sql.catalyst.analysis.CheckAnalysis.$anonfun$checkAnalysis0$5$adapted(CheckAnalysis.scala:256)
 ```
 
-Which is not as simple to understand as a normal UDF. But it is still not great.
+Which is not as simple to understand as a normal UDF.
 
 ```scala
 val sum_array = udf((a: Array[Long]) => a.sum)
