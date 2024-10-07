@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.apache.commons.io.IOUtils
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
 import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
 import org.apache.spark.sql.types.DataType
@@ -58,6 +59,13 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     } else {
       writeToFile(incoming, path, append = false, stream)
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.incDiskBytesAllocated(uncompressedSize)
+    logWarning(s"acquiring resources for disk buffer $id of size $uncompressedSize bytes")
+
+    val taskId = TaskContext.get().taskAttemptId()
+    val totalSize = metrics.diskBytesAllocated
+    logWarning(s"total size for task $taskId is $totalSize")
 
     logDebug(s"Spilled to $path $fileOffset:$diskLength")
     val buff = incoming match {
@@ -181,6 +189,14 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     }
 
     override protected def releaseResources(): Unit = {
+      logWarning(s"releasing resources for disk buffer $id of size $memoryUsedBytes bytes")
+      val metrics = GpuTaskMetrics.get
+      metrics.decDiskBytesAllocated(memoryUsedBytes)
+
+      val taskId = TaskContext.get().taskAttemptId()
+      val totalSize = metrics.diskBytesAllocated
+      logWarning(s"total size for task $taskId is $totalSize")
+
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {
         sharedBufferFiles.remove(id)

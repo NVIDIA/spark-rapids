@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -121,6 +121,12 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
+
+  var diskBytesAllocated: Long = 0
+
+  def incDiskBytesAllocated(bytes: Long): Unit = diskBytesAllocated += bytes
+
+  def decDiskBytesAllocated(bytes: Long): Unit = diskBytesAllocated -= bytes
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
