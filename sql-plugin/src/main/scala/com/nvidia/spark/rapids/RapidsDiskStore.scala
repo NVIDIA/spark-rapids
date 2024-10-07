@@ -64,7 +64,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     logWarning(s"acquiring resources for disk buffer $id of size $uncompressedSize bytes")
 
     val taskId = TaskContext.get().taskAttemptId()
-    val totalSize = metrics.diskBytesAllocated
+    val totalSize = metrics.getMaxDiskBytesAllocated()
     logWarning(s"total size for task $taskId is $totalSize")
 
     logDebug(s"Spilled to $path $fileOffset:$diskLength")
@@ -194,7 +194,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       metrics.decDiskBytesAllocated(memoryUsedBytes)
 
       val taskId = TaskContext.get().taskAttemptId()
-      val totalSize = metrics.diskBytesAllocated
+      val totalSize = metrics.getMaxDiskBytesAllocated()
       logWarning(s"total size for task $taskId is $totalSize")
 
       // Buffers that share paths must be cleaned up elsewhere
