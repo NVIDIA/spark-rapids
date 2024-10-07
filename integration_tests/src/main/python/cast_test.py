@@ -454,7 +454,7 @@ def test_cast_double_to_string():
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : True,
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -474,7 +474,7 @@ def test_cast_map_to_string(data_gen, legacy):
 def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : True,
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -528,7 +528,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : True,
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -850,7 +850,7 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         lambda spark: unary_op_df(spark, from_gen).selectExpr("CAST(a AS {}) as casted".format(to_type)),
         "Cast",
         {"spark.sql.session.timeZone": "+08",
-         "spark.rapids.sql.castStringToTimestamp.enabled": "true"})
+         "spark.rapids.sql.castStringToTimestamp.enabled": True})
 
 
 def test_cast_date_integral_and_fp_ansi_off():
