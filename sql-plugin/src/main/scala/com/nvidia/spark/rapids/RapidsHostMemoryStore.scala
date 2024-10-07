@@ -30,7 +30,6 @@ import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.GpuTaskMetrics
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -103,7 +102,6 @@ class RapidsHostMemoryStore(
           val taskId = TaskContext.get.taskAttemptId()
           logDebug(s"Task $taskId spilled $amountSpilled bytes from" +
             s"${name} to make room for ${buffer.id}")
-          TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
         }
         // if after spill we can fit the new buffer, return true
         buffer.memoryUsedBytes <= (ms - currentSize)
