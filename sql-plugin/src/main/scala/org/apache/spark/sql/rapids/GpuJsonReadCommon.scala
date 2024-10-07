@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuSca
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.CastStrings
+
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
 import org.apache.spark.sql.types.{DataType, _}
