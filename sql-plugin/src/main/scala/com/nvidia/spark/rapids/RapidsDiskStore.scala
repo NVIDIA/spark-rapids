@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import org.apache.commons.io.IOUtils
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
-import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
+import org.apache.spark.sql.rapids.execution.{SerializedHostTableUtils, TrampolineUtil}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -38,6 +38,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     extends RapidsBufferStoreWithoutSpill(StorageTier.DISK) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
+
+  private def reportDiskAllocMetrics(metrics: GpuTaskMetrics): Unit = {
+    val taskId = TaskContext.get().taskAttemptId()
+    val totalSize = metrics.getDiskBytesAllocated
+    val maxSize = metrics.getMaxDiskBytesAllocated
+    logDebug(s"total size for task $taskId is $totalSize, max size is $maxSize")
+  }
 
   override protected def createBuffer(
       incoming: RapidsBuffer,
@@ -59,14 +66,6 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     } else {
       writeToFile(incoming, path, append = false, stream)
     }
-    val metrics = GpuTaskMetrics.get
-    metrics.incDiskBytesAllocated(uncompressedSize)
-    logWarning(s"acquiring resources for disk buffer $id of size $uncompressedSize bytes")
-
-    val taskId = TaskContext.get().taskAttemptId()
-    val totalSize = metrics.getMaxDiskBytesAllocated()
-    logWarning(s"total size for task $taskId is $totalSize")
-
     logDebug(s"Spilled to $path $fileOffset:$diskLength")
     val buff = incoming match {
       case _: RapidsHostBatchBuffer =>
@@ -87,6 +86,12 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           incoming.meta,
           incoming.getSpillPriority)
     }
+    TrampolineUtil.incTaskMetricsDiskBytesSpilled(uncompressedSize)
+
+    val metrics = GpuTaskMetrics.get
+    metrics.incDiskBytesAllocated(uncompressedSize)
+    logDebug(s"acquiring resources for disk buffer $id of size $uncompressedSize bytes")
+    reportDiskAllocMetrics(metrics)
     Some(buff)
   }
 
@@ -189,13 +194,10 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     }
 
     override protected def releaseResources(): Unit = {
-      logWarning(s"releasing resources for disk buffer $id of size $memoryUsedBytes bytes")
+      logDebug(s"releasing resources for disk buffer $id of size $memoryUsedBytes bytes")
       val metrics = GpuTaskMetrics.get
       metrics.decDiskBytesAllocated(memoryUsedBytes)
-
-      val taskId = TaskContext.get().taskAttemptId()
-      val totalSize = metrics.getMaxDiskBytesAllocated()
-      logWarning(s"total size for task $taskId is $totalSize")
+      reportDiskAllocMetrics(metrics)
 
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {

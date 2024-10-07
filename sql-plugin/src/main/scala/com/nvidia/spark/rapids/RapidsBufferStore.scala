@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.StorageTier.{DEVICE, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -383,13 +382,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       throw new IllegalStateException(
         s"Unable to spill buffer ${buffer.id} of size ${buffer.memoryUsedBytes} " +
             s"to tier ${lastTier}")
-    }
-    lastTier.foreach {
-      case StorageTier.DISK =>
-        maybeNewBuffer.foreach(b =>
-          TrampolineUtil.incTaskMetricsDiskBytesSpilled(b.memoryUsedBytes)
-        )
-      case _ =>
     }
     // return the buffer to free and the new buffer to register
     BufferSpill(buffer, maybeNewBuffer)

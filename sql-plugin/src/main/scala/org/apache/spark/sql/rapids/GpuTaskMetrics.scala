@@ -126,7 +126,9 @@ class GpuTaskMetrics extends Serializable {
   private var diskBytesAllocated: Long = 0
   private var maxDiskBytesAllocated: Long = 0
 
-  def getMaxDiskBytesAllocated(): Long = diskBytesAllocated
+  def getDiskBytesAllocated: Long = diskBytesAllocated
+
+  def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
 
   def incDiskBytesAllocated(bytes: Long): Unit = {
     diskBytesAllocated += bytes
