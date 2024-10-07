@@ -854,8 +854,8 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
 def test_cast_date_integral_and_fp_ansi_off():
     """
     This tests that a date column can be cast to different numeric/floating-point types.
-    This needs to be tested with ANSI disabled, because some of these conversions are
-    not ANSI-compliant.
+    This needs to be tested with ANSI disabled, because none of these conversions are
+    ANSI-compliant.
     """
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, date_gen).selectExpr(
