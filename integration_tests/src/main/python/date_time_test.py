@@ -459,7 +459,6 @@ def test_to_timestamp(parser_policy):
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
-
 # mm: minute; MM: month
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
@@ -467,7 +466,7 @@ def test_to_timestamp(parser_policy):
 def test_formats_for_legacy_mode(format):
     gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: unary_op_df(spark, gen),
+        lambda spark : unary_op_df(spark, gen),
         "tab",
         '''select unix_timestamp(a, '{}'),
                   from_unixtime(unix_timestamp(a, '{}'), '{}'),
