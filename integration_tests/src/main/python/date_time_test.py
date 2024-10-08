@@ -461,6 +461,7 @@ def test_to_timestamp(parser_policy):
 
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
+@pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" or get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
 def test_yyyyMMdd_format_for_legacy_mode():
     gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
     assert_gpu_and_cpu_are_equal_sql(
