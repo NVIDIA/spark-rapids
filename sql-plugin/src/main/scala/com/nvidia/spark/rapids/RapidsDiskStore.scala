@@ -39,11 +39,11 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     extends RapidsBufferStoreWithoutSpill(StorageTier.DISK) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
-  private def reportDiskAllocMetrics(metrics: GpuTaskMetrics): Unit = {
+  private def reportDiskAllocMetrics(metrics: GpuTaskMetrics): String = {
     val taskId = TaskContext.get().taskAttemptId()
     val totalSize = metrics.getDiskBytesAllocated
     val maxSize = metrics.getMaxDiskBytesAllocated
-    logDebug(s"total size for task $taskId is $totalSize, max size is $maxSize")
+    s"total size for task $taskId is $totalSize, max size is $maxSize"
   }
 
   override protected def createBuffer(
@@ -91,7 +91,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     val metrics = GpuTaskMetrics.get
     metrics.incDiskBytesAllocated(uncompressedSize)
     logDebug(s"acquiring resources for disk buffer $id of size $uncompressedSize bytes")
-    reportDiskAllocMetrics(metrics)
+    logDebug(reportDiskAllocMetrics(metrics))
     Some(buff)
   }
 
@@ -197,7 +197,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       logDebug(s"releasing resources for disk buffer $id of size $memoryUsedBytes bytes")
       val metrics = GpuTaskMetrics.get
       metrics.decDiskBytesAllocated(memoryUsedBytes)
-      reportDiskAllocMetrics(metrics)
+      logDebug(reportDiskAllocMetrics(metrics))
 
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {

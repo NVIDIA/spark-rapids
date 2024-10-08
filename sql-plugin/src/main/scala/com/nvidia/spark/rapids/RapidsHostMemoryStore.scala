@@ -99,8 +99,7 @@ class RapidsHostMemoryStore(
       } else {
         val amountSpilled = synchronousSpill(targetTotalSize, catalog, stream)
         if (amountSpilled != 0) {
-          val taskId = TaskContext.get.taskAttemptId()
-          logDebug(s"Task $taskId spilled $amountSpilled bytes from" +
+          logDebug(s"Task ${TaskContext.get.taskAttemptId()} spilled $amountSpilled bytes from" +
             s"${name} to make room for ${buffer.id}")
         }
         // if after spill we can fit the new buffer, return true
