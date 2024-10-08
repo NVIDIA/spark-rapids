@@ -35,19 +35,19 @@ import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 trait RapidsErrorUtils340PlusBase extends RapidsErrorUtilsFor330plus with RapidsQueryErrorUtils {
 
   def mapKeyNotExistError(
-                           key: String,
-                           keyType: DataType,
-                           origin: Origin): NoSuchElementException = {
+      key: String,
+      keyType: DataType,
+      origin: Origin): NoSuchElementException = {
     throw new UnsupportedOperationException(
       "`mapKeyNotExistError` has been removed since Spark 3.4.0. "
     )
   }
 
   def invalidArrayIndexError(
-                              index: Int,
-                              numElements: Int,
-                              isElementAtF: Boolean = false,
-                              context: SQLQueryContext = null): ArrayIndexOutOfBoundsException = {
+      index: Int,
+      numElements: Int,
+      isElementAtF: Boolean = false,
+      context: SQLQueryContext = null): ArrayIndexOutOfBoundsException = {
     if (isElementAtF) {
       QueryExecutionErrors.invalidElementAtIndexError(index, numElements, context)
     } else {
@@ -56,16 +56,16 @@ trait RapidsErrorUtils340PlusBase extends RapidsErrorUtilsFor330plus with Rapids
   }
 
   def arithmeticOverflowError(
-                               message: String,
-                               hint: String = "",
-                               errorContext: SQLQueryContext = null): ArithmeticException = {
+      message: String,
+      hint: String = "",
+      errorContext: SQLQueryContext = null): ArithmeticException = {
     QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
   }
 
   def cannotChangeDecimalPrecisionError(
-                                         value: Decimal,
-                                         toType: DecimalType,
-                                         context: SQLQueryContext = null): ArithmeticException = {
+      value: Decimal,
+      toType: DecimalType,
+      context: SQLQueryContext = null): ArithmeticException = {
     QueryExecutionErrors.cannotChangeDecimalPrecisionError(
       value, toType.precision, toType.scale, context
     )
