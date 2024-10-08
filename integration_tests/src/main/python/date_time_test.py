@@ -461,8 +461,7 @@ def test_to_timestamp(parser_policy):
 
 
 # mm: minute; MM: month
-@pytest.mark.skipif(not is_supported_time_zone(),
-                    reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 def test_formats_for_legacy_mode(format):
