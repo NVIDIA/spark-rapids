@@ -73,6 +73,7 @@
     <modules>
         <module>aggregator</module>
         <module>datagen</module>
+        <module>df_udf</module>
         <module>dist</module>
         <module>integration_tests</module>
         <module>shuffle-plugin</module>
