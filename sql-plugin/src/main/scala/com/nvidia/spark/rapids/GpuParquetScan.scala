@@ -2613,6 +2613,12 @@ object MakeParquetTableProducer extends Logging {
       debugDumpPrefix: Option[String],
       debugDumpAlways: Boolean
   ): GpuDataProducer[Table] = {
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
+        logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
+      }
+    }
     if (useChunkedReader) {
       ParquetTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
         opts, buffer, offset,
@@ -2631,19 +2637,17 @@ object MakeParquetTableProducer extends Logging {
         } catch {
           case e: Exception =>
             val dumpMsg = debugDumpPrefix.map { prefix =>
-              val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-              s", data dumped to $p"
+              if (!debugDumpAlways) {
+                val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
+                s", data dumped to $p"
+              } else {
+                ""
+              }
             }.getOrElse("")
             throw new IOException(s"Error when processing ${splits.mkString("; ")}$dumpMsg", e)
         }
       }
       closeOnExcept(table) { _ =>
-        debugDumpPrefix.foreach { prefix =>
-          if (debugDumpAlways) {
-            val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-            logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
-          }
-        }
         GpuParquetScan.throwIfRebaseNeededInExceptionMode(table, dateRebaseMode,
           timestampRebaseMode)
         if (readDataSchema.length < table.getNumberOfColumns) {
@@ -2695,8 +2699,12 @@ case class ParquetTableReader(
       } catch {
         case e: Exception =>
           val dumpMsg = debugDumpPrefix.map { prefix =>
-            val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-            s", data dumped to $p"
+            if (!debugDumpAlways) {
+              val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
+              s", data dumped to $p"
+            } else {
+              ""
+            }
           }.getOrElse("")
           throw new IOException(s"Error when processing $splitsString$dumpMsg", e)
       }
@@ -2716,12 +2724,6 @@ case class ParquetTableReader(
   }
 
   override def close(): Unit = {
-    debugDumpPrefix.foreach { prefix =>
-      if (debugDumpAlways) {
-        val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-        logWarning(s"Wrote data for $splitsString to $p")
-      }
-    }
     reader.close()
     buffer.close()
   }

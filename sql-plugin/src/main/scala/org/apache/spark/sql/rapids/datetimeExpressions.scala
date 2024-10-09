@@ -640,7 +640,9 @@ object GpuToTimestamp {
     "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta(Option('-'), isTimestamp = true,
       raw"\A\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
     "yyyy/MM/dd HH:mm:ss" -> ParseFormatMeta(Option('/'), isTimestamp = true,
-      raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)")
+      raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
+    "yyyyMMdd" -> ParseFormatMeta(None, isTimestamp = false,
+      raw"\A\d{8}(\D|\s|\Z)")
   )
 
   /** remove whitespace before month and day */
@@ -762,8 +764,21 @@ object GpuToTimestamp {
           case RegexReplace(pattern, backref) =>
             RegexReplace(pattern.replace('-', '/'), backref.replace('-', '/'))
         }
-      case Some('-') | Some(_) | None =>
+      case Some('-') | Some(_) =>
         regexReplaceRules
+      case None =>
+        // For formats like `yyyyMMdd` that do not contains separator,
+        // do not need to do regexp replacement rules
+        // Note: here introduced the following inconsistent behavior compared to Spark
+        // Spark's behavior:
+        //   to_date('20240101', 'yyyyMMdd')  = 2024-01-01
+        //   to_date('202401 01', 'yyyyMMdd') = 2024-01-01
+        //   to_date('2024 0101', 'yyyyMMdd') = null
+        // GPU behavior:
+        //   to_date('20240101', 'yyyyMMdd')  = 2024-01-01
+        //   to_date('202401 01', 'yyyyMMdd') = null
+        //   to_date('2024 0101', 'yyyyMMdd') = null
+        Seq()
     }
 
     // apply each rule in turn to the data

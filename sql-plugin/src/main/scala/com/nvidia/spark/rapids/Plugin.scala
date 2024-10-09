@@ -37,7 +37,6 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -84,8 +83,6 @@ object RapidsPluginUtils extends Logging {
     cudfBuildInfo = loadProps(CUDF_PROPS_FILENAME),
     sparkRapidsPrivateBuildInfo =loadProps(PRIVATE_PROPS_FILENAME)
   )
-
-
 
   {
     logInfo(s"RAPIDS Accelerator build: ${buildInfoEvent.sparkRapidsBuildInfo}")
@@ -134,11 +131,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.08.1-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.10.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-24.08.1-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.10.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-24.08.1-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.10.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -411,14 +408,6 @@ object RapidsPluginUtils extends Logging {
     }
   }
 }
-
-
-case class SparkRapidsBuildInfoEvent(
-  sparkRapidsBuildInfo: Map[String, String],
-  sparkRapidsJniBuildInfo: Map[String, String],
-  cudfBuildInfo: Map[String, String],
-  sparkRapidsPrivateBuildInfo: Map[String, String]
-) extends SparkListenerEvent
 
 /**
  * The Spark driver plugin provided by the RAPIDS Spark plugin.

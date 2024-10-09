@@ -32,7 +32,6 @@ import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -1792,22 +1791,6 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
-    // TODO when https://github.com/rapidsai/cudf/issues/16453 is fixed remove this workaround
-    withResource(str.getBase.getData) { data =>
-      if (data == null || data.getLength <= 0) {
-        // An empty data for a string means that all of the inputs are either null or an empty
-        // string. CUDF will return null for all of these, but we should only do that for a
-        // null input. For all of the others it should be an empty string.
-        withResource(GpuScalar.from(null, dataType)) { nullArray =>
-          withResource(GpuScalar.from(
-            new GenericArrayData(Array(UTF8String.EMPTY_UTF8)), dataType)) { emptyStringArray =>
-            withResource(str.getBase.isNull) { retNull =>
-              return retNull.ifElse(nullArray, emptyStringArray)
-            }
-          }
-        }
-      }
-    }
     limit.getValue.asInstanceOf[Int] match {
       case 0 =>
         // Same as splitting as many times as possible

@@ -357,6 +357,10 @@ abstract class SplittableJoinIterator(
         case _ => Some(maps(1))
       }
       val gatherer = rightMap match {
+        case None if joinType == RightOuter && rightData.numCols > 0 =>
+          // Distinct right outer joins only produce a single gather map since right table rows
+          // are not rearranged by the join.
+          MultiJoinGather(leftGatherer, new JoinGathererSameTable(rightData))
         case None =>
           // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
           // In these cases, the map and the table are both the left side, and everything in the map

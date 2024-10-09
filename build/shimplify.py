@@ -187,14 +187,13 @@ __closing_shim_tag = __shim_comment_tag + ' ***/'
 __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
 __dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
-__all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
-__allScala213_shims_arr = sorted(__csv_ant_prop_as_arr('allScala213.buildvers'))
-
 __log = logging.getLogger('shimplify')
 __log.setLevel(logging.DEBUG if __should_trace else logging.INFO)
 __ch = logging.StreamHandler()
 __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
+__all_shims_arr = sorted(__ant_proj_prop("included_buildvers").split(", "))
+__shims_arr = __all_shims_arr if not __shims_arr else __shims_arr
 
 __shim_dir_pattern = re.compile(r'spark\d{3}')
 __shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
@@ -371,12 +370,6 @@ def __generate_symlinks():
                                                                              path,
                                                                              build_ver_arr))
 
-def __map_version_array(shim_json_string):
-    shim_ver = str(json.loads(shim_json_string).get('spark'))
-    assert shim_ver in __all_shims_arr or shim_ver in __allScala213_shims_arr, "all.buildvers or " \
-        "allScala213.buildvers in pom.xml does not contain %s" % shim_ver
-    return shim_ver
-
 def __traverse_source_tree_of_all_shims(src_type, func):
     """Walks src/<src_type>/sparkXYZ"""
     base_dir = __src_basedir
@@ -396,7 +389,7 @@ def __traverse_source_tree_of_all_shims(src_type, func):
                 shim_arr = shim_match.group(1).split(os.linesep)
                 assert len(shim_arr) > 0, "invalid empty shim comment,"\
                     "orphan shim files should be deleted"
-                build_ver_arr = map(__map_version_array, shim_arr)
+                build_ver_arr = map(lambda x: str(json.loads(x).get('spark')), shim_arr)
                 __log.debug("extracted shims %s", build_ver_arr)
                 assert build_ver_arr == sorted(build_ver_arr),\
                     "%s shim list is not properly sorted" % shim_file_path
@@ -502,7 +495,7 @@ def __update_files2bv(files2bv, path, buildver_arr):
 
 def __add_new_shim_to_file_map(files2bv):
     if __add_shim_buildver not in __all_shims_arr:
-        __log.warning("Update pom.xml to add %s to all.buildvers", __add_shim_buildver)
+        __log.warning("all.buildvers doesn't contain %s please look at build/get_buildvers.py", __add_shim_buildver)
     if __add_shim_buildver not in __shims_arr:
         # TODO  should we just bail and ask the user to add to all.buildvers manually first?
         __shims_arr.append(__add_shim_buildver)

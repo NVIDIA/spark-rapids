@@ -187,7 +187,7 @@ done < "$UNSHIMMED_LIST_TXT"
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
 
 while read unshimmed_class; do
-  for pw in ./parallel-world/spark[34]* ; do
+  for pw in ./parallel-world/spark[34-]* ; do
     unshimmed_path="$pw/$unshimmed_class"
     [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true
   done >> "$DELETE_DUPLICATES_TXT"

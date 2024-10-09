@@ -260,10 +260,6 @@ Refer to perfio.s3.enabled in [advanced_configs](./additional-functionality/adva
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
-## Archived releases
-
-As new releases come out, previous ones will still be available in [archived releases](./archive.md).
-
 ## Release v24.04.0
 ### Hardware Requirements:
 

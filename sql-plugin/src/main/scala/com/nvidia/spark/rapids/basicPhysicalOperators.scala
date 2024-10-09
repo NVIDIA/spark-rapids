@@ -107,8 +107,23 @@ object GpuProjectExec {
       // This can help avoid contiguous splits in some cases when the input data is also contiguous
       GpuColumnVector.incRefCounts(cb)
     } else {
-      val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
-      new ColumnarBatch(newColumns, cb.numRows())
+      try {
+        // In some cases like Expand, we have a lot Expressions generating null vectors.
+        // We can cache the null vectors to avoid creating them every time.
+        // Since we're attempting to reuse the whole null vector, it is important to aware that
+        // datatype and vector length should be the same.
+        // Within project(cb: ColumnarBatch, boundExprs: Seq[Expression]), all output vectors share
+        // the same vector length, which facilitates the reuse of null vectors.
+        // When leaving the scope of project(cb: ColumnarBatch, boundExprs: Seq[Expression]),
+        // the cached null vectors will be cleared because the next ColumnBatch may have
+        // different vector length, thus not able to reuse cached vectors.
+        GpuExpressionsUtils.cachedNullVectors.get.clear()
+
+        val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
+        new ColumnarBatch(newColumns, cb.numRows())
+      } finally {
+        GpuExpressionsUtils.cachedNullVectors.get.clear()
+      }
     }
   }
 

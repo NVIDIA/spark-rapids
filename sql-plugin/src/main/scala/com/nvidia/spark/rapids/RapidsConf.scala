@@ -665,10 +665,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val USE_SHUFFLED_SYMMETRIC_HASH_JOIN = conf("spark.rapids.sql.join.useShuffledSymmetricHashJoin")
     .doc("Use the experimental shuffle symmetric hash join designed to improve handling of large " +
-      "joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
+      "symmetric joins. Requires spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true.")
     .internal()
     .booleanConf
     .createWithDefault(true)
+
+  val USE_SHUFFLED_ASYMMETRIC_HASH_JOIN =
+    conf("spark.rapids.sql.join.useShuffledAsymmetricHashJoin")
+      .doc("Use the experimental shuffle asymmetric hash join designed to improve handling of " +
+        "large joins for left and right outer joins. Requires " +
+        "spark.rapids.sql.shuffledHashJoin.optimizeShuffle=true and " +
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin=true")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val JOIN_OUTER_MAGNIFICATION_THRESHOLD =
+    conf("spark.rapids.sql.join.outer.magnificationFactorThreshold")
+      .doc("The magnification factor threshold at which outer joins will consider using the " +
+        "unnatural side of the join to build the hash table")
+      .internal()
+      .integerConf
+      .createWithDefault(10000)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
       .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
@@ -1015,15 +1033,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(true)
 
-  val ENABLE_GETJSONOBJECT_LEGACY = conf("spark.rapids.sql.getJsonObject.legacy.enabled")
-      .doc("When set to true, the get_json_object function will use the legacy implementation " +
-          "on the GPU. The legacy implementation is faster than the current implementation, but " +
-          "it has several incompatibilities and bugs, including no input validation, escapes are " +
-          "not properly processed for Strings, and non-string output is not normalized.")
-      .internal()
-      .booleanConf
-      .createWithDefault(false)
-
   // FILE FORMATS
   val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
       .doc("The maximum number of threads on each executor to use for reading small " +
@@ -1236,6 +1245,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "semantically equal across Expand projection lists before expanding, to avoid " +
       s"duplicate evaluations. '${ENABLE_TIERED_PROJECT.key}' should also set to true " +
       "to enable this.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_COALESCE_AFTER_EXPAND = conf("spark.rapids.sql.coalesceAfterExpand.enabled")
+    .doc("When set to false disables the coalesce after GPU Expand. ")
     .internal()
     .booleanConf
     .createWithDefault(true)
@@ -2403,7 +2418,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.08.1-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.10.0-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2589,6 +2604,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
   lazy val useShuffledSymmetricHashJoin: Boolean = get(USE_SHUFFLED_SYMMETRIC_HASH_JOIN)
+
+  lazy val useShuffledAsymmetricHashJoin: Boolean =
+    get(USE_SHUFFLED_ASYMMETRIC_HASH_JOIN)
+
+  lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
 
@@ -2829,10 +2849,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-
-  lazy val isLegacyGetJsonObjectEnabled: Boolean = get(ENABLE_GETJSONOBJECT_LEGACY)
-
+  
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
+
+  lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.

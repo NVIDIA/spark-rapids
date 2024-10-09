@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,10 +128,11 @@ trait GpuPartitioning extends Partitioning {
 
     val hostPartColumns = withResource(partitionColumns) { _ =>
       withRetryNoSplit {
-        partitionColumns.safeMap(_.copyToHost())
+        partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))
       }
     }
-    try {
+    withResource(hostPartColumns) { _ =>
+      Cuda.DEFAULT_STREAM.sync()
       // Leaving the GPU for a while
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
@@ -168,8 +169,6 @@ trait GpuPartitioning extends Partitioning {
       } else {
         tmp
       }
-    } finally {
-      hostPartColumns.safeClose()
     }
   }
 

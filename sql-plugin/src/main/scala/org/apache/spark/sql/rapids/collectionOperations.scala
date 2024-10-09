@@ -108,6 +108,122 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
     }
 }
 
+case class GpuArrayJoin(override val children : Seq[Expression])
+  extends GpuExpression with ShimExpression {
+
+  private val array = children(0)
+  private val delimiter = children(1)
+  private val nullReplacement = children.lift(2)
+
+  override def dataType: DataType = array.dataType.asInstanceOf[ArrayType].elementType
+  override def prettyName: String = "array_join"
+  override def nullable: Boolean = children.exists(_.nullable)
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  private def concatArrayCol(arrayColumn: ColumnView,
+                             sepScalar: GpuScalar,
+                             naScalarOpt: Option[GpuScalar]): GpuColumnVector = {
+
+    val ret = if (!sepScalar.isValid) {
+        // Null separator is not valid and we don't have the same way to control it
+        // as we do with the column separator API. so just return all nulls.
+        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+          ColumnVector.fromScalar(nullString, arrayColumn.getRowCount.toInt)
+        }
+      } else {
+        naScalarOpt match {
+          case None =>
+            // Nulls are treated as if they are not in the string
+            withResource(Scalar.fromString("")) { emptyString =>
+              arrayColumn.stringConcatenateListElements(sepScalar.getBase,
+                emptyString, false, true)
+            }
+          case Some(nullReplacement) if nullReplacement.isValid =>
+            // TODO when https://github.com/rapidsai/cudf/issues/12766 is fixed remove
+            //  this workaround
+            withResource(replaceNullChild(arrayColumn, nullReplacement.getBase)) { workAround =>
+              workAround.stringConcatenateListElements(sepScalar.getBase,
+                nullReplacement.getBase, true, true)
+            }
+          case Some(_) => // The null replacement is not valid, so the result is all nulls
+            withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+              ColumnVector.fromScalar(nullString, arrayColumn.getRowCount.toInt)
+            }
+        }
+      }
+    GpuColumnVector.from(ret, dataType)
+  }
+
+  private def concatArrayCol(arrayColumn: ColumnView,
+                             sepColumn: ColumnView,
+                             naScalarOpt: Option[GpuScalar]): GpuColumnVector = {
+    val ret = withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+      naScalarOpt match {
+        case None =>
+          // Nulls are treated as if they are not in the string
+          withResource(Scalar.fromString("")) { emptyString =>
+            arrayColumn.stringConcatenateListElements(sepColumn,
+              nullString, emptyString, false, true)
+          }
+        case Some(nullReplacement) if nullReplacement.isValid =>
+          // TODO when https://github.com/rapidsai/cudf/issues/12766 is fixed remove
+          //  this workaround
+          withResource(replaceNullChild(arrayColumn, nullReplacement.getBase)) { workAround =>
+            workAround.stringConcatenateListElements(sepColumn,
+              nullString, nullReplacement.getBase, true, true)
+          }
+        case Some(_) => // The null replacement is not valid, so the result is all nulls
+          ColumnVector.fromScalar(nullString, arrayColumn.getRowCount.toInt)
+      }
+    }
+    GpuColumnVector.from(ret, dataType)
+  }
+
+  private def replaceNullChild(arrayColumn: ColumnView, replacement: Scalar): ColumnVector = {
+    withResource(arrayColumn.getChildColumnView(0)) { dataView =>
+      val replacedData = withResource(dataView.isNull) { isNull =>
+        isNull.ifElse(replacement, dataView)
+      }
+      withResource(replacedData) { _ =>
+        withResource(GpuListUtils.replaceListDataColumnAsView(arrayColumn,
+          replacedData)) { replacedView =>
+          replacedView.copyToColumnVector()
+        }
+      }
+    }
+  }
+
+  private def getNaScalarOpt(batch: ColumnarBatch): Option[GpuScalar] =
+    nullReplacement match {
+      case None => None
+      case Some(expr) =>
+        withResourceIfAllowed(expr.columnarEvalAny(batch)) {
+          case g: GpuScalar =>
+            Some(g.incRefCount)
+          case other =>
+            throw new IllegalStateException(s"Only scalars are " +
+              s"supported for null replacement $other")
+        }
+    }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(array.columnarEval(batch)) { arrayColumn =>
+      withResourceIfAllowed(delimiter.columnarEvalAny(batch)) { sep =>
+        withResource(getNaScalarOpt(batch)) { naScalarOpt =>
+          sep match {
+            case sepColumn: GpuColumnVector =>
+              concatArrayCol(arrayColumn.getBase, sepColumn.getBase, naScalarOpt)
+            case sepScalar: GpuScalar =>
+              concatArrayCol(arrayColumn.getBase, sepScalar, naScalarOpt)
+            case other =>
+              throw new IllegalStateException(s"Unexpected separator type $other")
+          }
+        }
+      }
+    }
+  }
+}
+
 object GpuElementAtMeta {
   /**
    * Construct the expression rule for `ElementAt`.

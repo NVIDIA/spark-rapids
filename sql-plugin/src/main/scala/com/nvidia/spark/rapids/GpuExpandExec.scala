@@ -53,7 +53,8 @@ class GpuExpandExecMeta(
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
     GpuExpandExec(projections, expand.output, childPlans.head.convertIfNeeded())(
-      preprojectEnabled = conf.isExpandPreprojectEnabled)
+      preprojectEnabled = conf.isExpandPreprojectEnabled,
+      coalesceAfter = conf.isCoalesceAfterExpandEnabled)
   }
 }
 
@@ -65,15 +66,21 @@ class GpuExpandExecMeta(
  *                    output the same schema specified bye the parameter `output`
  * @param output      Attribute references to Output
  * @param child       Child operator
+ * @param preprojectEnabled Whether to enable pre-project before expanding
+ * @param coalesceAfter Whether to coalesce the output batches
  */
 case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
     output: Seq[Attribute],
     child: SparkPlan)(
-    preprojectEnabled: Boolean = false) extends ShimUnaryExecNode with GpuExec {
+    preprojectEnabled: Boolean = false,
+    override val coalesceAfter: Boolean = true
+) extends ShimUnaryExecNode with GpuExec {
 
   override def otherCopyArgs: Seq[AnyRef] = Seq[AnyRef](
-    preprojectEnabled.asInstanceOf[java.lang.Boolean])
+    preprojectEnabled.asInstanceOf[java.lang.Boolean],
+    coalesceAfter.asInstanceOf[java.lang.Boolean]
+  )
 
   private val PRE_PROJECT_TIME = "preprojectTime"
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

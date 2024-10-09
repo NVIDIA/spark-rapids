@@ -16,7 +16,7 @@
 #
 
 # This script sets the environment to run cudf_udf tests of RAPIDS Accelerator for Apache Spark on DB.
-# cudf conda packages need to be installed in advance, please refer to
+# cudf python packages need to be installed in advance, please refer to
 #   './jenkins/databricks/init_cudf_udf.sh' to install.
 # All the environments can be overwritten by shell variables:
 #   LOCAL_JAR_PATH: Location of the RAPIDS jars
@@ -26,23 +26,20 @@
 # - Running tests on Databricks:
 #       `./jenkins/databricks/cudf-udf-test.sh`
 # To add support of a new runtime:
-#   1. Check if any more dependencies need to be added to the apt/conda install commands.
+#   1. Check if any more dependencies need to be added to the apt/conda/pip install commands.
 #   2. If you had to go beyond the above steps to support the new runtime, then update the
 #      instructions accordingly.
 set -ex
 
-# Try to use "cudf-udf" conda environment for the python cudf-udf tests.
-CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
-if [ ! -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    echo "Error not found cudf conda packages! Please refer to './jenkins/databricks/init_cudf_udf.sh' to install."
+# Try to use "cudf-udf" conda/pip environment for the python cudf-udf tests.
+CUDF_PY_ENV=${CUDF_PY_ENV:-$(echo /databricks/*/envs/cudf-udf)}
+if [ ! -d "${CUDF_PY_ENV}" ]; then
+    echo "Error not found cudf-py packages! Please refer to './jenkins/databricks/init_cudf_udf.sh' to install."
     exit -1
 fi
-export PATH=${CONDA_HOME}/envs/cudf-udf/bin:$PATH
-export PYSPARK_PYTHON=${CONDA_HOME}/envs/cudf-udf/bin/python
 # Set the path of python site-packages.
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-PYTHON_SITE_PACKAGES="${CONDA_HOME}/envs/cudf-udf/lib/${PYTHON_VERSION}/site-packages"
+PYTHON_SITE_PACKAGES=$(echo -n ${CUDF_PY_ENV}/*/lib/site-packages)
+[ -d "${CUDF_PY_ENV}/bin" ] && export PATH=${CUDF_PY_ENV}/bin:$PATH
 
 SOURCE_PATH="/home/ubuntu/spark-rapids"
 [[ -d "$LOCAL_JAR_PATH" ]] && cd $LOCAL_JAR_PATH || cd $SOURCE_PATH

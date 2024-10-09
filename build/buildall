@@ -91,6 +91,12 @@ function versionsFromDistProfile() {
   echo -n $versionStr
 }
 
+function versionsFromReleaseProfiles() {
+  versionRawStr=$(python build/get_buildvers.py $1 $2)
+  versionStr=${versionRawStr//[$'\n',]/}
+  echo -n $versionStr
+}
+
 FINAL_OP="package"
 
 while [[ "$1" != "" ]] ; do
@@ -173,22 +179,23 @@ fi
 
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
+echo "Collecting Spark versions..."
 case $DIST_PROFILE in
 
   snapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshotsScala213"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" "scala2.13/pom.xml"))
     ;;
 
   noSnapshotsScala213)
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshotsScala213"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" "scala2.13/pom.xml"))
     ;;
 
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshots"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "snap_and_no_snap" "pom.xml"))
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshots"))
+    SPARK_SHIM_VERSIONS=($(versionsFromReleaseProfiles "no_snapshots" "pom.xml"))
     ;;
 
   minimumFeatureVersionMix)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark341db
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
-
-import org.apache.spark.SparkEnv
+import com.nvidia.spark.rapids._
 
 object SparkShimServiceProvider {
   val VERSION = DatabricksShimVersion(3, 4, 1)
@@ -32,6 +30,6 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
-    SparkEnv.get.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "").startsWith("13.3.")
+    DatabricksShimServiceProvider.matchesVersion("13.3.x")
   }
 }

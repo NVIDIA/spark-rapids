@@ -23,9 +23,7 @@ elif [[ $SCALA_VER == '2.13' ]]; then
 fi
 while true; do
     {
-        mvn $COMMON_MVN_FLAGS --file $pom help:evaluate -pl dist \
-            -Dexpression=included_buildvers \
-            -DforceStdout -PnoSnapshots -q | tr -d ',' | \
+        python build/get_buildvers.py "no_snapshots.buildvers" $pom | tr -d ',' | \
             xargs -n 1 -I {} bash -c \
                 "mvn $COMMON_MVN_FLAGS --file $pom -Dbuildver={} de.qaware.maven:go-offline-maven-plugin:resolve-dependencies"
 

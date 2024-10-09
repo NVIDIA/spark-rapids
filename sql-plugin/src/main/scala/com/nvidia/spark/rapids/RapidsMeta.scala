@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
@@ -1347,7 +1347,7 @@ abstract class RuntimeReplaceableUnaryAstExprMeta[INPUT <: RuntimeReplaceable](
 /**
  * Base class for metadata around `UnaryExpression`.
  */
-abstract class UnaryExprMeta[INPUT <: UnaryExpression](
+abstract class UnaryExprMeta[INPUT <: Expression with UnaryLike[Expression]](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],

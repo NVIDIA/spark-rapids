@@ -726,8 +726,6 @@ def test_cast_int_to_string_not_UTC():
         {"spark.sql.session.timeZone": "+08"})
 
 not_utc_fallback_test_params = [(timestamp_gen, 'STRING'),
-        # python does not like year 0, and with time zones the default start date can become year 0 :(
-        (DateGen(start=date(1, 1, 1)), 'TIMESTAMP'),
         (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
 
 @allow_non_gpu('ProjectExec')

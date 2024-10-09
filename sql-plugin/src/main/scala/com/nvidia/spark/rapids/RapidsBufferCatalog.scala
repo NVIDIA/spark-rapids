@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
+import scala.collection.JavaConverters.collectionAsScalaIterableConverter
+
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
@@ -727,9 +729,8 @@ class RapidsBufferCatalog(
   def numBuffers: Int = bufferMap.size()
 
   override def close(): Unit = {
-    bufferIdToHandles.values.forEach { handles =>
-      handles.foreach(_.close())
-    }
+    bufferIdToHandles.values.asScala.toSeq.flatMap(_.seq).safeClose()
+
     bufferIdToHandles.clear()
   }
 }
@@ -864,30 +865,16 @@ object RapidsBufferCatalog extends Logging {
   }
 
   private def closeImpl(): Unit = synchronized {
-    if (_singleton != null) {
-      _singleton.close()
-      _singleton = null
-    }
+    Seq(_singleton, deviceStorage, hostStorage, diskStorage).safeClose()
 
-    if (memoryEventHandler != null) {
-      // Workaround for shutdown ordering problems where device buffers allocated with this handler
-      // are being freed after the handler is destroyed
-      //Rmm.clearEventHandler()
-      memoryEventHandler = null
-    }
-
-    if (deviceStorage != null) {
-      deviceStorage.close()
-      deviceStorage = null
-    }
-    if (hostStorage != null) {
-      hostStorage.close()
-      hostStorage = null
-    }
-    if (diskStorage != null) {
-      diskStorage.close()
-      diskStorage = null
-    }
+    _singleton = null
+    // Workaround for shutdown ordering problems where device buffers allocated
+    // with this handler are being freed after the handler is destroyed
+    //Rmm.clearEventHandler()
+    memoryEventHandler = null
+    deviceStorage = null
+    hostStorage = null
+    diskStorage = null
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage

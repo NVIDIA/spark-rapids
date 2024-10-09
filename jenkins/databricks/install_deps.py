@@ -68,7 +68,10 @@ def define_deps(spark_version, scala_version):
                  f'{spark_prefix}--common--tags--tags-{spark_suffix}_deploy.jar'),
         Artifact('org.apache.spark', f'spark-core_{scala_version}',
                  f'{spark_prefix}--core--core-{spark_suffix}_deploy.jar'),
-
+        Artifact('org.apache.spark', f'spark-versions_{scala_version}',
+                 f'spark--versions--*--shim_{scala_version}_deploy.jar'),
+        Artifact('org.apache.spark', f'databricks-versions_{scala_version}',
+                 f'common--build-info--build-info-spark_*_{scala_version}_deploy.jar'),
         # Spark Hive Patches
         Artifact('org.apache.spark', f'spark-hive_{scala_version}',
                          f'{spark_prefix}--sql--hive--hive-{spark_suffix}_*.jar'),
@@ -132,17 +135,17 @@ def define_deps(spark_version, scala_version):
     # Parquet
     if spark_version.startswith('3.4'):
         deps += [
-        Artifact('org.apache.parquet', 'parquet-hadoop', 
+        Artifact('org.apache.parquet', 'parquet-hadoop',
              f'{spark_prefix}--third_party--parquet-mr--parquet-hadoop--parquet-hadoop-shaded--*--libparquet-hadoop-internal.jar'),
-        Artifact('org.apache.parquet', 'parquet-common', 
+        Artifact('org.apache.parquet', 'parquet-common',
              f'{spark_prefix}--third_party--parquet-mr--parquet-common--parquet-common-shaded--*--libparquet-common-internal.jar'),
         Artifact('org.apache.parquet', 'parquet-column',
              f'{spark_prefix}--third_party--parquet-mr--parquet-column--parquet-column-shaded--*--libparquet-column-internal.jar'),
         Artifact('org.apache.parquet', 'parquet-format',
              f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--libparquet-format-structures-internal.jar'),
-        Artifact('shaded.parquet.org.apache.thrift', f'shaded-parquet-thrift_{scala_version}', 
+        Artifact('shaded.parquet.org.apache.thrift', f'shaded-parquet-thrift_{scala_version}',
             f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--org.apache.thrift__libthrift__0.16.0.jar'),
-        Artifact('org.apache.parquet', f'parquet-format-internal_{scala_version}', 
+        Artifact('org.apache.parquet', f'parquet-format-internal_{scala_version}',
             f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--libparquet-thrift.jar')
         ]
     else:

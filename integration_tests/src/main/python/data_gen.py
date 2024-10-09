@@ -1095,6 +1095,8 @@ all_basic_gens_no_null = [byte_gen, short_gen, int_gen, long_gen, float_gen, dou
                           string_gen, boolean_gen, date_gen, timestamp_gen]
 all_basic_gens = all_basic_gens_no_null + [null_gen]
 
+basic_gen_no_floats = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+
 all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 

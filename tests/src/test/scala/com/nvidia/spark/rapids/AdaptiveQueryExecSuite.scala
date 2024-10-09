@@ -81,6 +81,7 @@ class AdaptiveQueryExecSuite
     collect(plan) {
       case j: GpuShuffledHashJoinExec => j
       case j: GpuShuffledSymmetricHashJoinExec => j
+      case j: GpuShuffledAsymmetricHashJoinExec => j
     }
   }
 

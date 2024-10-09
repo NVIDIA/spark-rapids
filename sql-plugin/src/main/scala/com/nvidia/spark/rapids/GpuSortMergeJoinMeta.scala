@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, LeftOuter, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
@@ -82,8 +82,24 @@ class GpuSortMergeJoinMeta(
       (None, condition)
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
+      join.leftKeys, join.rightKeys)
     val joinExec = join.joinType match {
-      case Inner | FullOuter if conf.useShuffledSymmetricHashJoin =>
+      case LeftOuter | RightOuter if useSizedJoin =>
+        GpuShuffledAsymmetricHashJoinExec(
+          join.joinType,
+          leftKeys.map(_.convertToGpu()),
+          rightKeys.map(_.convertToGpu()),
+          joinCondition,
+          left,
+          right,
+          conf.isGPUShuffle,
+          conf.gpuTargetBatchSizeBytes,
+          join.isSkewJoin)(
+          join.leftKeys,
+          join.rightKeys,
+          conf.joinOuterMagnificationThreshold)
+      case Inner | FullOuter if useSizedJoin =>
         GpuShuffledSymmetricHashJoinExec(
           join.joinType,
           leftKeys.map(_.convertToGpu()),
@@ -109,6 +125,7 @@ class GpuSortMergeJoinMeta(
           join.leftKeys,
           join.rightKeys)
     }
+
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c,

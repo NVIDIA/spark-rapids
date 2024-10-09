@@ -35,15 +35,19 @@ def read_parquet_df(data_path):
 def read_parquet_sql(data_path):
     return lambda spark : spark.sql('select * from parquet.`{}`'.format(data_path))
 
+datetimeRebaseModeInWriteKey = 'spark.sql.parquet.datetimeRebaseModeInWrite'
+int96RebaseModeInWriteKey = 'spark.sql.parquet.int96RebaseModeInWrite'
+datetimeRebaseModeInReadKey = 'spark.sql.parquet.datetimeRebaseModeInRead'
+int96RebaseModeInReadKey = 'spark.sql.parquet.int96RebaseModeInRead'
 
 rebase_write_corrected_conf = {
-    'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-    'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'
+    datetimeRebaseModeInWriteKey : 'CORRECTED',
+    int96RebaseModeInWriteKey : 'CORRECTED'
 }
 
 rebase_write_legacy_conf = {
-    'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY',
-    'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'LEGACY'
+    datetimeRebaseModeInWriteKey : 'LEGACY',
+    int96RebaseModeInWriteKey : 'LEGACY'
 }
 
 # Like the standard map_gens_sample but with timestamps limited
@@ -146,8 +150,8 @@ def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, re
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
@@ -188,8 +192,8 @@ def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
@@ -199,6 +203,7 @@ def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
+@disable_ansi_mode
 def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens = [string_gen,
         byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens
@@ -225,8 +230,8 @@ def test_parquet_read_round_trip_binary(std_input_path, read_func, binary_as_str
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.parquet.binaryAsString': binary_as_string,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
@@ -245,8 +250,8 @@ def test_binary_df_read(spark_tmp_path, binary_as_string, read_func, data_gen):
     all_confs = {
         'spark.sql.parquet.binaryAsString': binary_as_string,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'}
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'}
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -256,8 +261,8 @@ def test_parquet_read_forced_binary_schema(std_input_path, v1_enabled_list):
     all_confs = copy_and_update(reader_opt_confs[0], {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
 
@@ -277,8 +282,8 @@ def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, rea
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.parquet.binaryAsString': 'true',
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
@@ -342,16 +347,16 @@ def test_parquet_read_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, parq
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_confs = {'spark.sql.parquet.outputTimestampType': ts_type,
-                   'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write[0],
-                   'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write[1]}
+                   datetimeRebaseModeInWriteKey : ts_rebase_write[0],
+                   int96RebaseModeInWriteKey : ts_rebase_write[1]}
     with_cpu_session(
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=write_confs)
     # The rebase modes in read configs should be ignored and overridden by the same modes in write
     # configs, which are retrieved from the written files.
     read_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                                                'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read[0],
-                                                'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read[1]})
+                                                datetimeRebaseModeInReadKey : ts_rebase_read[0],
+                                                int96RebaseModeInReadKey : ts_rebase_read[1]})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
         conf=read_confs)
@@ -734,7 +739,7 @@ def test_nested_pruning_and_case_insensitive(spark_tmp_path, data_gen, read_sche
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.optimizer.nestedSchemaPruning.enabled': nested_enabled,
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # This is a hack to get the type in a slightly less verbose way
     rs = StructGen(read_schema, nullable=False).data_type
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),

@@ -24,7 +24,7 @@ import org.apache.spark.sql.types._
 
 class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
   test("test simple retry") {
-    val bufferer = HostLineBuffererFactory.createBufferer(100, Array('\n'.toByte))
+    val bufferer = FilterEmptyHostLineBuffererFactory.createBufferer(100, Array('\n'.toByte))
     bufferer.add("{\"a\": 1, \"b\": 2".getBytes, 0, 14)
 
     val cudfSchema = GpuColumnVector.from(StructType(Seq(StructField("a", IntegerType),

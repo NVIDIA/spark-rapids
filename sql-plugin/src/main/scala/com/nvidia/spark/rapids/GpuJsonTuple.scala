@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
@@ -57,7 +57,6 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     withRetry(inputBatches, splitSpillableInHalfByRows) { attempt =>
       withResource(attempt.getColumnarBatch()) { inputBatch =>
         val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
-        val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
         val fieldInstructions = fieldExpressions.map { field =>
           withResourceIfAllowed(field.columnarEvalAny(inputBatch)) {
@@ -72,8 +71,8 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
 
         withResource(fieldInstructions.safeMap(field => JSONUtils.getJsonObject(json, field))) { 
             resultCols =>
-          val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
-            case (col, dataType) => GpuColumnVector.from(col, dataType)
+          val generatorCols = resultCols.safeMap(_.incRefCount).safeMap {
+            col => GpuColumnVector.from(col, StringType)
           }
           val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
             inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
