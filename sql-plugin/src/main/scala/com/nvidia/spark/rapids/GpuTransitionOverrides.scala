@@ -304,7 +304,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    */
   def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = {
     plan match {
-      case j: GpuShuffledSymmetricHashJoinExec =>
+      case j: GpuShuffledSizedHashJoinExec[_] =>
         val newChildren = Seq(j.left, j.right).map {
           case GpuCoalesceBatches(GpuShuffleCoalesceExec(c, _), _) => c
           case GpuShuffleCoalesceExec(c, _) => c
@@ -370,6 +370,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
+    case _: ExpandExec => true
     case _ => false
   }
 
