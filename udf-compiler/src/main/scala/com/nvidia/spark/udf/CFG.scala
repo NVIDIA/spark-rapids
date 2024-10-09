@@ -152,12 +152,7 @@ object CFG {
     while(codeIterator.hasNext) {
       val offset = codeIterator.next()
       val opcode: Int = codeIterator.byteAt(offset)
-      if (opcode == Opcode.ARETURN ||
-        opcode == Opcode.FRETURN ||
-        opcode == Opcode.IRETURN ||
-        opcode == Opcode.DRETURN ||
-        opcode == Opcode.LRETURN ||
-        opcode == Opcode.RETURN) {
+      if (isReturn(opcode)) {
         lastReturnOffset = offset
       }
     }
@@ -194,88 +189,81 @@ object CFG {
       val nextOffset: Int = codeIterator.lookAhead
       val opcode: Int = codeIterator.byteAt(offset)
       // here we are looking for branching instructions
-      if ((opcode == Opcode.ARETURN ||
-        opcode == Opcode.FRETURN ||
-        opcode == Opcode.IRETURN ||
-        opcode == Opcode.DRETURN ||
-        opcode == Opcode.LRETURN ||
-        opcode == Opcode.RETURN) && offset != lastReturnOffset) {
-        // if we had any return along the way, we are going to replace it
-        // with a GOTO [lastReturnOffset]
-        collectLabelsAndEdges(
-          codeIterator, constPool, lastReturnOffset,
-          labels + lastReturnOffset,
-          edges + (offset -> List((0, lastReturnOffset))))
-      } else {
-        opcode match {
-          case Opcode.IF_ICMPEQ | Opcode.IF_ICMPNE | Opcode.IF_ICMPLT |
-               Opcode.IF_ICMPGE | Opcode.IF_ICMPGT | Opcode.IF_ICMPLE |
-               Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT | Opcode.IFGE |
-               Opcode.IFGT | Opcode.IFLE | Opcode.IFNULL | Opcode.IFNONNULL =>
-            // an if statement has two other offsets, false and true branches.
+      opcode match {
+        case _ if isReturn(opcode) && offset != lastReturnOffset =>
+          // if we had any return along the way, we are going to replace it
+          // with a GOTO [lastReturnOffset]
+          collectLabelsAndEdges(
+            codeIterator, constPool, lastReturnOffset,
+            labels + lastReturnOffset,
+            edges + (offset -> List((0, lastReturnOffset))))
+        case Opcode.IF_ICMPEQ | Opcode.IF_ICMPNE | Opcode.IF_ICMPLT |
+             Opcode.IF_ICMPGE | Opcode.IF_ICMPGT | Opcode.IF_ICMPLE |
+             Opcode.IFEQ | Opcode.IFNE | Opcode.IFLT | Opcode.IFGE |
+             Opcode.IFGT | Opcode.IFLE | Opcode.IFNULL | Opcode.IFNONNULL =>
+          // an if statement has two other offsets, false and true branches.
 
-            // the false offset is the next offset, per the definition of if<cond>
-            val falseOffset = nextOffset
+          // the false offset is the next offset, per the definition of if<cond>
+          val falseOffset = nextOffset
 
-            // in jvm, the if<cond> ops are followed by two bytes, which are to be
-            // used together (s16bitAt does this for us) only for the success case of the if
-            val trueOffset = offset + codeIterator.s16bitAt(offset + 1)
+          // in jvm, the if<cond> ops are followed by two bytes, which are to be
+          // used together (s16bitAt does this for us) only for the success case of the if
+          val trueOffset = offset + codeIterator.s16bitAt(offset + 1)
 
-            // keep iterating, having added the false and true offsets to the labels,
-            // and having added the edges (if offset -> List(false offset, true offset))
-            collectLabelsAndEdges(
-              codeIterator, constPool, lastReturnOffset,
-              labels + falseOffset + trueOffset,
-              edges + (offset -> List((0, falseOffset), (1, trueOffset))))
-          case Opcode.TABLESWITCH =>
-            val defaultOffset = (offset + 4) / 4 * 4
-            val default = (-1, offset + codeIterator.s32bitAt(defaultOffset))
-            val lowOffset = defaultOffset + 4
-            val low = codeIterator.s32bitAt(lowOffset)
-            val highOffset = lowOffset + 4
-            val high = codeIterator.s32bitAt(highOffset)
-            val tableOffset = highOffset + 4
-            val table = List.tabulate(high - low + 1) { i =>
-              (low + i, offset + codeIterator.s32bitAt(tableOffset + i * 4))
-            } :+ default
-            collectLabelsAndEdges(
-              codeIterator, constPool, lastReturnOffset,
-              labels ++ table.map(_._2),
-              edges + (offset -> table))
-          case Opcode.LOOKUPSWITCH =>
-            val defaultOffset = (offset + 4) / 4 * 4
-            val default = (-1, offset + codeIterator.s32bitAt(defaultOffset))
-            val npairsOffset = defaultOffset + 4
-            val npairs = codeIterator.s32bitAt(npairsOffset)
-            val tableOffset = npairsOffset + 4
-            val table = List.tabulate(npairs) { i =>
-              (codeIterator.s32bitAt(tableOffset + i * 8),
-                offset + codeIterator.s32bitAt(tableOffset + i * 8 + 4))
-            } :+ default
-            collectLabelsAndEdges(
-              codeIterator, constPool, lastReturnOffset,
-              labels ++ table.map(_._2),
-              edges + (offset -> table))
-          case Opcode.GOTO | Opcode.GOTO_W =>
-            // goto statements have a single address target, we must go there
-            val getOffset = if (opcode == Opcode.GOTO) {
-              codeIterator.s16bitAt(_)
-            } else {
-              codeIterator.s32bitAt(_)
-            }
-            val labelOffset = offset + getOffset(offset + 1)
-            collectLabelsAndEdges(
-              codeIterator, constPool, lastReturnOffset,
-              labels + labelOffset,
-              edges + (offset -> List((0, labelOffset))))
-          case Opcode.IF_ACMPEQ | Opcode.IF_ACMPNE |
-               Opcode.JSR | Opcode.JSR_W | Opcode.RET =>
-            val instructionStr = InstructionPrinter.instructionString(
-              codeIterator, offset, constPool)
-            throw new SparkException("Unsupported instruction: " + instructionStr)
-          case _ => collectLabelsAndEdges(codeIterator, constPool, lastReturnOffset,
-            labels, edges)
-        }
+          // keep iterating, having added the false and true offsets to the labels,
+          // and having added the edges (if offset -> List(false offset, true offset))
+          collectLabelsAndEdges(
+            codeIterator, constPool, lastReturnOffset,
+            labels + falseOffset + trueOffset,
+            edges + (offset -> List((0, falseOffset), (1, trueOffset))))
+        case Opcode.TABLESWITCH =>
+          val defaultOffset = (offset + 4) / 4 * 4
+          val default = (-1, offset + codeIterator.s32bitAt(defaultOffset))
+          val lowOffset = defaultOffset + 4
+          val low = codeIterator.s32bitAt(lowOffset)
+          val highOffset = lowOffset + 4
+          val high = codeIterator.s32bitAt(highOffset)
+          val tableOffset = highOffset + 4
+          val table = List.tabulate(high - low + 1) { i =>
+            (low + i, offset + codeIterator.s32bitAt(tableOffset + i * 4))
+          } :+ default
+          collectLabelsAndEdges(
+            codeIterator, constPool, lastReturnOffset,
+            labels ++ table.map(_._2),
+            edges + (offset -> table))
+        case Opcode.LOOKUPSWITCH =>
+          val defaultOffset = (offset + 4) / 4 * 4
+          val default = (-1, offset + codeIterator.s32bitAt(defaultOffset))
+          val npairsOffset = defaultOffset + 4
+          val npairs = codeIterator.s32bitAt(npairsOffset)
+          val tableOffset = npairsOffset + 4
+          val table = List.tabulate(npairs) { i =>
+            (codeIterator.s32bitAt(tableOffset + i * 8),
+              offset + codeIterator.s32bitAt(tableOffset + i * 8 + 4))
+          } :+ default
+          collectLabelsAndEdges(
+            codeIterator, constPool, lastReturnOffset,
+            labels ++ table.map(_._2),
+            edges + (offset -> table))
+        case Opcode.GOTO | Opcode.GOTO_W =>
+          // goto statements have a single address target, we must go there
+          val getOffset = if (opcode == Opcode.GOTO) {
+            codeIterator.s16bitAt(_)
+          } else {
+            codeIterator.s32bitAt(_)
+          }
+          val labelOffset = offset + getOffset(offset + 1)
+          collectLabelsAndEdges(
+            codeIterator, constPool, lastReturnOffset,
+            labels + labelOffset,
+            edges + (offset -> List((0, labelOffset))))
+        case Opcode.IF_ACMPEQ | Opcode.IF_ACMPNE |
+             Opcode.JSR | Opcode.JSR_W | Opcode.RET =>
+          val instructionStr = InstructionPrinter.instructionString(
+            codeIterator, offset, constPool)
+          throw new SparkException("Unsupported instruction: " + instructionStr)
+        case _ => collectLabelsAndEdges(codeIterator, constPool, lastReturnOffset,
+          labels, edges)
       }
     } else {
       // base case
@@ -293,12 +281,7 @@ object CFG {
     if (codeIterator.hasNext) {
       val offset = codeIterator.next
       val opcode = codeIterator.byteAt(offset)
-      if ((opcode == Opcode.ARETURN ||
-           opcode == Opcode.FRETURN ||
-           opcode == Opcode.IRETURN ||
-           opcode == Opcode.DRETURN ||
-           opcode == Opcode.LRETURN ||
-           opcode == Opcode.RETURN) && offset != lastReturnOffset) {
+      if (isReturn(opcode) && offset != lastReturnOffset) {
         // an internal RETURN is replaced by GOTO to the last return of the
         // lambda.
         val instruction = Instruction(Opcode.GOTO, lastReturnOffset, "GOTO")
@@ -382,5 +365,14 @@ object CFG {
         // Add src -> dst to successor map.
         successor + (src -> dst))
     }
+  }
+
+  private def isReturn(opcode: Int): Boolean = {
+    opcode == Opcode.ARETURN ||
+      opcode == Opcode.FRETURN ||
+      opcode == Opcode.IRETURN ||
+      opcode == Opcode.DRETURN ||
+      opcode == Opcode.LRETURN ||
+      opcode == Opcode.RETURN
   }
 }
