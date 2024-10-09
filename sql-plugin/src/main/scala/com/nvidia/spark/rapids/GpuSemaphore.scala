@@ -381,7 +381,7 @@ private final class GpuSemaphore() extends Logging {
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
-    GpuTaskMetrics.get.updateMaxGpuMemory(taskAttemptId)
+    GpuTaskMetrics.get.updateMaxMemory(taskAttemptId)
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")

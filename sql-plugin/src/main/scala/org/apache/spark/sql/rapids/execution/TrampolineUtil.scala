@@ -123,7 +123,12 @@ object TrampolineUtil {
    * @param amountSpilled amount of memory spilled in bytes
    */
   def incTaskMetricsDiskBytesSpilled(amountSpilled: Long): Unit = {
-    Option(TaskContext.get).foreach(_.taskMetrics().incDiskBytesSpilled(amountSpilled))
+    Option(TaskContext.get).foreach(tc => {
+      val metrics = tc.taskMetrics()
+      if (metrics != null) {
+        metrics.incDiskBytesSpilled(amountSpilled)
+      }
+    })
   }
 
   /**
