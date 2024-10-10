@@ -19,8 +19,6 @@ package com.nvidia.spark.rapids
 import java.util.PriorityQueue
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
-import org.apache.spark.TaskContext
-
 class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) {
   // This lock is used to generate condition variables, which affords us the flexibility to notify
   // specific threads at a time. If we use the regular synchronized pattern, we have to either
@@ -58,12 +56,12 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     }
   }
 
-  def acquire(numPermits: Int, priority: T): Unit = {
+  def acquire(numPermits: Int, priority: T, taskAttemptId: Long): Unit = {
     lock.lock()
     try {
       if (!tryAcquire(numPermits, priority)) {
         val condition = lock.newCondition()
-        val info = ThreadInfo(priority, condition, numPermits, TaskContext.get().taskAttemptId())
+        val info = ThreadInfo(priority, condition, numPermits, taskAttemptId)
         try {
           waitingQueue.add(info)
           while (!info.signaled) {
