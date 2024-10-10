@@ -39,11 +39,11 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
     val t = new Thread(() => {
       try {
-        semaphore.acquire(1, 1)
+        semaphore.acquire(1, 1, 0)
         fail("Should not acquire permit")
       } catch {
         case _: InterruptedException =>
-          semaphore.acquire(1, 1)
+          semaphore.acquire(1, 1, 0)
       }
     })
     t.start()
@@ -62,7 +62,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
     def taskWithPriority(priority: Int) = new Runnable {
       override def run(): Unit = {
-        semaphore.acquire(1, priority)
+        semaphore.acquire(1, priority, 0)
         results.add(priority)
         semaphore.release(1)
       }
@@ -84,9 +84,9 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
   test("low priority thread cannot surpass high priority thread") {
     val semaphore = new TestPrioritySemaphore(10)
-    semaphore.acquire(5, 0)
+    semaphore.acquire(5, 0, 0)
     val t = new Thread(() => {
-      semaphore.acquire(10, 2)
+      semaphore.acquire(10, 2, 0)
       semaphore.release(10)
     })
     t.start()
