@@ -19,9 +19,40 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import com.nvidia.spark.rapids.GpuFilterExec
+
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.datasources.parquet.ParquetQuerySuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetQuerySuite
   extends ParquetQuerySuite
-  with RapidsSQLTestsBaseTrait {}
+    with RapidsSQLTestsBaseTrait {
+  import testImplicits._
+
+  test("SPARK-26677: negated null-safe equality comparison should not filter " +
+    "matched row groupsn Rapids") {
+    withAllParquetReaders {
+      withTempPath { path =>
+        // Repeated values for dictionary encoding.
+        Seq(Some("A"), Some("A"), None).toDF.repartition(1)
+          .write.parquet(path.getAbsolutePath)
+        val df = spark.read.parquet(path.getAbsolutePath)
+        df.show()
+        stripSparkFilterR(df.where("NOT (value <=> 'A')")).show()
+        checkAnswer(stripSparkFilterR(df.where("NOT (value <=> 'A')")), df)
+      }
+    }
+  }
+
+  /**
+   * Strip Spark-side filtering in order to check if a datasource filters rows correctly.
+   */
+  def stripSparkFilterR(df: DataFrame): DataFrame = {
+    val schema = df.schema
+    val withoutFilters = df.queryExecution.executedPlan.transform {
+      case GpuFilterExec(_, child) => child
+    }
+    spark.internalCreateDataFrame(withoutFilters.execute(), schema)
+  }
+}
