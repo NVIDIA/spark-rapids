@@ -39,10 +39,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm._
 
-import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
-
 object GetSequenceSize {
-  val TOO_LONG_SEQUENCE = s"Too long sequence found. Should be <= $MAX_ROUNDED_ARRAY_LENGTH"
   /**
    * Compute the size of each sequence according to 'start', 'stop' and 'step'.
    * A row (Row[start, stop, step]) contains at least one null element will produce
