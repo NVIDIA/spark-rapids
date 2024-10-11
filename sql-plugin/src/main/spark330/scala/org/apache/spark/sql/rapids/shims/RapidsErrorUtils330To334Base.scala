@@ -34,14 +34,14 @@ import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 trait RapidsErrorUtils330To334Base extends RapidsErrorUtilsFor330plus with RapidsQueryErrorUtils {
 
   def mapKeyNotExistError(
-                           key: String,
-                           keyType: DataType,
-                           origin: Origin): NoSuchElementException = {
+      key: String,
+      keyType: DataType,
+      origin: Origin): NoSuchElementException = {
     QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
   }
 
   def invalidArrayIndexError(index: Int, numElements: Int,
-                             isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
+      isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     if (isElementAtF) {
       QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
     } else {
@@ -50,16 +50,16 @@ trait RapidsErrorUtils330To334Base extends RapidsErrorUtilsFor330plus with Rapid
   }
 
   def arithmeticOverflowError(
-                               message: String,
-                               hint: String = "",
-                               errorContext: String = ""): ArithmeticException = {
+      message: String,
+      hint: String = "",
+      errorContext: String = ""): ArithmeticException = {
     QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
   }
 
   def cannotChangeDecimalPrecisionError(
-                                         value: Decimal,
-                                         toType: DecimalType,
-                                         context: String = ""): ArithmeticException = {
+      value: Decimal,
+      toType: DecimalType,
+      context: String = ""): ArithmeticException = {
     QueryExecutionErrors.cannotChangeDecimalPrecisionError(
       value, toType.precision, toType.scale, context
     )
