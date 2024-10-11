@@ -26,16 +26,16 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   test("tryAcquire should return true if permits are available") {
     val semaphore = new TestPrioritySemaphore(10)
 
-    assert(semaphore.tryAcquire(5, 0))
-    assert(semaphore.tryAcquire(3, 0))
-    assert(semaphore.tryAcquire(2, 0))
-    assert(!semaphore.tryAcquire(1, 0))
+    assert(semaphore.tryAcquire(5, 0, 0))
+    assert(semaphore.tryAcquire(3, 0, 0))
+    assert(semaphore.tryAcquire(2, 0, 0))
+    assert(!semaphore.tryAcquire(1, 0, 0))
   }
 
   test("acquire and release should work correctly") {
     val semaphore = new TestPrioritySemaphore(1)
 
-    assert(semaphore.tryAcquire(1, 0))
+    assert(semaphore.tryAcquire(1, 0, 0))
 
     val t = new Thread(() => {
       try {
@@ -94,10 +94,36 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
     // Here, there should be 5 available permits, but a thread with higher priority (2)
     // is waiting to acquire, therefore we should get rejected here
-    assert(!semaphore.tryAcquire(5, 0))
+    assert(!semaphore.tryAcquire(5, 0, 0))
     semaphore.release(5)
     t.join(1000)
     // After the high priority thread finishes, we can acquire with lower priority
-    assert(semaphore.tryAcquire(5, 0))
+    assert(semaphore.tryAcquire(5, 0, 0))
+  }
+
+  // this case is described at https://github.com/NVIDIA/spark-rapids/pull/11574/files#r1795652488
+  test("thread with larger task id should not surpass smaller task id in the waiting queue") {
+    val semaphore = new TestPrioritySemaphore(10)
+    semaphore.acquire(8, 0, 0)
+    val t = new Thread(() => {
+      semaphore.acquire(5, 0, 0)
+      semaphore.release(5)
+    })
+    t.start()
+    Thread.sleep(100)
+
+    // Here, there should be 2 available permits, and a thread with same task id (0)
+    // is waiting to acquire 5 permits, in this case we should succeed here
+    assert(semaphore.tryAcquire(2, 0, 0))
+    semaphore.release(2)
+
+    // Here, there should be 2 available permits, but a thread with smaller task id (0)
+    // is waiting to acquire, therefore we should get rejected here
+    assert(!semaphore.tryAcquire(2, 0, 1))
+
+    semaphore.release(8)
+    t.join(1000)
+    // After the high priority thread finishes, we can acquire with lower priority
+    assert(semaphore.tryAcquire(2, 0, 1))
   }
 }
