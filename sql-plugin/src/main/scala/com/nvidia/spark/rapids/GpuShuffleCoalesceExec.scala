@@ -105,7 +105,6 @@ object GpuShuffleCoalesceUtils {
           reader.prefetchHeadOnHost()
         }
       }
-      println("===> use GpuShuffleCoalesce Reader")
       reader.asIterator
     } else {
       val hostIter = new HostShuffleCoalesceIterator(iter, targetSize, metricsMap)
