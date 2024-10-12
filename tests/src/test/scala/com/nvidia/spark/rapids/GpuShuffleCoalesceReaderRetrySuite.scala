@@ -49,9 +49,9 @@ class GpuShuffleCoalesceReaderRetrySuite extends RmmSparkRetrySuiteBase {
     serializedOneIntColumnBatch(4))
 
   test("GpuShuffleCoalesceReader split-retry") {
-    val iter = closeOnExcept(serializedBatches) { _ =>
+    val iter = closeOnExcept(serializedBatches) { serBatches =>
       val reader = new GpuShuffleCoalesceReader(
-        Iterator(serializedBatches: _*),
+        Iterator(serBatches: _*),
         targetBatchSize = 390, // each is 64 due to padding, then total is 320 (=64x5)
         dataTypes = Array(IntegerType),
         metricsMap = Map.empty.withDefaultValue(NoopMetric))
