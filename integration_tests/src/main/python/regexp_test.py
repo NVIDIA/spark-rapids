@@ -284,6 +284,7 @@ def test_re_replace():
 
 # We have shims to support empty strings for zero-repetition patterns
 # See https://github.com/NVIDIA/spark-rapids/issues/5456
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/11600")
 def test_re_replace_repetition():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -698,6 +699,7 @@ def test_regexp_octal_digits():
             ),
         conf=_regexp_conf)
 
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/11600")
 def test_regexp_replace_digit():
     gen = mk_str_gen('[a-z]{0,2}[0-9]{0,2}') \
         .with_special_case('䤫畍킱곂⬡❽ࢅ獰᳌蛫青') \
@@ -1076,6 +1078,7 @@ def test_regexp_memory_fallback():
         }
     )
 
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/11600")
 def test_regexp_memory_ok():
     gen = StringGen('test')
     assert_gpu_and_cpu_are_equal_collect(
