@@ -1,12 +1,12 @@
 # Change log
-Generated on 2024-10-09
+Generated on 2024-10-14
 
 ## Release 24.10
 
 ### Features
 |||
 |:---|:---|
-|[#11297](https://github.com/NVIDIA/spark-rapids/issues/11297)|[FEA] Enable Parquet DataSource tests in Spark UT on Spark 3.3.0|
+|[#11525](https://github.com/NVIDIA/spark-rapids/issues/11525)|[FEA] If dump always is enabled dump before decoding the file|
 |[#11461](https://github.com/NVIDIA/spark-rapids/issues/11461)|[FEA] Support non-UTC timezone for casting from date to timestamp|
 |[#11445](https://github.com/NVIDIA/spark-rapids/issues/11445)|[FEA] Support format 'yyyyMMdd' in GetTimestamp operator|
 |[#11442](https://github.com/NVIDIA/spark-rapids/issues/11442)|[FEA] Add in support for setting row group sizes for parquet|
@@ -14,9 +14,6 @@ Generated on 2024-10-09
 |[#5223](https://github.com/NVIDIA/spark-rapids/issues/5223)|[FEA] Support array_join|
 |[#10968](https://github.com/NVIDIA/spark-rapids/issues/10968)|[FEA] support min_by function|
 |[#10437](https://github.com/NVIDIA/spark-rapids/issues/10437)|[FEA] Add Spark 3.5.2 snapshot support|
-|[#11263](https://github.com/NVIDIA/spark-rapids/issues/11263)|[FEA] Cluster/pack multi_get_json_object paths by common prefixes|
-|[#10832](https://github.com/NVIDIA/spark-rapids/issues/10832)|[FEA] Remove legacy get_json_object and config|
-|[#11240](https://github.com/NVIDIA/spark-rapids/issues/11240)|[FEA] Update JNI and private dependencies version to 24.10.0-SNAPSHOT on branch-24.10|
 
 ### Performance
 |||
@@ -24,10 +21,12 @@ Generated on 2024-10-09
 |[#10799](https://github.com/NVIDIA/spark-rapids/issues/10799)|[FEA] Optimize count distinct performance optimization with null columns reuse and post expand coalesce|
 |[#8301](https://github.com/NVIDIA/spark-rapids/issues/8301)|[FEA] semaphore prioritization|
 |[#11234](https://github.com/NVIDIA/spark-rapids/issues/11234)|Explore swapping build table for left outer joins|
+|[#11263](https://github.com/NVIDIA/spark-rapids/issues/11263)|[FEA] Cluster/pack multi_get_json_object paths by common prefixes|
 
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#11573](https://github.com/NVIDIA/spark-rapids/issues/11573)|[BUG] very long tail task is observed when many tasks are contending for PrioritySemaphore|
 |[#11367](https://github.com/NVIDIA/spark-rapids/issues/11367)|[BUG] Error "table_view.cpp:36: Column size mismatch" when using approx_percentile on a string column|
 |[#11543](https://github.com/NVIDIA/spark-rapids/issues/11543)|[BUG] test_yyyyMMdd_format_for_legacy_mode[DATAGEN_SEED=1727619674, TZ=UTC] failed GPU and CPU are not both null|
 |[#11500](https://github.com/NVIDIA/spark-rapids/issues/11500)|[BUG] dataproc serverless Integration tests failing in json_matrix_test.py|
@@ -69,6 +68,9 @@ Generated on 2024-10-09
 ### PRs
 |||
 |:---|:---|
+|[#11582](https://github.com/NVIDIA/spark-rapids/pull/11582)|[DOC] update doc for 24.10 release [skip ci]|
+|[#11588](https://github.com/NVIDIA/spark-rapids/pull/11588)|backport fixes of #11573 to branch 24.10|
+|[#11569](https://github.com/NVIDIA/spark-rapids/pull/11569)|Have "dump always" dump input files before trying to decode them|
 |[#11567](https://github.com/NVIDIA/spark-rapids/pull/11567)|Fix test case unix_timestamp(col, 'yyyyMMdd') failed for Africa/Casablanca timezone and LEGACY mode|
 |[#11496](https://github.com/NVIDIA/spark-rapids/pull/11496)|Update test now that code is fixed|
 |[#11548](https://github.com/NVIDIA/spark-rapids/pull/11548)|Fix negative rs. shuffle write time|
