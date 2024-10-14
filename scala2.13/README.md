@@ -25,8 +25,7 @@ You can use Maven to build the plugin. Like with Scala 2.12, we recommend buildi
 phase.
 
 ```shell script
-cd scala2.13
-mvn verify
+mvn verify -f scala2.13/
 ```
 
 After a successful build, the RAPIDS Accelerator jar will be in the `scala2.13/dist/target/` directory.
@@ -45,7 +44,6 @@ You can also use the `buildall` script in the parent directory to build against 
 of Apache Spark.
 
 ```shell script
-cd ..
 ./build/buildall --profile=noSnapshotsScala213
 ```
 

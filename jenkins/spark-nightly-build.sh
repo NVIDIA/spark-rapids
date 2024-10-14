@@ -19,6 +19,9 @@ set -ex
 
 . jenkins/version-def.sh
 
+## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
+MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
+
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
     # Run scala2.13 build and test against JDK17
@@ -26,16 +29,12 @@ if [ $SCALA_BINARY_VER == "2.13" ]; then
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    cd scala2.13
-    ln -sf ../jenkins jenkins
+    MVN="$MVN -f scala2.13/"
 fi
 
 WORKSPACE=${WORKSPACE:-$(pwd)}
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
-
-## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
-MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
 
 DIST_PL="dist"
 function mvnEval {
