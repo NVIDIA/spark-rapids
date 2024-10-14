@@ -19,7 +19,8 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, Schema, Table}
+import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
@@ -109,7 +110,6 @@ object GpuJsonReadCommon {
   private lazy val specialUnquotedFloats =
     Seq("NaN", "+INF", "-INF", "+Infinity", "Infinity", "-Infinity")
   private lazy val specialQuotedFloats = specialUnquotedFloats.map(s => '"'+s+'"')
-  private lazy val allSpecialFloats = specialUnquotedFloats ++ specialQuotedFloats
 
   /**
    * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
@@ -120,64 +120,41 @@ object GpuJsonReadCommon {
   private def sanitizeFloats(input: ColumnView, options: JSONOptions): ColumnVector = {
     // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
     // due to https://issues.apache.org/jira/browse/SPARK-38060
-    // cuDF `isFloat` supports some inputs that are not valid JSON numbers, such as `.1`, `1.`,
-    // and `+1` so we use a regular expression to match valid JSON numbers instead
-    // TODO The majority of this validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
-      "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    } else {
-      "^-?(?:(?:[1-9][0-9]*)|0)(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    }
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    val isValid = if (options.allowNonNumericNumbers) {
-      withResource(ColumnVector.fromStrings(allSpecialFloats: _*)) { nonNumeric =>
-        withResource(input.matchesRe(prog)) { isJsonNumber =>
-          withResource(input.contains(nonNumeric)) { nonNumeric =>
-            isJsonNumber.or(nonNumeric)
-          }
+    if (options.allowNonNumericNumbers) {
+      // Need to normalize the quotes to non-quoted to parse properly
+      withResource(ColumnVector.fromStrings(specialQuotedFloats: _*)) { quoted =>
+        withResource(ColumnVector.fromStrings(specialUnquotedFloats: _*)) { unquoted =>
+          input.findAndReplaceAll(quoted, unquoted)
         }
       }
     } else {
-      input.matchesRe(prog)
-    }
-    val cleaned = withResource(isValid) { _ =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
-      }
-    }
-
-    withResource(cleaned) { _ =>
-      if (options.allowNonNumericNumbers) {
-        // Need to normalize the quotes to non-quoted to parse properly
-        withResource(ColumnVector.fromStrings(specialQuotedFloats: _*)) { quoted =>
-          withResource(ColumnVector.fromStrings(specialUnquotedFloats: _*)) { unquoted =>
-            cleaned.findAndReplaceAll(quoted, unquoted)
-          }
-        }
-      } else {
-        cleaned.incRefCount()
-      }
+      input.copyToColumnVector()
     }
   }
 
-  private def sanitizeInts(input: ColumnView, options: JSONOptions): ColumnVector = {
-    // Integer numbers cannot look like a float, so no `.` The rest of the parsing should
-    // handle this correctly.
-    // TODO The majority of this validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
-      "^-?[0-9]+$"
-    } else {
-      "^-?(?:(?:[1-9][0-9]*)|0)$"
-    }
+  private def sanitizeInts(input: ColumnView): ColumnVector = {
+    // Integer numbers cannot look like a float, so no `.` or e The rest of the parsing should
+    // handle this correctly. The rest of the validation is in CUDF itself
 
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    withResource(input.matchesRe(prog)) { isValid =>
+    val tmp = withResource(Scalar.fromString(".")) { dot =>
+      withResource(input.stringContains(dot)) { hasDot =>
+        withResource(Scalar.fromString("e")) { e =>
+          withResource(input.stringContains(e)) { hase =>
+            hasDot.or(hase)
+          }
+        }
+      }
+    }
+    val invalid = withResource(tmp) { _ =>
+      withResource(Scalar.fromString("E")) { E =>
+        withResource(input.stringContains(E)) { hasE =>
+          tmp.or(hasE)
+        }
+      }
+    }
+    withResource(invalid) { _ =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
+        invalid.ifElse(nullString, input)
       }
     }
   }
@@ -194,32 +171,11 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def sanitizeUnquotedDecimal(input: ColumnView, options: JSONOptions): ColumnVector = {
-    // For unquoted decimal values the number has to look like it is floating point before it is
-    // parsed, so this follows that, but without the special cases for INF/NaN
-    // TODO The majority of this validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
-      "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    } else {
-      "^-?(?:(?:[1-9][0-9]*)|0)(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    }
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    withResource(input.matchesRe(prog)) { isValid =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
-      }
-    }
-  }
-
   private def sanitizeDecimal(input: ColumnView, options: JSONOptions): ColumnVector = {
     assert(options.locale == Locale.US)
     withResource(isQuotedString(input)) { isQuoted =>
-      withResource(sanitizeUnquotedDecimal(input, options)) { unquoted =>
-        withResource(sanitizeQuotedDecimalInUSLocale(input)) { quoted =>
-          isQuoted.ifElse(quoted, unquoted)
-        }
+      withResource(sanitizeQuotedDecimalInUSLocale(input)) { quoted =>
+        isQuoted.ifElse(quoted, input)
       }
     }
   }
@@ -231,13 +187,13 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector =
+  private def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    // TODO there is a bug here around 0 https://github.com/NVIDIA/spark-rapids/issues/10898
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
+  }
 
   private def castJsonStringToBool(input: ColumnView): ColumnVector = {
-    // TODO This validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
+    // Sadly there is no good kernel right now to do just this check/conversion
     val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
       input.equalTo(trueStr)
     }
@@ -336,7 +292,7 @@ object GpuJsonReadCommon {
       case (cv, Some(dt))
         if (dt == ByteType || dt == ShortType || dt == IntegerType || dt == LongType ) &&
             cv.getType == DType.STRING =>
-        withResource(sanitizeInts(cv, options)) { tmp =>
+        withResource(sanitizeInts(cv)) { tmp =>
           CastStrings.toInteger(tmp, false, GpuColumnVector.getNonNestedRapidsType(dt))
         }
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
@@ -363,12 +319,25 @@ object GpuJsonReadCommon {
   }
 
   def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
+    // This is really ugly, but options.allowUnquotedControlChars is marked as private
+    // and this is the only way I know to get it without even uglier tricks
+    @scala.annotation.nowarn("msg=Java enum ALLOW_UNQUOTED_CONTROL_CHARS in " +
+      "Java enum Feature is deprecated")
+    val allowUnquotedControlChars =
+      options.buildJsonFactory()
+        .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
     ai.rapids.cudf.JSONOptions.builder()
     .withRecoverWithNull(true)
     .withMixedTypesAsStrings(true)
     .withNormalizeWhitespace(true)
     .withKeepQuotes(true)
     .withNormalizeSingleQuotes(options.allowSingleQuotes)
+    .withStrictValidation(true)
+    .withLeadingZeros(options.allowNumericLeadingZeros)
+    .withNonNumericNumbers(options.allowNonNumericNumbers)
+    .withUnquotedControlChars(allowUnquotedControlChars)
+    .withCudfPruneSchema(true)
+    .withExperimental(true)
     .build()
   }
 }

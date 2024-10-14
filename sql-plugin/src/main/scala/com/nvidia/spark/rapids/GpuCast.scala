@@ -31,7 +31,8 @@ import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, 
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
@@ -40,7 +41,8 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
-final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression with NullIntolerant](
+final class CastExprMeta[
+      INPUT <: UnaryLike[Expression] with TimeZoneAwareExpression with NullIntolerant](
     cast: INPUT,
     val evalMode: GpuEvalMode.Value,
     conf: RapidsConf,
@@ -76,7 +78,7 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
 }
 
 /** Meta-data for cast, ansi_cast and ToPrettyString */
-abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpression](
+abstract class CastExprMetaBase[INPUT <: UnaryLike[Expression] with TimeZoneAwareExpression](
     cast: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -90,6 +92,7 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   override def isTimeZoneSupported: Boolean = {
     (fromType, toType) match {
       case (TimestampType, DateType) => true // this is for to_date(...)
+      case (DateType, TimestampType) => true
       case _ => false
     }
   }
@@ -630,6 +633,11 @@ object GpuCast {
         withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.asInstanceOf[ColumnVector],
             zoneId.normalized())) {
           shifted => shifted.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
+      case (DateType, TimestampType) if options.timeZoneId.isDefined =>
+        val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
+        withResource(input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))) { cv =>
+          GpuTimeZoneDB.fromTimestampToUtcTimestamp(cv, zoneId.normalized())
         }
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))

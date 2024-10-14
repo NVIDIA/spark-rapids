@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -325,6 +325,12 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       hostBuf: HostMemoryBuffer,
       bufSize: Long,
       splits: Array[PartitionedFile]): Table = {
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".avro")
+        logWarning(s"Wrote data for ${splits.mkString("; ")} to $p")
+      }
+    }
     val readOpts = CudfAvroOptions.builder()
       .includeColumn(readDataSchema.fieldNames.toSeq: _*)
       .build()
@@ -341,19 +347,15 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
     } catch {
       case e: Exception =>
         val dumpMsg = debugDumpPrefix.map { prefix =>
-          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".avro")
-          s", data dumped to $p"
+          if (!debugDumpAlways) {
+            val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".avro")
+            s", data dumped to $p"
+          } else {
+            ""
+          }
         }.getOrElse("")
         throw new IOException(
           s"Error when processing file splits [${splits.mkString("; ")}]$dumpMsg", e)
-    }
-    closeOnExcept(table) { _ =>
-      debugDumpPrefix.foreach { prefix =>
-        if (debugDumpAlways) {
-          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".avro")
-          logWarning(s"Wrote data for ${splits.mkString("; ")} to $p")
-        }
-      }
     }
     table
   }
