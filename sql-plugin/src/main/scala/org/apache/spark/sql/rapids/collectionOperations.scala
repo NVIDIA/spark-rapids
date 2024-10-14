@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.Optional
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, SegmentedReductionAggregation, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, ReductionAggregation, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
@@ -1651,7 +1651,8 @@ object GpuSequenceUtil {
   def computeSequenceSize(
       start: ColumnVector,
       stop: ColumnVector,
-      step: ColumnVector): ColumnVector = {
+      step: ColumnVector,
+      functionName: String): ColumnVector = {
     checkSequenceInputs(start, stop, step)
     val actualSize = GetSequenceSize(start, stop, step)
     val sizeAsLong = withResource(actualSize) { _ =>
@@ -1673,7 +1674,12 @@ object GpuSequenceUtil {
       // check max size
       withResource(Scalar.fromInt(MAX_ROUNDED_ARRAY_LENGTH)) { maxLen =>
         withResource(sizeAsLong.lessOrEqualTo(maxLen)) { allValid =>
-          require(isAllValidTrue(allValid), GetSequenceSize.TOO_LONG_SEQUENCE)
+          withResource(sizeAsLong.reduce(ReductionAggregation.max())) { maxSizeScalar =>
+            require(isAllValidTrue(allValid),
+              RapidsErrorUtils.getTooLongSequenceErrorString(
+                maxSizeScalar.getLong.asInstanceOf[Int],
+                functionName))
+          }
         }
       }
       // cast to int and return
@@ -1713,7 +1719,7 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
           val steps = stepGpuColOpt.map(_.getBase.incRefCount())
               .getOrElse(defaultStepsFunc(startCol, stopCol))
           closeOnExcept(steps) { _ =>
-            (computeSequenceSize(startCol, stopCol, steps), steps)
+            (computeSequenceSize(startCol, stopCol, steps, prettyName), steps)
           }
         }
 

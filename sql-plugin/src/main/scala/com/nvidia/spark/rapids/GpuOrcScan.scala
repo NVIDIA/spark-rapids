@@ -2822,6 +2822,12 @@ object MakeOrcTableProducer extends Logging {
       debugDumpPrefix: Option[String],
       debugDumpAlways: Boolean
   ): GpuDataProducer[Table] = {
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+        logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
+      }
+    }
     if (useChunkedReader) {
       OrcTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
         parseOpts, buffer, offset, bufferSize, metrics,  isSchemaCaseSensitive, readDataSchema,
@@ -2838,19 +2844,17 @@ object MakeOrcTableProducer extends Logging {
         } catch {
           case e: Exception =>
             val dumpMsg = debugDumpPrefix.map { prefix =>
-              val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
-              s", data dumped to $p"
+              if (!debugDumpAlways) {
+                val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+                s", data dumped to $p"
+              } else {
+                ""
+              }
             }.getOrElse("")
             throw new IOException(s"Error when processing ${splits.mkString("; ")}$dumpMsg", e)
         }
       }
       closeOnExcept(table) { _ =>
-        debugDumpPrefix.foreach { prefix =>
-          if (debugDumpAlways) {
-            val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
-            logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
-          }
-        }
         if (readDataSchema.length < table.getNumberOfColumns) {
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
             s"but read ${table.getNumberOfColumns} from ${splits.mkString("; ")}")
@@ -2895,8 +2899,12 @@ case class OrcTableReader(
       } catch {
         case e: Exception =>
           val dumpMsg = debugDumpPrefix.map { prefix =>
-            val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
-            s", data dumped to $p"
+            if (!debugDumpAlways) {
+              val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
+              s", data dumped to $p"
+            } else {
+              ""
+            }
           }.getOrElse("")
           throw new IOException(s"Error when processing $splitsString$dumpMsg", e)
       }
@@ -2914,12 +2922,6 @@ case class OrcTableReader(
   }
 
   override def close(): Unit = {
-    debugDumpPrefix.foreach { prefix =>
-      if (debugDumpAlways) {
-        val p = DumpUtils.dumpBuffer(conf, buffer, offset, bufferSize, prefix, ".orc")
-        logWarning(s"Wrote data for $splitsString to $p")
-      }
-    }
     reader.close()
     buffer.close()
   }

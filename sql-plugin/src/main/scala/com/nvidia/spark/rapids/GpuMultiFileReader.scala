@@ -122,14 +122,21 @@ object MultiFileReaderThreadPool extends Logging {
   private var threadPool: Option[ThreadPoolExecutor] = None
 
   private def initThreadPool(
-      maxThreads: Int,
+      numThreadsFromConf: Int,
       keepAliveSeconds: Int = 60): ThreadPoolExecutor = synchronized {
     if (threadPool.isEmpty) {
+      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
+
+      if (numThreadsFromConf != numThreads) {
+        logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
+            s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
+      }
+
       val threadPoolExecutor =
-        TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", maxThreads,
+        TrampolineUtil.newDaemonCachedThreadPool("multithreaded file reader worker", numThreads,
           keepAliveSeconds)
       threadPoolExecutor.allowCoreThreadTimeOut(true)
-      logDebug(s"Using $maxThreads for the multithreaded reader thread pool")
+      logDebug(s"Using $numThreads for the multithreaded reader thread pool")
       threadPool = Some(threadPoolExecutor)
     }
     threadPool.get
@@ -142,13 +149,7 @@ object MultiFileReaderThreadPool extends Logging {
    */
   def getOrCreateThreadPool(numThreadsFromConf: Int): ThreadPoolExecutor = {
     threadPool.getOrElse {
-      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
-
-      if (numThreadsFromConf != numThreads) {
-        logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
-            s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
-      }
-      initThreadPool(numThreads)
+      initThreadPool(numThreadsFromConf)
     }
   }
 }
