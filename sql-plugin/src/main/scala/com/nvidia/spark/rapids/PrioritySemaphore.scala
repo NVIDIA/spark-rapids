@@ -27,21 +27,30 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
   private val lock = new ReentrantLock()
   private var occupiedSlots: Int = 0
 
-  private case class ThreadInfo(priority: T, condition: Condition, numPermits: Int) {
+  private case class ThreadInfo(priority: T, condition: Condition, numPermits: Int, taskId: Long) {
     var signaled: Boolean = false
   }
+
+  // use task id as tie breaker when priorities are equal (both are 0 because never hold lock)
+  private val priorityComp = Ordering.by[ThreadInfo, T](_.priority).reverse.
+    thenComparing((a, b) => a.taskId.compareTo(b.taskId))
 
   // We expect a relatively small number of threads to be contending for this lock at any given
   // time, therefore we are not concerned with the insertion/removal time complexity.
   private val waitingQueue: PriorityQueue[ThreadInfo] =
-    new PriorityQueue[ThreadInfo](Ordering.by[ThreadInfo, T](_.priority).reverse)
+    new PriorityQueue[ThreadInfo](priorityComp)
 
-  def tryAcquire(numPermits: Int, priority: T): Boolean = {
+  def tryAcquire(numPermits: Int, priority: T, taskAttemptId: Long): Boolean = {
     lock.lock()
     try {
-      if (waitingQueue.size() > 0 && ordering.gt(waitingQueue.peek.priority, priority)) {
+      if (waitingQueue.size() > 0 &&
+        priorityComp.compare(
+          waitingQueue.peek(),
+          ThreadInfo(priority, null, numPermits, taskAttemptId)
+        ) < 0) {
         false
-      } else if (!canAcquire(numPermits)) {
+      }
+      else if (!canAcquire(numPermits)) {
         false
       } else {
         commitAcquire(numPermits)
@@ -52,12 +61,12 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
     }
   }
 
-  def acquire(numPermits: Int, priority: T): Unit = {
+  def acquire(numPermits: Int, priority: T, taskAttemptId: Long): Unit = {
     lock.lock()
     try {
-      if (!tryAcquire(numPermits, priority)) {
+      if (!tryAcquire(numPermits, priority, taskAttemptId)) {
         val condition = lock.newCondition()
-        val info = ThreadInfo(priority, condition, numPermits)
+        val info = ThreadInfo(priority, condition, numPermits, taskAttemptId)
         try {
           waitingQueue.add(info)
           while (!info.signaled) {
