@@ -551,12 +551,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createWithDefault(2)
 
-  val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
-    .doc("Number of threads used to spill shuffle data to disk in the background.")
-    .commonlyUsed()
-    .integerConf
-    .createWithDefault(6)
-
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +

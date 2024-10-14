@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "351"}
+{"spark": "352"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
-
-object RapidsErrorUtils extends RapidsErrorUtilsBase
-  with RapidsQueryErrorUtils with SequenceSizeTooLongErrorBuilder {
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
-  }
-}
+object RapidsErrorUtils extends RapidsErrorUtils340PlusBase
+  with SequenceSizeTooLongUnsuccessfulErrorBuilder
