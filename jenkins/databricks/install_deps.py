@@ -46,7 +46,7 @@ def define_deps(spark_version, scala_version):
         spark_prefix = '----ws_3_5'
         mvn_prefix = '--mvn'
     else:
-        raise Exception("Unsupported Databricks version")
+        raise Exception(f"Unsupported Databricks version {spark.version}")
 
     spark_suffix = f'hive-{hive_version}__hadoop-{hadoop_version}_{scala_version}'
 
