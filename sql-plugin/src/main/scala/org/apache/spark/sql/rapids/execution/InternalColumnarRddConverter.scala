@@ -715,7 +715,7 @@ object InternalColumnarRddConverter extends Logging {
     val b = batch.getOrElse({
       // We have to fall back to doing a slow transition.
       val converters = new GpuExternalRowToColumnConverter(schema)
-      val conf = new RapidsConf(df.sqlContext.conf)
+      val conf = new RapidsConf(df.sqlContext.sparkSession.sessionState.conf)
       val goal = TargetSize(conf.gpuTargetBatchSizeBytes)
       input.mapPartitions { rowIter =>
         new ExternalRowToColumnarIterator(rowIter, schema, goal, converters)

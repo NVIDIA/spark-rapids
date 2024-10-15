@@ -136,7 +136,7 @@ case class GpuInMemoryTableScanExec(
   override def outputOrdering: Seq[SortOrder] =
     relation.cachedPlan.outputOrdering.map(updateAttribute(_).asInstanceOf[SortOrder])
 
-  lazy val enableAccumulatorsForTest: Boolean = sparkSession.sqlContext
+  lazy val enableAccumulatorsForTest: Boolean = sparkSession.sessionState
       .conf.inMemoryTableScanStatisticsEnabled
 
   // Accumulators used for testing purposes

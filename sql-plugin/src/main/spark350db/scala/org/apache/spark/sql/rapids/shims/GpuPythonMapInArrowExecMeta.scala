@@ -15,24 +15,19 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "400"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.python._
 
-class BatchScanExecMeta(p: BatchScanExec,
+class GpuPythonMapInArrowExecMeta(
+    mapArrow: MapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends BatchScanExecMetaBase(p, conf, parent, rule) {
-  override def convertToGpu(): GpuExec = {
-    val spj = p.spjParams
-    GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters,
-      p.ordering, p.table, spj)
-  }
+  extends GpuPythonMapInArrowExecMetaBase(mapArrow, conf, parent, rule) {
+
 }

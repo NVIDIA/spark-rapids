@@ -15,6 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "350db"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -25,15 +26,14 @@ import com.nvidia.spark.rapids.GpuScan
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal, RowOrdering, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.plans.physical.{KeyGroupedPartitioning, KeyGroupedShuffleSpec, Partitioning, SinglePartition}
+import org.apache.spark.sql.catalyst.plans.physical.{KeyGroupedPartitioning, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowComparableWrapper}
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, StoragePartitionJoinParams}
-import org.apache.spark.sql.internal.SQLConf
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
@@ -166,18 +166,6 @@ case class GpuBatchScanExec(
               (groupedParts, expressions)
           }
 
-          // Also re-group the partitions if we are reducing compatible partition expressions
-          val finalGroupedPartitions = spjParams.reducers match {
-            case Some(reducers) =>
-              val result = groupedPartitions.groupBy { case (row, _) =>
-                KeyGroupedShuffleSpec.reducePartitionValue(row, partExpressions, reducers)
-              }.map { case (wrapper, splits) => (wrapper.row, splits.flatMap(_._2)) }.toSeq
-              val rowOrdering = RowOrdering.createNaturalAscendingOrdering(
-                partExpressions.map(_.dataType))
-              result.sorted(rowOrdering.on((t: (InternalRow, _)) => t._1))
-            case _ => groupedPartitions
-          }
-
           // When partially clustered, the input partitions are not grouped by partition
           // values. Here we'll need to check `commonPartitionValues` and decide how to group
           // and replicate splits within a partition.
@@ -185,15 +173,15 @@ case class GpuBatchScanExec(
             // A mapping from the common partition values to how many splits the partition
             // should contain.
             val commonPartValuesMap = spjParams.commonPartitionValues
-              .get
-              .map(t => (InternalRowComparableWrapper(t._1, partExpressions), t._2))
-              .toMap
-            val nestGroupedPartitions = finalGroupedPartitions.map { case (partValue, splits) =>
+                .get
+                .map(t => (InternalRowComparableWrapper(t._1, partExpressions), t._2))
+                .toMap
+            val nestGroupedPartitions = groupedPartitions.map { case (partValue, splits) =>
               // `commonPartValuesMap` should contain the part value since it's the super set.
               val numSplits = commonPartValuesMap
-                .get(InternalRowComparableWrapper(partValue, partExpressions))
+                  .get(InternalRowComparableWrapper(partValue, partExpressions))
               assert(numSplits.isDefined, s"Partition value $partValue does not exist in " +
-                "common partition values from Spark plan")
+                  "common partition values from Spark plan")
 
               val newSplits = if (spjParams.replicatePartitions) {
                 // We need to also replicate partitions according to the other side of join
@@ -221,7 +209,7 @@ case class GpuBatchScanExec(
           } else {
             // either `commonPartitionValues` is not defined, or it is defined but
             // `applyPartialClustering` is false.
-            val partitionMapping = finalGroupedPartitions.map { case (partValue, splits) =>
+            val partitionMapping = groupedPartitions.map { case (partValue, splits) =>
               InternalRowComparableWrapper(partValue, partExpressions) -> splits
             }.toMap
 
