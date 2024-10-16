@@ -89,13 +89,6 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def undoKeepQuotes(input: ColumnView): ColumnVector = {
-    withResource(isQuotedString(input)) { iq =>
-      withResource(stripFirstAndLastChar(input)) { stripped =>
-        iq.ifElse(stripped, input)
-      }
-    }
-  }
 
   private def fixupQuotedStrings(input: ColumnView): ColumnVector = {
     withResource(isQuotedString(input)) { iq =>
@@ -266,9 +259,9 @@ object GpuJsonReadCommon {
         }
 
       //
-      // TODO
+      // Done
       case (cv, Some(StringType)) if cv.getType == DType.STRING =>
-        undoKeepQuotes(cv)
+        JSONUtils.removeQuotes(cv)
       //
       //
 
