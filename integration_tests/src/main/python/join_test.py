@@ -242,10 +242,12 @@ def test_hash_join_ridealong_non_sized(data_gen, join_type, sub_part_enabled):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_symmetric_sized_join_types, ids=idfn)
+@pytest.mark.parametrize('shuffle_split', [True, False], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_hash_join_ridealong_symmetric(data_gen, join_type):
+def test_hash_join_ridealong_symmetric(data_gen, join_type, shuffle_split):
     confs = {
         "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.rapids.shuffle.splitRetryRead.enabled": shuffle_split,
     }
     hash_join_ridealong(data_gen, join_type, confs)
 
@@ -253,10 +255,12 @@ def test_hash_join_ridealong_symmetric(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_asymmetric_sized_join_types, ids=idfn)
+@pytest.mark.parametrize('shuffle_split', [True, False], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_hash_join_ridealong_asymmetric(data_gen, join_type):
+def test_hash_join_ridealong_asymmetric(data_gen, join_type, shuffle_split):
     confs = {
         "spark.rapids.sql.join.useShuffledAsymmetricHashJoin": "true",
+        "spark.rapids.shuffle.splitRetryRead.enabled": shuffle_split,
     }
     hash_join_ridealong(data_gen, join_type, confs)
 
