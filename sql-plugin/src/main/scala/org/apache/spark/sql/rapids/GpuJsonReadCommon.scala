@@ -24,7 +24,7 @@ import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.{CastStrings, JSONUtils}
 
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
@@ -192,29 +192,6 @@ object GpuJsonReadCommon {
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
   }
 
-  private def castJsonStringToBool(input: ColumnView): ColumnVector = {
-    // Sadly there is no good kernel right now to do just this check/conversion
-    val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
-      input.equalTo(trueStr)
-    }
-    withResource(isTrue) { _ =>
-      val isFalse = withResource(Scalar.fromString("false")) { falseStr =>
-        input.equalTo(falseStr)
-      }
-      val falseOrNull = withResource(isFalse) { _ =>
-        withResource(Scalar.fromBool(false)) { falseLit =>
-          withResource(Scalar.fromNull(DType.BOOL8)) { nul =>
-            isFalse.ifElse(falseLit, nul)
-          }
-        }
-      }
-      withResource(falseOrNull) { _ =>
-        withResource(Scalar.fromBool(true)) { trueLit =>
-          isTrue.ifElse(trueLit, falseOrNull)
-        }
-      }
-    }
-  }
 
   private def dateFormat(options: JSONOptions): Option[String] =
     GpuJsonUtils.optionalDateFormatInRead(options)
@@ -269,8 +246,14 @@ object GpuJsonReadCommon {
       options: JSONOptions): ColumnVector = {
     ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
       Some(nestedColumnViewMismatchTransform)) {
+
+      //
+      // DONE
       case (cv, Some(BooleanType)) if cv.getType == DType.STRING =>
-        castJsonStringToBool(cv)
+        JSONUtils.castStringsToBooleans(cv)
+      //
+      //
+
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
         withResource(fixupQuotedStrings(cv)) { fixed =>
           GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
@@ -281,8 +264,14 @@ object GpuJsonReadCommon {
           GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
             DType.TIMESTAMP_MICROSECONDS)
         }
+
+      //
+      // TODO
       case (cv, Some(StringType)) if cv.getType == DType.STRING =>
         undoKeepQuotes(cv)
+      //
+      //
+
       case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
         withResource(sanitizeDecimal(cv, options)) { tmp =>
           castStringToDecimal(tmp, dt)
