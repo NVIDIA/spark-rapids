@@ -3939,6 +3939,16 @@ object GpuOverrides extends Logging {
           GpuDynamicPruningExpression(child)
         }
       }),
+    expr[HyperLogLogPlusPlus](
+      "Aggregation approximate count distinct",
+      ExprChecks.reductionAndGroupByAgg(TypeSig.LONG, TypeSig.LONG,
+        Seq(ParamCheck("input", TypeSig.cpuAtomics, TypeSig.all))),
+      (a, conf, p, r) => new UnaryExprMeta[HyperLogLogPlusPlus](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = {
+          GpuHyperLogLogPlusPlus(child, a.relativeSD)
+        }
+      }
+    ),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
