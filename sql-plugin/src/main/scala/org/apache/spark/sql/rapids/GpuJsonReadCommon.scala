@@ -89,17 +89,6 @@ object GpuJsonReadCommon {
     }
   }
 
-
-  private def fixupQuotedStrings(input: ColumnView): ColumnVector = {
-    withResource(isQuotedString(input)) { iq =>
-      withResource(stripFirstAndLastChar(input)) { stripped =>
-        withResource(Scalar.fromString(null)) { ns =>
-          iq.ifElse(stripped, ns)
-        }
-      }
-    }
-  }
-
   private lazy val specialUnquotedFloats =
     Seq("NaN", "+INF", "-INF", "+Infinity", "Infinity", "-Infinity")
   private lazy val specialQuotedFloats = specialUnquotedFloats.map(s => '"'+s+'"')
@@ -248,12 +237,12 @@ object GpuJsonReadCommon {
       //
 
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
-        withResource(fixupQuotedStrings(cv)) { fixed =>
+        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
           GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
             dateFormat(options))
         }
       case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
-        withResource(fixupQuotedStrings(cv)) { fixed =>
+        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
           GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
             DType.TIMESTAMP_MICROSECONDS)
         }
@@ -261,7 +250,7 @@ object GpuJsonReadCommon {
       //
       // Done
       case (cv, Some(StringType)) if cv.getType == DType.STRING =>
-        JSONUtils.removeQuotes(cv)
+        JSONUtils.removeQuotes(cv, false)
       //
       //
 
