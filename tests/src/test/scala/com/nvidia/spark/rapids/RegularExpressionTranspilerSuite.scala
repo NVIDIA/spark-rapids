@@ -418,8 +418,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("replace_replace - ?, *, +, and {0, n} repetitions") {
+  test("replace_replace - ?, *, +, and {0, n} repetitions") {
     val patterns = Seq("D?", "D*", "D+", "D{0,}", "D{0,1}", "D{0,5}", "[1a-zA-Z]{0,}",
         "[1a-zA-Z]{0,2}", "A+")
     val inputs = Seq("SS", "DD", "SDSDSDS", "DDDD", "DDDDDD", "ABCDEFG")
@@ -711,27 +710,23 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("AST fuzz test - regexp_find") {
+  test("AST fuzz test - regexp_find") {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_FIND), REGEXP_LIMITED_CHARS_FIND,
       RegexFindMode)
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("AST fuzz test - regexp_replace") {
+  test("AST fuzz test - regexp_replace") {
     doAstFuzzTest(Some(REGEXP_LIMITED_CHARS_REPLACE), REGEXP_LIMITED_CHARS_REPLACE,
       RegexReplaceMode)
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("AST fuzz test - regexp_find - full unicode input") {
+  test("AST fuzz test - regexp_find - full unicode input") {
     assume(isUnicodeEnabled())
     doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
       RegexFindMode)
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("AST fuzz test - regexp_replace - full unicode input") {
+  test("AST fuzz test - regexp_replace - full unicode input") {
     assume(isUnicodeEnabled())
     doAstFuzzTest(None, REGEXP_LIMITED_CHARS_REPLACE,
       RegexReplaceMode)
@@ -741,8 +736,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     Charset.defaultCharset().name() == "UTF-8"
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("AST fuzz test - regexp_find - anchor focused") {
+  test("AST fuzz test - regexp_find - anchor focused") {
     doAstFuzzTest(validDataChars = Some("\r\nabc"),
       validPatternChars = "^$\\AZz\r\n()[]-", mode = RegexFindMode)
   }
@@ -784,8 +778,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("regexp_split - repetition with {0,n}, or {0,}") {
+  test("regexp_split - repetition with {0,n}, or {0,}") {
     // see https://github.com/NVIDIA/spark-rapids/issues/6958
     val patterns = Set("ba{0,}", raw"a\02{0,}", "ba{0,2}", raw"b\02{0,10}")
     val data = Seq("abaa", "baba", "ba\u0002b", "ab\u0002b\u0002a")
@@ -839,8 +832,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("string split fuzz") {
+  test("string split fuzz") {
     val (data, patterns) = generateDataAndPatterns(Some(REGEXP_LIMITED_CHARS_REPLACE),
       REGEXP_LIMITED_CHARS_REPLACE, RegexSplitMode)
     for (limit <- Seq(-2, -1, 2, 5)) {
@@ -848,8 +840,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  // Disabling until https://github.com/NVIDIA/spark-rapids/issues/11600 is fixed
-  ignore("string split fuzz - anchor focused") {
+  test("string split fuzz - anchor focused") {
     val (data, patterns) = generateDataAndPatterns(validDataChars = Some("\r\nabc"),
       validPatternChars = "^$\\AZz\r\n()", RegexSplitMode)
     doStringSplitTest(patterns, data, -1)

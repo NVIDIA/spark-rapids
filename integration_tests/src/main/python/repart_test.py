@@ -313,16 +313,16 @@ def test_hash_repartition_exact_longs_no_overflow(num_parts, is_ansi_mode):
 @pytest.mark.parametrize('num_parts', [17], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_hash_repartition_long_overflow_ansi_exception(num_parts):
-    data_gen = [('a', long_gen)]
-    part_on = [f.col('a') + 15]
     conf = ansi_enabled_conf
 
     def test_function(spark):
-        return gen_df(spark, data_gen, length=1024) \
-            .withColumn('plus15', f.col('a') + 15) \
-            .repartition(num_parts, f.col('plus15')) \
+        df = gen_df(spark, [('a', long_gen)], length=1024)
+        maxVal = df.selectExpr("max(a) as m").head()['m']
+        overflowVal = (1 << 63) - maxVal
+        return df.withColumn('plus', f.col('a') + overflowVal) \
+            .repartition(num_parts, f.col('plus')) \
             .withColumn('id', f.spark_partition_id()) \
-            .withColumn('hashed', f.hash(*part_on)) \
+            .withColumn('hashed', f.hash(f.col('a') + overflowVal)) \
             .selectExpr('*', 'pmod(hashed, {})'.format(num_parts))
 
     assert_gpu_and_cpu_error(
