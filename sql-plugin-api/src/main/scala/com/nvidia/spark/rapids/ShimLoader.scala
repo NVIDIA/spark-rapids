@@ -310,6 +310,9 @@ object ShimLoader {
     // hack for databricks, try to find something more reliable?
     if (SPARK_BUILD_USER.equals("Databricks")) {
       SPARK_VERSION + "-databricks"
+    // hack for preview versions to act as the base version
+    } else if (SPARK_VERSION matches """\d+\.\d+\.\d+-preview\d+""") {
+      SPARK_VERSION.split('-')(0)
     } else {
       SPARK_VERSION
     }
