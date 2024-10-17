@@ -22,6 +22,7 @@
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "350"}
+{"spark": "350db"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "400"}
@@ -98,7 +99,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
       result match {
         case _: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
-          sparkSession.sqlContext.conf.manageFilesourcePartitions =>
+          sparkSession.sessionState.conf.manageFilesourcePartitions =>
           // Need to recover partitions into the metastore so our saved data is visible.
           sessionState.executePlan(
             SparkShimImpl.v1RepairTableCommand(table.identifier)).toRdd

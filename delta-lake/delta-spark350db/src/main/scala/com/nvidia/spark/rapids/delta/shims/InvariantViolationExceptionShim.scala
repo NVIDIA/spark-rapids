@@ -13,16 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*** spark-rapids-shim-json-lines
-{"spark": "400"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.delta.shims
 
-import com.nvidia.spark.rapids.{ExprRule, GpuOverrides}
-import com.nvidia.spark.rapids.{ExprChecks, GpuExpression, TypeSig, UnaryExprMeta}
+import com.databricks.sql.transaction.tahoe.constraints.Constraints._
+import com.databricks.sql.transaction.tahoe.schema.DeltaInvariantViolationException
+import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, RaiseError}
+object InvariantViolationExceptionShim {
+  def apply(c: Check, m: Map[String, Any]): InvariantViolationException = {
+    DeltaInvariantViolationException(c, m)
+  }
 
-object RaiseErrorShim {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+  def apply(c: NotNull): InvariantViolationException = {
+    DeltaInvariantViolationException(c)
+  }
 }
