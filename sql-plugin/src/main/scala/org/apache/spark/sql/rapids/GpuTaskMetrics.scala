@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -121,6 +121,26 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
+  private val maxDiskMemoryBytes = new HighWatermarkAccumulator
+
+  private var diskBytesAllocated: Long = 0
+  private var maxDiskBytesAllocated: Long = 0
+
+  def getDiskBytesAllocated: Long = diskBytesAllocated
+
+  def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
+
+  def incDiskBytesAllocated(bytes: Long): Unit = {
+    diskBytesAllocated += bytes
+    maxDiskBytesAllocated = maxDiskBytesAllocated.max(diskBytesAllocated)
+  }
+
+  def decDiskBytesAllocated(bytes: Long): Unit = {
+    diskBytesAllocated -= bytes
+    // For some reason it's possible for the task to start out by releasing resources,
+    // possibly from a previous task, in such case we probably should just ignore it.
+    diskBytesAllocated = diskBytesAllocated.max(0)
+  }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
@@ -132,7 +152,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillToDiskTime" -> spillToDiskTimeNs,
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
     "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
-    "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes
+    "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
+    "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes
   )
 
   def register(sc: SparkContext): Unit = {
@@ -211,15 +232,18 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
-  def updateMaxGpuMemory(taskAttemptId: Long): Unit = {
+  def updateMaxMemory(taskAttemptId: Long): Unit = {
     val maxMem = RmmSpark.getAndResetGpuMaxMemoryAllocated(taskAttemptId)
     if (maxMem > 0) {
-      // This metric tracks the max amount of memory that is allocated on the gpu during
-      // the lifespan of a task. However, this update function only gets called once on task
-      // completion, whereas the actual logic tracking of the max value during memory allocations
-      // lives in the JNI. Therefore, we can stick the convention here of calling the add method
-      // instead of adding a dedicated max method to the accumulator.
+      // These metrics track the max amount of memory that is allocated on the gpu and disk,
+      // respectively, during the lifespan of a task. However, this update function only gets called
+      // once on task completion, whereas the actual logic tracking of the max value during memory
+      // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
+      // add method instead of adding a dedicated max method to the accumulator.
       maxDeviceMemoryBytes.add(maxMem)
+    }
+    if (maxDiskBytesAllocated > 0) {
+      maxDiskMemoryBytes.add(maxDiskBytesAllocated)
     }
   }
 }
