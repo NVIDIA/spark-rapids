@@ -98,6 +98,12 @@ def _get_overflow_df(spark, data, data_type, expr):
         StructType([StructField('a', data_type)])
     ).selectExpr(expr)
 
+def test_hll():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : spark.read.parquet("/home/chongg/a"),
+        "tab",
+        "select c1, APPROX_COUNT_DISTINCT(c2) from tab group by c1")
+
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
 @disable_ansi_mode
 def test_addition(data_gen):
