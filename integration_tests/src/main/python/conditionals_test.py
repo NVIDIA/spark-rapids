@@ -379,3 +379,30 @@ def test_case_when_all_then_values_are_scalars_with_nulls():
         "tab",
         sql_without_else,
         conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+
+@pytest.mark.parametrize('combine_string_contains_enabled', ['true', 'false'])
+def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
+    data_gen = [("c1", string_gen)]
+    sql =  """
+            SELECT
+                CASE
+                     WHEN INSTR(c1, 'a') > 0 THEN 'a'
+                     WHEN INSTR(c1, 'b') > 0 THEN 'b'
+                     WHEN INSTR(c1, 'c') > 0 THEN 'c'
+                     ELSE ''
+                END as output_1,
+                CASE
+                     WHEN INSTR(c1, 'c') > 0 THEN 'c'
+                     WHEN INSTR(c1, 'd') > 0 THEN 'd'
+                     WHEN INSTR(c1, 'e') > 0 THEN 'e'
+                     ELSE ''
+                END as output_2
+            from tab
+            """
+    # spark.rapids.sql.combined.expressions.enabled is true by default
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen),
+        "tab",
+        sql,
+        { "spark.rapids.sql.expression.combined.GpuContains" : combine_string_contains_enabled}
+    )
