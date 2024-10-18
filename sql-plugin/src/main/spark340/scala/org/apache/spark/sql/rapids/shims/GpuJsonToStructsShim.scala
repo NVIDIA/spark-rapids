@@ -56,6 +56,22 @@ object GpuJsonToStructsShim {
   def tagDateFormatSupportFromScan(meta: RapidsMeta[_, _, _], dateFormat: Option[String]): Unit = {
   }
 
+  def getNonLegacyDateRegexAndFormat(dateFormat: Option[String]) : (String, String, Boolean) = {
+    dateFormat match {
+      case None =>
+        // legacy behavior
+        throw new IllegalArgumentException("dateFormat must be specified")
+      case Some(fmt) =>
+        val regexRoot = fmt
+          .replace("yyyy", raw"\d{4}")
+          .replace("MM", raw"\d{2}")
+          .replace("dd", raw"\d{2}")
+        val cudfFormat = DateUtils.toStrf(fmt, parseString = true)
+        val failOnInvalid = GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy
+        ("^" + regexRoot + "$", cudfFormat, failOnInvalid)
+    }
+  }
+
   def castJsonStringToDateFromScan(input: ColumnView, dt: DType,
       dateFormat: Option[String]): ColumnVector = {
     dateFormat match {
