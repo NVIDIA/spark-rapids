@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.nvidia
 
+import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -32,6 +34,11 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
       }
   }
 
-  override def apply(plan: LogicalPlan): LogicalPlan =
-    plan.transformExpressions(replacePartialFunc)
+  override def apply(plan: LogicalPlan): LogicalPlan = {
+    if (RapidsConf.DFUDF_ENABLED.get(plan.conf)) {
+      plan.transformExpressions(replacePartialFunc)
+    } else {
+      plan
+    }
+  }
 }
