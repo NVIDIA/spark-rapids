@@ -19,5 +19,5 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-object RapidsErrorUtils extends RapidsErrorUtils341DBBase
+object RapidsErrorUtils extends RapidsErrorUtils341DBPlusBase
   with SequenceSizeTooLongErrorBuilder
