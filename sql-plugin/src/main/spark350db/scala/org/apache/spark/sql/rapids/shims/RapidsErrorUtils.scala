@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "341db"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 object RapidsErrorUtils extends RapidsErrorUtils341DBPlusBase
-  with SequenceSizeTooLongErrorBuilder
+  with SequenceSizeExceededLimitErrorBuilder
