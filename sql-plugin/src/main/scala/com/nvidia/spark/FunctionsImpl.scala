@@ -16,15 +16,17 @@
 
 package com.nvidia.spark
 
+import com.nvidia.spark.rapids.Functions
+
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.api.java.{UDF0, UDF1, UDF10, UDF2, UDF3, UDF4, UDF5, UDF6, UDF7, UDF8, UDF9}
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.functions.{udf => sp_udf}
 import org.apache.spark.sql.nvidia._
 import org.apache.spark.sql.types.LongType
 
 // scalastyle:off
-object functions {
+class FunctionsImpl extends Functions {
 // scalastyle:on
 
   /**
@@ -32,93 +34,88 @@ object functions {
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function0[Column]): UserDefinedFunction =
-    udf(DFUDF0(f), LongType)
+  override def df_udf(f: Function0[Column]): UserDefinedFunction =
+    sp_udf(DFUDF0(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function1[Column, Column]): UserDefinedFunction =
-    udf(DFUDF1(f), LongType)
+  override def df_udf(f: Function1[Column, Column]): UserDefinedFunction =
+    sp_udf(DFUDF1(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function2[Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF2(f), LongType)
+  override def df_udf(f: Function2[Column, Column, Column]): UserDefinedFunction =
+    sp_udf(DFUDF2(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function3[Column, Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF3(f), LongType)
+  override def df_udf(f: Function3[Column, Column, Column, Column]): UserDefinedFunction =
+    sp_udf(DFUDF3(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function4[Column, Column, Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF4(f), LongType)
+  override def df_udf(f: Function4[Column, Column, Column, Column, Column]): UserDefinedFunction =
+    sp_udf(DFUDF4(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function5[Column, Column, Column, Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF5(f), LongType)
+  override def df_udf(f: Function5[Column, Column, Column, Column, Column,
+    Column]): UserDefinedFunction = sp_udf(DFUDF5(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function6[Column, Column, Column, Column, Column, Column,
-    Column]): UserDefinedFunction =
-    udf(DFUDF6(f), LongType)
+  override def df_udf(f: Function6[Column, Column, Column, Column, Column, Column,
+    Column]): UserDefinedFunction = sp_udf(DFUDF6(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function7[Column, Column, Column, Column, Column, Column,
-    Column, Column]): UserDefinedFunction =
-    udf(DFUDF7(f), LongType)
+  override def df_udf(f: Function7[Column, Column, Column, Column, Column, Column,
+    Column, Column]): UserDefinedFunction = sp_udf(DFUDF7(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function8[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF8(f), LongType)
+  override def df_udf(f: Function8[Column, Column, Column, Column, Column, Column,
+    Column, Column, Column]): UserDefinedFunction = sp_udf(DFUDF8(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function9[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF9(f), LongType)
+  override def df_udf(f: Function9[Column, Column, Column, Column, Column, Column,
+    Column, Column, Column, Column]): UserDefinedFunction = sp_udf(DFUDF9(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: Function10[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column, Column]): UserDefinedFunction =
-    udf(DFUDF10(f), LongType)
+  override def df_udf(f: Function10[Column, Column, Column, Column, Column, Column,
+    Column, Column, Column, Column, Column]): UserDefinedFunction = sp_udf(DFUDF10(f), LongType)
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -130,103 +127,86 @@ object functions {
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF0[Column]): UserDefinedFunction = {
-    udf(JDFUDF0(f), LongType)
-  }
+  override def df_udf(f: UDF0[Column]): UserDefinedFunction =
+    sp_udf(JDFUDF0(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF1[Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF1(f), LongType)
-  }
+  override def df_udf(f: UDF1[Column, Column]): UserDefinedFunction =
+    sp_udf(JDFUDF1(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF2[Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF2(f), LongType)
-  }
+  override def df_udf(f: UDF2[Column, Column, Column]): UserDefinedFunction =
+    sp_udf(JDFUDF2(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF3[Column, Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF3(f), LongType)
-  }
+  override def df_udf(f: UDF3[Column, Column, Column, Column]): UserDefinedFunction =
+    sp_udf(JDFUDF3(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF4[Column, Column, Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF4(f), LongType)
-  }
+  override def df_udf(f: UDF4[Column, Column, Column, Column, Column]): UserDefinedFunction =
+    sp_udf(JDFUDF4(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF5[Column, Column, Column, Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF5(f), LongType)
-  }
+  override def df_udf(f: UDF5[Column, Column, Column, Column, Column,
+    Column]): UserDefinedFunction = sp_udf(JDFUDF5(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF6[Column, Column, Column, Column, Column, Column,
-    Column]): UserDefinedFunction = {
-    udf(JDFUDF6(f), LongType)
-  }
+  override def df_udf(f: UDF6[Column, Column, Column, Column, Column, Column,
+    Column]): UserDefinedFunction = sp_udf(JDFUDF6(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF7[Column, Column, Column, Column, Column, Column,
-    Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF7(f), LongType)
-  }
+  override def df_udf(f: UDF7[Column, Column, Column, Column, Column, Column,
+    Column, Column]): UserDefinedFunction = sp_udf(JDFUDF7(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF8[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF8(f), LongType)
-  }
+  override def df_udf(f: UDF8[Column, Column, Column, Column, Column, Column,
+    Column, Column, Column]): UserDefinedFunction = sp_udf(JDFUDF8(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF9[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF9(f), LongType)
-  }
+  override def df_udf(f: UDF9[Column, Column, Column, Column, Column, Column,
+    Column, Column, Column, Column]): UserDefinedFunction = sp_udf(JDFUDF9(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
    * By default the returned UDF is deterministic. To change it to nondeterministic, call the
    * API `UserDefinedFunction.asNondeterministic()`.
    */
-  def df_udf(f: UDF10[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column, Column]): UserDefinedFunction = {
-    udf(JDFUDF10(f), LongType)
-  }
-
+  override def df_udf(f: UDF10[Column, Column, Column, Column, Column, Column,
+    Column, Column, Column, Column, Column]): UserDefinedFunction = sp_udf(JDFUDF10(f), LongType)
 }

@@ -15,9 +15,12 @@ commands.
 
 ## Setup
 
-To do this include com.nvidia:df_udf_plugin as a dependency for your project and also include it on the 
-classpath for your Apache Spark environment. Then include `com.nvidia.spark.DFUDFPlugin` in the config 
-`spark.sql.extensions`. Now you can implement a UDF in terms of Dataframe operations.
+Accelerator for Apache Spark. As such you will need to select a scala version 2.12 or 2.13 that matches the
+version of Spark you are going to use. You will also need to add it to the
+classpath for your Apache Spark environment. If you plan to not use the GPU accelerated processing then add
+`com.nvidia.spark.DFUDFPlugin` in the config `spark.sql.extensions`. If you do use GPU accelerated processing
+the RAPIDS Plugin will enable this automatically and you don't need to set the `spark.sql.extensions` config
+unless you want to.Now you can implement a UDF in terms of Dataframe operations.
 
 ## Usage
 
@@ -46,6 +49,28 @@ Seq(Array(1L, 2L, 3L)).toDF("data").selectExpr("sum_array(data) as result").show
 +------+
 |     6|
 +------+
+```
+
+Java APIs are also supported and should work the same as Spark's UDFs
+
+```java
+import com.nvidia.spark.functions.df_udf
+
+import org.apache.spark.sql.*;
+import org.apache.spark.sql.api.java.UDF2;
+import org.apache.spark.sql.expressions.UserDefinedFunction;
+
+
+UserDefinedFunction myAdd = df_udf((Column lhs, Column rhs) -> lhs + rhs)
+spark.udf().register("myadd", myAdd)
+
+spark.sql("SELECT myadd(1, 1) as r").show();
+// +--+
+// | r|
+// +--+
+// | 2|
+// +--+
+
 ```
 
 ## Type Checks

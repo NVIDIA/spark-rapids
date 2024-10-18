@@ -14,18 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 
-class DFUDFPlugin extends (SparkSessionExtensions => Unit) {
-  override def apply(extensions: SparkSessionExtensions): Unit = {
-    extensions.injectResolutionRule(logicalPlanRules)
-  }
+trait DFUDFPluginAPI {
+  def apply(extensions: SparkSessionExtensions): Unit
 
-  def logicalPlanRules(sparkSession: SparkSession): Rule[LogicalPlan] = {
-    org.apache.spark.sql.nvidia.LogicalPlanRules()
-  }
+  def logicalPlanRules(sparkSession: SparkSession): Rule[LogicalPlan]
 }
