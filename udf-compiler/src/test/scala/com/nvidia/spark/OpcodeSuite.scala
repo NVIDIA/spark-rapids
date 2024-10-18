@@ -36,6 +36,7 @@ class OpcodeSuite extends AnyFunSuite {
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")
     .set("spark.rapids.sql.udfCompiler.enabled", "true")
+     // ANSI is disabled due to https://github.com/NVIDIA/spark-rapids/issues/11633
     .set("spark.sql.ansi.enabled", "false")
     .set(RapidsConf.EXPLAIN.key, "true")
 
