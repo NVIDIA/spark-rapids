@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,8 @@ class OpcodeSuite extends AnyFunSuite {
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")
     .set("spark.rapids.sql.udfCompiler.enabled", "true")
+     // ANSI is disabled due to https://github.com/NVIDIA/spark-rapids/issues/11633
+    .set("spark.sql.ansi.enabled", "false")
     .set(RapidsConf.EXPLAIN.key, "true")
 
   val spark: SparkSession =
@@ -2384,7 +2386,8 @@ class OpcodeSuite extends AnyFunSuite {
       run(20)
     } catch {
       case e: RuntimeException =>
-        assert(e.getMessage == "Fold number must be in range [0, 20), but got 20.")
+        // in new versions of spark, the message has extra information, so we use contains.
+        assert(e.getMessage.contains("Fold number must be in range [0, 20), but got 20."))
     }
   }
 
