@@ -21,6 +21,7 @@ import scala.collection.immutable.{HashMap, SortedMap, SortedSet}
 
 import CatalystExpressionBuilder.simplify
 import javassist.bytecode.{CodeIterator, ConstPool, InstructionPrinter, Opcode}
+import javassist.bytecode.analysis.Util
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
@@ -152,7 +153,7 @@ object CFG {
     while(codeIterator.hasNext) {
       val offset = codeIterator.next()
       val opcode: Int = codeIterator.byteAt(offset)
-      if (isReturn(opcode)) {
+      if (Util.isReturn(opcode)) {
         lastReturnOffset = offset
       }
     }
@@ -190,7 +191,7 @@ object CFG {
       val opcode: Int = codeIterator.byteAt(offset)
       // here we are looking for branching instructions
       opcode match {
-        case _ if isReturn(opcode) && offset != lastReturnOffset =>
+        case _ if Util.isReturn(opcode) && offset != lastReturnOffset =>
           // if we had any return along the way, we are going to replace it
           // with a GOTO [lastReturnOffset]
           collectLabelsAndEdges(
@@ -281,7 +282,7 @@ object CFG {
     if (codeIterator.hasNext) {
       val offset = codeIterator.next
       val opcode = codeIterator.byteAt(offset)
-      if (isReturn(opcode) && offset != lastReturnOffset) {
+      if (Util.isReturn(opcode) && offset != lastReturnOffset) {
         // an internal RETURN is replaced by GOTO to the last return of the
         // lambda.
         val instruction = Instruction(Opcode.GOTO, lastReturnOffset, "GOTO")
@@ -365,14 +366,5 @@ object CFG {
         // Add src -> dst to successor map.
         successor + (src -> dst))
     }
-  }
-
-  private def isReturn(opcode: Int): Boolean = {
-    opcode == Opcode.ARETURN ||
-      opcode == Opcode.FRETURN ||
-      opcode == Opcode.IRETURN ||
-      opcode == Opcode.DRETURN ||
-      opcode == Opcode.LRETURN ||
-      opcode == Opcode.RETURN
   }
 }
