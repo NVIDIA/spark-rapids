@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -60,33 +60,6 @@ object GpuJsonReadCommon {
     val builder = Schema.builder
     input.foreach(f => populateSchema(f.dataType, f.name, builder))
     builder.build
-  }
-
-  private def isQuotedString(input: ColumnView): ColumnVector = {
-    withResource(Scalar.fromString("\"")) { quote =>
-      withResource(input.startsWith(quote)) { sw =>
-        withResource(input.endsWith(quote)) { ew =>
-          sw.binaryOp(BinaryOp.LOGICAL_AND, ew, DType.BOOL8)
-        }
-      }
-    }
-  }
-
-  private def stripFirstAndLastChar(input: ColumnView): ColumnVector = {
-    withResource(Scalar.fromInt(1)) { one =>
-      val end = withResource(input.getCharLengths) { cc =>
-        withResource(cc.sub(one)) { endWithNulls =>
-          withResource(endWithNulls.isNull) { eIsNull =>
-            eIsNull.ifElse(one, endWithNulls)
-          }
-        }
-      }
-      withResource(end) { _ =>
-        withResource(ColumnVector.fromScalar(one, end.getRowCount.toInt)) { start =>
-          input.substring(start, end)
-        }
-      }
-    }
   }
 
   private lazy val specialUnquotedFloats =
@@ -141,27 +114,6 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def sanitizeQuotedDecimalInUSLocale(input: ColumnView): ColumnVector = {
-    // The US locale is kind of special in that it will remove the , and then parse the
-    // input normally
-    withResource(stripFirstAndLastChar(input)) { stripped =>
-      withResource(Scalar.fromString(",")) { comma =>
-        withResource(Scalar.fromString("")) { empty =>
-          stripped.stringReplace(comma, empty)
-        }
-      }
-    }
-  }
-
-  private def sanitizeDecimal(input: ColumnView, options: JSONOptions): ColumnVector = {
-    assert(options.locale == Locale.US)
-    withResource(isQuotedString(input)) { isQuoted =>
-      withResource(sanitizeQuotedDecimalInUSLocale(input)) { quoted =>
-        isQuoted.ifElse(quoted, input)
-      }
-    }
-  }
-
   private def castStringToFloat(input: ColumnView, dt: DType,
       options: JSONOptions): ColumnVector = {
     withResource(sanitizeFloats(input, options)) { sanitizedInput =>
@@ -169,10 +121,6 @@ object GpuJsonReadCommon {
     }
   }
 
-  private def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
-    // TODO there is a bug here around 0 https://github.com/NVIDIA/spark-rapids/issues/10898
-    CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
-  }
 
 
   private def dateFormat(options: JSONOptions): Option[String] =
@@ -254,10 +202,13 @@ object GpuJsonReadCommon {
       //
       //
 
+      //
+      // Done
       case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
-        withResource(sanitizeDecimal(cv, options)) { tmp =>
-          castStringToDecimal(tmp, dt)
-        }
+        JSONUtils.castStringsToDecimals(cv, dt.precision, -dt.scale, options.locale == Locale.US)
+      //
+      //
+
       case (cv, Some(dt)) if (dt == DoubleType || dt == FloatType) && cv.getType == DType.STRING =>
         castStringToFloat(cv,  GpuColumnVector.getNonNestedRapidsType(dt), options)
       case (cv, Some(dt))
