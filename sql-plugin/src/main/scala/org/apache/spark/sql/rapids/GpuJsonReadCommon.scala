@@ -21,7 +21,7 @@ import java.util.Locale
 //import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table, TableDebug}
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
-import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
+import com.nvidia.spark.rapids.{ColumnCastUtil, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.{CastStrings, JSONUtils}
@@ -189,7 +189,7 @@ object GpuJsonReadCommon {
       //
 
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
-        GpuCast.doCast(cv, StringType, dt)
+        throw new JsonParsingException(s"Cannot convert string to $dt", null)
     }
   }
 
