@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 //import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table, TableDebug}
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -62,33 +62,6 @@ object GpuJsonReadCommon {
     builder.build
   }
 
-
-  private def sanitizeInts(input: ColumnView): ColumnVector = {
-    // Integer numbers cannot look like a float, so no `.` or e The rest of the parsing should
-    // handle this correctly. The rest of the validation is in CUDF itself
-
-    val tmp = withResource(Scalar.fromString(".")) { dot =>
-      withResource(input.stringContains(dot)) { hasDot =>
-        withResource(Scalar.fromString("e")) { e =>
-          withResource(input.stringContains(e)) { hase =>
-            hasDot.or(hase)
-          }
-        }
-      }
-    }
-    val invalid = withResource(tmp) { _ =>
-      withResource(Scalar.fromString("E")) { E =>
-        withResource(input.stringContains(E)) { hasE =>
-          tmp.or(hasE)
-        }
-      }
-    }
-    withResource(invalid) { _ =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        invalid.ifElse(nullString, input)
-      }
-    }
-  }
 
   private def castStringToFloat(cv: ColumnView, dt: DType,
       options: JSONOptions): ColumnVector = {
@@ -206,12 +179,15 @@ object GpuJsonReadCommon {
       //
       //
 
+      //
+      // DONE
       case (cv, Some(dt))
         if (dt == ByteType || dt == ShortType || dt == IntegerType || dt == LongType ) &&
             cv.getType == DType.STRING =>
-        withResource(sanitizeInts(cv)) { tmp =>
-          CastStrings.toInteger(tmp, false, GpuColumnVector.getNonNestedRapidsType(dt))
-        }
+        JSONUtils.castStringsToIntegers(cv, GpuColumnVector.getNonNestedRapidsType(dt))
+      //
+      //
+
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
         GpuCast.doCast(cv, StringType, dt)
     }
