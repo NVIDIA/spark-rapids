@@ -3792,7 +3792,7 @@ object GpuOverrides extends Logging {
                 willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
                     "names in a struct")
               }
-              if (hasDateTimeType(st) && !conf.isJsonDateTimeReadEnabled) {
+              if (hasDateTimeType(st) && !this.conf.isJsonDateTimeReadEnabled) {
                 willNotWorkOnGpu("from_json on GPU does not support DateType or TimestampType" +
                   " by default due to compatibility. " +
                   "Set `spark.rapids.sql.json.read.datetime.enabled` to true to enable them.")
