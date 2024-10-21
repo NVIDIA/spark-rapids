@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -320,7 +320,9 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_f
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
-            lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
+            # _c2 + _c3 causes an ansi related ArithmeticException: [ARITHMETIC_OVERFLOW] integer overflow
+            # Only an issue when ansi_enabled which is not the goal of this test
+            lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + 1),
             # TODO add support for lists
             cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf=updated_conf)
@@ -377,6 +379,12 @@ non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourc
     # Date is also time zone related for csv since rebasing.
     pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates)),
     pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
+] if is_before_spark_400() else [
+    pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
+    # Date is also time zone related for csv since rebasing.
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
+    # Exception naming issue in EXCEPTION mode. https://github.com/NVIDIA/spark-rapids/issues/11641
+    # , pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
 ])
 def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list, ansi_enabled, time_parser_policy):
     data_path = std_input_path + '/' + filename
@@ -391,7 +399,7 @@ def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list,
                 .csv(data_path)
                 .collect(),
             conf=updated_conf,
-            error_message='DateTimeException')
+            error_message='DateTimeException' if is_before_spark_400() else 'SparkUpgradeException')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read \
@@ -551,6 +559,7 @@ def test_csv_read_case_insensitivity(spark_tmp_path):
         conf = {'spark.sql.caseSensitive': 'false'}
     )
 
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 def test_csv_read_count(spark_tmp_path):
     data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
