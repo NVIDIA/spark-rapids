@@ -694,8 +694,7 @@ def test_from_json_map_fallback():
     ])
 @allow_non_gpu(*non_utc_allow)
 def test_from_json_struct(schema):
-    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/10534
-    json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
+    json_string_gen = StringGen(r'{\'a\': [0-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
@@ -708,8 +707,7 @@ def test_from_json_struct(schema):
     ])
 @allow_non_gpu("ProjectExec")
 def test_from_json_struct_fallback_dupe_keys(schema):
-    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/10534
-    json_string_gen = StringGen(r'{\'a\': [1-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
+    json_string_gen = StringGen(r'{\'a\': [0-9]{0,5}, "b": \'[A-Z]{0,5}\', "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
     assert_gpu_fallback_collect(
@@ -1230,7 +1228,6 @@ def test_spark_from_json():
 # from_json - input=empty array, schema=struct, output=single row with null
 # from_json - input=empty object, schema=struct, output=single row with null
 # SPARK-19543: from_json empty input column
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10483')
 @pytest.mark.parametrize('data', [
     [[r'''[]''']],
     [[r'''{ }''']],
@@ -1300,7 +1297,6 @@ def test_spark_from_json_single_item_array_to_struct():
         lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema)),
         conf =_enable_all_types_conf)
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10484')
 #from_json - input=array, schema=struct, output=single row
 @allow_non_gpu('ProjectExec')
 def test_spark_from_json_struct_with_corrupted_row():
@@ -1391,7 +1387,6 @@ def test_spark_from_json_timestamp_format():
         conf =_enable_all_types_conf)
 
 # from_json missing fields
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10489')
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_spark_from_json_missing_fields_with_cr():
     schema = StructType([StructField("a", LongType(), False), StructField("b", StringType(), False), StructField("c", StringType(), False)])
@@ -1446,7 +1441,6 @@ def test_spark_from_json_missing_columns():
         conf =_enable_all_types_conf)
 
 # TEST from_json invalid json
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10483')
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_spark_from_json_invalid_json():
     schema = StructType([StructField("a", IntegerType())])
