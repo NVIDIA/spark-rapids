@@ -848,6 +848,8 @@ object GpuOverrides extends Logging {
   val jsonStructReadTypes: TypeSig = (TypeSig.STRUCT + TypeSig.ARRAY +
       TypeSig.STRING + TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN +
       TypeSig.DATE + TypeSig.TIMESTAMP).nested()
+    .withPsNote(TypeEnum.DATE, "DATE is not supported by default due to compatibility")
+    .withPsNote(TypeEnum.TIMESTAMP, "TIMESTAMP is not supported by default due to compatibility")
 
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
@@ -3795,7 +3797,7 @@ object GpuOverrides extends Logging {
               if (hasDateTimeType(st) && !this.conf.isJsonDateTimeReadEnabled) {
                 willNotWorkOnGpu("from_json on GPU does not support DateType or TimestampType" +
                   " by default due to compatibility. " +
-                  "Set `spark.rapids.sql.json.read.datetime.enabled` to true to enable them.")
+                  "Set `spark.rapids.sql.json.read.datetime.enabled` to `true` to enable them.")
               }
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
