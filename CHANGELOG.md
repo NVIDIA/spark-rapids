@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-10-14
+Generated on 2024-10-18
 
 ## Release 24.10
 
@@ -68,6 +68,8 @@ Generated on 2024-10-14
 ### PRs
 |||
 |:---|:---|
+|[#11624](https://github.com/NVIDIA/spark-rapids/pull/11624)|Update the download link [skip ci]|
+|[#11577](https://github.com/NVIDIA/spark-rapids/pull/11577)|Update latest changelog [skip ci]|
 |[#11576](https://github.com/NVIDIA/spark-rapids/pull/11576)|Update rapids JNI and private dependency to 24.10.0|
 |[#11582](https://github.com/NVIDIA/spark-rapids/pull/11582)|[DOC] update doc for 24.10 release [skip ci]|
 |[#11588](https://github.com/NVIDIA/spark-rapids/pull/11588)|backport fixes of #11573 to branch 24.10|
