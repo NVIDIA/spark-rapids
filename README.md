@@ -32,7 +32,7 @@ or answer a question on the [discussion board](https://github.com/NVIDIA/spark-r
 
 ## Download
 
-The jar files for the most recent release can be retrieved from the [download](docs/download.md)
+The jar files for the most recent release can be retrieved from the [download](https://nvidia.github.io/spark-rapids/docs/download.html)
 page.
 
 ## Building From Source
