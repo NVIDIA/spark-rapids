@@ -390,7 +390,8 @@ def test_basic_from_json(std_input_path, filename, schema, allow_non_numeric_num
         allow_numeric_leading_zeros, ansi_enabled, date_format):
     updated_conf = copy_and_update(_enable_all_types_conf,
         {'spark.sql.ansi.enabled': ansi_enabled,
-         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+         'spark.rapids.sql.json.read.datetime.enabled': 'true'})
     options = {"allowNonNumericNumbers": allow_non_numeric_numbers,
            "allowNumericLeadingZeros": allow_numeric_leading_zeros,
            }
@@ -1371,9 +1372,10 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_default_format(zone_
     schema = StructType([StructField("t", TimestampType())])
     data = [[r'''{"t": "2016-01-01 00:00:00"}'''],
         [r'''{"t": "2023-07-27 12:21:05"}''']]
+    conf = copy_and_update(_enable_all_types_conf, {"spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timeZone': zone_id})),
-        conf =_enable_all_types_conf)
+        conf =conf)
 
 # from_json with option (timestampFormat)
 # no timestamp format appears to actually work
@@ -1427,9 +1429,10 @@ def test_spark_from_json_date_with_format():
     data = [["""{"time": "26/08/2015"}"""],
             ["""{"time": "01/01/2024"}"""]]
     schema = StructType([StructField("d", DateType())])
+    conf = copy_and_update(_enable_all_types_conf, {"spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'dateFormat': 'dd/MM/yyyy'})),
-        conf =_enable_all_types_conf)
+        conf =conf)
 
 # TEST from_json missing columns
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
