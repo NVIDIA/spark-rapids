@@ -15,12 +15,14 @@ commands.
 
 ## Setup
 
-Accelerator for Apache Spark. As such you will need to select a scala version 2.12 or 2.13 that matches the
-version of Spark you are going to use. You will also need to add it to the
-classpath for your Apache Spark environment. If you plan to not use the GPU accelerated processing then add
-`com.nvidia.spark.DFUDFPlugin` in the config `spark.sql.extensions`. If you do use GPU accelerated processing
-the RAPIDS Plugin will enable this automatically and you don't need to set the `spark.sql.extensions` config
-unless you want to.Now you can implement a UDF in terms of Dataframe operations.
+The dataframe UDF plugin is packaged in the same jar as the RAPIDS Accelerator for Apache Spark. This jar will need to
+be added as a compile time dependency for code that wants to use this feature as well as adding the jar to your Spark
+classpath just like you would do for GPU acceleration.
+
+If you plan to not use the GPU accelerated processing, but still want dataframe UDF support on CPU applications then
+add `com.nvidia.spark.DFUDFPlugin` to the `spark.sql.extensions` config. If you do use GPU accelerated processing
+the RAPIDS Plugin will enable this automatically. You don't need to set the `spark.sql.extensions` config, but it
+won't hurt anything if you do add it. Now you can implement a UDF in terms of Dataframe operations.
 
 ## Usage
 
