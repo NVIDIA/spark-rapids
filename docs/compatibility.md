@@ -418,6 +418,9 @@ The `from_json` function is disabled by default because it is experimental and h
 incompatibilities with Spark, and can be enabled by setting 
 `spark.rapids.sql.expression.JsonToStructs=true`. You don't need to set 
 `spark.rapids.sql.format.json.enabled` and`spark.rapids.sql.format.json.read.enabled` to true.
+In addition, if the input schema contains date and/or timestamp types, an additional config 
+`spark.rapids.sql.json.read.datetime.enabled` also needs to be set to `true` in order 
+to turn on this function.
 
 There is no schema discovery as a schema is required as input to `from_json`
 
