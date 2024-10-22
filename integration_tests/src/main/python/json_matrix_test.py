@@ -1032,7 +1032,9 @@ def test_from_json_doubles(std_input_path, input_file):
 @pytest.mark.parametrize('read_func', [read_json_df])
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_scan_json_corrected_dates(std_input_path, read_func, spark_tmp_table_factory, input_file):
-    conf = copy_and_update(_enable_all_types_json_scan_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_all_types_json_scan_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + input_file,
         StructType([StructField("data", DateType())]),
@@ -1093,7 +1095,9 @@ def test_from_json_corrected_dates(std_input_path, input_file):
 @pytest.mark.parametrize('read_func', [read_json_df])
 @allow_non_gpu(*non_utc_allow)
 def test_scan_json_corrected_timestamps(std_input_path, read_func, spark_tmp_table_factory, input_file):
-    conf = copy_and_update(_enable_all_types_json_scan_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_all_types_json_scan_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + input_file,
         StructType([StructField("data", TimestampType())]),
