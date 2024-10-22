@@ -1002,7 +1002,7 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
             conf=all_confs)
 
 
-@pytest.mark.parametrize('data_gen', [byte_gen,
+_to_json_datagens=[byte_gen,
     boolean_gen,
     short_gen,
     int_gen,
@@ -1022,36 +1022,84 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
         .with_special_case('\\\'a\\\''),
     pytest.param(StringGen('\u001a', nullable=True), marks=pytest.mark.xfail(
         reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
-], ids=idfn)
+]
+
+@pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
-@pytest.mark.parametrize('pretty', [
-    pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
-    False
-])
 @pytest.mark.parametrize('timezone', [
     'UTC',
-    'Etc/UTC',
-    pytest.param('UTC+07:00', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    'Etc/UTC'
 ])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
-def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty, timezone):
+@allow_non_gpu(*non_utc_project_allow)
+def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
     struct_gen = StructGen([
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
         ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
-        ("d", MapGen(LongGen(nullable=False), data_gen)),
         ("d", MapGen(StringGen('[A-Za-z0-9]{0,10}', nullable=False), data_gen)),
-        ("e", ArrayGen(MapGen(LongGen(nullable=False), data_gen), nullable=True)),
+        ("e", ArrayGen(MapGen(StringGen('[A-Z]{5}', nullable=False), data_gen), nullable=True)),
     ], nullable=False)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'pretty': pretty,
                 'timeZone': timezone}
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
-        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+        return df.select(
+                f.to_json("my_struct", options).alias("ms"))
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : struct_to_json(spark),
+        conf=conf)
+
+@pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
+@pytest.mark.parametrize('ignore_null_fields', [True, False])
+@pytest.mark.parametrize('timezone', [
+    'UTC',
+    'Etc/UTC'
+])
+@allow_non_gpu(*non_utc_project_allow)
+def test_arrays_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
+    array_gen = ArrayGen(data_gen, nullable=True)
+    gen = StructGen([("my_array", array_gen)], nullable=False)
+
+    options = { 'ignoreNullFields': ignore_null_fields,
+                'timeZone': timezone}
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.select(
+                f.to_json("my_array", options).alias("ma"))
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : struct_to_json(spark),
+        conf=conf)
+
+@pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
+@pytest.mark.parametrize('ignore_null_fields', [True, False])
+@pytest.mark.parametrize('timezone', [
+    'UTC',
+    'Etc/UTC'
+])
+@allow_non_gpu(*non_utc_project_allow)
+def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
+    map_gen = MapGen(StringGen('[A-Z]{1,10}', nullable=False), data_gen, nullable=True)
+    gen = StructGen([("my_map", map_gen)], nullable=False)
+
+    options = { 'ignoreNullFields': ignore_null_fields,
+                'timeZone': timezone}
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.select(
+                f.to_json("my_map", options).alias("mm"))
 
     conf = copy_and_update(_enable_all_types_conf,
         { 'spark.rapids.sql.expression.StructsToJson': True })
@@ -1062,16 +1110,13 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty, t
 
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('timestamp_format', [
-    'yyyy-MM-dd\'T\'HH:mm:ss[.SSS][XXX]',
-    pytest.param('yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX', marks=pytest.mark.allow_non_gpu('ProjectExec')),
-    pytest.param('dd/MM/yyyy\'T\'HH:mm:ss[.SSS][XXX]', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    'yyyy-MM-dd\'T\'HH:mm:ss[.SSS][XXX]'
 ])
 @pytest.mark.parametrize('timezone', [
     'UTC',
-    'Etc/UTC',
-    pytest.param('UTC+07:00', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    'Etc/UTC'
 ])
-@pytest.mark.skipif(is_not_utc(), reason='Duplicated as original test case designed which it is parameterized by timezone. https://github.com/NVIDIA/spark-rapids/issues/9653.')
+@allow_non_gpu(*non_utc_project_allow)
 def test_structs_to_json_timestamp(spark_tmp_path, data_gen, timestamp_format, timezone):
     struct_gen = StructGen([
         ("b", StructGen([('child', data_gen)], nullable=True)),
@@ -1199,6 +1244,29 @@ def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezon
         'ProjectExec',
         conf=conf)
 
+
+@allow_non_gpu('ProjectExec')
+def test_structs_to_json_fallback_pretty(spark_tmp_path):
+    struct_gen = StructGen([
+        ('a', long_gen),
+        ("b", byte_gen),
+        ("c", ArrayGen(short_gen))
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'pretty': True }
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
 
 #####################################################
 # Some from_json tests ported over from Apache Spark
