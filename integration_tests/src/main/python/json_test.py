@@ -200,7 +200,9 @@ def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_li
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'
     schema = gen.data_type
-    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+         'spark.rapids.sql.json.read.datetime.enabled': 'true'})
 
     def create_test_data(spark):
         write = gen_df(spark, gen).write
@@ -238,7 +240,9 @@ def test_json_ts_formats_round_trip(spark_tmp_path, timestamp_format, v1_enabled
         write.json(data_path)
 
     with_cpu_session(lambda spark: create_test_data(spark))
-    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+         'spark.rapids.sql.json.read.datetime.enabled': 'true'})
 
     def do_read(spark):
         read = spark.read.schema(schema)
@@ -280,7 +284,8 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, timestamp_format, timestamp_t
     updated_conf = copy_and_update(_enable_all_types_conf,
         {
             'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.timestampType': timestamp_type
+            'spark.sql.timestampType': timestamp_type,
+            'spark.rapids.sql.json.read.datetime.enabled': 'true'
         })
 
     def do_read(spark):
@@ -343,7 +348,8 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
         allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory, date_format):
     updated_conf = copy_and_update(_enable_all_types_conf,
         {'spark.sql.ansi.enabled': ansi_enabled,
-         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+         'spark.rapids.sql.json.read.datetime.enabled': 'true'})
     options = {"allowNonNumericNumbers": allow_non_numeric_numbers,
            "allowNumericLeadingZeros": allow_numeric_leading_zeros,
            }
@@ -390,7 +396,8 @@ def test_basic_from_json(std_input_path, filename, schema, allow_non_numeric_num
         allow_numeric_leading_zeros, ansi_enabled, date_format):
     updated_conf = copy_and_update(_enable_all_types_conf,
         {'spark.sql.ansi.enabled': ansi_enabled,
-         'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+         'spark.rapids.sql.json.read.datetime.enabled': 'true'})
     options = {"allowNonNumericNumbers": allow_non_numeric_numbers,
            "allowNumericLeadingZeros": allow_numeric_leading_zeros,
            }
@@ -511,7 +518,8 @@ not_utc_json_scan_allow=['FileSourceScanExec'] if is_not_utc() else []
 def test_json_read_valid_dates(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
-                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy,
+                                    'spark.rapids.sql.json.read.datetime.enabled': 'true'})
     f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
     if time_parser_policy == 'LEGACY' and ansi_enabled == 'true':
         assert_gpu_fallback_collect(
@@ -546,7 +554,8 @@ def test_json_read_generated_dates(spark_tmp_table_factory, spark_tmp_path, date
 
     updated_conf = copy_and_update(_enable_all_types_conf, {
         'spark.sql.ansi.enabled': ansi_enabled,
-        'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+        'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+        'spark.rapids.sql.json.read.datetime.enabled': 'true'})
 
     options = { 'allowNumericLeadingZeros': allow_numeric_leading_zeros }
     if date_format:
@@ -572,7 +581,8 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
         time_parser_policy, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
-                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy })
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy,
+                                    'spark.rapids.sql.json.read.datetime.enabled': 'true'})
     options = { 'dateFormat': date_format } if date_format else {}
     f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, options)
     if time_parser_policy == 'EXCEPTION':
@@ -605,7 +615,8 @@ def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func,
         spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
                                    {'spark.sql.ansi.enabled': ansi_enabled,
-                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+                                    'spark.sql.legacy.timeParserPolicy': time_parser_policy,
+                                    'spark.rapids.sql.json.read.datetime.enabled': 'true'})
     f = read_func(std_input_path + '/' + filename, schema, spark_tmp_table_factory, {})
     assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
 
@@ -1371,9 +1382,10 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_default_format(zone_
     schema = StructType([StructField("t", TimestampType())])
     data = [[r'''{"t": "2016-01-01 00:00:00"}'''],
         [r'''{"t": "2023-07-27 12:21:05"}''']]
+    conf = copy_and_update(_enable_all_types_conf, {"spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timeZone': zone_id})),
-        conf =_enable_all_types_conf)
+        conf =conf)
 
 # from_json with option (timestampFormat)
 # no timestamp format appears to actually work
@@ -1427,9 +1439,10 @@ def test_spark_from_json_date_with_format():
     data = [["""{"time": "26/08/2015"}"""],
             ["""{"time": "01/01/2024"}"""]]
     schema = StructType([StructField("d", DateType())])
+    conf = copy_and_update(_enable_all_types_conf, {"spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'dateFormat': 'dd/MM/yyyy'})),
-        conf =_enable_all_types_conf)
+        conf =conf)
 
 # TEST from_json missing columns
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
