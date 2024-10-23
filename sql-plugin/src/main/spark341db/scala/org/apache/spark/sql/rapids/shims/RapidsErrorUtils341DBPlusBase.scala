@@ -15,15 +15,16 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "400"}
+{"spark": "341db"}
+{"spark": "350db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.errors.QueryExecutionErrors
 
-trait SequenceSizeExceededLimitErrorBuilder {
-  def getTooLongSequenceErrorString(sequenceSize: Int, functionName: String): String = {
-    QueryExecutionErrors.createArrayWithElementsExceedLimitError(functionName, sequenceSize)
-                        .getMessage
+trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
+  with RapidsQueryErrorUtils {
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }
 }
