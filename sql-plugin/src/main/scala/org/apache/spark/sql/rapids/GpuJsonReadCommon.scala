@@ -17,7 +17,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.DateTimeException
 import java.util.Locale
 //import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table, TableDebug}
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Schema, Table}
@@ -149,34 +148,10 @@ object GpuJsonReadCommon {
       //
 
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
-        dateFormat(options) match {
-          case None =>
-//            System.out.println("dateFormat is None")
-            withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
-              GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
-                dateFormat(options))
-            }
-
-          case _ =>
-//            System.out.println("dateFormat is not None")
-            val (regex, cudfFormat, failOnInvalid) =
-              GpuJsonToStructsShim.getNonLegacyDateRegexAndFormat(dateFormat(options))
-//              System.out.println("regex: " + regex)
-//              System.out.println("cudfFormat: " + cudfFormat)
-//              System.out.println("failOnInvalid: " + failOnInvalid)
-            val output = JSONUtils.castStringsToDates(cv, regex, cudfFormat, failOnInvalid)
-            if(output == null) {
-              throw new DateTimeException("One or more values is not a valid date")
-            }
-            output
+        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
+          GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
+            dateFormat(options))
         }
-
-//        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
-//          GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
-//            dateFormat(options))
-//        }
-
-
       case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
         withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
           GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
