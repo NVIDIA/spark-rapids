@@ -223,8 +223,8 @@ case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
 case class TargetSize(override val targetSizeBytes: Long)
     extends CoalesceSizeGoal
         with SplittableGoal {
-  require(targetSizeBytes <= Integer.MAX_VALUE,
-    "Target cannot exceed 2GB without checks for cudf row count limit")
+//  require(targetSizeBytes <= Integer.MAX_VALUE,
+//    "Target cannot exceed 2GB without checks for cudf row count limit")
 }
 
 /**
