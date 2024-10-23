@@ -38,17 +38,13 @@ class RapidsParquetQuerySuite
         Seq(Some("A"), Some("A"), None).toDF.repartition(1)
           .write.parquet(path.getAbsolutePath)
         val df = spark.read.parquet(path.getAbsolutePath)
-        df.show()
-        stripSparkFilterR(df.where("NOT (value <=> 'A')")).show()
+        stripSparkFilterRapids(df.where("NOT (value <=> 'A')")).show()
         checkAnswer(stripSparkFilterR(df.where("NOT (value <=> 'A')")), df)
       }
     }
   }
 
-  /**
-   * Strip Spark-side filtering in order to check if a datasource filters rows correctly.
-   */
-  def stripSparkFilterR(df: DataFrame): DataFrame = {
+  def stripSparkFilterRapids(df: DataFrame): DataFrame = {
     val schema = df.schema
     val withoutFilters = df.queryExecution.executedPlan.transform {
       case GpuFilterExec(_, child) => child
