@@ -1057,7 +1057,7 @@ private case class GpuParquetFileFilterHandler(
       false
     } else {
       val dt = sparkType.asInstanceOf[DecimalType]
-      metadata.getPrecision <= dt.precision && metadata.getScale == dt.scale
+      metadata.getPrecision <= dt.precision && metadata.getScale <= dt.scale
     }
   }
 }
