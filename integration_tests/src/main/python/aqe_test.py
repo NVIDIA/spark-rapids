@@ -396,7 +396,7 @@ def test_aqe_join_with_dpp(spark_tmp_path):
 
 # Verify that DPP and AQE can coexist in even some odd cases involving 2 tables with multiple columns
 @pytest.mark.skipif(condition=is_databricks_version_or_later(14, 3),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/11527")
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11643")
 @ignore_order(local=True)
 @allow_non_gpu(*aqe_join_with_dpp_fallback)
 def test_aqe_join_with_dpp_multi_columns(spark_tmp_path):
