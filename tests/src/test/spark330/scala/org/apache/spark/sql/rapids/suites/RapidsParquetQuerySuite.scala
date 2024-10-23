@@ -25,9 +25,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.datasources.parquet.ParquetQuerySuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
-class RapidsParquetQuerySuite
-  extends ParquetQuerySuite
-    with RapidsSQLTestsBaseTrait {
+class RapidsParquetQuerySuite extends ParquetQuerySuite with RapidsSQLTestsBaseTrait {
   import testImplicits._
 
   test("SPARK-26677: negated null-safe equality comparison should not filter " +
@@ -38,8 +36,7 @@ class RapidsParquetQuerySuite
         Seq(Some("A"), Some("A"), None).toDF.repartition(1)
           .write.parquet(path.getAbsolutePath)
         val df = spark.read.parquet(path.getAbsolutePath)
-        stripSparkFilterRapids(df.where("NOT (value <=> 'A')")).show()
-        checkAnswer(stripSparkFilterR(df.where("NOT (value <=> 'A')")), df)
+        checkAnswer(stripSparkFilterRapids(df.where("NOT (value <=> 'A')")), df)
       }
     }
   }
