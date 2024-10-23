@@ -242,7 +242,7 @@ abstract class GpuDataSourceBase(
 
       // This is a non-streaming file based datasource.
       case (format: FileFormat, _) =>
-        val useCatalogFileIndex = sparkSession.sqlContext.conf.manageFilesourcePartitions &&
+        val useCatalogFileIndex = sparkSession.sessionState.conf.manageFilesourcePartitions &&
           catalogTable.isDefined && catalogTable.get.tracksPartitionsInCatalog &&
           catalogTable.get.partitionColumnNames.nonEmpty
         val (fileCatalog, dataSchema, partitionSchema) = if (useCatalogFileIndex) {

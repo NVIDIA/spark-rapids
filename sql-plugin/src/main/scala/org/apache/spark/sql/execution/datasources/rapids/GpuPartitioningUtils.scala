@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,8 +99,8 @@ object GpuPartitioningUtils extends SQLConfHelper {
         typeInference = sparkSession.sessionState.conf.partitionColumnTypeInferenceEnabled,
         basePaths = basePaths,
         userSpecifiedSchema = userSpecifiedSchema,
-        caseSensitive = sparkSession.sqlContext.conf.caseSensitiveAnalysis,
-        validatePartitionColumns = sparkSession.sqlContext.conf.validatePartitionColumns,
+        caseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis,
+        validatePartitionColumns = sparkSession.sessionState.conf.validatePartitionColumns,
         timeZoneId = timeZoneId)
       (parsed, anyReplacedBase)
     }
