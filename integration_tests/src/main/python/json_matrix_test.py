@@ -734,7 +734,7 @@ def test_from_json_decs(std_input_path, input_file, dt):
     pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(condition=is_spark_400_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11154')),
     "bad_whitespace.json",
     "escaped_strings.json",
-    pytest.param("nested_escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10534')),
+    pytest.param("nested_escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11632')),
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
@@ -764,7 +764,7 @@ def test_scan_json_strings(std_input_path, read_func, spark_tmp_table_factory, i
     "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
     "escaped_strings.json",
-    pytest.param("nested_escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10534')),
+    pytest.param("nested_escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11632')),
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
     "timestamp_formatted_strings.json",
@@ -791,7 +791,7 @@ def test_from_json_strings(std_input_path, input_file):
     "int_struct_formatted.json",
     "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11386')),
+    "escaped_strings.json",
     pytest.param("nested_escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11387')),
     pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
@@ -1032,7 +1032,9 @@ def test_from_json_doubles(std_input_path, input_file):
 @pytest.mark.parametrize('read_func', [read_json_df])
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_scan_json_corrected_dates(std_input_path, read_func, spark_tmp_table_factory, input_file):
-    conf = copy_and_update(_enable_all_types_json_scan_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_all_types_json_scan_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + input_file,
         StructType([StructField("data", DateType())]),
@@ -1062,7 +1064,9 @@ def test_scan_json_corrected_dates(std_input_path, read_func, spark_tmp_table_fa
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_corrected_dates(std_input_path, input_file):
     schema = StructType([StructField("data", DateType())])
-    conf = copy_and_update(_enable_json_to_structs_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_json_to_structs_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").select(f.col('json'), f.from_json(f.col('json'), schema)),
         conf = conf)
@@ -1091,7 +1095,9 @@ def test_from_json_corrected_dates(std_input_path, input_file):
 @pytest.mark.parametrize('read_func', [read_json_df])
 @allow_non_gpu(*non_utc_allow)
 def test_scan_json_corrected_timestamps(std_input_path, read_func, spark_tmp_table_factory, input_file):
-    conf = copy_and_update(_enable_all_types_json_scan_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_all_types_json_scan_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + input_file,
         StructType([StructField("data", TimestampType())]),
@@ -1121,31 +1127,33 @@ def test_scan_json_corrected_timestamps(std_input_path, read_func, spark_tmp_tab
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow)
 def test_from_json_corrected_timestamps(std_input_path, input_file):
     schema = StructType([StructField("data", TimestampType())])
-    conf = copy_and_update(_enable_json_to_structs_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_json_to_structs_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").select(f.col('json'), f.from_json(f.col('json'), schema)),
         conf = conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10573')),
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11491')),
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_long_arrays(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1156,25 +1164,25 @@ def test_scan_json_long_arrays(std_input_path, read_func, spark_tmp_table_factor
         conf=_enable_all_types_json_scan_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10573')),
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11491')),
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_long_arrays(std_input_path, input_file):
     schema = StructType([StructField("data", ArrayType(LongType()))])
@@ -1183,25 +1191,25 @@ def test_from_json_long_arrays(std_input_path, input_file):
         conf =_enable_json_to_structs_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10574')),
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_string_arrays(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1212,25 +1220,25 @@ def test_scan_json_string_arrays(std_input_path, read_func, spark_tmp_table_fact
         conf=_enable_all_types_json_scan_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10574')),
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_string_arrays(std_input_path, input_file):
     schema = StructType([StructField("data", ArrayType(StringType()))])
@@ -1239,25 +1247,25 @@ def test_from_json_string_arrays(std_input_path, input_file):
         conf =_enable_json_to_structs_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     "int_array_formatted.json",
     pytest.param("int_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_long_structs(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1268,25 +1276,25 @@ def test_scan_json_long_structs(std_input_path, read_func, spark_tmp_table_facto
         conf=_enable_all_types_json_scan_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     "int_array_formatted.json",
     pytest.param("int_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_long_structs(std_input_path, input_file):
     schema = StructType([StructField("data", StructType([StructField("A", LongType()),StructField("B", LongType())]))])
@@ -1295,25 +1303,25 @@ def test_from_json_long_structs(std_input_path, input_file):
         conf =_enable_json_to_structs_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     "int_array_formatted.json",
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_string_structs(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1324,25 +1332,25 @@ def test_scan_json_string_structs(std_input_path, read_func, spark_tmp_table_fac
         conf=_enable_all_types_json_scan_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     "int_array_formatted.json",
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_string_structs(std_input_path, input_file):
     schema = StructType([StructField("data", StructType([StructField("A", StringType()),StructField("B", StringType())]))])
@@ -1352,24 +1360,24 @@ def test_from_json_string_structs(std_input_path, input_file):
 
 @pytest.mark.parametrize('dt', [DecimalType(38,0), DecimalType(10,2)], ids=idfn)
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10573')), # This does not fail on 38,0
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11491')),
     "bad_whitespace.json",
-    pytest.param("escaped_stringted_.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_dec_arrays(std_input_path, read_func, spark_tmp_table_factory, input_file, dt):
@@ -1381,25 +1389,25 @@ def test_scan_json_dec_arrays(std_input_path, read_func, spark_tmp_table_factory
 
 @pytest.mark.parametrize('dt', [DecimalType(38,0), DecimalType(10,2)], ids=idfn)
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     pytest.param("int_array_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10573')), # This does not fail on 38,0
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11491')),
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260'))])
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_dec_arrays(std_input_path, input_file, dt):
     schema = StructType([StructField("data", ArrayType(dt))])
@@ -1408,25 +1416,25 @@ def test_from_json_dec_arrays(std_input_path, input_file, dt):
         conf =_enable_json_to_structs_conf)
 
 @pytest.mark.parametrize('input_file', [
-    pytest.param("int_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("int_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("float_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("sci_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("decimal_locale_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("single_quoted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("boolean_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_formatted.json",
+    "float_formatted.json",
+    "sci_formatted.json",
+    "int_formatted_strings.json",
+    "float_formatted_strings.json",
+    "sci_formatted_strings.json",
+    "decimal_locale_formatted_strings.json",
+    "single_quoted_strings.json",
+    "boolean_formatted.json",
     "int_array_formatted.json",
     "int_struct_formatted.json",
-    pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "int_mixed_array_struct_formatted.json",
     "bad_whitespace.json",
-    pytest.param("escaped_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "escaped_strings.json",
     "nested_escaped_strings.json",
-    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    pytest.param("repeated_columns.json", marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/11361')),
     "mixed_objects.json",
-    pytest.param("timestamp_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
-    pytest.param("timestamp_tz_formatted_strings.json", marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/15260')),
+    "timestamp_formatted_strings.json",
+    "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
 def test_scan_json_mixed_struct(std_input_path, read_func, spark_tmp_table_factory, input_file):
@@ -1448,7 +1456,9 @@ def test_scan_json_mixed_struct(std_input_path, read_func, spark_tmp_table_facto
     ])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_from_json_mixed_corrected(std_input_path, input_file, schema):
-    conf = copy_and_update(_enable_json_to_structs_conf, {"spark.sql.legacy.timeParserPolicy": "CORRECTED"})
+    conf = copy_and_update(_enable_json_to_structs_conf, 
+        {"spark.sql.legacy.timeParserPolicy": "CORRECTED",
+         "spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : read_json_as_text(spark, std_input_path + '/' + input_file, "json").selectExpr('json',
             "from_json(json, '" + schema + "') as parsed"),

@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
-object RapidsErrorUtils extends RapidsQueryErrorUtils {
+object RapidsErrorUtils extends RapidsQueryErrorUtils with SequenceSizeTooLongErrorBuilder {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     // Follow the Spark string format before 3.3.0

@@ -551,12 +551,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createWithDefault(2)
 
-  val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
-    .doc("Number of threads used to spill shuffle data to disk in the background.")
-    .commonlyUsed()
-    .integerConf
-    .createWithDefault(6)
-
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
@@ -1366,6 +1360,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "unicode digits, and the RAPIDS Accelerator does not.")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_READ_JSON_DATE_TIME = conf("spark.rapids.sql.json.read.datetime.enabled")
+    .doc("JSON reading is not 100% compatible when reading dates and timestamps.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
     .doc("When set to true enables all avro input and output acceleration. " +
@@ -2418,7 +2417,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.10.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.12.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2849,7 +2848,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-  
+
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
@@ -2956,6 +2955,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
+
+  lazy val isJsonDateTimeReadEnabled: Boolean = get(ENABLE_READ_JSON_DATE_TIME)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 

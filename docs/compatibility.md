@@ -393,10 +393,14 @@ consistent with the behavior in Spark 3.3.0 and later.
 Another limitation of the GPU JSON reader is that it will parse strings containing non-string boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
 
-### JSON Timestamps/Dates
+### JSON Dates/Timestamps
 
-The JSON parser does not support the `TimestampNTZ` type and will fall back to CPU if `spark.sql.timestampType` is
-set to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `TimestampNTZ` type.
+Dates and timestamps are not supported by default in JSON parser, since the GPU implementation is not 100%
+compatible with Apache Spark.
+If needed, they can be turned on through the config `spark.rapids.sql.json.read.datetime.enabled`.
+Once enabled, the JSON parser still does not support the `TimestampNTZ` type and will fall back to CPU
+if `spark.sql.timestampType` is set to `TIMESTAMP_NTZ` or if an explicit schema is provided that
+contains the `TimestampNTZ` type.
 
 There is currently no support for reading numeric values as timestamps and null values are returned instead
 ([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast
@@ -418,6 +422,9 @@ The `from_json` function is disabled by default because it is experimental and h
 incompatibilities with Spark, and can be enabled by setting 
 `spark.rapids.sql.expression.JsonToStructs=true`. You don't need to set 
 `spark.rapids.sql.format.json.enabled` and`spark.rapids.sql.format.json.read.enabled` to true.
+In addition, if the input schema contains date and/or timestamp types, an additional config 
+`spark.rapids.sql.json.read.datetime.enabled` also needs to be set to `true` in order 
+to enable this function on the GPU.
 
 There is no schema discovery as a schema is required as input to `from_json`
 
@@ -652,6 +659,7 @@ guaranteed to produce the same results as the CPU:
 - `yyyy/MM/dd`
 - `yyyy-MM-dd`
 - `yyyyMMdd`
+- `yyyymmdd`
 - `yyyy/MM/dd HH:mm:ss`
 - `yyyy-MM-dd HH:mm:ss`
 
@@ -661,7 +669,10 @@ LEGACY timeParserPolicy support has the following limitations when running on th
 - The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar
   that Spark uses in legacy mode
 - When format is `yyyyMMdd`, GPU only supports 8 digit strings. Spark supports like 7 digit
-  `2024101` string while GPU does not support.
+  `2024101` string while GPU does not support. Only tested `UTC` and `Asia/Shanghai` timezones.
+- When format is `yyyymmdd`, GPU only supports 8 digit strings. Spark supports like 7 digit
+  `2024101` string while GPU does not support. Only tested `UTC` and `Asia/Shanghai` timezones.
+
 
 ## Formatting dates and timestamps as strings
 

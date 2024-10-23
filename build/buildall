@@ -86,7 +86,7 @@ function bloopInstall() {
 
 function versionsFromDistProfile() {
   [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
-  versionRawStr=$(mvn -B help:evaluate -q -pl dist -P"$1" -Dexpression=included_buildvers -DforceStdout)
+  versionRawStr=$($MVN -B help:evaluate -q -pl dist -P"$1" -Dexpression=included_buildvers -DforceStdout)
   versionStr=${versionRawStr//[$'\n',]/}
   echo -n $versionStr
 }
@@ -171,6 +171,7 @@ fi
 export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
 
 if [[ "$SCALA213" == "1" ]]; then
+  MVN="$MVN -f scala2.13/"
   DIST_PROFILE=${DIST_PROFILE:-"noSnapshotsScala213"}
   $(dirname $0)/make-scala-version-build-files.sh 2.13
 else
@@ -222,6 +223,8 @@ if [[ "$GEN_BLOOP" == "true" ]]; then
   exit 0
 fi
 
+[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
+
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
 export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
 export NUM_SHIMS=${#SPARK_SHIM_VERSIONS[@]}
@@ -230,10 +233,6 @@ export BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 if [[ "$SKIP_CLEAN" != "1" ]]; then
   echo Clean once across all modules
   $MVN -q clean
-fi
-
-if [[ "$SCALA213" == "1" ]]; then
-  cd scala2.13
 fi
 
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
@@ -305,7 +304,7 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $INCLUDED_BUILDVERS_OPT \
+  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dmaven.scaladoc.skip
 )
