@@ -19,8 +19,8 @@ from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_emr_runtime
 from data_gen import *
-from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
-from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime
+from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
+from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime, is_spark_400_or_later
 
 pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
@@ -122,6 +122,7 @@ def join_batch_size_test_params(*args):
                 params += [ pytest.param(obj, batch_size) ]
     return params
 
+@pytest.mark.skipif(is_spark_400_or_later(), reason='EmptyRelationExec not yet supported') # https://github.com/NVIDIA/spark-rapids/issues/11100
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
@@ -131,6 +132,7 @@ def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe
         return left.join(broadcast(right), how=join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
+@pytest.mark.skipif(is_spark_400_or_later(), reason='EmptyRelationExec not yet supported') # https://github.com/NVIDIA/spark-rapids/issues/11100
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
@@ -140,6 +142,7 @@ def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_
         return left.join(broadcast(right), how=join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
+@pytest.mark.skipif(is_spark_400_or_later(), reason='EmptyRelationExec not yet supported') # https://github.com/NVIDIA/spark-rapids/issues/11100
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
@@ -149,6 +152,7 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabl
         return left.join(broadcast(right), how=join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
+@pytest.mark.skipif(is_spark_400_or_later(), reason='EmptyRelationExec not yet supported') # https://github.com/NVIDIA/spark-rapids/issues/11100
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
@@ -157,6 +161,7 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
         return left.join(broadcast(right), how=join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.adaptive.enabled': 'true'})
 
+@pytest.mark.skipif(is_spark_400_or_later(), reason='EmptyRelationExec not yet supported') # https://github.com/NVIDIA/spark-rapids/issues/11100
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_empty_broadcast_hash_join(join_type):
@@ -165,6 +170,8 @@ def test_empty_broadcast_hash_join(join_type):
         return left.join(right.hint("broadcast"), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.adaptive.enabled': 'true'})
 
+# ShuffleExchangeExec falling back to CPU due to HashAggregate, see linked issue
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_broadcast_hash_join_constant_keys(join_type):
     def do_join(spark):
@@ -317,6 +324,7 @@ def test_cartesian_join(data_gen, batch_size):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.xfail(condition=is_databricks_runtime(),
@@ -330,6 +338,7 @@ def test_cartesian_join_special_case_count(batch_size):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.xfail(condition=is_databricks_runtime(),
@@ -375,6 +384,7 @@ def test_broadcast_nested_loop_join(data_gen, batch_size):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join_special_case_count(batch_size):
@@ -385,6 +395,7 @@ def test_broadcast_nested_loop_join_special_case_count(batch_size):
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
@@ -444,6 +455,7 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
         return left.join(broadcast(right), left.a > f.log(right.r_a), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Cross', 'Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -518,6 +530,7 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
         return broadcast(left).join(right, how=join_type).distinct()
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -527,6 +540,7 @@ def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join
         return left.join(broadcast(right), how=join_type).selectExpr('COUNT(*)')
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -706,6 +720,7 @@ def test_join_bucketed_table(repartition, spark_tmp_table_factory):
 
 # Because we disable ShuffleExchangeExec in some cases we need to allow it to not be on the GPU
 # and we do the result sorting in python to avoid that shuffle also being off the GPU
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -727,7 +742,8 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
             # by default if the operation after the shuffle is not on the GPU then
             # don't do a GPU shuffle, so do something simple after the repartition
             # to make sure that the GPU shuffle is used.
-            left = left.repartition('a').selectExpr('b + 1 as b', 'a').cache()
+            # Changed from `+ 1` to `/ 2` to avoid ANSI mode overflow errors
+            left = left.repartition('a').selectExpr('b / 2 as b', 'a').cache()
             left.count() # populate the cache
         else:
             #cache_right
@@ -735,7 +751,8 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
             # by default if the operation after the shuffle is not on the GPU then
             # don't do a GPU shuffle, so do something simple after the repartition
             # to make sure that the GPU shuffle is used.
-            right = right.repartition('r_a').selectExpr('c + 1 as c', 'r_a').cache()
+            # Changed from `+ 1` to `/ 2` to avoid ANSI mode overflow errors
+            right = right.repartition('r_a').selectExpr('c / 2 as c', 'r_a').cache()
             right.count() # populate the cache
         # Now turn it back so the other half of the shuffle will be on the oposite side
         spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', cpu_side == 'cache')
@@ -1220,7 +1237,9 @@ def test_distinct_join(join_type, batch_size):
     }
     def do_join(spark):
         left_df = spark.range(1024).withColumn("x", f.col("id") + 1)
-        right_df = spark.range(768).withColumn("x", f.col("id") * 2)
+        # Changed from `* 2` to `/ 2` to avoid error that caused project to fall back to CPU
+        # right_df = spark.range(768).withColumn("x", f.col("id") * 2)
+        right_df = spark.range(768).withColumn("x", f.col("id") / 2)
         return left_df.join(right_df, ["x"], join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
 
@@ -1296,6 +1315,7 @@ def test_sized_join_conditional(join_type, is_ast_supported, is_left_smaller, ba
         return left_df.join(right_df, cond, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
 
+@disable_ansi_mode # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize("join_type", ["LeftOuter", "RightOuter"], ids=idfn)
 @pytest.mark.parametrize("is_left_replicated", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_conditional", [False, True], ids=idfn)
