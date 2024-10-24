@@ -164,7 +164,6 @@ abstract class BackendTestSettings {
       this
     }
 
-
     def includeAllRapidsTests(): SuiteSettings = {
       inclusion.add(IncludeByPrefix(RAPIDS_TEST))
       this
