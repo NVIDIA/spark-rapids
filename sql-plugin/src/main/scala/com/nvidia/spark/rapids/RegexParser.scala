@@ -1388,9 +1388,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
                   case RegexEscaped('z') =>
-                    // \Z\z or $\z transpiles to $
-                    r(j) = RegexChar('$')
-                    popBackrefIfNecessary(false)
+                    // since \z is not supported by cudf
+                    // we need to transpile $\z to $(?![\r\n\u0085\u2028\u2029])
+                    // however, cudf doesn't support negative look ahead
+                    throw new RegexUnsupportedException("Regex sequence $\\z is not supported",
+                      part.position)
                   case RegexEscaped(a) if "bB".contains(a) =>
                     throw new RegexUnsupportedException(
                       "Regex sequences with \\b or \\B not supported around $", part.position)

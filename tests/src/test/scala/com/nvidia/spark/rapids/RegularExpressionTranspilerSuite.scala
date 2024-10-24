@@ -460,7 +460,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\Z", "(?:\r|\u0085|\u2028|\u2029|\r\n)?\\$"))
+        .replaceAll("\\\\Z", "(?:\r\n)?\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -474,11 +474,11 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   test("transpile $") {
-    doTranspileTest("a$", "a(?:\r|\u0085|\u2028|\u2029|\r\n)?$")
+    doTranspileTest("a$", "a(?:\r\n)?$")
   }
 
   test("transpile \\Z") {
-    val expected = "a(?:\r|\u0085|\u2028|\u2029|\r\n)?$"
+    val expected = "a(?:\r\n)?$"
     doTranspileTest("a\\Z", expected)
     doTranspileTest("a\\Z+", expected)
     doTranspileTest("a\\Z{1}", expected)
@@ -538,7 +538,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},-./;:!^$#%&*+?<=>@\"'~`_" +
-    "abc0123x\\ \t\r\n\f\u000b\u0000BsdwSDWzZ"
+    "abc0123x\\ \t\r\n\f\u000b\u0000BsdwSDWZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 
