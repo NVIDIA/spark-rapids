@@ -63,7 +63,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
     .exclude("SPARK-36229 conv should return result equal to -1 in base of toBase", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
   enableSuite[RapidsParquetAvroCompatibilitySuite]
-    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11401"))
+    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11592"))
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
     .exclude("Create parquet table with compression", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11416"))
@@ -72,25 +72,25 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetFileFormatSuite]
-    .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11402"))
+    .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11602"))
   enableSuite[RapidsParquetFieldIdIOSuite]
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
     .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11454"))
     .exclude("parquet timestamp conversion", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11448"))
   enableSuite[RapidsParquetPartitionDiscoverySuite]
-    .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11430"))
+    .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11583"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
-    .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
-    .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
+    .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11475"))
+    .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11476"))
   enableSuite[RapidsParquetQuerySuite]
     .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11403"))
     .exclude("SPARK-34212 Parquet should read decimals correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11433"))
   enableSuite[RapidsParquetRebaseDatetimeSuite]
-    .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
+    .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11599"))
+    .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11593"))
+    .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11480"))
+    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", ADJUST_UT("original test case inherited from Spark cannot find the needed local resources"))
   enableSuite[RapidsParquetSchemaPruningSuite]
     .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
     .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
