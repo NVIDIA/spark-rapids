@@ -18,11 +18,10 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
 from data_gen import *
 from pyspark.sql.types import *
 
-from spark_session import is_before_spark_400
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
 import pyspark.sql.utils
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_334, is_before_spark_351, is_before_spark_342, is_before_spark_340, is_spark_350
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_334, is_before_spark_342, is_before_spark_340, is_databricks_version_or_later, is_spark_350, is_spark_400_or_later
 from conftest import get_datagen_seed
 from marks import allow_non_gpu
 
@@ -330,8 +329,9 @@ sequence_too_long_length_gens = [
 def test_sequence_too_long_sequence(stop_gen):
     msg = "Too long sequence" if is_before_spark_334() \
                                  or (not is_before_spark_340() and is_before_spark_342()) \
-                                 or is_spark_350() \
-          else "Can't create array" if not is_before_spark_400() \
+                                 or (is_spark_350() and not is_databricks_version_or_later(14, 3)) \
+          else "Can't create array" if ((is_databricks_version_or_later(14, 3))
+                                         or is_spark_400_or_later()) \
           else "Unsuccessful try to create array with"
     assert_gpu_and_cpu_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.

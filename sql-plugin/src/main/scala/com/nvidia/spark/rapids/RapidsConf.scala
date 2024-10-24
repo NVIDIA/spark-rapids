@@ -822,6 +822,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val DFUDF_ENABLED = conf("spark.rapids.sql.dfudf.enabled")
+    .doc("When set to false, the DataFrame UDF plugin is disabled. True enables it.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
@@ -1360,6 +1366,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "unicode digits, and the RAPIDS Accelerator does not.")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_READ_JSON_DATE_TIME = conf("spark.rapids.sql.json.read.datetime.enabled")
+    .doc("JSON reading is not 100% compatible when reading dates and timestamps.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
     .doc("When set to true enables all avro input and output acceleration. " +
@@ -2593,6 +2604,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
+  lazy val isDfUdfEnabled: Boolean = get(DFUDF_ENABLED)
+
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
@@ -2843,7 +2856,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-  
+
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
@@ -2950,6 +2963,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
+
+  lazy val isJsonDateTimeReadEnabled: Boolean = get(ENABLE_READ_JSON_DATE_TIME)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
