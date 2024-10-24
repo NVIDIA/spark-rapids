@@ -49,16 +49,16 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
    */
   @transient protected var rng: RapidsXORShiftRandom = _
 
-  @transient protected lazy val seed: Long = child match {
+  private lazy val seed: Long = child match {
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
     case GpuLiteral(s, LongType) => s.asInstanceOf[Long]
     case _ => throw new RapidsAnalysisException(
       s"Input argument to $prettyName must be an integer, long or null literal.")
   }
 
-  @transient protected var previousPartition: Int = 0
+  private var previousPartition: Int = 0
 
-  @transient protected var curXORShiftRandomSeed: Option[Long] = None
+  private var curXORShiftRandomSeed: Option[Long] = None
 
   private def wasInitialized: Boolean = rng != null
 
