@@ -102,10 +102,13 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
     .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
   enableSuite[RapidsParquetSchemaPruningSuite]
-    .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
-    .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
-    .excludeByPrefix("Case-insensitive parser", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
-    .excludeByPrefix("Case-sensitive parser", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
+    .excludeBySuffix("select a single complex field", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11619"))
+    .excludeBySuffix("select a single complex field and the partition column", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11620"))
+    .excludeBySuffix("select missing subfield", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11621"))
+    .excludeBySuffix("select explode of nested field of array of struct", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
+    .excludeBySuffix("empty schema intersection", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11627"))
+    .excludeBySuffix("select one deep nested complex field after join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11628"))
+    .excludeBySuffix("select one deep nested complex field after outer join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11629"))
   enableSuite[RapidsParquetSchemaSuite]
     .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11434"))
     .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11446"))
