@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
@@ -72,6 +71,7 @@ class GpuShuffledHashJoinMeta(
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
+    val readOpt = CoalesceReadOption(conf)
     val joinExec = join.joinType match {
       case LeftOuter | RightOuter if useSizedJoin =>
         GpuShuffledAsymmetricHashJoinExec(
@@ -83,6 +83,7 @@ class GpuShuffledHashJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          readOpt,
           isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys,
@@ -97,6 +98,7 @@ class GpuShuffledHashJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          readOpt,
           isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys)
@@ -285,22 +287,20 @@ object GpuShuffledHashJoinExec extends Logging {
     val buildTypes = buildOutput.map(_.dataType).toArray
     closeOnExcept(new CloseableBufferedIterator(buildIter)) { bufBuildIter =>
       val startTime = System.nanoTime()
+      var isBuildSerialized = false
       // Batches type detection
-      val isBuildSerialized = bufBuildIter.hasNext && isBatchSerialized(bufBuildIter.head)
-
-      // Let batches coalesce for size overflow check
-      val coalesceBuiltIter = if (isBuildSerialized) {
-        new HostShuffleCoalesceIterator(bufBuildIter, targetSize, coalesceMetrics)
-      } else { // Batches on GPU have already coalesced to the target size by the given goal.
-        bufBuildIter
-      }
-
+      val coalesceBuiltIter = GpuShuffleCoalesceUtils.getHostShuffleCoalesceIterator(
+        bufBuildIter, targetSize, coalesceMetrics).map { iter =>
+        isBuildSerialized = true
+        iter
+      }.getOrElse(bufBuildIter)
       if (coalesceBuiltIter.hasNext) {
         val firstBuildBatch = coalesceBuiltIter.next()
         // Batches have coalesced to the target size, so size will overflow if there are
         // more than one batch, or the first batch size already exceeds the target.
         val sizeOverflow = closeOnExcept(firstBuildBatch) { _ =>
-          coalesceBuiltIter.hasNext || getBatchSize(firstBuildBatch) > targetSize
+          coalesceBuiltIter.hasNext ||
+            GpuShuffleCoalesceUtils.getCoalescedBufferSize(firstBuildBatch) > targetSize
         }
         val needSingleBuildBatch = !subPartConf.getOrElse(sizeOverflow)
         if (needSingleBuildBatch && isBuildSerialized && !sizeOverflow) {
@@ -309,11 +309,11 @@ object GpuShuffledHashJoinExec extends Logging {
           // It can be optimized for grabbing the GPU semaphore when there is only a single
           // serialized host batch and the sub-partitioning is not activated.
           val (singleBuildCb, bufferedStreamIter) = getBuildBatchOptimizedAndClose(
-            firstBuildBatch.asInstanceOf[HostConcatResult], streamIter, buildTypes,
-            buildGoal, buildTime)
+            firstBuildBatch, streamIter, buildTypes, buildGoal, buildTime)
           logDebug("In the optimized case for grabbing the GPU semaphore, return " +
-            s"a single batch (size: ${getBatchSize(singleBuildCb)}) for the build side " +
-            s"with $buildGoal goal.")
+            s"a single batch (size: " +
+            s"${GpuShuffleCoalesceUtils.getCoalescedBufferSize(singleBuildCb)}) for the " +
+            s"build side with $buildGoal goal.")
           (Left(singleBuildCb), bufferedStreamIter)
 
         } else { // Other cases without optimization
@@ -321,8 +321,7 @@ object GpuShuffledHashJoinExec extends Logging {
             coalesceBuiltIter
           val gpuBuildIter = if (isBuildSerialized) {
             // batches on host, move them to GPU
-            new GpuShuffleCoalesceIterator(safeIter.asInstanceOf[Iterator[HostConcatResult]],
-              buildTypes, coalesceMetrics)
+            new GpuShuffleCoalesceIterator(safeIter, buildTypes, coalesceMetrics)
           } else { // batches already on GPU
             safeIter.asInstanceOf[Iterator[ColumnarBatch]]
           }
@@ -334,8 +333,9 @@ object GpuShuffledHashJoinExec extends Logging {
           }.getOrElse {
             if (needSingleBuildBatch) {
               val oneCB = getAsSingleBatch(gpuBuildIter, buildOutput, buildGoal, coalesceMetrics)
-              logDebug(s"Return a single batch (size: ${getBatchSize(oneCB)}) for the " +
-                s"build side with $buildGoal goal.")
+              logDebug(s"Return a single batch (size: " +
+                s"${GpuShuffleCoalesceUtils.getCoalescedBufferSize(oneCB)}) for the build " +
+                s"side with $buildGoal goal.")
               Left(oneCB)
             } else {
               logDebug("Return multiple batches as the build side data for the following " +
@@ -411,16 +411,8 @@ object GpuShuffledHashJoinExec extends Logging {
     }
   }
 
-  /** Only accepts a HostConcatResult or a ColumnarBatch as input */
-  private def getBatchSize(maybeBatch: AnyRef): Long = maybeBatch match {
-    case batch: ColumnarBatch => GpuColumnVector.getTotalDeviceMemoryUsed(batch)
-    case hostBatch: HostConcatResult => hostBatch.getTableHeader().getDataLen()
-    case _ => throw new IllegalStateException(s"Expect a HostConcatResult or a " +
-      s"ColumnarBatch, but got a ${maybeBatch.getClass.getSimpleName}")
-  }
-
   private def getBuildBatchOptimizedAndClose(
-      hostConcatResult: HostConcatResult,
+      hostConcatResult: AutoCloseable,
       streamIter: Iterator[ColumnarBatch],
       buildDataTypes: Array[DataType],
       buildGoal: CoalesceSizeGoal,
@@ -441,8 +433,7 @@ object GpuShuffledHashJoinExec extends Logging {
         }
         // Bring the build batch to the GPU now
         val buildBatch = buildTime.ns {
-          val cb =
-            cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, buildDataTypes)
+          val cb = GpuShuffleCoalesceUtils.toGpuIfAllowed(hostConcatResult, buildDataTypes)
           getFilterFunc(buildGoal).map(filterAndClose => filterAndClose(cb)).getOrElse(cb)
         }
         (buildBatch, bufStreamIter)
@@ -461,10 +452,6 @@ object GpuShuffledHashJoinExec extends Logging {
       coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME),
       "single build batch")
     ConcatAndConsumeAll.getSingleBatchWithVerification(singleBatchIter, inputAttrs)
-  }
-
-  def isBatchSerialized(batch: ColumnarBatch): Boolean = {
-    batch.numCols() == 1 && batch.column(0).isInstanceOf[SerializedTableColumn]
   }
 }
 
