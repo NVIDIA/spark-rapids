@@ -24,7 +24,7 @@ import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.jni.{CastStrings, JSONUtils}
+import com.nvidia.spark.rapids.jni.{JSONUtils}
 
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
@@ -62,27 +62,6 @@ object GpuJsonReadCommon {
     builder.build
   }
 
-
-  private def castStringToFloat(cv: ColumnView, dt: DType,
-      options: JSONOptions): ColumnVector = {
-//    TableDebug.get().debug("input", cv)
-
-    if (options.allowNonNumericNumbers) {
-      // The input already parsed non-numeric numbers according to the reading options.
-      // Only quoted strings left.
-      withResource(JSONUtils.removeQuotesForFloats(cv)) { sanitizedInput =>
-//        TableDebug.get().debug("sanitized float", sanitizedInput)
-
-        val out = CastStrings.toFloat(sanitizedInput, false, dt)
-//        TableDebug.get().debug("out with allow", out)
-        out
-      }
-    } else {
-      val out = CastStrings.toFloat(cv, false, dt)
-//      TableDebug.get().debug("out no allow", out)
-      out
-    }
-  }
 
 
 
@@ -175,7 +154,8 @@ object GpuJsonReadCommon {
       //
       // DONE
       case (cv, Some(dt)) if (dt == DoubleType || dt == FloatType) && cv.getType == DType.STRING =>
-        castStringToFloat(cv,  GpuColumnVector.getNonNestedRapidsType(dt), options)
+        JSONUtils.castStringsToFloats(cv,  GpuColumnVector.getNonNestedRapidsType(dt),
+          options.allowNonNumericNumbers)
       //
       //
 
