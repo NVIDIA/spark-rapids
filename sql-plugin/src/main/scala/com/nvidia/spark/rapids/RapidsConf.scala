@@ -2388,6 +2388,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(true)
 
+  val TRACE_TASK_GPU_OWNERSHIP = conf("spark.rapids.sql.nvtx.traceTaskGpuOwnership")
+    .doc("Enable tracing of the GPU ownership of tasks. This can be useful for debugging " +
+      "deadlocks and other issues related to GPU semaphore.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
