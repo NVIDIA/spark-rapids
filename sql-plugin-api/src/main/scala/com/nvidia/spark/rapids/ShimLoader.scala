@@ -360,6 +360,14 @@ object ShimLoader {
       newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
 
+  def newFunctionsImpl(): Functions = {
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.FunctionsImpl")
+  }
+
+  def newDFUDFImpl(): DFUDFPluginAPI = {
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.DFUDFPluginImpl")
+  }
+
   def loadColumnarRDD(): Class[_] = {
     ShimReflectionUtils.
       loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")

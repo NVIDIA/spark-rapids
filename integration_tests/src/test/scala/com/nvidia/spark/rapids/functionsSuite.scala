@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark
+package com.nvidia.spark.rapids
 
 import com.nvidia.spark.functions._
 

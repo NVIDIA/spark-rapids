@@ -822,6 +822,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val DFUDF_ENABLED = conf("spark.rapids.sql.dfudf.enabled")
+    .doc("When set to false, the DataFrame UDF plugin is disabled. True enables it.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
       "set if they should be enabled by default or disabled by default.")
@@ -2597,6 +2603,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_MODE).equals("explainonly")
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
+
+  lazy val isDfUdfEnabled: Boolean = get(DFUDF_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
