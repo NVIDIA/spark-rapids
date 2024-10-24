@@ -846,7 +846,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
   // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
   // the end of a line of an input character sequence.
   // this method produces a RegexAST which outputs a regular expression to match any possible
-  // combination of line terminators
+  // combination of line terminators.
+  // Cudf added support to identify \n, \r, \u0085, \u2028, \u2029 as line break characters
+  // when EXT_NEWLINE flag is set. See issue: https://github.com/NVIDIA/spark-rapids/issues/11554
   private def lineTerminatorMatcher(excludeCRLF: Boolean, capture: Boolean): RegexAST = {
     if (excludeCRLF) {
       RegexEmpty()
