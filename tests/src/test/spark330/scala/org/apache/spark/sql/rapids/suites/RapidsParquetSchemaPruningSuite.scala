@@ -19,9 +19,33 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
+import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.parquet.ParquetSchemaPruningSuite
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetSchemaPruningSuite
   extends ParquetSchemaPruningSuite
-  with RapidsSQLTestsBaseTrait {}
+  with RapidsSQLTestsBaseTrait {
+
+  override protected def checkScanSchemata(df: DataFrame,
+                                           expectedSchemaCatalogStrings: String*): Unit = {
+    val fileSourceScanSchemata =
+      collect(df.queryExecution.executedPlan) {
+        case scan: FileSourceScanExec => scan.requiredSchema
+        case gpuScan: GpuFileSourceScanExec => gpuScan.requiredSchema
+      }
+    assert(fileSourceScanSchemata.size === expectedSchemaCatalogStrings.size,
+      s"Found ${fileSourceScanSchemata.size} file sources in dataframe, " +
+        s"but expected $expectedSchemaCatalogStrings")
+    fileSourceScanSchemata.zip(expectedSchemaCatalogStrings).foreach {
+      case (scanSchema, expectedScanSchemaCatalogString) =>
+        val expectedScanSchema = CatalystSqlParser.parseDataType(expectedScanSchemaCatalogString)
+        implicit val equality = schemaEquality
+        assert(scanSchema === expectedScanSchema)
+    }
+
+  }
+}
