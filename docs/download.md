@@ -27,7 +27,7 @@ The plugin is tested on the following architectures:
 
 ### Software Requirements:
 
-	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+	OS: Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
 
 	NVIDIA Driver*: R470+
 
