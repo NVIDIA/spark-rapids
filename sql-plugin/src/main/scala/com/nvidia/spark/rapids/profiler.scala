@@ -122,19 +122,26 @@ object ProfilerOnExecutor extends Logging {
       val stageId = taskCtx.stageId
       if (stageRanges.contains(stageId)) {
         synchronized {
+          println("stageRanges.contains(stageId)")
           if (taskLimit <= 0) {
+            println("no task limit")
             // Unlimited tasks per stage
             activeStages.add(taskCtx.stageId)
             enable()
             startPollingDriver()
           } else {
             val currentCount = stageTaskCount.getOrElse(stageId, 0)
+            println(s"taskLimit: $taskLimit, currentCount: $currentCount")
             // Check if the task limit has been reached
             if (currentCount < taskLimit) {
               stageTaskCount(taskCtx.stageId) = currentCount + 1
               activeStages.add(taskCtx.stageId)
               enable()
               startPollingDriver()
+            } else {
+              println("task limit reached")
+              // disable()
+              // stopPollingDriver()
             }
           }
         }
