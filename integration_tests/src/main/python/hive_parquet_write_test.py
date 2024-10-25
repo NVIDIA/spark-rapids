@@ -25,11 +25,26 @@ from spark_session import with_cpu_session, with_gpu_session, is_before_spark_32
 # "GpuInsertIntoHiveTable" for Parquet write.
 _write_to_hive_conf = {"spark.sql.hive.convertMetastoreParquet": False}
 
-_hive_bucket_gens = [
+_hive_bucket_basic_gens = [
     boolean_gen, byte_gen, short_gen, int_gen, long_gen, string_gen, float_gen, double_gen,
     DateGen(start=date(1590, 1, 1)), _restricted_timestamp()]
 
-_hive_basic_gens = _hive_bucket_gens + [
+_hive_bucket_basic_struct_gen = StructGen(
+    [['c'+str(ind), c_gen] for ind, c_gen in enumerate(_hive_bucket_basic_gens)])
+
+_hive_bucket_struct_gens = [
+    _hive_bucket_basic_struct_gen,
+    StructGen([['child0', byte_gen], ['child1', _hive_bucket_basic_struct_gen]]),
+    StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+_hive_bucket_array_gens = [ArrayGen(sub_gen) for sub_gen in _hive_bucket_basic_gens] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+_hive_bucket_gens = _hive_bucket_basic_gens + _hive_bucket_struct_gens + _hive_bucket_array_gens
+
+_hive_basic_gens = _hive_bucket_basic_gens + [
     DecimalGen(precision=19, scale=1, nullable=True),
     DecimalGen(precision=23, scale=5, nullable=True),
     DecimalGen(precision=36, scale=3, nullable=True)]

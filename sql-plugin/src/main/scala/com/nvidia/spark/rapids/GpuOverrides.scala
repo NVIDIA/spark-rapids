@@ -3309,8 +3309,27 @@ object GpuOverrides extends Logging {
       "hive hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.psNote(TypeEnum.ARRAY, "Nested levels exceeding 8 layers are not supported") +
+              TypeSig.psNote(TypeEnum.STRUCT, "Nested levels exceeding 8 layers are not supported"),
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          def getMaxNestedDepth(inputType: DataType): Int = {
+            inputType match {
+              case at: ArrayType => 1 + getMaxNestedDepth(at.elementType)
+              case st: StructType =>
+                1 + st.map(f => getMaxNestedDepth(f.dataType)).max
+              case _ => 1 // primitive types
+            }
+          }
+          val maxDepth = a.children.map(c => getMaxNestedDepth(c.dataType)).max
+          if (maxDepth > 8) {
+            willNotWorkOnGpu(s"GPU HiveHash supports 8 levels at most for " +
+              s"nested types, but got $maxDepth")
+          }
+        }
+
         def convertToGpu(): GpuExpression =
           GpuHiveHash(childExprs.map(_.convertToGpu()))
       }),
