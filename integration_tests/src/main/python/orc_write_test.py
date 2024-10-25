@@ -360,8 +360,8 @@ def test_orc_do_not_lowercase_columns(spark_tmp_path):
 
     # The wording of the `is not exists` error message in Spark 4.x is unfortunate, but accurate:
     # https://github.com/apache/spark/blob/4501285a49e4c0429c9cf2c105f044e1c8a93d21/python/pyspark/errors/error-conditions.json#L487
-    expected_error_message = "No StructField named acol" if is_before_spark_400() else \
-                             "Key `acol` is not exists."
+    expected_error_message = "Key `acol` is not exists." if is_spark_400_or_later() or is_databricks_version_or_later(14, 3) \
+                             else "No StructField named acol"
     assert_gpu_and_cpu_writes_are_equal_collect(
         # column is uppercase
         lambda spark, path: spark.range(0, 1000).select(col("id").alias("Acol")).write.orc(path),
