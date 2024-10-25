@@ -3379,7 +3379,7 @@ object GpuOverrides extends Logging {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
 
-          extractStringLit(a.children(1)).map(_.toUpperCase) match {
+          extractStringLit(a.children(1)) match {
             // In Spark, the key in parse_url could act like a regex, but GPU will match the key
             // exactly. When key is literal, GPU will check if the key contains regex special and
             // fallbcak to CPU if it does, but we are not able to fallback when key is column.
