@@ -84,6 +84,7 @@ import logging
 import os
 import re
 import subprocess
+from functools import partial
 
 
 def __project():
@@ -199,6 +200,8 @@ __shim_dir_pattern = re.compile(r'spark\d{3}')
 __shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
                                     r'\n(.*)\n' +
                                     re.escape(__closing_shim_tag), re.DOTALL)
+__spark_version_placeholder = re.escape('${spark.version.classifier}')
+__package_pattern = re.compile('package .*' + __spark_version_placeholder)
 
 def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
@@ -365,10 +368,7 @@ def __generate_symlinks():
         __log.info("# generating symlinks for shim %s %s files", buildver, src_type)
         __traverse_source_tree_of_all_shims(
             src_type,
-            lambda src_type, path, build_ver_arr: __generate_symlink_to_file(buildver,
-                                                                             src_type,
-                                                                             path,
-                                                                             build_ver_arr))
+            partial(__generate_symlink_to_file, buildver=buildver, src_type=src_type))
 
 def __traverse_source_tree_of_all_shims(src_type, func):
     """Walks src/<src_type>/sparkXYZ"""
@@ -392,11 +392,16 @@ def __traverse_source_tree_of_all_shims(src_type, func):
                 build_ver_arr = map(lambda x: str(json.loads(x).get('spark')), shim_arr)
                 __log.debug("extracted shims %s", build_ver_arr)
                 assert build_ver_arr == sorted(build_ver_arr),\
-                    "%s shim list is not properly sorted" % shim_file_path
-                func(src_type, shim_file_path, build_ver_arr)
+                    "%s shim list is not properly sorted: %s" % (shim_file_path, build_ver_arr)
+                func(shim_file_path=shim_file_path, build_ver_arr=build_ver_arr, shim_file_txt=shim_file_txt)
 
+def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr, shim_file_txt):
+    package_match = __package_pattern.search(shim_file_txt)
+    new_package = None
+    if package_match:
+        new_package = package_match.group(0).replace('${spark.version.classifier}', 'spark' + buildver)
+        print("GERA_DEBUG new_package=" + new_package)
 
-def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr):
     if buildver in build_ver_arr:
         project_base_dir = str(__project().getBaseDir())
         base_dir = __src_basedir
@@ -416,9 +421,16 @@ def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr
         target_shim_file_path = os.path.join(target_root, target_rel_path)
         __log.debug("creating symlink %s -> %s", target_shim_file_path, shim_file_path)
         __makedirs(os.path.dirname(target_shim_file_path))
-        if __should_overwrite:
+        if __should_overwrite or package_match:
             __remove_file(target_shim_file_path)
-        __symlink(shim_file_path, target_shim_file_path)
+        if package_match:
+            with open(target_shim_file_path, mode='w') as f:
+                f.write(shim_file_txt[0:package_match.start()])
+                f.write(new_package)
+                f.write('\n')
+                f.write(shim_file_txt[package_match.end():])
+        else:
+            __symlink(shim_file_path, target_shim_file_path)
 
 
 def __symlink(src, target):

@@ -16,8 +16,31 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "350"}
+{"spark": "350db"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.spark320
+package com.nvidia.spark.rapids.${spark.version.classifier}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
