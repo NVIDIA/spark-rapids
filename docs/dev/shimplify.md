@@ -68,9 +68,9 @@ validations:
 `target/${buildver}/generated/src/(main|test)/(scala|java)`
 except for template classes requiring spark.version.classifier in the package name.
 
-* If the package name of a class such as RapidsShuffleManager contains `${spark.version.classifier}`
+* If the package name of a class such as RapidsShuffleManager contains `$_spark.version.classifier_`
 (because it is source-identical across shims up to the package name) it will be materialized in the
-`target/${buildver}/generated/src/(main|test)/(scala|java)` with `spark.version.classifer`
+`target/${buildver}/generated/src/(main|test)/(scala|java)` with `spark.version.classifier`
 interpolated into the package name.
 
 Thus, instead of hardcoding distinct

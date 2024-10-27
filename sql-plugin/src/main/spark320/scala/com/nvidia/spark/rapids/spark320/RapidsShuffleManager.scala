@@ -40,7 +40,7 @@
 {"spark": "352"}
 {"spark": "353"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.${spark.version.classifier}
+package com.nvidia.spark.rapids.$_spark.version.classifier_
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
