@@ -339,7 +339,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\f", "\f", "\r", "\u0085", "\u2028",
       "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\n\r",
       "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb",
-      "TEST\u0085\n", "TEST\u0085\r", "TEST\u2028\r","TEST\u2028\u2029")
+      "TEST\u0085\n", "TEST\u0085\r", "TEST\u2028\r","TEST\u2028\u2029", "TEST\u2028\r\n")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
     val unsupportedPatterns = Seq("[\r\n]?$", "$\r", "\r$",
       // "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$", "[D$3]$")
