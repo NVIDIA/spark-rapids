@@ -150,6 +150,7 @@ object GpuShuffleCoalesceUtils {
    * host buffer from the Shuffle coalesce exec, or a coalesced GPU batch.
    */
   def getCoalescedBufferSize(concated: AnyRef): Long = concated match {
+    // TODO add the Kudo case
     case c: HostConcatResult => c.getTableHeader.getDataLen
     case g => GpuColumnVector.getTotalDeviceMemoryUsed(g.asInstanceOf[ColumnarBatch])
   }
@@ -158,6 +159,7 @@ object GpuShuffleCoalesceUtils {
   def coalescedResultToGpuIfAllowed(
       coalescedResult: AnyRef,
       dataTypes: Array[DataType]): ColumnarBatch = coalescedResult match {
+    // TODO add the Kudo case
     case c: HostConcatResult =>
       cudf_utils.HostConcatResultUtil.getColumnarBatch(c, dataTypes)
     case o =>
