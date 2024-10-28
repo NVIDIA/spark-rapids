@@ -178,7 +178,7 @@ sealed trait TableOperator[T <: AutoCloseable, C] {
   def concatOnHost(tables: Array[T]): C
 }
 
-class CudfTableOperator extends TableOperator[SerializedTableColumn, HostConcatResult] {
+class JCudfTableOperator extends TableOperator[SerializedTableColumn, HostConcatResult] {
   override def getDataLen(table: SerializedTableColumn): Long = table.header.getDataLen
   override def getNumRows(table: SerializedTableColumn): Int = table.header.getNumRows
 
