@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_before_spark_400, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_databricks_version_or_later, is_spark_321cdh, is_spark_400_or_later, is_spark_cdh, with_cpu_session, with_gpu_session
 from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
