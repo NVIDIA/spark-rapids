@@ -396,7 +396,6 @@ def __traverse_source_tree_of_all_shims(src_type, func):
                 func(shim_file_path=shim_file_path, build_ver_arr=build_ver_arr, shim_file_txt=shim_file_txt)
 
 def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr, shim_file_txt):
-    package_match = __package_pattern.search(shim_file_txt)
     if buildver in build_ver_arr:
         project_base_dir = str(__project().getBaseDir())
         base_dir = __src_basedir
@@ -416,6 +415,7 @@ def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr
         target_shim_file_path = os.path.join(target_root, target_rel_path)
         __log.debug("creating symlink %s -> %s", target_shim_file_path, shim_file_path)
         __makedirs(os.path.dirname(target_shim_file_path))
+        package_match = __package_pattern.search(shim_file_txt)
         if __should_overwrite or package_match:
             __remove_file(target_shim_file_path)
         if package_match:
