@@ -477,6 +477,24 @@ def test_formats_for_legacy_mode(format):
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
+# mm: minute; MM: month
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
+def test_formats_for_legacy_mode_other_formats():
+    format = "yyyyMMdd HH:mm:ss"
+    # Test years after 1900,
+    gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4}) [0-9]{2}:[0-9]{2}:[0-9]{2}')
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, gen),
+        "tab",
+        '''select unix_timestamp(a, '{}'),
+                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
+                  date_format(to_timestamp(a, '{}'), '{}')
+           from tab
+        '''.format(format, format, format, format, format),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
 @tz_sensitive_test
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 @pytest.mark.parametrize("ansi_enabled", [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
