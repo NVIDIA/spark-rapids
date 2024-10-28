@@ -19,7 +19,9 @@ package org.apache.spark.sql.rapids
 import java.nio.charset.Charset
 import java.text.DecimalFormatSymbols
 import java.util.{EnumSet, Locale, Optional}
+
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, RoundMode, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -28,6 +30,7 @@ import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
