@@ -172,7 +172,7 @@ object GpuShuffleCoalesceUtils {
  * This is used by HostCoalesceIteratorBase to separate the table operations from
  * the shuffle read process.
  */
-sealed trait TableOperator[T <: AutoCloseable, C] {
+sealed trait SerializedTableOperator[T <: AutoCloseable, C] {
   def getDataLen(table: T): Long
   def getNumRows(table: T): Int
   def concatOnHost(tables: Array[T]): C
