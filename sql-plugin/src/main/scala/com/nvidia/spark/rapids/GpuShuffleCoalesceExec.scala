@@ -178,7 +178,7 @@ sealed trait SerializedTableOperator[T <: AutoCloseable, C] {
   def concatOnHost(tables: Array[T]): C
 }
 
-class JCudfTableOperator extends TableOperator[SerializedTableColumn, HostConcatResult] {
+class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn, HostConcatResult] {
   override def getDataLen(table: SerializedTableColumn): Long = table.header.getDataLen
   override def getNumRows(table: SerializedTableColumn): Int = table.header.getNumRows
 
@@ -218,7 +218,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag, C](
     onTaskCompletion(tc)(close())
   }
 
-  protected def tableOperator: TableOperator[T, C]
+  protected def tableOperator: SerializedTableOperator[T, C]
 
   override def close(): Unit = {
     serializedTables.forEach(_.close())
@@ -302,7 +302,7 @@ class HostShuffleCoalesceIterator(
     metricsMap: Map[String, GpuMetric])
   extends HostCoalesceIteratorBase[SerializedTableColumn, HostConcatResult](iter,
     targetBatchByteSize, metricsMap) {
-  override protected def tableOperator = new CudfTableOperator
+  override protected def tableOperator = new JCudfTableOperator
 }
 
 /**
