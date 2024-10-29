@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 //import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table, TableDebug}
+
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
@@ -47,8 +48,10 @@ object GpuJsonReadCommon {
       }
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
+    case dt: DecimalType =>
+      builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name, dt.precision)
     case _ =>
-      builder.addColumn(DType.STRING, name)
+      builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name)
   }
 
   /**
@@ -62,9 +65,6 @@ object GpuJsonReadCommon {
     builder.build
   }
 
-
-
-
   private def dateFormat(options: JSONOptions): Option[String] =
     GpuJsonUtils.optionalDateFormatInRead(options)
 
@@ -76,8 +76,9 @@ object GpuJsonReadCommon {
     throw new IllegalStateException(s"Don't know how to transform $cv to $dt for JSON")
   }
 
+
   private def nestedColumnViewMismatchTransform(cv: ColumnView,
-      dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
+    dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
     // In the future we should be able to convert strings to maps/etc, but for
     // now we are working around issues where CUDF is not returning a STRING for nested
     // types when asked for it.
@@ -193,6 +194,44 @@ object GpuJsonReadCommon {
       }
     }
   }
+
+  def convertDateTimeType(inputCv: ColumnVector,
+      topLevelType: DataType,
+      options: JSONOptions): ColumnVector = {
+    ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
+      Some(nestedColumnViewMismatchTransform)) {
+
+
+      case (cv, Some(DateType)) if cv.getType == DType.STRING =>
+        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
+          GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
+            dateFormat(options))
+        }
+      case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
+        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
+          GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
+            DType.TIMESTAMP_MICROSECONDS)
+        }
+
+
+    }
+  }
+
+
+  /**
+   * Convert the parsed input table to the desired output types
+   * @param input the column to start with
+   * @param desired the desired output data types
+   * @param options the options the user provided
+   * @return an array of converted column vectors in the same order as the input table.
+   */
+//  def convertDateTimeType(input: ColumnVector,
+//      desired: DataType,
+//      options: JSONOptions): Array[ColumnVector] = {
+//    withResource(new NvtxRange("convertDateTimeType", NvtxColor.RED)) { _ =>
+//      convertDateTimeType(input, desired, options)
+//    }
+//  }
 
   def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions =
     cudfJsonOptionBuilder(options).build()
