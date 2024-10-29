@@ -147,7 +147,8 @@ object GpuJsonReadCommon {
       //
       // Done
       case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
-        JSONUtils.castStringsToDecimals(cv, dt.precision, -dt.scale, options.locale == Locale.US)
+        JSONUtils.castStringsToDecimals(cv, GpuColumnVector.getNonNestedRapidsType(dt),
+          dt.precision, -dt.scale, options.locale == Locale.US)
       //
       //
 
