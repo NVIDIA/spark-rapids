@@ -1141,7 +1141,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val filterFunc = (file: PartitionedFile) => {
-      filterHandler.filterBlocks(footerReadType, file, conf,
+      // we need to copy the Hadoop Configuration because filter push down can mutate it,
+      // which can affect other threads.
+      filterHandler.filterBlocks(footerReadType, file, new Configuration(conf),
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
@@ -1234,12 +1236,18 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       val tc = TaskContext.get()
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
       files.grouped(numFilesFilterParallel).map { fileGroup =>
+        // we need to copy the Hadoop Configuration because filter push down can mutate it,
+        // which can affect other threads.
         threadPool.submit(
-          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema))
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
+            filters, readDataSchema))
       }.toArray.flatMap(_.get())
     } else {
+      // we need to copy the Hadoop Configuration because filter push down can mutate it, which can
+      // affect other tasks which use it.
+      val hadoopConf = new Configuration(conf)
       files.map { file =>
-        filterBlocksForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
+        filterBlocksForCoalescingReader(footerReadType, file, hadoopConf, filters, readDataSchema)
       }
     }
     metaAndFilesArr.foreach { metaAndFile =>
@@ -1326,7 +1334,9 @@ case class GpuParquetPartitionReaderFactory(
 
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    val conf = broadcastedConf.value.value
+    // we need to copy the Hadoop Configuration because filter push down can mutate it,
+    // which can affect other tasks.
+    val conf = new Configuration(broadcastedConf.value.value)
     val startTime = System.nanoTime()
     val singleFileInfo = filterHandler.filterBlocks(footerReadType, file, conf, filters,
       readDataSchema)
