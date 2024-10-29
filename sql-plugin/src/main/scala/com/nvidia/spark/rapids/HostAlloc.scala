@@ -82,12 +82,12 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       synchronized {
         currentNonPinnedAllocated += amount
       }
-      Some(HostMemoryBuffer.allocate(amount, false))
+      Some(HostMemoryBuffer.allocateRaw(amount))
     } else {
       synchronized {
         if ((currentNonPinnedAllocated + amount) <= nonPinnedLimit) {
           currentNonPinnedAllocated += amount
-          Some(HostMemoryBuffer.allocate(amount, false))
+          Some(HostMemoryBuffer.allocateRaw(amount))
         } else {
           None
         }
