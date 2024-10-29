@@ -1243,8 +1243,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
             filters, readDataSchema))
       }.toArray.flatMap(_.get())
     } else {
-      // we need to copy the Hadoop Configuration because filter push down can mutate it, which can
-      // affect other tasks which use it.
+      // We need to copy the Hadoop Configuration because filter push down can mutate it. In
+      // this case we are serially iterating through the files so each one mutating it serially
+      // doesn't affect the filter of the other files. We just need to make sure it's copied
+      // once so other tasks don't modify the same conf.
       val hadoopConf = new Configuration(conf)
       files.map { file =>
         filterBlocksForCoalescingReader(footerReadType, file, hadoopConf, filters, readDataSchema)
