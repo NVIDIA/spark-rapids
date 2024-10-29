@@ -385,7 +385,6 @@ def test_parquet_read_roundtrip_datetime_with_legacy_rebase_mismatch_files(spark
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path2),
         conf=write_confs2)
 
-    #       'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
     read_confs = copy_and_update(reader_confs,
                                 {'spark.sql.sources.useV1SourceList': v1_enabled_list,
                                  'spark.sql.parquet.datetimeRebaseModeInRead': 'LEGACY',
