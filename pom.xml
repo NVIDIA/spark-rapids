@@ -826,7 +826,7 @@
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
-        <spark350db143.version>3.5.0-databricks143</spark350db143.version>
+        <spark350db143.version>3.5.0-databricks-143</spark350db143.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
