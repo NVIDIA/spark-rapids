@@ -126,6 +126,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     }
     HostColumnVector hostColumnVector = new HostColumnVector(type, rows,
         Optional.of(nullCount), data, valid, offsets, hostColumnVectorCoreList);
+    //TODO get rid of built and do refcounting instead...
     built = true;
     return hostColumnVector;
   }

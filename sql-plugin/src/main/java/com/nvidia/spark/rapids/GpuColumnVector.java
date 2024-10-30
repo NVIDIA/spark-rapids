@@ -237,6 +237,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final RapidsHostColumnBuilder[] builders;
     private ai.rapids.cudf.HostColumnVector[] hostColumns;
+    private ai.rapids.cudf.HostColumnVector[] wipHostColumns;
 
     /**
      * A collection of builders for building up columnar data.
@@ -285,24 +286,23 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     public HostColumnVector[] buildHostColumns() {
-      HostColumnVector[] vectors = new HostColumnVector[builders.length];
-      try {
-        for (int i = 0; i < builders.length; i++) {
-          vectors[i] = builders[i].build();
+      // buildHostColumns is called from tryBuild, and tryBuild has to be safe to call
+      // multiple times, so if a retry exception happens in this code, we need to pick
+      // up where we left off last time.
+      if (wipHostColumns == null) {
+        wipHostColumns = new HostColumnVector[builders.length];
+      }
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null && wipHostColumns[i] == null) {
+          wipHostColumns[i] = builders[i].build();
           builders[i] = null;
-        }
-        HostColumnVector[] result = vectors;
-        vectors = null;
-        return result;
-      } finally {
-        if (vectors != null) {
-          for (HostColumnVector v : vectors) {
-            if (v != null) {
-              v.close();
-            }
-          }
+        } else if (builders[i] == null && wipHostColumns[i] == null) {
+          throw new IllegalStateException("buildHostColumns cannot be called more than once");
         }
       }
+      HostColumnVector[] result = wipHostColumns;
+      wipHostColumns = null;
+      return result;
     }
 
     /**
@@ -327,13 +327,24 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           }
         }
       } finally {
-        if (hostColumns != null) {
-          for (ai.rapids.cudf.HostColumnVector hcv: hostColumns) {
-            if (hcv != null) {
-              hcv.close();
+        try {
+          if (hostColumns != null) {
+            for (ai.rapids.cudf.HostColumnVector hcv : hostColumns) {
+              if (hcv != null) {
+                hcv.close();
+              }
             }
+            hostColumns = null;
           }
-          hostColumns = null;
+        } finally {
+          if (wipHostColumns != null) {
+            for (ai.rapids.cudf.HostColumnVector hcv : wipHostColumns) {
+              if (hcv != null) {
+                hcv.close();
+              }
+            }
+            wipHostColumns = null;
+          }
         }
       }
     }
