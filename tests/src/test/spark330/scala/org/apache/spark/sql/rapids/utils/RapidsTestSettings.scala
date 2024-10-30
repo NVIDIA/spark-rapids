@@ -47,20 +47,10 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("from_json - input=empty array, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10907"))
     .exclude("from_json - input=empty object, schema=struct, output=single row with null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10910"))
     .exclude("SPARK-20549: from_json bad UTF-8", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10911"))
-    .exclude("to_json - array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10915"))
-    .exclude("to_json - array with single empty row", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10923"))
-    .exclude("to_json - empty array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10924"))
-    .exclude("SPARK-21513: to_json support map[string, struct] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10916"))
     .exclude("SPARK-21513: to_json support map[struct, struct] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10918"))
-    .exclude("SPARK-21513: to_json support map[string, integer] to json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10919"))
-    .exclude("to_json - array with maps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10920"))
-    .exclude("to_json - array with single map", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10921"))
     .exclude("from_json missing fields", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10922"))
   enableSuite[RapidsJsonFunctionsSuite]
     .exclude("from_json invalid json", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10891"))
-    .exclude("to_json - array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10894"))
-    .exclude("to_json - map", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10895"))
-    .exclude("to_json - array of primitive types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10896"))
     .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10901"))
   enableSuite[RapidsJsonSuite]
     .exclude("SPARK-32810: JSON data source should be able to read files with escaped glob metacharacter in the paths", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
@@ -73,7 +63,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33428 conv function shouldn't raise error if input string is too big", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
     .exclude("SPARK-36229 conv should return result equal to -1 in base of toBase", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11142"))
   enableSuite[RapidsParquetAvroCompatibilitySuite]
-    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11401"))
+    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11592"))
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
     .exclude("Create parquet table with compression", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11416"))
@@ -82,36 +72,39 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetFileFormatSuite]
-    .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11402"))
+    .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11602"))
   enableSuite[RapidsParquetFieldIdIOSuite]
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
     .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11454"))
     .exclude("parquet timestamp conversion", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11448"))
   enableSuite[RapidsParquetPartitionDiscoverySuite]
-    .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11430"))
+    .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11583"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
-    .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
-    .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11379"))
+    .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11475"))
+    .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11476"))
   enableSuite[RapidsParquetQuerySuite]
-    .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11403"))
+    .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", ADJUST_UT("fetches the CPU version of Execution Plan instead of the GPU version."))
     .exclude("SPARK-34212 Parquet should read decimals correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11433"))
   enableSuite[RapidsParquetRebaseDatetimeSuite]
-    .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
-    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11404"))
+    .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11599"))
+    .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11593"))
+    .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11480"))
+    .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", ADJUST_UT("original test case inherited from Spark cannot find the needed local resources"))
   enableSuite[RapidsParquetSchemaPruningSuite]
-    .excludeByPrefix("Spark vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
-    .excludeByPrefix("Non-vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
-    .excludeByPrefix("Case-insensitive parser", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
-    .excludeByPrefix("Case-sensitive parser", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11405"))
+    .excludeBySuffix("select a single complex field", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11619"))
+    .excludeBySuffix("select a single complex field and the partition column", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11620"))
+    .excludeBySuffix("select missing subfield", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11621"))
+    .excludeBySuffix("select explode of nested field of array of struct", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11653"))
+    .excludeBySuffix("empty schema intersection", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11627"))
+    .excludeBySuffix("select one deep nested complex field after join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11628"))
+    .excludeBySuffix("select one deep nested complex field after outer join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11629"))
   enableSuite[RapidsParquetSchemaSuite]
     .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11434"))
     .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11446"))
   enableSuite[RapidsParquetThriftCompatibilitySuite]
-    .exclude("Read Parquet file generated by parquet-thrift", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11381"))
-    .exclude("SPARK-10136 list of primitive list", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11381"))
+    .exclude("Read Parquet file generated by parquet-thrift", ADJUST_UT("https://github.com/NVIDIA/spark-rapids/pull/11591"))
+    .exclude("SPARK-10136 list of primitive list", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11589"))
   enableSuite[RapidsParquetVectorizedSuite]
   enableSuite[RapidsRegexpExpressionsSuite]
   enableSuite[RapidsStringExpressionsSuite]

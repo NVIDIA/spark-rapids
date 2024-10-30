@@ -73,7 +73,6 @@
     <modules>
         <module>aggregator</module>
         <module>datagen</module>
-        <module>df_udf</module>
         <module>dist</module>
         <module>integration_tests</module>
         <module>shuffle-plugin</module>
@@ -590,6 +589,26 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release353</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>353</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>353</buildver>
+                <spark.version>${spark353.version}</spark.version>
+                <spark.test.version>${spark353.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -785,6 +804,7 @@
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
+        <spark353.version>3.5.3</spark353.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->

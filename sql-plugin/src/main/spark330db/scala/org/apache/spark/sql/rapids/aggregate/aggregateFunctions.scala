@@ -26,6 +26,7 @@
 {"spark": "350db"}
 {"spark": "351"}
 {"spark": "352"}
+{"spark": "353"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.aggregate
