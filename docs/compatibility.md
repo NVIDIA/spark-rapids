@@ -490,8 +490,10 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Line anchors `^` and `$` are not supported in some contexts, such as when combined with a choice (`^|a` or `$|a`).
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported.
-- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+- Patterns containing an end-of-line or string anchor immediately next to a newline or repetition that produces zero
   or more results
+- Patterns containing end-of-line anchors like `$` or `\Z` immediately followed by 
+  escape sequences (e.g., `\w`, `\b`) are not supported.
 - Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers within a choice block such as `(2|\u2029??)+` 

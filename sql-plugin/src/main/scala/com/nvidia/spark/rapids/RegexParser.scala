@@ -1395,9 +1395,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
                     // however, cudf doesn't support negative look ahead
                     throw new RegexUnsupportedException("Regex sequence $\\z is not supported",
                       part.position)
-                  case RegexEscaped(a) if "bB".contains(a) =>
+                  case RegexEscaped(a) if "bBsSdDwWaAf".contains(a) =>
                     throw new RegexUnsupportedException(
-                      "Regex sequences with \\b or \\B not supported around $", part.position)
+                      s"Regex sequences with \\$a are not supported around end-of-line markers " +
+                        "like $ or \\Z at position", part.position)
                   case _ =>
                     r.append(rewrite(part, replacement, last, flags))
                 }
