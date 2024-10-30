@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -311,21 +311,26 @@ object GpuJsonReadCommon {
   def convertTableToDesiredType(table: Table,
       desired: StructType,
       options: JSONOptions): Array[ColumnVector] = {
-    val dataTypes = desired.fields.map(_.dataType)
-    dataTypes.zipWithIndex.safeMap {
-      case (dt, i) =>
-        convertToDesiredType(table.getColumn(i), dt, options)
+    withResource(new NvtxRange("convertTableToDesiredType", NvtxColor.RED)) { _ =>
+      val dataTypes = desired.fields.map(_.dataType)
+      dataTypes.zipWithIndex.safeMap {
+        case (dt, i) =>
+          convertToDesiredType(table.getColumn(i), dt, options)
+      }
     }
   }
 
-  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
+  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions =
+    cudfJsonOptionBuilder(options).build()
+
+  def cudfJsonOptionBuilder(options: JSONOptions): ai.rapids.cudf.JSONOptions.Builder = {
     // This is really ugly, but options.allowUnquotedControlChars is marked as private
     // and this is the only way I know to get it without even uglier tricks
     @scala.annotation.nowarn("msg=Java enum ALLOW_UNQUOTED_CONTROL_CHARS in " +
       "Java enum Feature is deprecated")
-    val allowUnquotedControlChars =
-      options.buildJsonFactory()
-        .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
+    val allowUnquotedControlChars = options.buildJsonFactory()
+      .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
+
     ai.rapids.cudf.JSONOptions.builder()
     .withRecoverWithNull(true)
     .withMixedTypesAsStrings(true)
@@ -338,6 +343,5 @@ object GpuJsonReadCommon {
     .withUnquotedControlChars(allowUnquotedControlChars)
     .withCudfPruneSchema(true)
     .withExperimental(true)
-    .build()
   }
 }

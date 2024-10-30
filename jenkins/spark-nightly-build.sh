@@ -19,6 +19,11 @@ set -ex
 
 . jenkins/version-def.sh
 
+## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
+MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
+
+DIST_PL="dist"
+DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
     # Run scala2.13 build and test against JDK17
@@ -26,18 +31,14 @@ if [ $SCALA_BINARY_VER == "2.13" ]; then
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    cd scala2.13
-    ln -sf ../jenkins jenkins
+    MVN="$MVN -f scala2.13/"
+    DIST_PATH="scala2.13/$DIST_PL"
 fi
 
 WORKSPACE=${WORKSPACE:-$(pwd)}
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 
-## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
-MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
-
-DIST_PL="dist"
 function mvnEval {
     $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease320 -Dmaven.repo.local=$M2DIR -DforceStdout -Dexpression=$1
 }
@@ -80,7 +81,7 @@ function distWithReducedPom {
             mvnCmd="deploy:deploy-file"
             if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
               # try move tmp artifacts back to target folder for simplifying separate release process
-              mv ${TMP_PATH}/${ART_ID}-${ART_VER}-*.jar ${DIST_PL}/target/
+              mv ${TMP_PATH}/${ART_ID}-${ART_VER}-*.jar ${DIST_PATH}/target/
             fi
             mvnExtraFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots -Dtypes=${DEPLOY_TYPES} -Dfiles=${DEPLOY_FILES} -Dclassifiers=${DEPLOY_CLASSIFIERS}"
             ;;
@@ -166,7 +167,7 @@ if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
 
     # move artifacts to temp for deployment later
     artifactFile="${ART_ID}-${ART_VER}-${classifier}.jar"
-    mv ${DIST_PL}/target/${artifactFile} ${TMP_PATH}/
+    mv ${DIST_PATH}/target/${artifactFile} ${TMP_PATH}/
     # update deployment properties
     DEPLOY_TYPES="${DEPLOY_TYPES},jar"
     DEPLOY_FILES="${DEPLOY_FILES},${DIST_PL}/target/${artifactFile}"
