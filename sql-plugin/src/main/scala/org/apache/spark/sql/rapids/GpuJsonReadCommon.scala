@@ -18,7 +18,6 @@
 package org.apache.spark.sql.rapids
 
 import java.util.Locale
-//import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Scalar, Schema, Table, TableDebug}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, NvtxColor, NvtxRange, Schema, Table}
 import com.fasterxml.jackson.core.JsonParser
