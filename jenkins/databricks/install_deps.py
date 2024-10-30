@@ -244,7 +244,7 @@ def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir
                     <file>{jar}</file>
                     <groupId>{group_id}</groupId>
                     <artifactId>{artifact_id}</artifactId>
-                    <version>{spark_version_to_install_databricks_jars}</version>
+                    <version>{spark_version_to_install_databricks_jars}143</version>
                     <packaging>jar</packaging>
                 </configuration>
             </execution>"""
