@@ -281,6 +281,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     @Override
     protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      builders[builderIndex].close();
       builders[builderIndex] = null;
       return cv;
     }
@@ -295,6 +296,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       for (int i = 0; i < builders.length; i++) {
         if (builders[i] != null && wipHostColumns[i] == null) {
           wipHostColumns[i] = builders[i].build();
+          builders[i].close();
           builders[i] = null;
         } else if (builders[i] == null && wipHostColumns[i] == null) {
           throw new IllegalStateException("buildHostColumns cannot be called more than once");
