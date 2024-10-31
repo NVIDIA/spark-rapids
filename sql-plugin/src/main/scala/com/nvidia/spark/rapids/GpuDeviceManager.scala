@@ -248,7 +248,7 @@ object GpuDeviceManager extends Logging {
             s"less than allocation of ${toMiB(minAllocation)} MiB (gpu.total: " +
             s"${toMiB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MIN_FRACTION}: " +
             s"${conf.rmmAllocMinFraction} => gpu.total *" +
-            s"minAllocFraction = ${toMiB(minAllocation)} MiB). Please ensure that the GPU has" +
+            s"minAllocFraction = ${toMiB(minAllocation)} MiB). Please ensure that the GPU has " +
             s"enough free memory, or adjust configuration accordingly.")
       }
       if (maxAllocation < poolAllocation) {
@@ -256,8 +256,8 @@ object GpuDeviceManager extends Logging {
             s"more than allocation of ${toMiB(maxAllocation)} MiB (gpu.total: " +
             s"${toMiB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MAX_FRACTION}: " +
             s"${conf.rmmAllocMaxFraction} => gpu.total *" +
-            s"maxAllocFraction = ${toMiB(maxAllocation)} MiB). Please ensure that pool allocation" +
-            s"does not exceed maximum allocation and adjust configuration accordingly.")
+            s"maxAllocFraction = ${toMiB(maxAllocation)} MiB). Please ensure that pool " +
+            s"allocation does not exceed maximum allocation and adjust configuration accordingly.")
       }
       if (reserveAmount >= maxAllocation) {
         throw new IllegalArgumentException(s"RMM reserve memory (${toMiB(reserveAmount)} MB) " +
@@ -267,7 +267,7 @@ object GpuDeviceManager extends Logging {
       }
       val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
       if (poolAllocation > adjustedMaxAllocation) {
-        logWarning(s"RMM pool allocation (${toMiB(poolAllocation)} MB) does not leave enough" +
+        logWarning(s"RMM pool allocation (${toMiB(poolAllocation)} MB) does not leave enough " +
           s"free memory for reserve memory (${toMiB(reserveAmount)} MB), lowering the pool " +
           s"size to ${toMiB(adjustedMaxAllocation)} MB to " +
           s"accommodate the requested reserve amount.")
