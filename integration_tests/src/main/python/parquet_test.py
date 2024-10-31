@@ -18,7 +18,7 @@ import pytest
 from asserts import *
 from conftest import is_not_utc
 from data_gen import *
-from parquet_write_test import parquet_nested_datetime_gen, parquet_ts_write_options
+from parquet_write_test import parquet_datetime_gen_simple, parquet_nested_datetime_gen, parquet_ts_write_options
 from marks import *
 import pyarrow as pa
 import pyarrow.parquet as pa_pq
@@ -359,6 +359,38 @@ def test_parquet_read_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, parq
                                                 int96RebaseModeInReadKey : ts_rebase_read[1]})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
+        conf=read_confs)
+
+
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
+@pytest.mark.parametrize('parquet_gens', [parquet_datetime_gen_simple], ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_roundtrip_datetime_with_legacy_rebase_mismatch_files(spark_tmp_path, parquet_gens,
+                                                            reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path2 = spark_tmp_path + '/PARQUET_DATA2'
+    write_confs = {'spark.sql.parquet.datetimeRebaseModeInWrite': 'LEGACY',
+                   'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'}
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=write_confs)
+    # we want to test having multiple files that have the same column with different
+    # types - INT96 and INT64 (TIMESTAMP_MICROS)
+    write_confs2 = {'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                   'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
+                   'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path2),
+        conf=write_confs2)
+
+    read_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 'spark.sql.parquet.datetimeRebaseModeInRead': 'LEGACY',
+                                 'spark.sql.parquet.int96RebaseModeInRead': 'LEGACY'})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path, data_path2).filter("_c0 is not null and _c1 is not null"),
         conf=read_confs)
 
 # This is legacy format, which is totally different from datatime legacy rebase mode.
