@@ -414,7 +414,7 @@ object GpuShuffledHashJoinExec extends Logging {
   private def getBatchSize(maybeBatch: AnyRef): Long = maybeBatch match {
     case batch: ColumnarBatch => GpuColumnVector.getTotalDeviceMemoryUsed(batch)
     case hostBatch: CoalescedHostResult => hostBatch.getDataSize
-    case _ => throw new IllegalStateException(s"Expect a HostConcatResult or a " +
+    case _ => throw new IllegalStateException(s"Expect a CoalescedHostResult or a " +
       s"ColumnarBatch, but got a ${maybeBatch.getClass.getSimpleName}")
   }
 

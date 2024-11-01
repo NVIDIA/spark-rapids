@@ -101,8 +101,8 @@ object GpuShuffleCoalesceUtils {
    * @param readOption the coalesce read option
    * @param metricsMap metrics map
    * @param prefetchFirstBatch whether prefetching the first bundle of serialized
-   *                           batches with the total siz up to the "targetSize". The
-   *                           prefetch batches will be cached on host until the "next()"
+   *                           batches with the total size up to the "targetSize". The
+   *                           prefetched batches will be cached on host until the "next()"
    *                           is called. This is for some optimization cases in join.
    */
   def getGpuShuffleCoalesceIterator(
