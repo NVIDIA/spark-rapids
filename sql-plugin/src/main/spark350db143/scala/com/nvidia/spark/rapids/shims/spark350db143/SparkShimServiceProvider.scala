@@ -19,12 +19,10 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark350db143
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
-
-import org.apache.spark.SparkEnv
+import com.nvidia.spark.rapids._
 
 object SparkShimServiceProvider {
-  val VERSION = DatabricksShimVersion(3, 5, 0)
+  val VERSION = DatabricksShimVersion(3, 5, 0, "14.3")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
@@ -32,6 +30,6 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
-    SparkEnv.get.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "").startsWith("14.3.")
+    DatabricksShimServiceProvider.matchesVersion("14.3.x")
   }
 }
