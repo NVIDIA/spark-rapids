@@ -29,24 +29,10 @@ import random
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
-# Choose the right Parquet conf keys.
-# The 'spark.sql.legacy.parquet.*' conf keys were removed completely on Apache Spark 4.0.
-# This change was pulled into Databricks 14.3.  For Spark versions that exceed either of
-# these, using the removed conf keys would cause deprecation errors, indicating that the
-# replacement conf keys (i.e. 'spark.sql.parquet.*') be used instead.
-must_use_new_parquet_conf_keys = is_spark_400_or_later() or is_databricks_version_or_later(14, 3)
-conf_key_parquet_datetimeRebaseModeInWrite = \
-  'spark.sql.parquet.datetimeRebaseModeInWrite' if must_use_new_parquet_conf_keys else \
-  'spark.sql.legacy.parquet.datetimeRebaseModeInWrite'
-conf_key_parquet_int96RebaseModeInWrite = \
-  'spark.sql.parquet.int96RebaseModeInWrite' if must_use_new_parquet_conf_keys else \
-  'spark.sql.legacy.parquet.int96RebaseModeInWrite'
-conf_key_parquet_datetimeRebaseModeInRead = \
-    'spark.sql.parquet.datetimeRebaseModeInRead' if must_use_new_parquet_conf_keys else \
-    'spark.sql.legacy.parquet.datetimeRebaseModeInRead'
-conf_key_parquet_int96RebaseModeInRead = \
-    'spark.sql.parquet.int96RebaseModeInRead' if must_use_new_parquet_conf_keys else \
-    'spark.sql.legacy.parquet.int96RebaseModeInRead'
+conf_key_parquet_datetimeRebaseModeInWrite = 'spark.sql.parquet.datetimeRebaseModeInWrite'
+conf_key_parquet_int96RebaseModeInWrite = 'spark.sql.parquet.int96RebaseModeInWrite'
+conf_key_parquet_datetimeRebaseModeInRead = 'spark.sql.parquet.datetimeRebaseModeInRead'
+conf_key_parquet_int96RebaseModeInRead = 'spark.sql.parquet.int96RebaseModeInRead'
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
