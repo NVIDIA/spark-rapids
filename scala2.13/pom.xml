@@ -1615,14 +1615,11 @@ This will force full Scala code rebuild in downstream modules.
                             <skip>${maven.scalastyle.skip}</skip>
                             <target>
                                 <pathconvert property="scalastyle.dirs" pathsep=" ">
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/*/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/*/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/scala-${scala.binary.version}"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/*/scala-${scala.binary.version}"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/scala-${scala.binary.version}"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/*/scala-${scala.binary.version}"/>
+                                    <dirset dir="${spark.rapids.source.basedir}">
+                                        <include name="**/src/main"/>
+                                        <include name="**/src/test"/>
+                                        <exclude name="**/target/*/generated/src/**"/>
+                                    </dirset>
                                 </pathconvert>
                                 <echo>Checking scalastyle for all modules using following paths:
                                     ${scalastyle.dirs}
