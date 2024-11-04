@@ -604,6 +604,7 @@
                 <spark.version>${spark351.version}</spark.version>
                 <spark.test.version>${spark351.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</rapids.delta.artifactId>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
