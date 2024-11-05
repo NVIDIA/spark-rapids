@@ -48,8 +48,8 @@ def _get_buildvers(buildvers, pom_file, logger=None):
     if "scala2.13" in pom_file:
         no_snapshots = list(filter(lambda x: not x.endswith("cdh"), no_snapshots))
 
-    db_release = list(filter(lambda x: x.endswith("db"), no_snapshots))
-    no_snapshots = list(filter(lambda x: not x.endswith("db"), no_snapshots))
+    db_release = list(filter(lambda x: "db" in x, no_snapshots))
+    no_snapshots = list(filter(lambda x: "db" not in x, no_snapshots))
     snap_and_no_snap = no_snapshots + snapshots
     snap_and_no_snap_with_db = snap_and_no_snap + db_release
     no_snap_with_db = no_snapshots + db_release
