@@ -42,6 +42,11 @@ def define_deps(spark_version, scala_version):
     elif spark_version.startswith('3.4'):
         spark_prefix = '----ws_3_4'
         mvn_prefix = '--mvn'
+    elif spark_version.startswith('3.5'):
+        spark_prefix = '----ws_3_5'
+        mvn_prefix = '--mvn'
+    else:
+        raise Exception(f"Unsupported Databricks version {spark.version}")
 
     spark_suffix = f'hive-{hive_version}__hadoop-{hadoop_version}_{scala_version}'
 
@@ -69,7 +74,7 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.spark', f'spark-core_{scala_version}',
                  f'{spark_prefix}--core--core-{spark_suffix}_deploy.jar'),
         Artifact('org.apache.spark', f'spark-versions_{scala_version}',
-                 f'spark--versions--*--shim_{scala_version}_deploy.jar'),
+                 f'spark--versions--*--shim*_{scala_version}_deploy.jar'),
         Artifact('org.apache.spark', f'databricks-versions_{scala_version}',
                  f'common--build-info--build-info-spark_*_{scala_version}_deploy.jar'),
         # Spark Hive Patches
@@ -125,7 +130,7 @@ def define_deps(spark_version, scala_version):
         Artifact('com.fasterxml.jackson.core', 'jackson-annotations',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__*.jar'),
         Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                 f'{spark_prefix}--vendor--avro--avro-*.jar'),
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro*.jar' if spark_version.startswith('3.5') else f'{spark_prefix}--vendor--avro--avro-*.jar'),
         Artifact('org.apache.avro', 'avro-mapred',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__*.jar'),
         Artifact('org.apache.avro', 'avro',
@@ -133,7 +138,7 @@ def define_deps(spark_version, scala_version):
     ]
 
     # Parquet
-    if spark_version.startswith('3.4'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5'):
         deps += [
         Artifact('org.apache.parquet', 'parquet-hadoop',
              f'{spark_prefix}--third_party--parquet-mr--parquet-hadoop--parquet-hadoop-shaded--*--libparquet-hadoop-internal.jar'),
@@ -162,7 +167,7 @@ def define_deps(spark_version, scala_version):
 
 
     # log4j-core
-    if spark_version.startswith('3.3') or spark_version.startswith('3.4'):
+    if spark_version.startswith('3.3') or spark_version.startswith('3.4') or spark_version.startswith('3.5'):
         deps += Artifact('org.apache.logging.log4j', 'log4j-core',
                          f'{prefix_ws_sp_mvn_hadoop}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__*.jar'),
 
@@ -172,7 +177,7 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-parser-combinators_{scala_version}-*.jar')
     ]
 
-    if spark_version.startswith('3.4'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5'):
         deps += [
         # Spark Internal Logging
         Artifact('org.apache.spark', f'spark-common-utils_{scala_version}', f'{spark_prefix}--common--utils--common-utils-hive-2.3__hadoop-3.2_2.12_deploy.jar'),
@@ -180,6 +185,12 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.spark', f'spark-sql-api_{scala_version}', f'{spark_prefix}--sql--api--sql-api-hive-2.3__hadoop-3.2_2.12_deploy.jar')
         ]
 
+    if spark_version.startswith('3.5'):
+        deps += [
+        Artifact('org.scala-lang.modules', f'scala-collection-compat_{scala_version}',
+             f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-collection-compat_{scala_version}--org.scala-lang.modules__scala-collection-compat_{scala_version}__2.11.0.jar'), 
+        Artifact('org.apache.avro', f'avro-connector', f'{spark_prefix}--connector--avro--avro-hive-2.3__hadoop-3.2_2.12_shaded---606136534--avro-unshaded-hive-2.3__hadoop-3.2_2.12_deploy.jar')
+        ]
 
     return deps
 

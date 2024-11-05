@@ -23058,8 +23058,8 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td><em>PS<br/>DATE is not supported by default due to compatibility</em></td>
+<td><em>PS<br/>TIMESTAMP is not supported by default due to compatibility;<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td>S</td>
 <td> </td>

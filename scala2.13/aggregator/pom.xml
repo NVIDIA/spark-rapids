@@ -745,6 +745,23 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <id>release353</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>353</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
         <!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>

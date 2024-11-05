@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -81,15 +81,34 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   }
 }
 
-/** A case class to pack some options. Now it has only one, but may have more in the future */
-case class CoalesceReadOption private(useSplitRetryRead: Boolean)
+/** A case class to pack some options. */
+case class CoalesceReadOption private(kudoEnabled: Boolean, useSplitRetryRead: Boolean)
 
 object CoalesceReadOption {
-  def apply(conf: RapidsConf): CoalesceReadOption =
-    CoalesceReadOption(conf.shuffleSplitRetryReadEnabled)
+  def apply(conf: RapidsConf): CoalesceReadOption = {
+    // TODO get the value of Kudo support from conf
+    CoalesceReadOption(kudoEnabled = false, conf.shuffleSplitRetryReadEnabled)
+  }
 }
 
 object GpuShuffleCoalesceUtils {
+  /**
+   * Return an iterator that will pull in batches from the input iterator,
+   * concatenate them up to the "targetSize" and move the concatenated result
+   * to the GPU for each output batch.
+   * The input iterator is expected to contain only serialized host batches just
+   * returned from the Shuffle deserializer. Otherwise, it will blow up.
+   *
+   * @param iter the input iterator containing only serialized host batches
+   * @param targetSize the target batch size for coalescing
+   * @param dataTypes the schema of the input batches
+   * @param readOption the coalesce read option
+   * @param metricsMap metrics map
+   * @param prefetchFirstBatch whether prefetching the first bundle of serialized
+   *                           batches with the total size up to the "targetSize". The
+   *                           prefetched batches will be cached on host until the "next()"
+   *                           is called. This is for some optimization cases in join.
+   */
   def getGpuShuffleCoalesceIterator(
       iter: Iterator[ColumnarBatch],
       targetSize: Long,
@@ -98,7 +117,12 @@ object GpuShuffleCoalesceUtils {
       metricsMap: Map[String, GpuMetric],
       prefetchFirstBatch: Boolean = false): Iterator[ColumnarBatch] = {
     if (readOption.useSplitRetryRead) {
-      val reader = new GpuShuffleCoalesceReader(iter, targetSize, dataTypes, metricsMap)
+      val reader = if (readOption.kudoEnabled) {
+        // TODO replace with the actual Kudo host iterator
+        throw new UnsupportedOperationException("Kudo is not supported yet")
+      } else {
+        new GpuShuffleCoalesceReader(iter, targetSize, dataTypes, metricsMap)
+      }
       if (prefetchFirstBatch) {
         withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
           // Force a coalesce of the first batch before we grab the GPU semaphore
@@ -107,7 +131,12 @@ object GpuShuffleCoalesceUtils {
       }
       reader.asIterator
     } else {
-      val hostIter = new HostShuffleCoalesceIterator(iter, targetSize, metricsMap)
+      val hostIter = if (readOption.kudoEnabled) {
+        // TODO replace with the actual Kudo host iterator
+        throw new UnsupportedOperationException("Kudo is not supported yet")
+      } else {
+        new HostShuffleCoalesceIterator(iter, targetSize, metricsMap)
+      }
       val maybeBufferedIter = if (prefetchFirstBatch) {
         val bufferedIter = new CloseableBufferedIterator(hostIter)
         withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
@@ -122,86 +151,66 @@ object GpuShuffleCoalesceUtils {
     }
   }
 
-  /** Try to convert a concatenated host buffer to a GPU batch. */
-  def toGpuIfAllowed(
-      table: AnyRef,
-      dataTypes: Array[DataType]): ColumnarBatch = table match {
-    case c: HostConcatResult =>
-      cudf_utils.HostConcatResultUtil.getColumnarBatch(c, dataTypes)
-    case o =>
-      throw new IllegalArgumentException(s"unsupported type: ${o.getClass}")
-  }
-
-  /**
-   * Get an iterator that can coalesce the serialized small host batches just
-   * returned by the Shuffle deserializer.
-   */
-  def getHostShuffleCoalesceIterator(
-      iter: BufferedIterator[ColumnarBatch],
-      targetSize: Long,
-      coalesceMetrics: Map[String, GpuMetric]): Option[Iterator[AutoCloseable]] = {
-    var retIter: Option[Iterator[AutoCloseable]] = None
-    if (iter.hasNext && iter.head.numCols() == 1) {
-      iter.head.column(0) match {
-        case _: SerializedTableColumn =>
-          retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics))
-        case _ => // should be gpu batches
-      }
-    }
-    retIter
-  }
-
   /** Get the buffer size of a serialized batch just returned by the Shuffle deserializer */
   def getSerializedBufferSize(cb: ColumnarBatch): Long = {
     assert(cb.numCols() == 1)
     val hmb = cb.column(0) match {
-      case serCol: SerializedTableColumn =>
-        serCol.hostBuffer
+      // TODO add the Kudo case
+      case serCol: SerializedTableColumn => serCol.hostBuffer
       case o => throw new IllegalStateException(s"unsupported type: ${o.getClass}")
     }
     if (hmb != null) hmb.getLength else 0L
   }
+}
 
-  /**
-   * Get the buffer size of the coalesced result, it accepts either a concatenated
-   * host buffer from the Shuffle coalesce exec, or a coalesced GPU batch.
-   */
-  def getCoalescedBufferSize(concated: AnyRef): Long = concated match {
-    case c: HostConcatResult => c.getTableHeader.getDataLen
-    case g => GpuColumnVector.getTotalDeviceMemoryUsed(g.asInstanceOf[ColumnarBatch])
-  }
+/**
+ * A trait representing the shuffle coalesced result by the Shuffle coalesce iterator.
+ */
+sealed trait CoalescedHostResult extends AutoCloseable {
+  /** Convert itself to a GPU batch */
+  def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch
+
+  /** Get the data size */
+  def getDataSize: Long
 }
 
 /**
  * A trait defining some operations on the table T.
- * This is used by GpuShuffleCoalesceReaderBase and HostCoalesceIteratorBase to separate the
- * table operations from the shuffle read process.
+ * This is used by HostCoalesceIteratorBase to separate the table operations from
+ * the shuffle read process.
  */
-sealed trait TableOperator[T <: AutoCloseable, C] {
+sealed trait SerializedTableOperator[T <: AutoCloseable] {
   def getDataLen(table: T): Long
   def getNumRows(table: T): Int
-  def concatOnHost(tables: Array[T]): C
-  def toGpu(c: C, dataTypes: Array[DataType]): ColumnarBatch
+  def concatOnHost(tables: Array[T]): CoalescedHostResult
 }
 
-class CudfTableOperator extends TableOperator[SerializedTableColumn, HostConcatResult] {
+class JCudfCoalescedHostResult(hostConcatResult: HostConcatResult) extends CoalescedHostResult {
+  assert(hostConcatResult != null, "hostConcatResult should not be null")
+
+  override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch =
+    cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
+
+  override def close(): Unit = hostConcatResult.close()
+
+  override def getDataSize: Long = hostConcatResult.getTableHeader.getDataLen
+}
+
+class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] {
   override def getDataLen(table: SerializedTableColumn): Long = table.header.getDataLen
   override def getNumRows(table: SerializedTableColumn): Int = table.header.getNumRows
 
-  override def concatOnHost(tables: Array[SerializedTableColumn]): HostConcatResult = {
+  override def concatOnHost(tables: Array[SerializedTableColumn]): CoalescedHostResult = {
     assert(tables.nonEmpty, "no tables to be concatenated")
     val numCols = tables.head.header.getNumColumns
-    if (numCols == 0) {
+    val ret = if (numCols == 0) {
       val totalRowsNum = tables.map(getNumRows).sum
       cudf_utils.HostConcatResultUtil.rowsOnlyHostConcatResult(totalRowsNum)
     } else {
       val (headers, buffers) = tables.map(t => (t.header, t.hostBuffer)).unzip
       JCudfSerialization.concatToHostBuffer(headers, buffers)
     }
-  }
-
-  override def toGpu(c: HostConcatResult, dataTypes: Array[DataType]): ColumnarBatch = {
-    cudf_utils.HostConcatResultUtil.getColumnarBatch(c, dataTypes)
+    new JCudfCoalescedHostResult(ret)
   }
 }
 
@@ -213,7 +222,7 @@ class CudfTableOperator extends TableOperator[SerializedTableColumn, HostConcatR
  * When OOM happens, it will reduce the target size by half, try to concatenate
  * half of cached tables and send the result to GPU again.
  */
-abstract class GpuShuffleCoalesceReaderBase[T <: AutoCloseable: ClassTag, C](
+abstract class GpuShuffleCoalesceReaderBase[T <: AutoCloseable: ClassTag](
     iter: Iterator[ColumnarBatch],
     targetBatchSize: Long,
     dataTypes: Array[DataType],
@@ -229,7 +238,7 @@ abstract class GpuShuffleCoalesceReaderBase[T <: AutoCloseable: ClassTag, C](
   private[this] var realBatchSize = math.max(targetBatchSize, 1)
   private[this] var closed = false
 
-  protected def tableOperator: TableOperator[T, C]
+  protected def tableOperator: SerializedTableOperator[T]
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
@@ -306,11 +315,11 @@ abstract class GpuShuffleCoalesceReaderBase[T <: AutoCloseable: ClassTag, C](
         }
         (concatHostBatch, curTables.length)
       }
-      withResourceIfAllowed(concatRet) { _ =>
+      withResource(concatRet) { _ =>
         // Begin to use GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         withResource(new MetricRange(opTimeMetric)) { _ =>
-          (tableOperator.toGpu(concatRet, dataTypes), numTables)
+          (concatRet.toGpuBatch(dataTypes), numTables)
         }
       }
     }
@@ -350,10 +359,10 @@ class GpuShuffleCoalesceReader(
     targetBatchSize: Long,
     dataTypes: Array[DataType],
     metricsMap: Map[String, GpuMetric])
-  extends GpuShuffleCoalesceReaderBase[SerializedTableColumn, HostConcatResult](iter,
-    targetBatchSize, dataTypes, metricsMap) {
+  extends GpuShuffleCoalesceReaderBase[SerializedTableColumn](iter, targetBatchSize,
+    dataTypes, metricsMap) {
 
-  override protected val tableOperator = new CudfTableOperator
+  override protected val tableOperator = new JCudfTableOperator
 }
 
 /**
@@ -362,10 +371,12 @@ class GpuShuffleCoalesceReader(
  * to the target batch size and then concatenated on the host before handing
  * them to the caller on `.next()`
  */
-abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag, C](
+abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag](
     iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
-    metricsMap: Map[String, GpuMetric]) extends Iterator[C] with AutoCloseable {
+    metricsMap: Map[String, GpuMetric])
+  extends Iterator[CoalescedHostResult] with AutoCloseable {
+
   private[this] val concatTimeMetric = metricsMap(GpuMetric.CONCAT_TIME)
   private[this] val inputBatchesMetric = metricsMap(GpuMetric.NUM_INPUT_BATCHES)
   private[this] val inputRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
@@ -379,14 +390,14 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag, C](
     onTaskCompletion(tc)(close())
   }
 
-  protected def tableOperator: TableOperator[T, C]
+  protected def tableOperator: SerializedTableOperator[T]
 
   override def close(): Unit = {
     serializedTables.forEach(_.close())
     serializedTables.clear()
   }
 
-  private def concatenateTablesInHost(): C = {
+  private def concatenateTablesInHost(): CoalescedHostResult = {
     val result = withResource(new MetricRange(concatTimeMetric)) { _ =>
       withResource(new Array[T](numTablesInBatch)) { tables =>
         tables.indices.foreach(i => tables(i) = serializedTables.removeFirst())
@@ -439,7 +450,7 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag, C](
     numTablesInBatch > 0
   }
 
-  override def next(): C = {
+  override def next(): CoalescedHostResult = {
     if (!hasNext()) {
       throw new NoSuchElementException("No more host batches to concatenate")
     }
@@ -459,18 +470,17 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag, C](
 
 class HostShuffleCoalesceIterator(
     iter: Iterator[ColumnarBatch],
-    targetBatchByteSize: Long,
+    targetBatchSize: Long,
     metricsMap: Map[String, GpuMetric])
-  extends HostCoalesceIteratorBase[SerializedTableColumn, HostConcatResult](iter,
-    targetBatchByteSize, metricsMap) {
-  override protected def tableOperator = new CudfTableOperator
+  extends HostCoalesceIteratorBase[SerializedTableColumn](iter, targetBatchSize, metricsMap) {
+  override protected def tableOperator = new JCudfTableOperator
 }
 
 /**
- * Iterator that expects only the coalesced host buffers as the input, and transfers
- * the host buffers to GPU.
+ * Iterator that expects only "CoalescedHostResult"s as the input, and transfers
+ * them to GPU.
  */
-class GpuShuffleCoalesceIterator(iter: Iterator[AnyRef],
+class GpuShuffleCoalesceIterator(iter: Iterator[CoalescedHostResult],
     dataTypes: Array[DataType],
     metricsMap: Map[String, GpuMetric]) extends Iterator[ColumnarBatch] {
   private[this] val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
@@ -484,21 +494,21 @@ class GpuShuffleCoalesceIterator(iter: Iterator[AnyRef],
       throw new NoSuchElementException("No more columnar batches")
     }
     withResource(new NvtxRange("Concat+Load Batch", NvtxColor.YELLOW)) { _ =>
-      val hostConcatResult = withResource(new MetricRange(opTimeMetric)) { _ =>
+      val hostCoalescedResult = withResource(new MetricRange(opTimeMetric)) { _ =>
         // op time covers concat time performed in `iter.next()`.
         // Note the concat runs on CPU.
         // GPU time = opTime - concatTime
         iter.next()
       }
 
-      withResourceIfAllowed(hostConcatResult) { _ =>
+      withResource(hostCoalescedResult) { _ =>
         // We acquire the GPU regardless of whether `hostConcatResult`
         // is an empty batch or not, because the downstream tasks expect
         // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
         // generate GPU data from batches that are empty.
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         withResource(new MetricRange(opTimeMetric)) { _ =>
-          val batch = GpuShuffleCoalesceUtils.toGpuIfAllowed(hostConcatResult, dataTypes)
+          val batch = hostCoalescedResult.toGpuBatch(dataTypes)
           outputBatchesMetric += 1
           outputRowsMetric += batch.numRows()
           batch

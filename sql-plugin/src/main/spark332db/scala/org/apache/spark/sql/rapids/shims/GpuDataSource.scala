@@ -24,6 +24,7 @@
 {"spark": "350"}
 {"spark": "351"}
 {"spark": "352"}
+{"spark": "353"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -121,14 +122,16 @@ case class GpuDataSource(
       data: LogicalPlan,
       outputColumnNames: Seq[String]): BaseRelation = {
 
-    val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
-    if (outputColumns.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
-      throw QueryCompilationErrors.cannotSaveIntervalIntoExternalStorageError()
-    }
-
     val format = originalProvidingInstance()
     if (!format.isInstanceOf[FileFormat]) {
       throw new IllegalArgumentException(s"Original provider does not extend FileFormat: $format")
+    }
+
+    val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
+    outputColumns.toStructType.foreach { field =>
+      if (field.dataType.isInstanceOf[CalendarIntervalType]) {
+        throw QueryCompilationErrors.dataTypeUnsupportedByDataSourceError(format.toString, field)
+      }
     }
 
     val cmd = planForWritingFileFormat(format.asInstanceOf[FileFormat], mode, data)

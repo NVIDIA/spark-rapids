@@ -129,6 +129,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.join.leftOuter.enabled"></a>spark.rapids.sql.join.leftOuter.enabled|When set to true left outer joins are enabled on the GPU|true|Runtime
 <a name="sql.join.leftSemi.enabled"></a>spark.rapids.sql.join.leftSemi.enabled|When set to true left semi joins are enabled on the GPU|true|Runtime
 <a name="sql.join.rightOuter.enabled"></a>spark.rapids.sql.join.rightOuter.enabled|When set to true right outer joins are enabled on the GPU|true|Runtime
+<a name="sql.json.read.datetime.enabled"></a>spark.rapids.sql.json.read.datetime.enabled|JSON reading is not 100% compatible when reading dates and timestamps.|false|Runtime
 <a name="sql.json.read.decimal.enabled"></a>spark.rapids.sql.json.read.decimal.enabled|When reading a quoted string as a decimal Spark supports reading non-ascii unicode digits, and the RAPIDS Accelerator does not.|true|Runtime
 <a name="sql.json.read.double.enabled"></a>spark.rapids.sql.json.read.double.enabled|JSON reading is not 100% compatible when reading doubles.|true|Runtime
 <a name="sql.json.read.float.enabled"></a>spark.rapids.sql.json.read.float.enabled|JSON reading is not 100% compatible when reading floats.|true|Runtime

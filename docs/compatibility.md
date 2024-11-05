@@ -393,10 +393,14 @@ consistent with the behavior in Spark 3.3.0 and later.
 Another limitation of the GPU JSON reader is that it will parse strings containing non-string boolean or numeric values where
 Spark will treat them as invalid inputs and will just return `null`.
 
-### JSON Timestamps/Dates
+### JSON Dates/Timestamps
 
-The JSON parser does not support the `TimestampNTZ` type and will fall back to CPU if `spark.sql.timestampType` is
-set to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `TimestampNTZ` type.
+Dates and timestamps are not supported by default in JSON parser, since the GPU implementation is not 100%
+compatible with Apache Spark.
+If needed, they can be turned on through the config `spark.rapids.sql.json.read.datetime.enabled`.
+Once enabled, the JSON parser still does not support the `TimestampNTZ` type and will fall back to CPU
+if `spark.sql.timestampType` is set to `TIMESTAMP_NTZ` or if an explicit schema is provided that
+contains the `TimestampNTZ` type.
 
 There is currently no support for reading numeric values as timestamps and null values are returned instead
 ([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast
@@ -418,6 +422,9 @@ The `from_json` function is disabled by default because it is experimental and h
 incompatibilities with Spark, and can be enabled by setting 
 `spark.rapids.sql.expression.JsonToStructs=true`. You don't need to set 
 `spark.rapids.sql.format.json.enabled` and`spark.rapids.sql.format.json.read.enabled` to true.
+In addition, if the input schema contains date and/or timestamp types, an additional config 
+`spark.rapids.sql.json.read.datetime.enabled` also needs to be set to `true` in order 
+to enable this function on the GPU.
 
 There is no schema discovery as a schema is required as input to `from_json`
 
@@ -477,17 +484,16 @@ These are the known edge cases where running on the GPU will produce different r
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
 - Word and non-word boundaries, `\b` and `\B`
-- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
-  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
-  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchors `^` and `$` are not supported in some contexts, such as when combined with a choice (`^|a` or `$|a`).
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported
-- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+- String anchor `\z` is not supported.
+- Patterns containing an end-of-line or string anchor immediately next to a newline or repetition that produces zero
   or more results
+- Patterns containing end-of-line anchors like `$` or `\Z` immediately followed by 
+  escape sequences (e.g., `\w`, `\b`) are not supported.
 - Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers within a choice block such as `(2|\u2029??)+` 
@@ -655,17 +661,16 @@ guaranteed to produce the same results as the CPU:
 - `yyyymmdd`
 - `yyyy/MM/dd HH:mm:ss`
 - `yyyy-MM-dd HH:mm:ss`
+- `yyyyMMdd HH:mm:ss`
 
 LEGACY timeParserPolicy support has the following limitations when running on the GPU:
 
 - Only 4 digit years are supported
 - The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar
   that Spark uses in legacy mode
-- When format is `yyyyMMdd`, GPU only supports 8 digit strings. Spark supports like 7 digit
-  `2024101` string while GPU does not support. Only tested `UTC` and `Asia/Shanghai` timezones.
-- When format is `yyyymmdd`, GPU only supports 8 digit strings. Spark supports like 7 digit
-  `2024101` string while GPU does not support. Only tested `UTC` and `Asia/Shanghai` timezones.
-
+- When format is/contains `yyyyMMdd` or `yyyymmdd`, GPU only supports 8 digit strings for these formats.
+  Spark supports like 7 digit `2024101` string while GPU does not support. Only tested `UTC` and
+  `Asia/Shanghai` timezones.
 
 ## Formatting dates and timestamps as strings
 

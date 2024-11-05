@@ -1120,6 +1120,7 @@ object SpillableHostConcatResult {
   def from(batch: ColumnarBatch): SpillableHostConcatResult = {
     require(batch.numCols() > 0, "Batch must have at least 1 column")
     batch.column(0) match {
+      // TODO add the Kudo case
       case col: SerializedTableColumn =>
         val buffer = col.hostBuffer
         buffer.incRefCount()
