@@ -104,10 +104,6 @@ def test_substring_index(data_gen,delim):
 
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.skipif(condition=is_spark_400_or_later(),
-                    reason="Bug in Apache Spark 4.0 causes NumberFormatExceptions from substring_index(), "
-                           "if called with index==null. For further information, see: "
-                           "https://issues.apache.org/jira/browse/SPARK-48989.")
 @pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
 def test_unsupported_fallback_substring_index(data_gen):
     delim_gen = StringGen(pattern="_")
