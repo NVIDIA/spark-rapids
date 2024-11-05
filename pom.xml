@@ -338,7 +338,8 @@
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-21x</rapids.delta.artifactId1>
                 <rapids.delta.artifactId2>rapids-4-spark-delta-22x</rapids.delta.artifactId2>
-                <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -550,7 +551,7 @@
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifer}</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
@@ -574,7 +575,7 @@
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifer}</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
