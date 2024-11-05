@@ -484,17 +484,16 @@ These are the known edge cases where running on the GPU will produce different r
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
 - Word and non-word boundaries, `\b` and `\B`
-- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
-  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
-  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchors `^` and `$` are not supported in some contexts, such as when combined with a choice (`^|a` or `$|a`).
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported
-- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+- String anchor `\z` is not supported.
+- Patterns containing an end-of-line or string anchor immediately next to a newline or repetition that produces zero
   or more results
+- Patterns containing end-of-line anchors like `$` or `\Z` immediately followed by 
+  escape sequences (e.g., `\w`, `\b`) are not supported.
 - Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers within a choice block such as `(2|\u2029??)+` 

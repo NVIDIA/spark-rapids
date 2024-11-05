@@ -18,11 +18,11 @@ package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
 import java.text.DecimalFormatSymbols
-import java.util.{Locale, Optional}
+import java.util.{EnumSet, Locale, Optional}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, RoundMode, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -1114,7 +1114,8 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def toString: String = s"$left gpurlike $right"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    lhs.getBase.containsRe(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE))
+    lhs.getBase.containsRe(new RegexProgram(pattern,
+      EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE))
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -1231,7 +1232,8 @@ case class GpuRegExpReplace(
             throw new IllegalStateException("Need a replace")
         }
       case _ =>
-        val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
+        val prog = new RegexProgram(cudfRegexPattern,
+          EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE)
         if (SparkShimImpl.reproduceEmptyStringBug &&
             GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
           val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
@@ -1275,7 +1277,7 @@ case class GpuRegExpReplaceWithBackref(
   override def dataType: DataType = StringType
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val prog = new RegexProgram(cudfRegexPattern)
+    val prog = new RegexProgram(cudfRegexPattern, EnumSet.of(RegexFlag.EXT_NEWLINE))
     if (SparkShimImpl.reproduceEmptyStringBug &&
         GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
       val isEmpty = withResource(input.getBase.getCharLengths) { len =>
@@ -1416,7 +1418,8 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    withResource(str.getBase.extractRe(new RegexProgram(extractPattern))) { extract =>
+    withResource(str.getBase.extractRe(new RegexProgram(extractPattern,
+      EnumSet.of(RegexFlag.EXT_NEWLINE)))) { extract =>
       withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
         val outputNullAndInputNotNull =
           withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
@@ -1514,7 +1517,8 @@ case class GpuRegExpExtractAll(
       idx: GpuScalar): ColumnVector = {
     idx.getValue.asInstanceOf[Int] match {
       case 0 =>
-        val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
+        val prog = new RegexProgram(cudfRegexPattern,
+          EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE)
         str.getBase.extractAllRecord(prog, 0)
       case _ =>
         // Extract matches corresponding to idx. cuDF's extract_all_record does not support
@@ -1529,7 +1533,7 @@ case class GpuRegExpExtractAll(
         // 2nd element afterwards from the cuDF list
 
         val rowCount = str.getRowCount
-        val prog = new RegexProgram(cudfRegexPattern)
+        val prog = new RegexProgram(cudfRegexPattern, EnumSet.of(RegexFlag.EXT_NEWLINE))
 
         val extractedWithNulls = withResource(
           // Now the index is always 1 because we have transpiled all the capture groups to the
@@ -1795,7 +1799,8 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
       case 0 =>
         // Same as splitting as many times as possible
         if (isRegExp) {
-          str.getBase.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), -1)
+          str.getBase.stringSplitRecord(new RegexProgram(pattern,
+            EnumSet.of(RegexFlag.EXT_NEWLINE) ,CaptureGroups.NON_CAPTURE), -1)
         } else {
           str.getBase.stringSplitRecord(pattern, -1)
         }
@@ -1810,7 +1815,8 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
         }
       case n =>
         if (isRegExp) {
-          str.getBase.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), n)
+          str.getBase.stringSplitRecord(new RegexProgram(pattern,
+            EnumSet.of(RegexFlag.EXT_NEWLINE) ,CaptureGroups.NON_CAPTURE), n)
         } else {
           str.getBase.stringSplitRecord(pattern, n)
         }
@@ -1923,7 +1929,8 @@ case class GpuStringToMap(strExpr: Expression,
   private def toMap(str: GpuColumnVector): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
     val listsOfStrings = if (isPairDelimRegExp) {
-      str.getBase.stringSplitRecord(new RegexProgram(pairDelim, CaptureGroups.NON_CAPTURE))
+      str.getBase.stringSplitRecord(new RegexProgram(pairDelim,
+        EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE))
     } else {
       str.getBase.stringSplitRecord(pairDelim)
     }
@@ -1932,7 +1939,8 @@ case class GpuStringToMap(strExpr: Expression,
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
         val keysValuesTable = if (isKeyValueDelimRegExp) {
-          stringsCol.stringSplit(new RegexProgram(keyValueDelim, CaptureGroups.NON_CAPTURE), 2)
+          stringsCol.stringSplit(new RegexProgram(keyValueDelim,
+            EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE), 2)
         } else {
           stringsCol.stringSplit(keyValueDelim, 2)
         }
