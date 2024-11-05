@@ -752,7 +752,7 @@
 
     <properties>
         <!-- start dyn.shim properties -->
-        <dyn.shim.excluded.releases/>
+        <dyn.shim.excluded.releases>350db143</dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>
