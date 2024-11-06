@@ -84,6 +84,7 @@ class GpuSortMergeJoinMeta(
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
+    val readOpt = CoalesceReadOption(conf)
     val joinExec = join.joinType match {
       case LeftOuter | RightOuter if useSizedJoin =>
         GpuShuffledAsymmetricHashJoinExec(
@@ -95,6 +96,7 @@ class GpuSortMergeJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          readOpt,
           join.isSkewJoin)(
           join.leftKeys,
           join.rightKeys,
@@ -109,6 +111,7 @@ class GpuSortMergeJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          readOpt,
           join.isSkewJoin)(
           join.leftKeys,
           join.rightKeys)
