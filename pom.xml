@@ -431,27 +431,6 @@
             </modules>
         </profile>
         <profile>
-            <id>release344</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>344</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>344</buildver>
-                <spark.version>${spark344.version}</spark.version>
-                <spark.test.version>${spark344.version}</spark.test.version>
-                <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
-                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <slf4j.version>2.0.6</slf4j.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-24x</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release330cdh</id>
             <activation>
                 <property>
@@ -852,7 +831,6 @@
         <spark341.version>3.4.1</spark341.version>
         <spark342.version>3.4.2</spark342.version>
         <spark343.version>3.4.3</spark343.version>
-        <spark344.version>3.4.4</spark344.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
