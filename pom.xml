@@ -475,7 +475,8 @@
                 <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-21x</rapids.delta.artifactId1>
                 <rapids.delta.artifactId2>rapids-4-spark-delta-22x</rapids.delta.artifactId2>
-                <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
                 <!-- Keeping the scala plugin version 4.3.0 for details
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
