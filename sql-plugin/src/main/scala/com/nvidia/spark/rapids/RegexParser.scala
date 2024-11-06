@@ -1336,10 +1336,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // when the previous character is a line anchor ($), the JVM has special handling
               // when matching against line terminator characters
               case Some(RegexChar('$')) | Some(RegexEscaped('Z')) =>
-                val j = r.lastIndexWhere {
-                  case RegexEmpty() => false
-                  case _ => true
-                }
                 part match {
                   case RegexGroup(capture, RegexSequence(
                       ListBuffer(RegexCharacterClass(true, parts))), _)
