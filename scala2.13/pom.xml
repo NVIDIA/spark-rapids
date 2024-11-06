@@ -432,6 +432,26 @@
             </modules>
         </profile>
         <profile>
+            <id>release344</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>344</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>344</buildver>
+                <spark.version>${spark344.version}</spark.version>
+                <spark.test.version>${spark344.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.6</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-24x</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release330cdh</id>
             <activation>
                 <property>
@@ -576,6 +596,7 @@
                 <spark.version>${spark350.version}</spark.version>
                 <spark.test.version>${spark350.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -596,6 +617,7 @@
                 <spark.version>${spark351.version}</spark.version>
                 <spark.test.version>${spark351.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -616,6 +638,7 @@
                 <spark.version>${spark352.version}</spark.version>
                 <spark.test.version>${spark352.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -636,6 +659,7 @@
                 <spark.version>${spark353.version}</spark.version>
                 <spark.test.version>${spark353.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -657,6 +681,7 @@
                 <spark.version>${spark400.version}</spark.version>
                 <spark.test.version>${spark400.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -781,7 +806,7 @@
         <scala.binary.version>2.13</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
-        <scala.version>2.13.14</scala.version>
+        <scala.version>2.12.15</scala.version>
         <!--
         -processing
         to suppress unactionable "No processor claimed any of these annotations"
@@ -803,7 +828,7 @@
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <rapids.shim.jar.phase>none</rapids.shim.jar.phase>
         <rapids.shim.jar.test.phase>package</rapids.shim.jar.test.phase>
-        <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+        <rapids.delta.artifactId1>!!! ERROR rapids.delta.artifactId1 definition is required releas${buildver} profile !!!</rapids.delta.artifactId1>
         <rapids.delta.artifactId2>${rapids.delta.artifactId1}</rapids.delta.artifactId2>
         <rapids.delta.artifactId3>${rapids.delta.artifactId1}</rapids.delta.artifactId3>
         <test.include.tags/>
@@ -833,6 +858,7 @@
         <spark341.version>3.4.1</spark341.version>
         <spark342.version>3.4.2</spark342.version>
         <spark343.version>3.4.3</spark343.version>
+        <spark344.version>3.4.4</spark344.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
