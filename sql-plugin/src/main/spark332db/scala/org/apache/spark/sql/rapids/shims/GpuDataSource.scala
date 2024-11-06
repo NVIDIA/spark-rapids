@@ -29,6 +29,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
+import com.nvidia.spark.rapids.shims.LogicalPlanShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql._
@@ -83,9 +84,7 @@ case class GpuDataSource(
     PartitioningUtils.validatePartitionColumn(data.schema, partitionColumns, caseSensitive)
 
     val fileIndex = catalogTable.map(_.identifier).map { tableIdent =>
-      sparkSession.table(tableIdent).queryExecution.analyzed.collect {
-        case LogicalRelation(t: HadoopFsRelation, _, _, _) => t.location
-      }.head
+      LogicalPlanShims.getLocations(sparkSession.table(tableIdent).queryExecution.analyzed).head
     }
 
     // For partitioned relation r, r.schema's column ordering can be different from the column
