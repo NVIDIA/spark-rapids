@@ -72,8 +72,8 @@
             <classifier>${spark.version.classifier}</classifier>
         </dependency>
         <!--
-            placeholders for maximum number of delta-lake shims per Spark shim:
-            - if we need only N use rapids.delta.artifactIdN+1 = rapids.delta.artifactIdN
+            Placeholders for the maximum number of delta-lake shims per Spark shim:
+            If a Shim needs only N it uses rapids.delta.artifactIdN+1 = rapids.delta.artifactIdN
         -->
         <dependency>
             <groupId>com.nvidia</groupId>
