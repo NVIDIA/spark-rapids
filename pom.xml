@@ -444,6 +444,7 @@
                 <spark.version>${spark344.version}</spark.version>
                 <spark.test.version>${spark344.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
@@ -828,7 +829,13 @@
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <rapids.shim.jar.phase>none</rapids.shim.jar.phase>
         <rapids.shim.jar.test.phase>package</rapids.shim.jar.test.phase>
-        <rapids.delta.artifactId1>!!! ERROR rapids.delta.artifactId1 definition is required releas${buildver} profile !!!</rapids.delta.artifactId1>
+
+        <!--
+            Dummy value just to pass the Maven artifactId format check.
+            Enforcer Plugin checks for the proper value override for each releaseXYZ profile
+         -->
+        <rapids.delta.artifactId1>DEFINE_FOR_EVERY_SPARK_SHIM</rapids.delta.artifactId1>
+
         <rapids.delta.artifactId2>${rapids.delta.artifactId1}</rapids.delta.artifactId2>
         <rapids.delta.artifactId3>${rapids.delta.artifactId1}</rapids.delta.artifactId3>
         <test.include.tags/>
@@ -1551,6 +1558,11 @@ This will force full Scala code rebuild in downstream modules.
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <requireProperty>
+                            <regexMessage>At least one of rapids.delta.artifactId1, rapids.delta.artifactId2 ... is required in the POM profile "release${buildver}"</regexMessage>
+                            <property>rapids.delta.artifactId1</property>
+                            <regex>^rapids-4-spark-delta-.*</regex>
+                        </requireProperty>
                         <!-- #if scala-2.12 -->
                         <requireJavaVersion>
                             <message>Only Java 8, 11, and 17 are supported!</message>
