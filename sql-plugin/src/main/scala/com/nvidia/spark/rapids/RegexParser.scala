@@ -1347,7 +1347,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
                     popBackrefIfNecessary(false)
-                  case RegexChar(ch) if "\n\r\u0085\u2028\u2029".contains(ch) =>
+                  case RegexChar(ch) if lineTerminatorChars.contains(ch) =>
                     // what's really needed here is negative lookahead, but that is not
                     // supported by cuDF
                     // in this case: $\n would transpile to (?!\r)\n$
