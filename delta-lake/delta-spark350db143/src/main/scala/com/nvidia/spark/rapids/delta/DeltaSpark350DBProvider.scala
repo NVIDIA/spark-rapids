@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplace
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
-object DeltaSpark341DBProvider extends DatabricksDeltaProviderBase {
+object DeltaSpark350DBProvider extends DatabricksDeltaProviderBase {
 
   override def convertToGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
