@@ -478,8 +478,7 @@ def __shimplify_layout():
         for src_type in ['main', 'test']:
             __traverse_source_tree_of_all_shims(
                 src_type,
-                lambda unused_src_type, shim_file_path, build_ver_arr:
-                __update_files2bv(files2bv, shim_file_path, build_ver_arr))
+                partial(__update_files2bv, files2bv=files2bv))
 
     # adding a new shim?
     if __add_shim_buildver is not None:
@@ -508,11 +507,17 @@ def __shimplify_layout():
                     __git_rename_or_copy(shim_file, owner_shim)
 
 
-def __update_files2bv(files2bv, path, buildver_arr):
-    assert path not in files2bv.keys(), "new path %s %s should be "\
-        "encountered only once, current map\n%s" % (path, buildver_arr, files2bv)
-    __log.debug("Adding %s %s to files to shim map", path, buildver_arr)
-    files2bv[path] = buildver_arr
+def __update_files2bv(files2bv,
+                      # TODO an anachronism requirement: that the following two params
+                      # have the same name along generate_symlink_file
+                      shim_file_path,
+                      build_ver_arr,
+                      #
+                      **kwargs):
+    assert shim_file_path not in files2bv.keys(), "new path %s %s should be "\
+        "encountered only once, current map\n%s" % (shim_file_path, build_ver_arr, files2bv)
+    __log.debug("Adding %s %s to files to shim map", shim_file_path, build_ver_arr)
+    files2bv[shim_file_path] = build_ver_arr
 
 
 def __add_new_shim_to_file_map(files2bv):
