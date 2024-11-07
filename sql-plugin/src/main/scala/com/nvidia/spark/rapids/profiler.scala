@@ -137,7 +137,7 @@ object ProfilerOnExecutor extends Logging {
             taskCtx.addTaskCompletionListener[Unit] { _ =>
               val currentCount = stageTaskCount.getOrElse(stageId, 0)
               if (currentCount < taskLimit) {
-                stageTaskCount(taskCtx.stageId) = currentCount + 1
+                stageTaskCount(stageId) = currentCount + 1
               } else {
                 disable()
               }
