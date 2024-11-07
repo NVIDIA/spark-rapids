@@ -709,12 +709,11 @@ def test_from_json_map_with_options(allow_single_quotes,
     #  - Numbers with leading zeros
     #  - Non-numeric numbers
     #  - Unquoted control characters in quoted strings
-    # TODO: add `\n` into the last pattern
     json_string_gen = StringGen(r'{"a": "[0-9]{0,5}"}') \
         .with_special_pattern(r"""{'a': "[0-9]{0,5}"}""", weight=50) \
         .with_special_pattern(r'{"a": 0[0-9]{0,5}}', weight=50) \
-        .with_special_pattern(r'{"a": Infinity}', weight=50) \
-        .with_special_pattern(r'{"a\tb": "01\r\t23"}', weight=50)
+        .with_special_pattern(r'{"a": [+-]?(INF|Infinity|NaN)}', weight=50) \
+        .with_special_pattern(r'{"(a|a\r\n\tb)": "(xyz|01\r\n\t23)"}', weight=50)
     options = {"allowSingleQuotes": allow_single_quotes,
                 # Cannot test `allowNumericLeadingZeros==true` because the GPU output always has
                 # leading zeros while the CPU output does not, thus test will always fail.
