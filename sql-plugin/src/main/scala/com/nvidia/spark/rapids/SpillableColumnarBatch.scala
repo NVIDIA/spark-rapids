@@ -117,8 +117,8 @@ class SpillableColumnarBatchImpl (
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     withRapidsBuffer { rapidsBuffer =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       rapidsBuffer.getColumnarBatch(sparkTypes)
     }
   }
