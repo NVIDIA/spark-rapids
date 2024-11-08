@@ -170,6 +170,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("String regexp_extract end-of-line 1", extractStringsLineEnd,
     conf = conf) {
+    assume(isUnicodeEnabled())
     frame =>
       frame.selectExpr("regexp_extract(strings, '(456(\r|\u2028)$|123\n$)', 0)")
   }
