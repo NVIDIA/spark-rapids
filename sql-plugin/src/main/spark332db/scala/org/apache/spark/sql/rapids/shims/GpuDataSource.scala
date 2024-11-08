@@ -21,13 +21,16 @@
 {"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
 {"spark": "351"}
 {"spark": "352"}
+{"spark": "353"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
+import com.nvidia.spark.rapids.shims.LogicalPlanShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql._
@@ -82,9 +85,7 @@ case class GpuDataSource(
     PartitioningUtils.validatePartitionColumn(data.schema, partitionColumns, caseSensitive)
 
     val fileIndex = catalogTable.map(_.identifier).map { tableIdent =>
-      sparkSession.table(tableIdent).queryExecution.analyzed.collect {
-        case LogicalRelation(t: HadoopFsRelation, _, _, _) => t.location
-      }.head
+      LogicalPlanShims.getLocations(sparkSession.table(tableIdent).queryExecution.analyzed).head
     }
 
     // For partitioned relation r, r.schema's column ordering can be different from the column
@@ -121,14 +122,16 @@ case class GpuDataSource(
       data: LogicalPlan,
       outputColumnNames: Seq[String]): BaseRelation = {
 
-    val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
-    if (outputColumns.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
-      throw QueryCompilationErrors.cannotSaveIntervalIntoExternalStorageError()
-    }
-
     val format = originalProvidingInstance()
     if (!format.isInstanceOf[FileFormat]) {
       throw new IllegalArgumentException(s"Original provider does not extend FileFormat: $format")
+    }
+
+    val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
+    outputColumns.toStructType.foreach { field =>
+      if (field.dataType.isInstanceOf[CalendarIntervalType]) {
+        throw QueryCompilationErrors.dataTypeUnsupportedByDataSourceError(format.toString, field)
+      }
     }
 
     val cmd = planForWritingFileFormat(format.asInstanceOf[FileFormat], mode, data)

@@ -72,7 +72,7 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
         private def dumpCurrentBatch(): ColumnarBatch = {
           val outputPath = pathOfBatch(split.index, batchIdx)
           val outputStream = outputPath.getFileSystem(info.hadoopConf.value.value)
-            .create(outputPath, false)
+            .create(outputPath, true)
           DumpUtils.dumpToParquet(nextBatch.get, outputStream)
           nextBatch.get
         }

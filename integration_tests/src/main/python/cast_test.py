@@ -18,7 +18,7 @@ from asserts import *
 from conftest import is_not_utc, is_supported_time_zone, is_dataproc_serverless_runtime
 from data_gen import *
 from spark_session import *
-from marks import allow_non_gpu, approximate_float, datagen_overrides, tz_sensitive_test
+from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
@@ -26,13 +26,27 @@ import math
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
-def test_cast_empty_string_to_int():
+
+def test_cast_empty_string_to_int_ansi_off():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
                 'CAST(a as BYTE)',
                 'CAST(a as SHORT)',
                 'CAST(a as INTEGER)',
-                'CAST(a as LONG)'))
+                'CAST(a as LONG)'),
+                conf=ansi_disabled_conf)
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11552")
+def test_cast_empty_string_to_int_ansi_on():
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, StringGen(pattern="")).selectExpr(
+            'CAST(a as BYTE)',
+            'CAST(a as SHORT)',
+            'CAST(a as INTEGER)',
+            'CAST(a as LONG)').collect(),
+        conf=ansi_enabled_conf,
+        error_message="cannot be cast to ")
 
 # These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
 # just about everything for non-nested values. This is intended to check that the
@@ -61,12 +75,22 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
-def test_cast_string_date_valid_format():
+def test_cast_string_date_valid_format_ansi_off():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())),
-            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
+            conf = copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}))
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
+def test_cast_string_date_valid_format_ansi_on():
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all formats.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, StringGen(date_start_1_1_1)).select(f.col('a').cast(DateType())).collect(),
+        conf = copy_and_update(ansi_enabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}),
+        error_message="One or more values could not be converted to DateType")
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
                                  '1970 T', ' 1970-01T', '1970-01 A',  # not conform to "yyyy-[M]M" after trim
@@ -94,8 +118,8 @@ def test_cast_string_date_invalid_ansi_before_320():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'}, )
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True}, )
 
 # test Spark versions >= 320 and databricks, ANSI mode, valid values
 @pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
@@ -103,8 +127,8 @@ def test_cast_string_date_valid_ansi():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'})
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True})
 
 # test Spark versions >= 320, ANSI mode
 @pytest.mark.skipif(is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+")
@@ -112,8 +136,8 @@ def test_cast_string_date_valid_ansi():
 def test_cast_string_date_invalid_ansi(invalid):
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'},
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True},
         error_message="DateTimeException")
 
 
@@ -144,7 +168,8 @@ def test_cast_string_date_non_ansi():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
+        conf=copy_and_update(ansi_disabled_conf, {'spark.rapids.sql.hasExtendedYearValues': False}))
+
 
 @pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1),
                                       StringGen(date_start_1_1_1 + '[ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
@@ -153,32 +178,65 @@ def test_cast_string_date_non_ansi():
                         ids=idfn)
 @tz_sensitive_test
 @allow_non_gpu(*non_utc_allow)
-def test_cast_string_ts_valid_format(data_gen):
+def test_cast_string_ts_valid_format_ansi_off(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
-            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
-                'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+            conf = copy_and_update(ansi_disabled_conf,
+                                   {'spark.rapids.sql.hasExtendedYearValues': False,
+                                    'spark.rapids.sql.castStringToTimestamp.enabled': True}))
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11556")
+@pytest.mark.parametrize('data_gen', [StringGen(date_start_1_1_1)],
+                         ids=idfn)
+@tz_sensitive_test
+@allow_non_gpu(*non_utc_allow)
+def test_cast_string_ts_valid_format_ansi_on(data_gen):
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
+        conf = copy_and_update(ansi_enabled_conf,
+                               {'spark.rapids.sql.hasExtendedYearValues': False,
+                                'spark.rapids.sql.castStringToTimestamp.enabled': True}))
+
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
-def test_cast_string_date_fallback():
+def test_cast_string_date_fallback_ansi_off():
+    """
+    This tests that STRING->DATE conversion is run on CPU, via a fallback.
+    The point of this test is to exercise the fallback, and not to examine any errors in casting.
+    There is no change in behaviour between Apache Spark and the plugin, since they're both
+    exercising the CPU implementation.  Therefore, this needn't be tested with ANSI enabled.
+    """
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
             lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(DateType()).cast(StringType())),
-            'Cast')
+            'Cast',
+            conf=ansi_disabled_conf)
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
 def test_cast_string_timestamp_fallback():
+    """
+    This tests that STRING->TIMESTAMP conversion is run on CPU, via a fallback.
+    The point of this test is to exercise the fallback, and not to examine any errors in casting.
+    There is no change in behaviour between Apache Spark and the plugin, since they're both
+    exercising the CPU implementation.  Therefore, this needn't be tested with ANSI enabled.
+    """
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
             lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
             'Cast',
-            conf = {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+            conf = copy_and_update(ansi_disabled_conf,
+                                   {'spark.rapids.sql.castStringToTimestamp.enabled': True}))
 
 
+@disable_ansi_mode  # In ANSI mode, there are restrictions to casting DECIMAL to other types.
+                    # ANSI mode behaviour is tested in test_ansi_cast_decimal_to.
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
     decimal_gen_32bit,
@@ -191,10 +249,10 @@ def test_cast_string_timestamp_fallback():
     DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),
     DecimalGen(precision=38, scale=-10)], ids=meta_idfn('from:'))
 @pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType(), StringType()], ids=meta_idfn('to:'))
-def test_cast_decimal_to(data_gen, to_type):
+def test_with_ansi_disabled_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
-            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True})
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', [
@@ -210,6 +268,8 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
             conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True,
                 'spark.sql.ansi.enabled': True})
 
+
+@disable_ansi_mode  # With ANSI enabled, casting from wider to narrower types will fail.
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(7, 1),
@@ -226,9 +286,23 @@ def test_ansi_cast_decimal_to(data_gen, to_type):
     DecimalType(30, -4),
     DecimalType(38, -10),
     DecimalType(1, -1)], ids=meta_idfn('to:'))
-def test_cast_decimal_to_decimal(data_gen, to_type):
+def test_with_ansi_disabled_cast_decimal_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')))
+
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/11550")
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10050')
+@pytest.mark.parametrize('data_gen', [
+    DecimalGen(3, 0)], ids=meta_idfn('from:'))
+@pytest.mark.parametrize('to_type', [
+    DecimalType(1, -1)], ids=meta_idfn('to:'))
+def test_ansi_cast_failures_decimal_to_decimal(data_gen, to_type):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')).collect(),
+        conf=ansi_enabled_conf,
+        error_message="overflow occurred")
+
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('to_type', [
@@ -240,10 +314,21 @@ def test_cast_decimal_to_decimal(data_gen, to_type):
     DecimalType(10, 2),
     DecimalType(18, 0),
     DecimalType(18, 2)], ids=idfn)
-def test_cast_integral_to_decimal(data_gen, to_type):
+def test_cast_integral_to_decimal_ansi_off(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(
-            f.col('a').cast(to_type)))
+            f.col('a').cast(to_type)),
+        conf=ansi_disabled_conf)
+
+
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('to_type', [DecimalType(2, 0)], ids=idfn)
+def test_cast_integral_to_decimal_ansi_on(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+                f.col('a').cast(to_type)),
+        conf=ansi_enabled_conf)
 
 def test_cast_byte_to_decimal_overflow():
     assert_gpu_and_cpu_are_equal_collect(
@@ -278,11 +363,28 @@ _float_special_cases = [(float("inf"), 5.0), (float("-inf"), 5.0), (float("nan")
     DecimalType(30, 3),
     DecimalType(5, -3),
     DecimalType(3, 0)], ids=idfn)
-def test_cast_floating_point_to_decimal(data_gen, to_type):
+def test_cast_floating_point_to_decimal_ansi_off(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(
             f.col('a'), f.col('a').cast(to_type)),
-        conf={'spark.rapids.sql.castFloatToDecimal.enabled': 'true'})
+        conf=copy_and_update(
+               ansi_disabled_conf,
+               {'spark.rapids.sql.castFloatToDecimal.enabled': True}))
+
+
+@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/11550")
+@pytest.mark.parametrize('data_gen', [FloatGen(special_cases=_float_special_cases)])
+@pytest.mark.parametrize('to_type', [DecimalType(7, 1)])
+def test_cast_floating_point_to_decimal_ansi_on(data_gen, to_type):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).select(
+                         f.col('a'),
+                         f.col('a').cast(to_type)).collect(),
+        conf=copy_and_update(
+            ansi_enabled_conf,
+            {'spark.rapids.sql.castFloatToDecimal.enabled': True}),
+        error_message="[NUMERIC_VALUE_OUT_OF_RANGE.WITH_SUGGESTION]")
+
 
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen]
@@ -323,7 +425,7 @@ def _assert_cast_to_string_equal (data_gen, conf):
 
 
 @pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @allow_non_gpu(*non_utc_allow)
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -347,18 +449,18 @@ def test_cast_double_to_string():
     assert from_cpu_float == from_gpu_float
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @pytest.mark.xfail(reason='casting this type to string is not exact match')
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : True,
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 
 @pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @allow_non_gpu(*non_utc_allow)
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -367,18 +469,18 @@ def test_cast_map_to_string(data_gen, legacy):
 
 
 @pytest.mark.parametrize('data_gen', not_matched_map_gens_for_cast_to_string, ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @pytest.mark.xfail(reason='casting this type to string is not exact match')
 def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : True,
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @allow_non_gpu(*non_utc_allow)
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
@@ -400,7 +502,7 @@ def test_one_nested_null_field_legacy_cast(cast_conf):
 
     assert_gpu_and_cpu_are_equal_collect(
         was_broken_for_nested_null,
-        {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": True if cast_conf == 'LEGACY' else False}
     )
 
 # https://github.com/NVIDIA/spark-rapids/issues/2315
@@ -417,16 +519,16 @@ def test_two_col_struct_legacy_cast(cast_conf):
 
     assert_gpu_and_cpu_are_equal_collect(
         broken_df,
-        {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": True if cast_conf == 'LEGACY' else False}
     )
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", element_gen]]) for element_gen in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
-@pytest.mark.parametrize('legacy', ['true', 'false'])
+@pytest.mark.parametrize('legacy', [True, False])
 @pytest.mark.xfail(reason='casting this type to string is not an exact match')
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : True,
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -481,13 +583,17 @@ def test_cast_float_to_timestamp_side_effect():
 # non ansi mode, will get null
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_cast_float_to_timestamp_for_nan_inf(type):
+def test_with_ansi_off_cast_float_to_timestamp_for_nan_inf(type):
+    """
+    Tests the behaviour of floats when cast to timestamp, with ANSI disabled.
+    ANSI mode tests are covered in test_cast_float_to_timestamp_ansi_for_nan_inf.
+    """
     def fun(spark):
         data = [(float("inf"),), (float("-inf"),), (float("nan"),)]
         schema = StructType([StructField("value", type, True)])
         df = spark.createDataFrame(data, schema)
         return df.select(f.col('value').cast(TimestampType()))
-    assert_gpu_and_cpu_are_equal_collect(fun)
+    assert_gpu_and_cpu_are_equal_collect(fun, conf=ansi_disabled_conf)
 
 # gen for casting long to timestamp, range is about in [0000, 9999]
 long_gen_to_timestamp = LongGen(max_val=math.floor((9999-1970) * 365 * 86400),
@@ -554,11 +660,20 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
                         "cast(value as float)", "cast(value as double)"),
         conf=ansi_enabled_conf)
 
+
+@pytest.mark.skipif(is_databricks_runtime() and is_databricks_version_or_later(14, 3),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
+@pytest.mark.skipif(not is_databricks_runtime() and is_spark_400_or_later(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11555")
 def test_cast_timestamp_to_numeric_non_ansi():
+    """
+    Test timestamp->numeric conversions with ANSI off.
+    """
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
-                        "cast(a as float)", "cast(a as double)"))
+                        "cast(a as float)", "cast(a as double)"),
+        conf=ansi_disabled_conf)
 
 @allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_string():
@@ -726,8 +841,6 @@ def test_cast_int_to_string_not_UTC():
         {"spark.sql.session.timeZone": "+08"})
 
 not_utc_fallback_test_params = [(timestamp_gen, 'STRING'),
-        # python does not like year 0, and with time zones the default start date can become year 0 :(
-        (DateGen(start=date(1, 1, 1)), 'TIMESTAMP'),
         (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
 
 @allow_non_gpu('ProjectExec')
@@ -737,9 +850,16 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         lambda spark: unary_op_df(spark, from_gen).selectExpr("CAST(a AS {}) as casted".format(to_type)),
         "Cast",
         {"spark.sql.session.timeZone": "+08",
-         "spark.rapids.sql.castStringToTimestamp.enabled": "true"})
+         "spark.rapids.sql.castStringToTimestamp.enabled": True})
 
-def test_cast_date_integral_and_fp():
+
+def test_cast_date_integral_and_fp_ansi_off():
+    """
+    This tests that a date column can be cast to different numeric/floating-point types.
+    This needs to be tested with ANSI disabled, because none of these conversions are
+    ANSI-compliant.
+    """
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, date_gen).selectExpr(
-            "cast(a as boolean)", "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)", "cast(a as float)", "cast(a as double)"))
+            "cast(a as boolean)", "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)", "cast(a as float)", "cast(a as double)"),
+            conf=ansi_disabled_conf)

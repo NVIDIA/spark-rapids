@@ -32,7 +32,7 @@ or answer a question on the [discussion board](https://github.com/NVIDIA/spark-r
 
 ## Download
 
-The jar files for the most recent release can be retrieved from the [download](docs/download.md)
+The jar files for the most recent release can be retrieved from the [download](https://nvidia.github.io/spark-rapids/docs/download.html)
 page.
 
 ## Building From Source
@@ -73,7 +73,7 @@ as a `provided` dependency.
 <dependency>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark_2.12</artifactId>
-    <version>24.10.0-SNAPSHOT</version>
+    <version>24.12.0-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>
 ```

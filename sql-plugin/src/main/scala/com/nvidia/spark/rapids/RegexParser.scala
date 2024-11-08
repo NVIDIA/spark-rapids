@@ -846,24 +846,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
   // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
   // the end of a line of an input character sequence.
   // this method produces a RegexAST which outputs a regular expression to match any possible
-  // combination of line terminators
-  private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean,
-      capture: Boolean): RegexAST = {
-    val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
-    terminatorChars ++= lineTerminatorChars.filter(!exclude.contains(_)).map(RegexChar)
-
-    if (terminatorChars.size == 0 && excludeCRLF) {
+  // combination of line terminators.
+  // Cudf added support to identify \n, \r, \u0085, \u2028, \u2029 as line break characters
+  // when EXT_NEWLINE flag is set. See issue: https://github.com/NVIDIA/spark-rapids/issues/11554
+  private def lineTerminatorMatcher(excludeCRLF: Boolean, capture: Boolean): RegexAST = {
+    if (excludeCRLF) {
       RegexEmpty()
-    } else if (terminatorChars.size == 0) {
+    } else {
       RegexGroup(capture = capture, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))),
           None)
-    } else if (excludeCRLF) {
-      RegexGroup(capture = capture,
-        RegexCharacterClass(negated = false, characters = terminatorChars),
-        None
-      )
-    } else {
-      RegexGroup(capture = capture, RegexParser.parse("\r|\u0085|\u2028|\u2029|\r\n"), None)
     }
   }
 
@@ -1104,8 +1095,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 }
               }
               RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set(ch), true,
-                    mode == RegexReplaceMode), SimpleQuantifier('?')),
+                RegexRepetition(lineTerminatorMatcher(excludeCRLF = true,
+                    capture = mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
             case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
               throw new RegexUnsupportedException(
@@ -1119,8 +1110,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 }
               }
               RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set.empty, false,
-                    mode == RegexReplaceMode), SimpleQuantifier('?')),
+                RegexRepetition(lineTerminatorMatcher(excludeCRLF = false,
+                    capture = mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
@@ -1367,18 +1358,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   case RegexGroup(capture, RegexSequence(
                       ListBuffer(RegexCharacterClass(true, parts))), _)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(lineTerminatorMatcher(Set.empty, true, capture),
+                    r(j) = RegexSequence(
+                      ListBuffer(lineTerminatorMatcher(excludeCRLF = true, capture = capture),
                         RegexChar('$')))
                     popBackrefIfNecessary(capture)
                   case RegexGroup(capture, RegexCharacterClass(true, parts), _)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(lineTerminatorMatcher(Set.empty, true, capture),
+                    r(j) = RegexSequence(ListBuffer(
+                      lineTerminatorMatcher(excludeCRLF = true, capture = capture),
                         RegexChar('$')))
                     popBackrefIfNecessary(capture)
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(
-                      ListBuffer(lineTerminatorMatcher(Set.empty, true, false), RegexChar('$')))
+                    r(j) = RegexSequence(ListBuffer(
+                      lineTerminatorMatcher(excludeCRLF = true, capture = false),
+                        RegexChar('$')))
                     popBackrefIfNecessary(false)
                   case RegexChar(ch) if ch == '\n' =>
                     // what's really needed here is negative lookahead, but that is not
@@ -1391,16 +1385,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
                       ListBuffer(
                         rewrite(part, replacement, None, flags),
                         RegexSequence(ListBuffer(
-                          RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
+                          RegexRepetition(
+                            lineTerminatorMatcher(excludeCRLF = true, capture = false),
                             SimpleQuantifier('?')), RegexChar('$')))))
                     popBackrefIfNecessary(false)
                   case RegexEscaped('z') =>
-                    // \Z\z or $\z transpiles to $
-                    r(j) = RegexChar('$')
-                    popBackrefIfNecessary(false)
-                  case RegexEscaped(a) if "bB".contains(a) =>
+                    // since \z is not supported by cudf
+                    // we need to transpile $\z to $(?![\r\n\u0085\u2028\u2029])
+                    // however, cudf doesn't support negative look ahead
+                    throw new RegexUnsupportedException("Regex sequence $\\z is not supported",
+                      part.position)
+                  case RegexEscaped(a) if "bBsSdDwWaAf".contains(a) =>
                     throw new RegexUnsupportedException(
-                      "Regex sequences with \\b or \\B not supported around $", part.position)
+                      s"Regex sequences with \\$a are not supported around end-of-line markers " +
+                        "like $ or \\Z at position", part.position)
                   case _ =>
                     r.append(rewrite(part, replacement, last, flags))
                 }

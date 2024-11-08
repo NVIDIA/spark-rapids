@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,6 +78,35 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   override def value: NanoTime = NanoTime(_sum)
 }
 
+class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
+  private var _value = 0L
+  override def isZero: Boolean = _value == 0
+
+  override def copy(): HighWatermarkAccumulator = {
+    val newAcc = new HighWatermarkAccumulator
+    newAcc._value = this._value
+    newAcc
+  }
+
+  override def reset(): Unit = {
+    _value = 0
+  }
+
+  override def add(v: jl.Long): Unit = {
+    _value += v
+  }
+
+  override def merge(other: AccumulatorV2[jl.Long, Long]): Unit = other match {
+    case wa: HighWatermarkAccumulator =>
+      _value = _value.max(wa._value)
+    case _ =>
+      throw new UnsupportedOperationException(
+        s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
+  }
+
+  override def value: Long = _value
+}
+
 class GpuTaskMetrics extends Serializable {
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
@@ -91,6 +120,28 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromHostTimeNs = new NanoSecondAccumulator
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
+  private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
+  private val maxDiskMemoryBytes = new HighWatermarkAccumulator
+
+  private var diskBytesAllocated: Long = 0
+  private var maxDiskBytesAllocated: Long = 0
+
+  def getDiskBytesAllocated: Long = diskBytesAllocated
+
+  def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
+
+  def incDiskBytesAllocated(bytes: Long): Unit = {
+    diskBytesAllocated += bytes
+    maxDiskBytesAllocated = maxDiskBytesAllocated.max(diskBytesAllocated)
+  }
+
+  def decDiskBytesAllocated(bytes: Long): Unit = {
+    diskBytesAllocated -= bytes
+    // For some reason it's possible for the task to start out by releasing resources,
+    // possibly from a previous task, in such case we probably should just ignore it.
+    diskBytesAllocated = diskBytesAllocated.max(0)
+  }
+
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
     "gpuRetryCount" -> retryCount,
@@ -100,7 +151,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillToHostTime" -> spillToHostTimeNs,
     "gpuSpillToDiskTime" -> spillToDiskTimeNs,
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
-    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs
+    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
+    "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
+    "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes
   )
 
   def register(sc: SparkContext): Unit = {
@@ -176,6 +229,21 @@ class GpuTaskMetrics extends Serializable {
     val compNs = RmmSpark.getAndResetComputeTimeLostToRetryNs(taskAttemptId)
     if (compNs > 0) {
       retryComputationTime.add(compNs)
+    }
+  }
+
+  def updateMaxMemory(taskAttemptId: Long): Unit = {
+    val maxMem = RmmSpark.getAndResetGpuMaxMemoryAllocated(taskAttemptId)
+    if (maxMem > 0) {
+      // These metrics track the max amount of memory that is allocated on the gpu and disk,
+      // respectively, during the lifespan of a task. However, this update function only gets called
+      // once on task completion, whereas the actual logic tracking of the max value during memory
+      // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
+      // add method instead of adding a dedicated max method to the accumulator.
+      maxDeviceMemoryBytes.add(maxMem)
+    }
+    if (maxDiskBytesAllocated > 0) {
+      maxDiskMemoryBytes.add(maxDiskBytesAllocated)
     }
   }
 }

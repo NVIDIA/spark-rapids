@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>24.10.0-SNAPSHOT</version>
+    <version>24.12.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -407,6 +407,26 @@
             </modules>
         </profile>
         <profile>
+            <id>release344</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>344</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>344</buildver>
+                <spark.version>${spark344.version}</spark.version>
+                <spark.test.version>${spark344.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.6</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-24x</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release330cdh</id>
             <activation>
                 <property>
@@ -589,6 +609,26 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release353</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>353</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>353</buildver>
+                <spark.version>${spark353.version}</spark.version>
+                <spark.test.version>${spark353.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -722,8 +762,8 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>24.10.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>24.10.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>24.12.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>24.12.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.13</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -776,6 +816,7 @@
         <spark341.version>3.4.1</spark341.version>
         <spark342.version>3.4.2</spark342.version>
         <spark343.version>3.4.3</spark343.version>
+        <spark344.version>3.4.4</spark344.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
@@ -784,6 +825,7 @@
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
+        <spark353.version>3.5.3</spark353.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
@@ -1568,14 +1610,11 @@ This will force full Scala code rebuild in downstream modules.
                             <skip>${maven.scalastyle.skip}</skip>
                             <target>
                                 <pathconvert property="scalastyle.dirs" pathsep=" ">
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/*/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/*/scala"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/scala-${scala.binary.version}"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/*/scala-${scala.binary.version}"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/scala-${scala.binary.version}"/>
-                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/*/scala-${scala.binary.version}"/>
+                                    <dirset dir="${spark.rapids.source.basedir}">
+                                        <include name="**/src/main"/>
+                                        <include name="**/src/test"/>
+                                        <exclude name="**/target/*/generated/src/**"/>
+                                    </dirset>
                                 </pathconvert>
                                 <echo>Checking scalastyle for all modules using following paths:
                                     ${scalastyle.dirs}

@@ -1141,7 +1141,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val filterFunc = (file: PartitionedFile) => {
-      filterHandler.filterBlocks(footerReadType, file, conf,
+      // we need to copy the Hadoop Configuration because filter push down can mutate it,
+      // which can affect other threads.
+      filterHandler.filterBlocks(footerReadType, file, new Configuration(conf),
         filters, readDataSchema)
     }
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
@@ -1234,12 +1236,20 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       val tc = TaskContext.get()
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
       files.grouped(numFilesFilterParallel).map { fileGroup =>
+        // we need to copy the Hadoop Configuration because filter push down can mutate it,
+        // which can affect other threads.
         threadPool.submit(
-          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema))
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
+            filters, readDataSchema))
       }.toArray.flatMap(_.get())
     } else {
+      // We need to copy the Hadoop Configuration because filter push down can mutate it. In
+      // this case we are serially iterating through the files so each one mutating it serially
+      // doesn't affect the filter of the other files. We just need to make sure it's copied
+      // once so other tasks don't modify the same conf.
+      val hadoopConf = new Configuration(conf)
       files.map { file =>
-        filterBlocksForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
+        filterBlocksForCoalescingReader(footerReadType, file, hadoopConf, filters, readDataSchema)
       }
     }
     metaAndFilesArr.foreach { metaAndFile =>
@@ -1326,7 +1336,9 @@ case class GpuParquetPartitionReaderFactory(
 
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    val conf = broadcastedConf.value.value
+    // we need to copy the Hadoop Configuration because filter push down can mutate it,
+    // which can affect other tasks.
+    val conf = new Configuration(broadcastedConf.value.value)
     val startTime = System.nanoTime()
     val singleFileInfo = filterHandler.filterBlocks(footerReadType, file, conf, filters,
       readDataSchema)
@@ -2613,6 +2625,12 @@ object MakeParquetTableProducer extends Logging {
       debugDumpPrefix: Option[String],
       debugDumpAlways: Boolean
   ): GpuDataProducer[Table] = {
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
+        logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
+      }
+    }
     if (useChunkedReader) {
       ParquetTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
         opts, buffer, offset,
@@ -2631,19 +2649,17 @@ object MakeParquetTableProducer extends Logging {
         } catch {
           case e: Exception =>
             val dumpMsg = debugDumpPrefix.map { prefix =>
-              val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-              s", data dumped to $p"
+              if (!debugDumpAlways) {
+                val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
+                s", data dumped to $p"
+              } else {
+                ""
+              }
             }.getOrElse("")
             throw new IOException(s"Error when processing ${splits.mkString("; ")}$dumpMsg", e)
         }
       }
       closeOnExcept(table) { _ =>
-        debugDumpPrefix.foreach { prefix =>
-          if (debugDumpAlways) {
-            val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-            logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
-          }
-        }
         GpuParquetScan.throwIfRebaseNeededInExceptionMode(table, dateRebaseMode,
           timestampRebaseMode)
         if (readDataSchema.length < table.getNumberOfColumns) {
@@ -2695,8 +2711,12 @@ case class ParquetTableReader(
       } catch {
         case e: Exception =>
           val dumpMsg = debugDumpPrefix.map { prefix =>
-            val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-            s", data dumped to $p"
+            if (!debugDumpAlways) {
+              val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
+              s", data dumped to $p"
+            } else {
+              ""
+            }
           }.getOrElse("")
           throw new IOException(s"Error when processing $splitsString$dumpMsg", e)
       }
@@ -2716,12 +2736,6 @@ case class ParquetTableReader(
   }
 
   override def close(): Unit = {
-    debugDumpPrefix.foreach { prefix =>
-      if (debugDumpAlways) {
-        val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-        logWarning(s"Wrote data for $splitsString to $p")
-      }
-    }
     reader.close()
     buffer.close()
   }
