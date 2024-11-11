@@ -125,7 +125,7 @@ class SerializedBatchIterator(dIn: DataInputStream)
  * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(dataSize: GpuMetric)
-  extends Serializer with Serializable {
+    extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
     new GpuColumnarBatchSerializerInstance(dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
@@ -299,7 +299,7 @@ object SerializedTableColumn {
       val cv = batch.column(0)
       cv match {
         case serializedTableColumn: SerializedTableColumn
-          if serializedTableColumn.hostBuffer != null =>
+            if serializedTableColumn.hostBuffer != null =>
           sum += serializedTableColumn.hostBuffer.getLength
         case _ =>
       }

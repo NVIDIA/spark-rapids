@@ -510,10 +510,7 @@ class AggHelper(
     // We need to merge the aggregated batches into 1 before calling post process,
     // if the aggregate code had to split on a retry
     if (aggregatedSeq.size > 1) {
-      val concatted =
-        withResource(aggregatedSeq) { _ =>
-          concatenateBatches(metrics, aggregatedSeq)
-        }
+      val concatted = concatenateBatches(metrics, aggregatedSeq)
       withRetryNoSplit(concatted) { attempt =>
         withResource(attempt.getColumnarBatch()) { cb =>
           SpillableColumnarBatch(
@@ -1043,7 +1040,7 @@ class GpuMergeAggregateIterator(
       // combine all the data into a single batch
       val spillCbs = ArrayBuffer[SpillableColumnarBatch]()
       var totalBytes = 0L
-      withResource(spillCbs) { _ =>
+      closeOnExcept(spillCbs) { _ =>
         while (input.hasNext && (spillCbs.isEmpty ||
           (totalBytes + input.head.sizeInBytes) < targetSize)) {
           val tmp = input.next
