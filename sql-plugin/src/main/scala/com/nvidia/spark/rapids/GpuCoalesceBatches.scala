@@ -67,7 +67,7 @@ object ConcatAndConsumeAll {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
     } else {
-      val tables = arrayOfBatches.map(GpuColumnVector.from)
+      val tables = arrayOfBatches.safeMap(GpuColumnVector.from)
       try {
         val combined = Table.concatenate(tables: _*)
         try {
