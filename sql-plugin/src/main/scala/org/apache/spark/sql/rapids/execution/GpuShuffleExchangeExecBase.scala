@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -202,8 +202,6 @@ abstract class GpuShuffleExchangeExecBase(
         createNanoTimingMetric(DEBUG_LEVEL,"rs. serialization time"),
     "rapidsShuffleDeserializationTime" ->
         createNanoTimingMetric(DEBUG_LEVEL,"rs. deserialization time"),
-    "rapidsShufflePartitionTime" ->
-      createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle partition time"),
     "rapidsShuffleWriteTime" ->
         createNanoTimingMetric(ESSENTIAL_LEVEL,"rs. shuffle write time"),
     "rapidsShuffleCombineTime" ->
@@ -233,8 +231,7 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    gpuLongMetric("dataSize"), allMetrics("rapidsShuffleSerializationTime"),
-    allMetrics("rapidsShuffleDeserializationTime"))
+    gpuLongMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -317,8 +314,7 @@ object GpuShuffleExchangeExecBase {
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
     def getPartitioned: ColumnarBatch => Any = {
-      val partitionMetric = metrics("rapidsShufflePartitionTime")
-      batch => partitionMetric.ns(partitioner.columnarEvalAny(batch))
+      batch => partitioner.columnarEvalAny(batch)
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>

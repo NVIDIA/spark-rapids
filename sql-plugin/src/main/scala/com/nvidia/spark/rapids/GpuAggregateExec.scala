@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.atomic.AtomicReference
-
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -28,7 +26,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatches}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
-import com.nvidia.spark.rapids.RapidsConf.AggFallbackAlgorithm
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -123,7 +120,7 @@ object AggregateUtils extends Logging {
     }
 
     // Calculate the max rows that can be processed during computation within the budget
-    val maxRows = Math.max(totalBudget / computationBytesPerRow, 1)
+    val maxRows = totalBudget / computationBytesPerRow
 
     // Finally compute the input target batching size taking into account the cudf row limits
     Math.min(inputRowSize * maxRows, Int.MaxValue)
@@ -733,21 +730,13 @@ object GpuAggregateIterator extends Logging {
 object GpuAggFirstPassIterator {
   def apply(cbIter: Iterator[ColumnarBatch],
       aggHelper: AggHelper,
-      metrics: GpuHashAggregateMetrics,
-      firstPassAggToggle: AtomicReference[Boolean]
+      metrics: GpuHashAggregateMetrics
   ): Iterator[SpillableColumnarBatch] = {
     val preprocessProjectIter = cbIter.map { cb =>
       val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       aggHelper.preStepBound.projectAndCloseWithRetrySingleBatch(sb)
     }
-
-    if (firstPassAggToggle.get()) {
-      computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper)
-    } else {
-      preprocessProjectIter.map { cb =>
-        SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-      }
-    }
+    computeAggregateWithoutPreprocessAndClose(metrics, preprocessProjectIter, aggHelper)
   }
 }
 
@@ -910,7 +899,6 @@ object GpuAggFinalPassIterator {
  */
 class GpuMergeAggregateIterator(
     firstPassIter: CloseableBufferedIterator[SpillableColumnarBatch],
-    firstPassAggToggle: AtomicReference[Boolean],
     inputAttributes: Seq[Attribute],
     groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
@@ -922,8 +910,7 @@ class GpuMergeAggregateIterator(
     conf: SQLConf,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double,
-    localInputRowsCount: LocalGpuMetric,
-    aggOutputSizeRatio: Double
+    localInputRowsCount: LocalGpuMetric
 )
   extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
@@ -994,14 +981,11 @@ class GpuMergeAggregateIterator(
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
 
-          realIter = Some(ConcatIterator.apply(firstPassIter,
-            (aggOutputSizeRatio * configuredTargetBatchSize).toLong
-          ))
-          firstPassAggToggle.set(false)
+          realIter = Some(ConcatIterator.apply(firstPassIter, configuredTargetBatchSize))
           metrics.numTasksSkippedAgg += 1
           return realIter.get.next()
         } else {
-          logWarning(s"The reduction ratio in first pass is not high enough to skip " +
+          logInfo(s"The reduction ratio in first pass is not high enough to skip " +
             s"second and third pass aggregation: peek.numRows: ${peek.numRows()}, " +
             s"localInputRowsCount.value: ${localInputRowsCount.value}")
         }
@@ -1028,9 +1012,7 @@ class GpuMergeAggregateIterator(
       }
 
       realIter = Some(ConcatIterator.apply(
-        new CloseableBufferedIterator(buildBucketIterator()),
-        (aggOutputSizeRatio * configuredTargetBatchSize).toLong
-      ))
+        new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
       realIter.get.next()
     }
   }
@@ -1406,40 +1388,20 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       canUsePartialSortAgg &&
       groupingCanBeSorted
 
-    if(conf.aggFallbackAlgorithm == AggFallbackAlgorithm.REPARTITION) {
-      GpuHashAggregateExec(
-        aggRequiredChildDistributionExpressions,
-        gpuGroupingExpressions,
-        gpuAggregateExpressions,
-        aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
-        resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-        gpuChild,
-        conf.gpuTargetBatchSizeBytes,
-        estimatedPreProcessGrowth,
-        conf.forceSinglePassPartialSortAgg,
-        allowSinglePassAgg,
-        allowNonFullyAggregatedOutput,
-        conf.skipAggPassReductionRatio,
-        conf.aggOutputSizeRatioToBatchSize
-      )
-    }
-    else {
-      GpuHashAggregateExecSB(
-        aggRequiredChildDistributionExpressions,
-        gpuGroupingExpressions,
-        gpuAggregateExpressions,
-        aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
-        resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-        gpuChild,
-        conf.gpuTargetBatchSizeBytes,
-        estimatedPreProcessGrowth,
-        conf.forceSinglePassPartialSortAgg,
-        allowSinglePassAgg,
-        allowNonFullyAggregatedOutput,
-        conf.skipAggPassReductionRatio
-      )
-
-    }
+    GpuHashAggregateExec(
+      aggRequiredChildDistributionExpressions,
+      gpuGroupingExpressions,
+      gpuAggregateExpressions,
+      aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
+      resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+      gpuChild,
+      conf.gpuTargetBatchSizeBytes,
+      estimatedPreProcessGrowth,
+      conf.forceSinglePassPartialSortAgg,
+      allowSinglePassAgg,
+      allowNonFullyAggregatedOutput,
+      conf.skipAggPassReductionRatio
+    )
   }
 }
 
@@ -1513,38 +1475,21 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
           GpuOverrides.wrapExpr(converted, conf, Some(this))
         case meta => meta
       }
-      if(conf.aggFallbackAlgorithm == AggFallbackAlgorithm.REPARTITION) {
-        GpuHashAggregateExec(
-          aggRequiredChildDistributionExpressions,
-          groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-          aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
-          aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
-          retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-          childPlans.head.convertIfNeeded(),
-          conf.gpuTargetBatchSizeBytes,
-          // For now we are just going to go with the original hash aggregation
-          1.0,
-          forceSinglePassAgg = false,
-          allowSinglePassAgg = false,
-          allowNonFullyAggregatedOutput = false,
-          1,
-          1)
-      }else {
-        GpuHashAggregateExecSB(
-          aggRequiredChildDistributionExpressions,
-          groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-          aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
-          aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
-          retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-          childPlans.head.convertIfNeeded(),
-          conf.gpuTargetBatchSizeBytes,
-          // For now we are just going to go with the original hash aggregation
-          1.0,
-          forceSinglePassAgg = false,
-          allowSinglePassAgg = false,
-          allowNonFullyAggregatedOutput = false,
-          1)
-      }
+      GpuHashAggregateExec(
+        aggRequiredChildDistributionExpressions,
+        groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+        aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
+        aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
+        retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+        childPlans.head.convertIfNeeded(),
+        conf.gpuTargetBatchSizeBytes,
+        // For now we are just going to go with the original hash aggregation
+        1.0,
+        forceSinglePassAgg = false,
+        allowSinglePassAgg = false,
+        allowNonFullyAggregatedOutput = false,
+        1)
+
     } else {
       super.convertToGpu()
     }
@@ -1909,8 +1854,7 @@ case class GpuHashAggregateExec(
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
-    skipAggPassReductionRatio: Double,
-    aggOutputSizeRatio: Double
+    skipAggPassReductionRatio: Double
 ) extends ShimUnaryExecNode with GpuExec {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
@@ -2000,8 +1944,7 @@ case class GpuHashAggregateExec(
         boundGroupExprs, aggregateExprs, aggregateAttrs, resultExprs, modeInfo,
         localEstimatedPreProcessGrowth, alreadySorted, expectedOrdering,
         postBoundReferences, targetBatchSize, aggMetrics, conf,
-        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio,
-        aggOutputSizeRatio
+        localForcePre, localAllowPre, allowNonFullyAggregatedOutput, skipAggPassReductionRatio
       )
     }
   }
@@ -2122,8 +2065,7 @@ class DynamicGpuPartialAggregateIterator(
     forceSinglePassAgg: Boolean,
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
-    skipAggPassReductionRatio: Double,
-    aggOutputSizeRatio: Double
+    skipAggPassReductionRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
   private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
@@ -2184,10 +2126,8 @@ class DynamicGpuPartialAggregateIterator(
       inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
       metrics.opTime, metrics.numPreSplits)
 
-    val firstPassAggregateToggle = new AtomicReference[Boolean]
-    firstPassAggregateToggle.set(true)
     val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper,
-      metrics, firstPassAggregateToggle)
+      metrics)
 
     // Technically on a partial-agg, which this only works for, this last iterator should
     // be a noop except for some metrics. But for consistency between all of the
@@ -2206,8 +2146,6 @@ class DynamicGpuPartialAggregateIterator(
       metrics.opTime, metrics.numPreSplits)
 
     val localInputRowsMetrics = new LocalGpuMetric
-    val firstPassAggregateToggle = new AtomicReference[Boolean]
-    firstPassAggregateToggle.set(true)
 
     val firstPassIter = GpuAggFirstPassIterator(
       splitInputIter.map(cb => {
@@ -2215,11 +2153,10 @@ class DynamicGpuPartialAggregateIterator(
         cb
       }),
       preProcessAggHelper,
-      metrics, firstPassAggregateToggle)
+      metrics)
 
     val mergeIter = new GpuMergeAggregateIterator(
       new CloseableBufferedIterator(firstPassIter),
-      firstPassAggregateToggle,
       inputAttrs,
       groupingExprs,
       aggregateExprs,
@@ -2231,8 +2168,7 @@ class DynamicGpuPartialAggregateIterator(
       conf,
       allowNonFullyAggregatedOutput,
       skipAggPassReductionRatio,
-      localInputRowsMetrics,
-      aggOutputSizeRatio
+      localInputRowsMetrics
     )
 
     GpuAggFinalPassIterator.makeIter(mergeIter, postBoundReferences, metrics)
@@ -2254,6 +2190,7 @@ class DynamicGpuPartialAggregateIterator(
       }
       val newIter = if (doSinglePassAgg) {
         metrics.singlePassTasks += 1
+        // TO discuss in PR: is singlePassSortedAgg still necessary?
         singlePassSortedAgg(inputIter, preProcessAggHelper)
       } else {
         // Not sorting so go back to that
@@ -2262,16 +2199,8 @@ class DynamicGpuPartialAggregateIterator(
       }
       aggIter = Some(newIter)
     }
-    val ret = aggIter.map(_.next()).getOrElse {
+    aggIter.map(_.next()).getOrElse {
       throw new NoSuchElementException()
     }
-
-    if (hasNext) {
-      GpuSemaphore.forbidVoluntaryRelease(TaskContext.get())
-    } else {
-      GpuSemaphore.allowVoluntaryRelease(TaskContext.get())
-    }
-
-    ret
   }
 }

@@ -288,8 +288,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           s"Current spillable ${currentSpillableSize}")
       val bufferSpills = new mutable.ArrayBuffer[BufferSpill]()
       withResource(new NvtxRange(s"${name} sync spill", NvtxColor.ORANGE)) { _ =>
-        logWarning(s"${name} store (tid ${Thread.currentThread().getId}) " +
-          s"spilling to reduce usage from " +
+        logWarning(s"${name} store spilling to reduce usage from " +
           s"${currentSize} total (${currentSpillableSize} spillable) " +
           s"to $targetTotalSize bytes")
 

@@ -59,7 +59,7 @@ object GpuSemaphore {
         // Since we don't have access to a configuration object here,
         // default to only one task per GPU behavior.
         if (instance == null) {
-          initialize(false)
+          initialize()
         }
       }
     }
@@ -69,11 +69,11 @@ object GpuSemaphore {
   /**
    * Initializes the GPU task semaphore.
    */
-  def initialize(checkVoluntaryGpuRelease: Boolean): Unit = synchronized {
+  def initialize(): Unit = synchronized {
     if (instance != null) {
       throw new IllegalStateException("already initialized")
     }
-    instance = new GpuSemaphore(checkVoluntaryGpuRelease)
+    instance = new GpuSemaphore()
   }
 
   /**
@@ -109,24 +109,6 @@ object GpuSemaphore {
   def releaseIfNecessary(context: TaskContext): Unit = {
     if (context != null) {
       getInstance.releaseIfNecessary(context)
-    }
-  }
-
-  def forbidVoluntaryRelease(context: TaskContext): Unit= {
-    if (context != null) {
-      getInstance.forbidVoluntaryRelease(context)
-    }
-  }
-
-  def allowVoluntaryRelease(context: TaskContext): Unit = {
-    if (context != null) {
-      getInstance.allowVoluntaryRelease(context)
-    }
-  }
-
-  def voluntaryRelease(context: TaskContext): Unit = {
-    if (context != null) {
-      getInstance.voluntaryRelease(context)
     }
   }
 
@@ -347,7 +329,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
   }
 }
 
-private final class GpuSemaphore(val checkVoluntaryGpuRelease: Boolean) extends Logging {
+private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
@@ -356,8 +338,6 @@ private final class GpuSemaphore(val checkVoluntaryGpuRelease: Boolean) extends 
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
-
-  private val voluntaryReleaseForbiddenRecords = new ConcurrentHashMap[Long, Boolean]
 
   def tryAcquire(context: TaskContext): TryAcquireResult = {
     // Make sure that the thread/task is registered before we try and block
@@ -410,32 +390,10 @@ private final class GpuSemaphore(val checkVoluntaryGpuRelease: Boolean) extends 
     }
   }
 
-  def forbidVoluntaryRelease(context: TaskContext): Unit = {
-    val taskAttemptId = context.taskAttemptId()
-    voluntaryReleaseForbiddenRecords.put(taskAttemptId, true)
-  }
-
-  def allowVoluntaryRelease(context: TaskContext): Unit = {
-    val taskAttemptId = context.taskAttemptId()
-    voluntaryReleaseForbiddenRecords.remove(taskAttemptId)
-  }
-
-  def voluntaryRelease(context: TaskContext): Unit = {
-    val taskAttemptId = context.taskAttemptId()
-    if (!checkVoluntaryGpuRelease ||
-      !voluntaryReleaseForbiddenRecords.getOrDefault(taskAttemptId, false)) {
-      releaseIfNecessary(context)
-      logInfo(s"Voluntary release GPU for task $taskAttemptId")
-    } else {
-      logInfo(s"Voluntary release GPU is forbidden for task $taskAttemptId")
-    }
-  }
-
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
     GpuTaskMetrics.get.updateMaxMemory(taskAttemptId)
-    voluntaryReleaseForbiddenRecords.remove(taskAttemptId)
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")

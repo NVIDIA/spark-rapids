@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.apache.spark.serializer.{DeserializationStream, SerializationStream, 
 import org.apache.spark.sql.types.NullType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
+class SerializedBatchIterator(dIn: DataInputStream)
   extends Iterator[(Int, ColumnarBatch)] {
   private[this] var nextHeader: Option[SerializedTableHeader] = None
   private[this] var toBeReturned: Option[ColumnarBatch] = None
@@ -90,16 +90,14 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   }
 
   override def hasNext: Boolean = {
-    deserTime.ns(tryReadNextHeader())
+    tryReadNextHeader()
     nextHeader.isDefined
   }
 
   override def next(): (Int, ColumnarBatch) = {
     if (toBeReturned.isEmpty) {
-      deserTime.ns {
-        tryReadNextHeader()
-        toBeReturned = tryReadNext()
-      }
+      tryReadNextHeader()
+      toBeReturned = tryReadNext()
       if (nextHeader.isEmpty || toBeReturned.isEmpty) {
         throw new NoSuchElementException("Walked off of the end...")
       }
@@ -126,23 +124,20 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
  *
  * @note The RAPIDS shuffle does not use this code.
  */
-class GpuColumnarBatchSerializer(dataSize: GpuMetric, serTime: GpuMetric = NoopMetric,
-    deserTime: GpuMetric = NoopMetric)
-    extends Serializer with Serializable {
+class GpuColumnarBatchSerializer(dataSize: GpuMetric)
+  extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
-    new GpuColumnarBatchSerializerInstance(dataSize, serTime, deserTime)
+    new GpuColumnarBatchSerializerInstance(dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric,
-    serTime: GpuMetric, deserTime: GpuMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
       new DataOutputStream(new BufferedOutputStream(out))
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = {
-      val start = System.nanoTime()
       val batch = value.asInstanceOf[ColumnarBatch]
       val numColumns = batch.numCols()
       val columns: Array[HostColumnVector] = new Array(numColumns)
@@ -190,7 +185,6 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric,
       } finally {
         toClose.safeClose()
       }
-      serTime.add(System.nanoTime() - start)
       this
     }
 
@@ -226,7 +220,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric,
       private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
-        new SerializedBatchIterator(dIn, deserTime)
+        new SerializedBatchIterator(dIn)
       }
 
       override def asIterator: Iterator[Any] = {
@@ -305,7 +299,7 @@ object SerializedTableColumn {
       val cv = batch.column(0)
       cv match {
         case serializedTableColumn: SerializedTableColumn
-            if serializedTableColumn.hostBuffer != null =>
+          if serializedTableColumn.hostBuffer != null =>
           sum += serializedTableColumn.hostBuffer.getLength
         case _ =>
       }

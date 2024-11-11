@@ -134,7 +134,7 @@ trait GpuPartitioning extends Partitioning {
     withResource(hostPartColumns) { _ =>
       Cuda.DEFAULT_STREAM.sync()
       // Leaving the GPU for a while
-      GpuSemaphore.voluntaryRelease(TaskContext.get())
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
       val origParts = new Array[ColumnarBatch](numPartitions)
       var start = 0
