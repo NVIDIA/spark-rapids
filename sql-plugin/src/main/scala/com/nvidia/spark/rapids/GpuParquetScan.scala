@@ -21,7 +21,6 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
-import java.util
 import java.util.{Collections, Locale}
 import java.util.concurrent._
 
@@ -58,6 +57,7 @@ import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.velox.{FileCopyRange, VeloxHDFS}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -464,7 +464,6 @@ private case class GpuParquetFileFilterHandler(
 
   private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
-  private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
 
   private def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -536,8 +535,12 @@ private case class GpuParquetFileFilterHandler(
   private def readFooterBuffer(
       filePath: Path,
       conf: Configuration): HostMemoryBuffer = {
-    PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
-      .getOrElse(readFooterBufUsingHadoop(filePath, conf))
+    PerfIO.readParquetFooterBuffer(
+        filePath, conf, GpuParquetUtils.verifyParquetMagic)
+      .getOrElse(
+        VeloxHDFS.readParquetFooterBuffer(filePath, conf)
+          .getOrElse(readFooterBufUsingHadoop(filePath, conf))
+      )
   }
 
   private def readFooterBufUsingHadoop(filePath: Path, conf: Configuration): HostMemoryBuffer = {
@@ -558,7 +561,7 @@ private case class GpuParquetFileFilterHandler(
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
         val footerIndex = footerLengthIndex - footerLength
-        verifyParquetMagic(filePath, magic)
+        GpuParquetUtils.verifyParquetMagic(filePath, magic)
         if (footerIndex < MAGIC.length || footerIndex >= footerLengthIndex) {
           throw new RuntimeException(s"corrupted file: the footer index is not within " +
             s"the file: $footerIndex")
@@ -579,21 +582,6 @@ private case class GpuParquetFileFilterHandler(
           }
           outBuffer
         }
-      }
-    }
-  }
-
-
-  private def verifyParquetMagic(filePath: Path, magic: Array[Byte]): Unit = {
-    if (!util.Arrays.equals(MAGIC, magic)) {
-      if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
-        throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
-          "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
-          s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
-      } else {
-        throw new RuntimeException(s"$filePath is not a Parquet file. " +
-          s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
-          s"but found ${util.Arrays.toString(magic)}")
       }
     }
   }
@@ -659,8 +647,15 @@ private case class GpuParquetFileFilterHandler(
             }
           }
         }.getOrElse {
-          ParquetFileReader.readFooter(conf, filePath,
-            ParquetMetadataConverter.range(file.start, file.start + file.length))
+          VeloxHDFS.readParquetFooterBuffer(filePath, conf).map { hmb =>
+            withResource(hmb) { _ =>
+              ParquetFileReader.readFooter(new HMBInputFile(hmb),
+                ParquetMetadataConverter.range(file.start, file.start + file.length))
+            }
+          }.getOrElse {
+            ParquetFileReader.readFooter(conf, filePath,
+              ParquetMetadataConverter.range(file.start, file.start + file.length))
+          }
         }
       }
     }
@@ -1591,6 +1586,28 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
       ).getOrElse {
+      // try to read data through VeloxHDFS if necessary
+      val streamHandle = VeloxHDFS.createInputFileStream(filePathString)
+      if (streamHandle > 0) {
+        // Builds ParquetCopyRange while computing total read size
+        val ranges = ArrayBuffer.empty[FileCopyRange]
+        val bufferAddr = out.buffer.getAddress
+        val readSize = coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
+          ranges += FileCopyRange(
+            blockCopy.offset,
+            blockCopy.length,
+            bufferAddr + blockCopy.outputOffset
+          )
+          out.seek(blockCopy.outputOffset + blockCopy.length)
+          acc + blockCopy.length
+        }
+        // leverage velox::HdfsReadFile to buffer Hdfs files (which based on libhdfs3)
+        VeloxHDFS.copyRangesFromFile(
+          filePathString, streamHandle, ranges,
+          closeAfterFinished = true
+        )
+        readSize
+      } else {
         withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
           val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
           coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
@@ -1598,6 +1615,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           }
         }
       }
+    }
     // try to cache the remote ranges that were copied
     remoteCopies.foreach { range =>
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES, NoopMetric) += 1

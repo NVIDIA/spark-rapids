@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.charset.StandardCharsets
+import java.util
 import java.util.Locale
 
 import scala.collection.JavaConverters._
 
+import org.apache.hadoop.fs.Path
+import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath}
 import org.apache.parquet.schema.MessageType
 
@@ -83,4 +87,27 @@ object GpuParquetUtils extends Logging {
 
     block
   }
+
+  /**
+   * Verify the Magic code stored in the Parquet Footer
+   *
+   * @param filePath the path of Parquet file
+   * @param magic the Magic code extracted from the file
+   */
+  def verifyParquetMagic(filePath: Path, magic: Array[Byte]): Unit = {
+    if (!util.Arrays.equals(MAGIC, magic)) {
+      if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
+        throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
+          "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
+          s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
+      } else {
+        throw new RuntimeException(s"$filePath is not a Parquet file. " +
+          s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
+          s"but found ${util.Arrays.toString(magic)}")
+      }
+    }
+  }
+
+  private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
+
 }

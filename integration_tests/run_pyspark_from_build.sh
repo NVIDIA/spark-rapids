@@ -364,6 +364,21 @@ EOF
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
+    if [[ "$VELOX_TEST" -eq 1 ]]; then
+      if [ -z "${VELOX_JARS}" ]; then
+        echo "Error: Environment VELOX_JARS is not set."
+        exit 1
+      fi
+      export PYSP_TEST_spark_jars="${PYSP_TEST_spark_jars},${VELOX_JARS//:/,}"
+      export PYSP_TEST_spark_memory_offHeap_enabled=true
+      export PYSP_TEST_spark_memory_offHeap_size=512M
+      export PYSP_TEST_spark_gluten_loadLibFromJar=true
+      export PYSP_TEST_spark_rapids_sql_loadVelox=true
+      if [[ "$VELOX_HDFS_TEST" -eq 1 ]]; then
+        export PYSP_TEST_spark_rapids_sql_velox_useVeloxHDFS=true
+      fi
+    fi
+
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then
         echo "Running spark-shell smoke test..."
