@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids.delta
 
 import java.net.URI
 
+import com.databricks.sql.io.RowIndexFilterType
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
+import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
 import com.nvidia.spark.rapids.{GpuMetric, RapidsConf, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
@@ -26,15 +28,19 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, OnHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StructType, StructField}
 import org.apache.spark.util.SerializableConfiguration
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnarBatchRow, ColumnVector}
+
+import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 case class GpuDeltaParquetFileFormat(
     override val columnMappingMode: DeltaColumnMappingMode,
@@ -44,7 +50,7 @@ case class GpuDeltaParquetFileFormat(
     broadcastDvMap: Option[Broadcast[Map[URI, DeletionVectorDescriptorWithFilterType]]],
     tablePath: Option[String] = None,
     broadcastHadoopConf: Option[Broadcast[SerializableConfiguration]] = None
-) extends GpuDeltaParquetFileFormatBase {
+  ) extends GpuDeltaParquetFileFormatBase {
 
   if (hasDeletionVectorMap) {
     require(tablePath.isDefined && !isSplittable && disablePushDowns,
@@ -130,13 +136,24 @@ case class GpuDeltaParquetFileFormat(
           delVecSizeMetric += dv.descriptor.inlineData.length
           RoaringBitmapWrapper.deserializeFromBytes(dv.descriptor.inlineData).inner
         }
-//      val useOffHeapBuffers = sparkSession.sessionState.conf.offHeapColumnVectorEnabled
-      addMetadataColumnToIterator(prepareSchema(requiredSchema),
-        dv,
-        input.asInstanceOf[Iterator[ColumnarBatch]],
-        maxDelVecScatterBatchSize,
-        delVecScatterTimeMetric
-      ).asInstanceOf[Iterator[InternalRow]]
+      val useOffHeapBuffers = sparkSession.sessionState.conf.offHeapColumnVectorEnabled
+      try {
+        val iter = addMetadataColumnToIterator(prepareSchema(requiredSchema),
+          dv,
+          input.asInstanceOf[Iterator[ColumnarBatch]],
+          maxDelVecScatterBatchSize,
+          delVecScatterTimeMetric
+        ).asInstanceOf[Iterator[InternalRow]]
+        iteratorWithAdditionalMetadataColumns(file, iter, isRowDeletedColumn, isRowDeletedColumn,
+          useOffHeapBuffers).asInstanceOf[Iterator[InternalRow]]
+      } catch {
+        case NonFatal(e) =>
+          dataReader match {
+            case resource: AutoCloseable => GpuDeltaParquetFileFormat.closeQuietly(resource)
+            case _ => // do nothing
+          }
+          throw e
+      }
     }
   }
 
@@ -148,122 +165,129 @@ case class GpuDeltaParquetFileFormat(
    *   - [[ROW_INDEX_COLUMN_NAME]] - index of the row within the file. Note, this column is only
    *     populated when we are not using _metadata.row_index column.
    */
-//  private def iteratorWithAdditionalMetadataColumns(
-//                                                     partitionedFile: PartitionedFile,
-//                                                     iterator: Iterator[Object],
-//                                                     isRowDeletedColumnOpt: Option[ColumnMetadata],
-//                                                     rowIndexColumnOpt: Option[ColumnMetadata],
-//                                                     useOffHeapBuffers: Boolean,
-//                                                     serializableHadoopConf: SerializableConfiguration,
-//                                                     useMetadataRowIndex: Boolean): Iterator[Object] = {
-//    require(!useMetadataRowIndex || rowIndexColumnOpt.isDefined,
-//      "useMetadataRowIndex is enabled but rowIndexColumn is not defined.")
-//
-//    val rowIndexFilterOpt = isRowDeletedColumnOpt.map { col =>
-//      // Fetch the DV descriptor from the broadcast map and create a row index filter
-//      val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
-//        .get(FILE_ROW_INDEX_FILTER_ID_ENCODED)
-//      val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
-//        .get(FILE_ROW_INDEX_FILTER_TYPE)
-//      if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
-//        val rowIndexFilter = filterTypeOpt.get match {
-//          case RowIndexFilterType.IF_CONTAINED => DropMarkedRowsFilter
-//          case RowIndexFilterType.IF_NOT_CONTAINED => KeepMarkedRowsFilter
-//          case unexpectedFilterType => throw new IllegalStateException(
-//            s"Unexpected row index filter type: ${unexpectedFilterType}")
-//        }
-//        rowIndexFilter.createInstance(
-//          DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get.asInstanceOf[String]),
-//          serializableHadoopConf.value,
-//          tablePath.map(new Path(_)))
-//      } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
-//        throw new IllegalStateException(
-//          s"Both ${FILE_ROW_INDEX_FILTER_ID_ENCODED} and ${FILE_ROW_INDEX_FILTER_TYPE} " +
-//            "should either both have values or no values at all.")
-//      } else {
-//        KeepAllRowsFilter
-//      }
-//    }
-//
-//    // We only generate the row index column when predicate pushdown is not enabled.
-//    val rowIndexColumnToWriteOpt = if (useMetadataRowIndex) None else rowIndexColumnOpt
-//    val metadataColumnsToWrite =
-//      Seq(isRowDeletedColumnOpt, rowIndexColumnToWriteOpt).filter(_.nonEmpty).map(_.get)
-//
-//    // When metadata.row_index is not used there is no way to verify the Parquet index is
-//    // starting from 0. We disable the splits, so the assumption is ParquetFileFormat respects
-//    // that.
-//    var rowIndex: Long = 0
-//
-//    // Used only when non-column row batches are received from the Parquet reader
-//    val tempVector = new OnHeapColumnVector(1, ByteType)
-//
-//    iterator.map { row =>
-//      row match {
-//        case batch: ColumnarBatch => // When vectorized Parquet reader is enabled.
-//          val size = batch.numRows()
-//          // Create vectors for all needed metadata columns.
-//          // We can't use the one from Parquet reader as it set the
-//          // [[WritableColumnVector.isAllNulls]] to true and it can't be reset with using any
-//          // public APIs.
-//          trySafely(useOffHeapBuffers, size, metadataColumnsToWrite) { writableVectors =>
-//            val indexVectorTuples = new ArrayBuffer[(Int, ColumnVector)]
-//
-//            // When predicate pushdown is enabled we use _metadata.row_index. Therefore,
-//            // we only need to construct the isRowDeleted column.
-//            var index = 0
-//            isRowDeletedColumnOpt.foreach { columnMetadata =>
-//              val isRowDeletedVector = writableVectors(index)
-//              if (useMetadataRowIndex) {
-//                rowIndexFilterOpt.get.materializeIntoVectorWithRowIndex(
-//                  size, batch.column(rowIndexColumnOpt.get.index), isRowDeletedVector)
-//              } else {
-//                rowIndexFilterOpt.get
-//                  .materializeIntoVector(rowIndex, rowIndex + size, isRowDeletedVector)
-//              }
-//              indexVectorTuples += (columnMetadata.index -> isRowDeletedVector)
-//              index += 1
-//            }
-//
-//            rowIndexColumnToWriteOpt.foreach { columnMetadata =>
-//              val rowIndexVector = writableVectors(index)
-//              // populate the row index column value.
-//              for (i <- 0 until size) {
-//                rowIndexVector.putLong(i, rowIndex + i)
-//              }
-//
-//              indexVectorTuples += (columnMetadata.index -> rowIndexVector)
-//              index += 1
-//            }
-//
-//            val newBatch = replaceVectors(batch, indexVectorTuples.toSeq: _*)
-//            rowIndex += size
-//            newBatch
-//          }
-//
-//        case columnarRow: ColumnarBatchRow =>
-//          // When vectorized reader is enabled but returns immutable rows instead of
-//          // columnar batches [[ColumnarBatchRow]]. So we have to copy the row as a
-//          // mutable [[InternalRow]] and set the `row_index` and `is_row_deleted`
-//          // column values. This is not efficient. It should affect only the wide
-//          // tables. https://github.com/delta-io/delta/issues/2246
-//          throw new RuntimeException(s"Parquet reader returned a ColumnarBatchRow row type")
-//        case rest: InternalRow => // When vectorized Parquet reader is disabled
-//          // Temporary vector variable used to get DV values from RowIndexFilter
-//          // Currently the RowIndexFilter only supports writing into a columnar vector
-//          // and doesn't have methods to get DV value for a specific row index.
-//          // TODO: This is not efficient, but it is ok given the default reader is vectorized
-//          throw new RuntimeException(s"Parquet reader returned an InternalRow row type")
-//        case others =>
-//          throw new RuntimeException(
-//            s"Parquet reader returned an unknown row type: ${others.getClass.getName}")
-//      }
-//    }
-//  }
+  private def iteratorWithAdditionalMetadataColumns(partitionedFile: PartitionedFile,
+    iterator: Iterator[Any],
+    isRowDeletedColumn: Option[ColumnMetadata],
+    rowIndexColumn: Option[ColumnMetadata],
+    useOffHeapBuffers: Boolean): Iterator[Any] = {
+    val pathUri = partitionedFile.pathUri
+    val rowIndexFilter = isRowDeletedColumn.map { col =>
+      broadcastDvMap.get.value.get(pathUri).map { descriptorWithFilterType =>
+        val dvDescriptor = descriptorWithFilterType.descriptor
+        val filterType = descriptorWithFilterType.filterType
+        filterType match {
+          case RowIndexFilterType.IF_CONTAINED =>
+            DropMarkedRowsFilter.createInstance(
+              dvDescriptor,
+              broadcastHadoopConf.get.value.value,
+              tablePath.map(new Path(_)))
+          case RowIndexFilterType.IF_NOT_CONTAINED =>
+            KeepMarkedRowsFilter.createInstance(
+              dvDescriptor,
+              broadcastHadoopConf.get.value.value,
+              tablePath.map(new Path(_)))
+          case _ =>
+            throw new IllegalArgumentException(s"Unexpected filter type ${filterType}")
+        }
+      }.getOrElse(KeepAllRowsFilter)
+    }
+
+    val metadataColumns = List(isRowDeletedColumn, rowIndexColumn).flatten
+
+    var rowIndex: Long = 0L
+
+    iterator.map {
+      case batch: ColumnarBatch =>
+        val size = batch.numRows()
+        GpuDeltaParquetFileFormat.trySafely(useOffHeapBuffers, size, metadataColumns) { writableVectors =>
+          val indexVectorTuples = new ArrayBuffer[(Int, ColumnVector)]()
+          var index = 0
+
+          isRowDeletedColumn.foreach { columnMetadata =>
+            val isRowDeletedVector = writableVectors(index)
+            rowIndexFilter.get.materializeIntoVector(rowIndex, rowIndex + size, isRowDeletedVector)
+            indexVectorTuples += (columnMetadata.index -> isRowDeletedVector)
+            index += 1
+          }
+
+          rowIndexColumn.foreach { columnMetadata =>
+            val rowIndexVector = writableVectors(index)
+            // populate the row index column value.
+            for (i <- 0 until size) {
+              rowIndexVector.putLong(i, rowIndex + i)
+            }
+
+            indexVectorTuples += (columnMetadata.index -> rowIndexVector)
+            index += 1
+          }
+
+          val newBatch = GpuDeltaParquetFileFormat.replaceVectors(batch, indexVectorTuples.toSeq)
+          rowIndex += size
+          newBatch
+        }
+
+      case _: ColumnarBatchRow =>
+        throw new RuntimeException("Received invalid type ColumnarBatchRow")
+      case _: InternalRow =>
+        throw new RuntimeException("Received invalid type InternalRow")
+
+      case other =>
+        throw new RuntimeException(s"Parquet reader returned an unknown row type: ${other.getClass.getName}")
+    }
+  }
 }
 
 object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+  }
+
+  /** Utility method to create a new writable vector */
+  private def newVector(useOffHeapBuffers: Boolean,
+    size: Int, dataType: StructField): WritableColumnVector = {
+    if (useOffHeapBuffers) {
+      OffHeapColumnVector.allocateColumns(size, Seq(dataType).toArray)(0)
+    } else {
+      OnHeapColumnVector.allocateColumns(size, Seq(dataType).toArray)(0)
+    }
+  }
+
+  /** Try the operation, if the operation fails release the created resource */
+  private def trySafely[R <: WritableColumnVector, T](useOffHeapBuffers: Boolean,
+     size: Int,
+     columns: Seq[ColumnMetadata])(f: Seq[WritableColumnVector] => T): T = {
+    val resources = new ArrayBuffer[WritableColumnVector](columns.size)
+    try {
+      columns.foreach(col => resources.append(newVector(useOffHeapBuffers, size, col.structField)))
+      f(resources.toSeq)
+    } catch {
+      case NonFatal(e) =>
+        resources.foreach(closeQuietly(_))
+        throw e
+    }
+  }
+
+  /** Utility method to quietly close an [[AutoCloseable]] */
+  private def closeQuietly(closeable: AutoCloseable): Unit = {
+    if (closeable != null) {
+      try {
+        closeable.close()
+      } catch {
+        case NonFatal(_) => // ignore
+      }
+    }
+  }
+
+  def replaceVectors(batch: ColumnarBatch, indexVectorTuples: Seq[(Int, ColumnVector)]): ColumnarBatch = {
+    val vectors = new ArrayBuffer[ColumnVector]()
+
+    for (i <- 0 until batch.numCols()) {
+      indexVectorTuples.find(_._1 == i) match {
+        case Some((_, newVector)) => vectors += newVector
+        case None => vectors += batch.column(i)
+      }
+    }
+
+    new ColumnarBatch(vectors.toArray, batch.numRows())
   }
 
   def convertToGpu(fmt: DeltaParquetFileFormat): GpuDeltaParquetFileFormat = {
