@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,6 +85,8 @@ class ClusterUtils(object):
             if current_state in ['INTERNAL_ERROR', 'SKIPPED', 'TERMINATED'] or p >= 60:
                 if p >= retries:
                    print("Waited %d times already, stopping" % p)
+                # Output the cluster ID to stdout so a calling script can get it easily
+                print(clusterid, file=sys.stdout)
                 sys.exit(4)
             p = p + 1
         print("Done starting cluster", file=printLoc)
