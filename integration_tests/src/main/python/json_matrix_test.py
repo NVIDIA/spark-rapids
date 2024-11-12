@@ -1257,7 +1257,11 @@ def test_from_json_string_arrays(std_input_path, input_file):
     "single_quoted_strings.json",
     "boolean_formatted.json",
     "int_array_formatted.json",
-    pytest.param("int_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
+    "int_struct_formatted.json",
+    pytest.param("int_struct_formatted_overflows.json", marks=pytest.mark.xfail(
+        condition=is_before_spark_342() or is_databricks_version_or_later(14, 3),
+        reason='Before Spark 3.4.2? https://github.com/NVIDIA/spark-rapids/issues/10588. '
+               'Databricks 14.3 or later? https://github.com/NVIDIA/spark-rapids/issues/11711.')),
     pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
     "bad_whitespace.json",
     "escaped_strings.json",
@@ -1286,7 +1290,11 @@ def test_scan_json_long_structs(std_input_path, read_func, spark_tmp_table_facto
     "single_quoted_strings.json",
     "boolean_formatted.json",
     "int_array_formatted.json",
-    pytest.param("int_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
+    "int_struct_formatted.json",
+    pytest.param("int_struct_formatted_overflows.json", marks=pytest.mark.xfail(
+        condition=is_before_spark_342() or is_databricks_version_or_later(14, 3),
+        reason='Before Spark 3.4.2? https://github.com/NVIDIA/spark-rapids/issues/10588. '
+               'Databricks 14.3 or later? https://github.com/NVIDIA/spark-rapids/issues/11711.')),
     pytest.param("int_mixed_array_struct_formatted.json", marks=pytest.mark.xfail(condition=is_before_spark_342(),reason='https://github.com/NVIDIA/spark-rapids/issues/10588')),
     "bad_whitespace.json",
     "escaped_strings.json",
