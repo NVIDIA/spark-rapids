@@ -106,24 +106,10 @@
         <dependency>
             <groupId>org.apache.gluten</groupId>
             <artifactId>spark-sql-columnar-shims-spark32</artifactId>
-            <version>${gluten.version}</version>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.gluten</groupId>
             <artifactId>backends-velox</artifactId>
-            <version>${gluten.version}</version>
-            <scope>provided</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.gluten</groupId>
-                    <artifactId>spark-sql-columnar-shims-spark34</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-core</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
