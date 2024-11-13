@@ -30,14 +30,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-
-
-/**
- *  Exception thrown when cudf cannot parse the JSON data because some Json to Struct cases are not
- *  currently supported.
- */
-class JsonParsingException(s: String, cause: Throwable) extends RuntimeException(s, cause) {}
-
 case class GpuJsonToStructs(
     schema: DataType,
     options: Map[String, String],
@@ -52,34 +44,25 @@ case class GpuJsonToStructs(
     timeZoneId.get,
     SQLConf.get.columnNameOfCorruptRecord)
 
+  private lazy val cudfOptions = GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     withResource(new NvtxRange("GpuJsonToStructs", NvtxColor.YELLOW)) { _ =>
       schema match {
-        case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase)
+        case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase, cudfOptions)
+
         case struct: StructType =>
-          // if we ever need to support duplicate keys we need to keep track of the duplicates
-          //  and make the first one null, but I don't think this will ever happen in practice
-          val cudfSchema = makeSchema(struct)
-          try {
-            val parsedStructs = JSONUtils.fromJSONToStructs(input.getBase, cudfSchema,
-              GpuJsonReadCommon.cudfJsonOptions(parsedOptions), parsedOptions.locale == Locale.US)
-            val hasDateTime = TrampolineUtil.dataTypeExistsRecursively(struct, t =>
-              t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType]
-            )
-            if(hasDateTime) {
-              System.out.println("Has datetime");
-              withResource(parsedStructs) { _ =>
-                convertDateTimeType(parsedStructs, struct, parsedOptions)
-              }
-            } else {
-              parsedStructs
+          val parsedStructs = JSONUtils.fromJSONToStructs(input.getBase, makeSchema(struct),
+            cudfOptions, parsedOptions.locale == Locale.US)
+          val hasDateTime = TrampolineUtil.dataTypeExistsRecursively(struct, t =>
+            t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType]
+          )
+          if (hasDateTime) {
+            withResource(parsedStructs) { _ =>
+              convertDateTimeType(parsedStructs, struct, parsedOptions)
             }
-          } catch {
-            case e: RuntimeException =>
-              throw new JsonParsingException("Currently some JsonToStructs cases " +
-                "are not supported. " +
-                "Consider to set spark.rapids.sql.expression.JsonToStructs=false", e)
+          } else {
+            parsedStructs
           }
 
         case _ => throw new IllegalArgumentException(

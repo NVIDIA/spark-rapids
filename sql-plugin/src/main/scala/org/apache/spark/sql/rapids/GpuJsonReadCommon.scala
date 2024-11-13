@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 package org.apache.spark.sql.rapids
 
 import java.util.Locale
@@ -75,7 +74,6 @@ object GpuJsonReadCommon {
     throw new IllegalStateException(s"Don't know how to transform $cv to $dt for JSON")
   }
 
-
   private def nestedColumnViewMismatchTransform(cv: ColumnView,
     dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
     // In the future we should be able to convert strings to maps/etc, but for
@@ -113,6 +111,20 @@ object GpuJsonReadCommon {
     }
   }
 
+  private def convertStringToDate(input: ColumnView, options: JSONOptions): ColumnVector = {
+    withResource(JSONUtils.removeQuotes(input, /*nullifyIfNotQuoted*/ true)) { removedQuotes =>
+      GpuJsonToStructsShim.castJsonStringToDateFromScan(removedQuotes, DType.TIMESTAMP_DAYS,
+        dateFormat(options))
+    }
+  }
+
+  private def convertStringToTimestamp(input: ColumnView, options: JSONOptions): ColumnVector = {
+    withResource(JSONUtils.removeQuotes(input, /*nullifyIfNotQuoted*/ true)) { removedQuotes =>
+      GpuTextBasedPartitionReader.castStringToTimestamp(removedQuotes, timestampFormat(options),
+        DType.TIMESTAMP_MICROSECONDS)
+    }
+  }
+
   private def convertToDesiredType(inputCv: ColumnVector,
       topLevelType: DataType,
       options: JSONOptions): ColumnVector = {
@@ -120,25 +132,21 @@ object GpuJsonReadCommon {
       Some(nestedColumnViewMismatchTransform)) {
 
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
-        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
-          GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
-            dateFormat(options))
-        }
+        convertStringToDate(cv, options)
+
       case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
-        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
-          GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
-            DType.TIMESTAMP_MICROSECONDS)
-        }
+        convertStringToTimestamp(cv, options)
 
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
-        val builder = Schema.builder
+        // There is an issue with the Schema implementation such that the schema's top level
+        // is never used when passing down data schema from Java to C++.
+        // As such, we have to wrap the current column schema `dt` in a struct schema.
+        val builder = Schema.builder // This is created as a struct schema
         populateSchema(dt, "", builder)
-        JSONUtils.convertDataType(cv, builder.build, cudfJsonOptions(options),
+        JSONUtils.convertDataType(cv, builder.build, options.allowNonNumericNumbers,
           options.locale == Locale.US)
-
     }
   }
-
 
   /**
    * Convert the parsed input table to the desired output types
@@ -159,48 +167,30 @@ object GpuJsonReadCommon {
     }
   }
 
+  /**
+   * Convert a strings column into date/time types.
+   * @param inputCv The input column vector
+   * @param topLevelType The desired output data type
+   * @param options JSON options for the conversion
+   * @return The converted column vector
+   */
   def convertDateTimeType(inputCv: ColumnVector,
       topLevelType: DataType,
       options: JSONOptions): ColumnVector = {
-    ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
-      Some(nestedColumnViewMismatchTransform)) {
+    withResource(new NvtxRange("convertDateTimeType", NvtxColor.RED)) { _ =>
+      ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
+        Some(nestedColumnViewMismatchTransform)) {
 
+        case (cv, Some(DateType)) if cv.getType == DType.STRING =>
+          convertStringToDate(cv, options)
 
-      case (cv, Some(DateType)) if cv.getType == DType.STRING =>
-        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
-          GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
-            dateFormat(options))
-        }
-      case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
-        withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
-          GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
-            DType.TIMESTAMP_MICROSECONDS)
-        }
-
-
+        case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
+          convertStringToTimestamp(cv, options)
+      }
     }
   }
 
-
-  /**
-   * Convert the parsed input table to the desired output types
-   * @param input the column to start with
-   * @param desired the desired output data types
-   * @param options the options the user provided
-   * @return an array of converted column vectors in the same order as the input table.
-   */
-//  def convertDateTimeType(input: ColumnVector,
-//      desired: DataType,
-//      options: JSONOptions): Array[ColumnVector] = {
-//    withResource(new NvtxRange("convertDateTimeType", NvtxColor.RED)) { _ =>
-//      convertDateTimeType(input, desired, options)
-//    }
-//  }
-
-  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions =
-    cudfJsonOptionBuilder(options).build()
-
-  def cudfJsonOptionBuilder(options: JSONOptions): ai.rapids.cudf.JSONOptions.Builder = {
+  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
     // This is really ugly, but options.allowUnquotedControlChars is marked as private
     // and this is the only way I know to get it without even uglier tricks
     @scala.annotation.nowarn("msg=Java enum ALLOW_UNQUOTED_CONTROL_CHARS in " +
@@ -209,16 +199,17 @@ object GpuJsonReadCommon {
       .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
 
     ai.rapids.cudf.JSONOptions.builder()
-    .withRecoverWithNull(true)
-    .withMixedTypesAsStrings(true)
-    .withNormalizeWhitespace(true)
-    .withKeepQuotes(true)
-    .withNormalizeSingleQuotes(options.allowSingleQuotes)
-    .withStrictValidation(true)
-    .withLeadingZeros(options.allowNumericLeadingZeros)
-    .withNonNumericNumbers(options.allowNonNumericNumbers)
-    .withUnquotedControlChars(allowUnquotedControlChars)
-    .withCudfPruneSchema(true)
-    .withExperimental(true)
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(true)
+      .withNormalizeWhitespace(true)
+      .withKeepQuotes(true)
+      .withNormalizeSingleQuotes(options.allowSingleQuotes)
+      .withStrictValidation(true)
+      .withLeadingZeros(options.allowNumericLeadingZeros)
+      .withNonNumericNumbers(options.allowNonNumericNumbers)
+      .withUnquotedControlChars(allowUnquotedControlChars)
+      .withCudfPruneSchema(true)
+      .withExperimental(true)
+      .build()
   }
 }
