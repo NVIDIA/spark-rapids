@@ -119,13 +119,6 @@ object GpuJsonReadCommon {
     ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
       Some(nestedColumnViewMismatchTransform)) {
 
-      //
-      // DONE
-      case (cv, Some(BooleanType)) if cv.getType == DType.STRING =>
-        JSONUtils.castStringsToBooleans(cv)
-      //
-      //
-
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
         withResource(JSONUtils.removeQuotes(cv, true)) { fixed =>
           GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
@@ -137,40 +130,12 @@ object GpuJsonReadCommon {
             DType.TIMESTAMP_MICROSECONDS)
         }
 
-      //
-      // Done
-      case (cv, Some(StringType)) if cv.getType == DType.STRING =>
-        JSONUtils.removeQuotes(cv, false)
-      //
-      //
-
-      //
-      // Done
-      case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
-        JSONUtils.castStringsToDecimals(cv, GpuColumnVector.getNonNestedRapidsType(dt),
-          dt.precision, -dt.scale, options.locale == Locale.US)
-      //
-      //
-
-      //
-      // DONE
-      case (cv, Some(dt)) if (dt == DoubleType || dt == FloatType) && cv.getType == DType.STRING =>
-        JSONUtils.castStringsToFloats(cv,  GpuColumnVector.getNonNestedRapidsType(dt),
-          options.allowNonNumericNumbers)
-      //
-      //
-
-      //
-      // DONE
-      case (cv, Some(dt))
-        if (dt == ByteType || dt == ShortType || dt == IntegerType || dt == LongType ) &&
-            cv.getType == DType.STRING =>
-        JSONUtils.castStringsToIntegers(cv, GpuColumnVector.getNonNestedRapidsType(dt))
-      //
-      //
-
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
-        throw new JsonParsingException(s"Cannot convert string to $dt", null)
+        val builder = Schema.builder
+        populateSchema(dt, "", builder)
+        JSONUtils.convertDataType(cv, builder.build, cudfJsonOptions(options),
+          options.locale == Locale.US)
+
     }
   }
 
