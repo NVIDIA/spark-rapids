@@ -702,7 +702,8 @@ def test_from_json_map_with_invalid():
 @pytest.mark.parametrize('allow_non_numeric_numbers', ['true', 'false'])
 @pytest.mark.parametrize('allow_unquoted_chars', ['true', 'false'])
 def test_from_json_map_with_options(allow_single_quotes,  
-                                    allow_non_numeric_numbers, allow_unquoted_chars):
+                                    allow_non_numeric_numbers,
+                                    allow_unquoted_chars):
     # Test the input with:
     #  - Double quotes
     #  - Single quotes
