@@ -23,7 +23,7 @@ import com.fasterxml.jackson.core.JsonParser
 import com.nvidia.spark.rapids.{ColumnCastUtil, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.jni.{JSONUtils}
+import com.nvidia.spark.rapids.jni.JSONUtils
 
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
