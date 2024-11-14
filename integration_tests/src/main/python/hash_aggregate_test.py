@@ -1118,7 +1118,8 @@ def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback()
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_hash_multiple_mode_query(data_gen, conf):
+@pytest.mark.parametrize('shuffle_split', [True, False], ids=idfn)
+def test_hash_multiple_mode_query(data_gen, conf, shuffle_split):
     print_params(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -1132,7 +1133,10 @@ def test_hash_multiple_mode_query(data_gen, conf):
                  f.max('a'),
                  f.sumDistinct('b'),
                  f.countDistinct('c')
-                ), conf=conf)
+                ),
+        conf=copy_and_update(
+            conf,
+            {'spark.rapids.shuffle.splitRetryRead.enabled': shuffle_split}))
 
 
 @approximate_float

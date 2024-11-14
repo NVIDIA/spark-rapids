@@ -274,9 +274,31 @@ object JoinBuildSideStats {
         keysTable.distinctCount(NullEquality.EQUAL)
       }
       val isDistinct = builtCount == buildKeys.numRows()
-      val magnificationFactor = buildKeys.numRows().toDouble / builtCount
+      val magnificationFactor = buildKeys.numRows().toDouble / math.max(builtCount, 1)
       JoinBuildSideStats(magnificationFactor, isDistinct)
     }
+  }
+
+  def fromBatches(batches: Seq[SpillableColumnarBatch],
+      boundBuildKeys: Seq[GpuExpression]): JoinBuildSideStats = {
+    assert(batches.nonEmpty, "at least one batch is required")
+    // This is okay because the build keys must be deterministic
+    val keysTables = batches.safeMap(sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        withResource(GpuProjectExec.project(cb, boundBuildKeys))(GpuColumnVector.from)
+      })
+    val singleTable = if (keysTables.length == 1) {
+      keysTables.head
+    } else { // More than one table
+      withResource(keysTables)(_ => Table.concatenate(keysTables: _*))
+    }
+    // Based off of the keys on the build side guess at how many output rows there
+    // will be for each input row on the stream side. This does not take into account
+    // the join type, data skew or even if the keys actually match.
+    val builtCount = withResource(singleTable)(_.distinctCount(NullEquality.EQUAL))
+    val isDistinct = builtCount == singleTable.getRowCount
+    val magnificationFactor = singleTable.getRowCount.toDouble / math.max(builtCount, 1)
+    JoinBuildSideStats(magnificationFactor, isDistinct)
   }
 }
 
