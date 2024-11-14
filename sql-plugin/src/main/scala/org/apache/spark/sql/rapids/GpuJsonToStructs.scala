@@ -84,7 +84,8 @@ case class GpuJsonToStructs(
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     withResource(new NvtxRange("GpuJsonToStructs", NvtxColor.YELLOW)) { _ =>
       schema match {
-        case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase)
+        case _: MapType =>
+          JSONUtils.extractRawMapFromJsonString(input.getBase, jsonOptionBuilder.build())
         case struct: StructType =>
           // if we ever need to support duplicate keys we need to keep track of the duplicates
           //  and make the first one null, but I don't think this will ever happen in practice
