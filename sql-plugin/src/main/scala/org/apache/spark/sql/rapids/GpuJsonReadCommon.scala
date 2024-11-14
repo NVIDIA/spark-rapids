@@ -130,13 +130,10 @@ object GpuJsonReadCommon {
       options: JSONOptions): ColumnVector = {
     ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
       Some(nestedColumnViewMismatchTransform)) {
-
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
         convertStringToDate(cv, options)
-
       case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
         convertStringToTimestamp(cv, options)
-
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
         // There is an issue with the Schema implementation such that the schema's top level
         // is never used when passing down data schema from Java to C++.
@@ -180,10 +177,8 @@ object GpuJsonReadCommon {
     withResource(new NvtxRange("convertDateTimeType", NvtxColor.RED)) { _ =>
       ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
         Some(nestedColumnViewMismatchTransform)) {
-
         case (cv, Some(DateType)) if cv.getType == DType.STRING =>
           convertStringToDate(cv, options)
-
         case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
           convertStringToTimestamp(cv, options)
       }
