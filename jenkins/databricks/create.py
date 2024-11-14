@@ -29,14 +29,14 @@ def main():
   sshkey = ''
   cluster_name = 'CI-GPU-databricks-24.12.0-SNAPSHOT'
   idletime = 240
-  runtime = '7.0.x-gpu-ml-scala2.12'
+  runtime = '13.3.x-gpu-ml-scala2.12'
   num_workers = 1
   worker_type = 'g4dn.xlarge'
   driver_type = 'g4dn.xlarge'
   cloud_provider = 'aws'
   # comma separated init scripts in Databricks workspace, e.g. /foo,/bar,...
   init_scripts = ''
-  aws_zone='us-west-2c'
+  aws_zone='auto'
 
 
   try:

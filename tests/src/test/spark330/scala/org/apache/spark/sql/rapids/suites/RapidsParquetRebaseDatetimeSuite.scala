@@ -33,7 +33,7 @@ class RapidsParquetRebaseDatetimeSuite
 
   import testImplicits._
 
-  test("SPARK-35427: datetime rebasing in the EXCEPTION mode in Rapids") {
+  test("SPARK-35427: datetime rebasing in the EXCEPTION mode Rapids") {
     def checkTsWrite(): Unit = {
       withTempPath { dir =>
         val df = Seq("1001-01-01 01:02:03.123")

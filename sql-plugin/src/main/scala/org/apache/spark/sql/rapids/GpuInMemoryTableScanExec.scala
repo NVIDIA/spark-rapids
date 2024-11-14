@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,7 +136,7 @@ case class GpuInMemoryTableScanExec(
   override def outputOrdering: Seq[SortOrder] =
     relation.cachedPlan.outputOrdering.map(updateAttribute(_).asInstanceOf[SortOrder])
 
-  lazy val enableAccumulatorsForTest: Boolean = sparkSession.sqlContext
+  lazy val enableAccumulatorsForTest: Boolean = sparkSession.sessionState
       .conf.inMemoryTableScanStatisticsEnabled
 
   // Accumulators used for testing purposes

@@ -77,7 +77,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
     .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11454"))
-    .exclude("parquet timestamp conversion", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11448"))
+    .exclude("parquet timestamp conversion", ADJUST_UT("impala_timestamp cannot be found"))
   enableSuite[RapidsParquetPartitionDiscoverySuite]
     .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11583"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]

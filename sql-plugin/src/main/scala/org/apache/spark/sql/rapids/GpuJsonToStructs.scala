@@ -50,7 +50,6 @@ case class GpuJsonToStructs(
     withResource(new NvtxRange("GpuJsonToStructs", NvtxColor.YELLOW)) { _ =>
       schema match {
         case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase, cudfOptions)
-
         case struct: StructType =>
           val parsedStructs = JSONUtils.fromJSONToStructs(input.getBase, makeSchema(struct),
             cudfOptions, parsedOptions.locale == Locale.US)
@@ -64,7 +63,6 @@ case class GpuJsonToStructs(
           } else {
             parsedStructs
           }
-
         case _ => throw new IllegalArgumentException(
           s"GpuJsonToStructs currently does not support schema of type $schema.")
       }
