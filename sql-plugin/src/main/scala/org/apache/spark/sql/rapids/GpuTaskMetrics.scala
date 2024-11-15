@@ -121,7 +121,11 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
+  private val maxHostMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
+
+  private var hostBytesAllocated: Long = 0
+  private var maxHostBytesAllocated: Long = 0
 
   private var diskBytesAllocated: Long = 0
   private var maxDiskBytesAllocated: Long = 0
@@ -129,6 +133,23 @@ class GpuTaskMetrics extends Serializable {
   def getDiskBytesAllocated: Long = diskBytesAllocated
 
   def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
+
+  def getHostBytesAllocated: Long = hostBytesAllocated
+
+  def getMaxHostBytesAllocated: Long = maxHostBytesAllocated
+
+  def incHostBytesAllocated(bytes: Long): Unit = {
+    hostBytesAllocated += bytes
+    maxHostBytesAllocated = maxHostBytesAllocated.max(hostBytesAllocated)
+  }
+
+  def decHostBytesAllocated(bytes: Long): Unit = {
+    hostBytesAllocated -= bytes
+    // For some reason it's possible for the task to start out by releasing resources,
+    // possibly from a previous task, in such case we probably should just ignore it.
+    hostBytesAllocated = hostBytesAllocated.max(0)
+  }
+
 
   def incDiskBytesAllocated(bytes: Long): Unit = {
     diskBytesAllocated += bytes
@@ -153,6 +174,7 @@ class GpuTaskMetrics extends Serializable {
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
     "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
     "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
+    "gpuMaxHostMemoryBytes" -> maxHostMemoryBytes,
     "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes
   )
 
@@ -241,6 +263,9 @@ class GpuTaskMetrics extends Serializable {
       // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
       // add method instead of adding a dedicated max method to the accumulator.
       maxDeviceMemoryBytes.add(maxMem)
+    }
+    if (maxHostBytesAllocated > 0) {
+      maxHostMemoryBytes.add(maxHostBytesAllocated)
     }
     if (maxDiskBytesAllocated > 0) {
       maxDiskMemoryBytes.add(maxDiskBytesAllocated)

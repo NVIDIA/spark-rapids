@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
@@ -52,10 +54,25 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
   }
 
+  private def reportHostAllocMetrics(metrics: GpuTaskMetrics): String = {
+    try {
+      val taskId = TaskContext.get().taskAttemptId()
+      val totalSize = metrics.getHostBytesAllocated
+      val maxSize = metrics.getMaxHostBytesAllocated
+      s"total size for task $taskId is $totalSize, max size is $maxSize"
+    } catch {
+      case _: NullPointerException =>
+        "allocated memory outside of a task context"
+    }
+  }
+
   private def releasePinned(ptr: Long, amount: Long): Unit = {
     synchronized {
       currentPinnedAllocated -= amount
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.decHostBytesAllocated(amount)
+    logDebug(reportHostAllocMetrics(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -63,6 +80,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     synchronized {
       currentNonPinnedAllocated -= amount
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.decHostBytesAllocated(amount)
+    logDebug(reportHostAllocMetrics(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -186,6 +206,11 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       allocAttemptFinishedWithoutException = true
     } finally {
       if (ret.isDefined) {
+        // Alternatively we could do the host watermark tracking in the JNI code to make
+        // it consistent with how we handle device memory tracking
+        val metrics = GpuTaskMetrics.get
+        metrics.incHostBytesAllocated(amount)
+        logDebug(reportHostAllocMetrics(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
       } else {
         // shouldRetry should indicate if spill did anything for us and we should try again.
