@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -688,10 +688,12 @@ abstract class AbstractGpuCoalesceIterator(
  * @param batches a sequence of `SpillableColumnarBatch` to manage.
  */
 case class BatchesToCoalesce(batches: Array[SpillableColumnarBatch])
-    extends AutoCloseable {
+    extends AutoCloseable with RetrySizeAwareable {
   override def close(): Unit = {
     batches.safeClose()
   }
+
+  override def sizeInBytes: Long = batches.map(_.sizeInBytes).sum
 }
 
 class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],

@@ -26,7 +26,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * Holds a ColumnarBatch that the backing buffers on it can be spilled.
  */
-trait SpillableColumnarBatch extends AutoCloseable {
+trait SpillableColumnarBatch extends AutoCloseable with RetrySizeAwareable {
   /**
    * The number of rows stored in this batch.
    */
@@ -51,8 +51,6 @@ trait SpillableColumnarBatch extends AutoCloseable {
    *       with decompressing the data if necessary.
    */
   def getColumnarBatch(): ColumnarBatch
-
-  def sizeInBytes: Long
 
   def dataTypes: Array[DataType]
 }

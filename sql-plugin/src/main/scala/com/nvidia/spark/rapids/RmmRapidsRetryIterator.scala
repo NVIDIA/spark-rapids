@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -454,17 +454,34 @@ object RmmRapidsRetryIterator extends Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
+        val message = s"could not split inputs and retry. The current input size: " +
+          s"${sizeAsString(attemptStack.head)}"
+        logWarning(message)
         if (isFromGpuOom) {
-          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+          throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
         } else {
-          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+          throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
         }
       }
       // splitPolicy must take ownership of the argument
-      val splitted = splitPolicy(attemptStack.pop())
+      val curAttempt = attemptStack.pop()
+      val curSize = closeOnExcept(curAttempt)(sizeAsString)
+      val splitted = try {
+        splitPolicy(curAttempt)
+      } catch {
+        case ex: Throwable =>
+          // We can not change the root exception instance so print the size info to console
+          logWarning(s"Failed to split the input with size: $curSize")
+          throw ex
+      }
       // the splitted sequence needs to be inserted in reverse order
       // so we try the first item first.
       splitted.reverse.foreach(attemptStack.push)
+    }
+
+    private def sizeAsString(maybeSizeAwareable: T): String = maybeSizeAwareable match {
+      case sizeAware: RetrySizeAwareable => s"${sizeAware.sizeInBytes} bytes"
+      case _ => s"unknown for a ${maybeSizeAwareable.getClass.getSimpleName}"
     }
 
     override def next(): K = {
@@ -754,4 +771,8 @@ object RmmRapidsRetryIterator extends Logging {
  */
 case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
   override def close(): Unit = ()
+}
+
+trait RetrySizeAwareable {
+  def sizeInBytes: Long
 }
