@@ -374,9 +374,6 @@ EOF
       export PYSP_TEST_spark_memory_offHeap_size=512M
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
       export PYSP_TEST_spark_rapids_sql_loadVelox=true
-      if [[ "$VELOX_HDFS_TEST" -eq 1 ]]; then
-        export PYSP_TEST_spark_rapids_sql_velox_useVeloxHDFS=true
-      fi
     fi
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"

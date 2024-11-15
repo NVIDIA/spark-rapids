@@ -1696,7 +1696,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   object VeloxFilterPushdownType extends Enumeration {
     val ALL_SUPPORTED, NONE, UNCHANGED = Value
-  }
+  }  
 
   val PUSH_DOWN_FILTERS_TO_VELOX = conf("spark.rapids.sql.parquet.pushDownFiltersToVelox")
     .doc("Push down all supported filters to Velox if set to ALL_SUPPORTED. " +
@@ -1721,13 +1721,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .integerConf
     .createWithDefault(0)
-
-  val ENABLE_VELOX_HDFS = conf("spark.rapids.sql.velox.useVeloxHDFS")
-    .doc("Use HDFS reader of velox to do buffering instead of Hadoop Java API")
-    .internal()
-    .startupOnly()
-    .booleanConf
-    .createWithDefault(false)
 
   val LOAD_VELOX = conf("spark.rapids.sql.loadVelox")
     .doc("Load Velox (through Gluten) as a spark driver plugin")
@@ -2883,8 +2876,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableNativeVeloxConverter: Boolean = get(ENABLE_NATIVE_VELOX_CONVERTER)
 
   lazy val parquetVeloxPreloadCapacity: Int = get(PARQUET_VELOX_PRELOAD_CAP)
-
-  lazy val enableVeloxHDFS: Boolean = get(ENABLE_VELOX_HDFS)
 
   lazy val loadVelox: Boolean = get(LOAD_VELOX)
 
