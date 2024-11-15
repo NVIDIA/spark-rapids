@@ -23,6 +23,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuCoalesceIterator, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator, NoopMetric, RequireSingleBatch}
+import com.nvidia.spark.rapids.GpuShuffleCoalesceUtils
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
@@ -71,14 +72,17 @@ object GpuExecutorBroadcastHelper {
     // to ensure this always a single batch for the following step.
     val shuffleMetrics = Map(
       CONCAT_TIME -> metricsMap(CONCAT_TIME),
-      OP_TIME -> metricsMap(OP_TIME)
+      CONCAT_HEADER_TIME -> metricsMap(CONCAT_HEADER_TIME),
+      CONCAT_BUFFER_TIME -> metricsMap(CONCAT_BUFFER_TIME),
+      OP_TIME -> metricsMap(OP_TIME),
     ).withDefaultValue(NoopMetric)
 
     val iter = shuffleDataIterator(shuffleData)
     new GpuCoalesceIterator(
-      new GpuShuffleCoalesceIterator(
-        new HostShuffleCoalesceIterator(iter, targetSize, shuffleMetrics),
-        dataTypes, shuffleMetrics).asInstanceOf[Iterator[ColumnarBatch]],
+      GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(iter, targetSize,
+        dataTypes,
+        CoalesceReadOption(SQLConf.get),
+        shuffleMetrics),
       dataTypes,
       RequireSingleBatch,
       NoopMetric, // numInputRows

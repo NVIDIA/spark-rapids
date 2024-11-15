@@ -22,8 +22,9 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
-
+import com.nvidia.spark.rapids.GpuColumnVector.extractTypes
 import org.apache.spark.TaskContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -205,11 +206,13 @@ case class GpuShuffledHashJoinExec(
           GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
     val realTarget = realTargetBatchSize()
+    val buildDataType = extractTypes(buildPlan.schema)
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         val (buildData, maybeBufferedStreamIter) =
           GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(buildIter,
+            buildDataType,
             new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
             realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics)
 
@@ -276,6 +279,7 @@ object GpuShuffledHashJoinExec extends Logging {
    */
   private[rapids] def prepareBuildBatchesForJoin(
       buildIter: Iterator[ColumnarBatch],
+      buildDataType: Array[DataType],
       streamIter: Iterator[ColumnarBatch],
       targetSize: Long,
       buildOutput: Seq[Attribute],
@@ -290,7 +294,7 @@ object GpuShuffledHashJoinExec extends Logging {
       var isBuildSerialized = false
       // Batches type detection
       val coalesceBuiltIter = getHostShuffleCoalesceIterator(
-        bufBuildIter, targetSize, coalesceMetrics).map { iter =>
+        bufBuildIter, buildDataType, targetSize, coalesceMetrics).map { iter =>
         isBuildSerialized = true
         iter
       }.getOrElse(bufBuildIter)
@@ -463,12 +467,15 @@ object GpuShuffledHashJoinExec extends Logging {
 
   private def getHostShuffleCoalesceIterator(
       iter: BufferedIterator[ColumnarBatch],
+      dataTypes: Array[DataType],
       targetSize: Long,
       coalesceMetrics: Map[String, GpuMetric]): Option[Iterator[CoalescedHostResult]] = {
     var retIter: Option[Iterator[CoalescedHostResult]] = None
     if (iter.hasNext && iter.head.numCols() == 1) {
       iter.head.column(0) match {
-        // TODO add the Kudo case
+        case _: KudoSerializedTableColumn =>
+          retIter = Some(new KudoHostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics,
+            dataTypes))
         case _: SerializedTableColumn =>
           retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics))
         case _ => // should be gpu batches

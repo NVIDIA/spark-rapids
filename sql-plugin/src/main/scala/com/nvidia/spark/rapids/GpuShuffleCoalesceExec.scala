@@ -17,21 +17,24 @@
 package com.nvidia.spark.rapids
 
 import java.util
-
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer, KudoTable}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.GpuMetric.{CONCAT_BUFFER_TIME, CONCAT_HEADER_TIME}
 import org.apache.spark.TaskContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.metric.SQLMetrics.createNanoTimingMetric
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -51,7 +54,9 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
+    CONCAT_HEADER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_HEADER_TIME),
+    CONCAT_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_BUFFER_TIME),
   )
 
   override protected val outputBatchesLevel = MODERATE_LEVEL
@@ -68,7 +73,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     val metricsMap = allMetrics
     val targetSize = targetBatchByteSize
     val dataTypes = GpuColumnVector.extractTypes(schema)
-    val readOption = CoalesceReadOption(new RapidsConf(conf))
+    val readOption = CoalesceReadOption(conf)
 
     child.executeColumnar().mapPartitions { iter =>
       GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(iter, targetSize, dataTypes,
@@ -81,9 +86,8 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 case class CoalesceReadOption private(kudoEnabled: Boolean)
 
 object CoalesceReadOption {
-  def apply(conf: RapidsConf): CoalesceReadOption = {
-    // TODO get the value from conf
-    CoalesceReadOption(false)
+  def apply(conf: SQLConf): CoalesceReadOption = {
+    CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf))
   }
 }
 
@@ -113,8 +117,7 @@ object GpuShuffleCoalesceUtils {
       metricsMap: Map[String, GpuMetric],
       prefetchFirstBatch: Boolean = false): Iterator[ColumnarBatch] = {
     val hostIter = if (readOption.kudoEnabled) {
-      // TODO replace with the actual Kudo host iterator
-      throw new UnsupportedOperationException("Kudo is not supported yet")
+      new KudoHostShuffleCoalesceIterator(iter, targetSize, metricsMap, dataTypes)
     } else {
       new HostShuffleCoalesceIterator(iter, targetSize, metricsMap)
     }
@@ -191,6 +194,70 @@ class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] 
       JCudfSerialization.concatToHostBuffer(headers, buffers)
     }
     new JCudfCoalescedHostResult(ret)
+  }
+}
+
+case class KudoHostMergeResultWrapper(inner: Either[KudoHostMergeResult, Int],
+    dataSize: Long) extends CoalescedHostResult {
+
+  /** Convert itself to a GPU batch */
+  override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
+    inner match {
+      case Left(result) =>
+        RmmRapidsRetryIterator.withRetryNoSplit {
+          closeOnExcept(result.toTable) { cudfTable =>
+            GpuColumnVector.from(cudfTable, dataTypes)
+          }
+        }
+      case Right(count) =>
+        // Row count only table
+        new ColumnarBatch(Array.empty, count)
+    }
+  }
+
+  /** Get the data size */
+  override def getDataSize: Long = dataSize
+
+  override def close(): Unit = inner match {
+    case Left(result) => result.close()
+    case _ =>
+  }
+}
+
+class KudoTableOperator(
+    kudo: KudoSerializer,
+    kudoMergeHeaderTime: GpuMetric,
+    kudoMergeBufferTime: GpuMetric,
+) extends
+  SerializedTableOperator[KudoSerializedTableColumn] {
+  require(kudo != null, "kudo serializer should not be null")
+  override def getDataLen(column: KudoSerializedTableColumn): Long = column
+    .kudoTable
+    .getHeader
+    .getTotalDataLen
+  override def getNumRows(column: KudoSerializedTableColumn): Int = column
+    .kudoTable
+    .getHeader
+    .getNumRows
+
+  override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
+    require(columns.nonEmpty, "no tables to be concatenated")
+    val numCols = columns.head.kudoTable.getHeader.getNumColumns
+    if (numCols == 0) {
+      val totalRowsNum = columns.map(getNumRows).sum
+      KudoHostMergeResultWrapper(Right(totalRowsNum), 0)
+    } else {
+      val kudoTables = new util.ArrayList[KudoTable](columns.length)
+      columns.foreach { column =>
+        kudoTables.add(column.kudoTable)
+      }
+
+      val result = kudo.mergeOnHost(kudoTables)
+      kudoMergeHeaderTime += result.getRight.getCalcHeaderTime
+      kudoMergeBufferTime += result.getRight.getMergeIntoHostBufferTime
+
+      KudoHostMergeResultWrapper(Left(result.getLeft), hostMergeResult.getDataLength)
+    }
   }
 }
 
@@ -302,8 +369,25 @@ class HostShuffleCoalesceIterator(
     targetBatchSize: Long,
     metricsMap: Map[String, GpuMetric])
   extends HostCoalesceIteratorBase[SerializedTableColumn](iter, targetBatchSize, metricsMap) {
-  override protected def tableOperator = new JCudfTableOperator
+  override protected def tableOperator = {
+    new JCudfTableOperator
+  }
 }
+
+class KudoHostShuffleCoalesceIterator(
+    iter: Iterator[ColumnarBatch],
+    targetBatchSize: Long,
+    metricsMap: Map[String, GpuMetric],
+    dataTypes: Array[DataType])
+  extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize, metricsMap) {
+  override protected def tableOperator = {
+    val schema = GpuColumnVector.from(dataTypes)
+    new KudoTableOperator(new KudoSerializer(schema),
+      metricsMap(CONCAT_HEADER_TIME),
+      metricsMap(CONCAT_BUFFER_TIME))
+  }
+}
+
 
 /**
  * Iterator that expects only "CoalescedHostResult"s as the input, and transfers

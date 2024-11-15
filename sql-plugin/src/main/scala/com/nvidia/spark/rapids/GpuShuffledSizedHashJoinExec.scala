@@ -319,7 +319,10 @@ object GpuShuffledSizedHashJoinExec {
     // Use a filtered metrics map to avoid output batch counts and other unrelated metric updates
     Map(
       OP_TIME -> metrics(OP_TIME),
-      CONCAT_TIME -> metrics(CONCAT_TIME)).withDefaultValue(NoopMetric)
+      CONCAT_TIME -> metrics(CONCAT_TIME),
+      CONCAT_HEADER_TIME -> metrics(CONCAT_HEADER_TIME),
+      CONCAT_BUFFER_TIME -> metrics(CONCAT_BUFFER_TIME)
+    ).withDefaultValue(NoopMetric)
   }
 
   def createJoinIterator(
@@ -385,6 +388,8 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
+    CONCAT_HEADER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_HEADER_TIME),
+    CONCAT_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_BUFFER_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
