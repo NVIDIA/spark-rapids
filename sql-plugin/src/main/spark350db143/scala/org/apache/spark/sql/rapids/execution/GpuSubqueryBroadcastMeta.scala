@@ -28,7 +28,7 @@ class GpuSubqueryBroadcastMeta(
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends
-    GpuSubqueryBroadcastMetaBase(s, conf, p, r) {
+    GpuSubqueryBroadcastMeta330DBBase(s, conf, p, r) {
   override def convertToGpu(): GpuExec = {
     GpuSubqueryBroadcastExec(s.name, s.indices, s.buildKeys, broadcastBuilder())(
       getBroadcastModeKeyExprs)
