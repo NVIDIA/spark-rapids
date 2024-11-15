@@ -140,7 +140,7 @@ object GpuJsonReadCommon {
         // As such, we have to wrap the current column schema `dt` in a struct schema.
         val builder = Schema.builder // This is created as a struct schema
         populateSchema(dt, "", builder)
-        JSONUtils.convertDataType(cv, builder.build, options.allowNonNumericNumbers,
+        JSONUtils.convertFromStrings(cv, builder.build, options.allowNonNumericNumbers,
           options.locale == Locale.US)
     }
   }
