@@ -988,7 +988,10 @@ def test_from_json_struct_of_list(schema):
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
                                 r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}') \
         .with_special_pattern('', weight=50) \
-        .with_special_pattern('null', weight=50)
+        .with_special_pattern('null', weight=50) \
+        .with_special_pattern('{"student": ["[A-Z]{1}[a-z]{2,5}"]}', weight=50) \
+        .with_special_pattern('{"student": [[1-9]{1,5}]}', weight=50) \
+        .with_special_pattern('{"student": {"[A-Z]{1}[a-z]{2,5}": "[A-Z]{1}[a-z]{2,5}"}}', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
