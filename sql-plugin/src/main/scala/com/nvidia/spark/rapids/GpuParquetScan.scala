@@ -468,9 +468,9 @@ private case class GpuParquetFileFilterHandler(
 
   private def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
-      case p:PrimitiveType =>
+      case p: PrimitiveType =>
         p.getPrimitiveTypeName == PrimitiveTypeName.INT96
-      case g:GroupType => //GroupType
+      case g: GroupType => //GroupType
         g.getFields.asScala.exists(t => isParquetTimeInInt96(t))
       case _ => false
     }
@@ -600,7 +600,7 @@ private case class GpuParquetFileFilterHandler(
 
   private def readAndFilterFooter(
       file: PartitionedFile,
-      conf : Configuration,
+      conf: Configuration,
       readDataSchema: StructType,
       filePath: Path): ParquetFooter = {
     val footerSchema = convertToFooterSchema(readDataSchema)
@@ -624,7 +624,7 @@ private case class GpuParquetFileFilterHandler(
   )
   private def readAndSimpleFilterFooter(
       file: PartitionedFile,
-      conf : Configuration,
+      conf: Configuration,
       filePath: Path): ParquetMetadata = {
     //noinspection ScalaDeprecation
     withResource(new NvtxRange("readFooter", NvtxColor.YELLOW)) { _ =>
@@ -688,18 +688,18 @@ private case class GpuParquetFileFilterHandler(
           case ParquetFooterReaderType.NATIVE =>
             val serialized = withResource(readAndFilterFooter(file, conf,
               readDataSchema, filePath)) { tableFooter =>
-                if (tableFooter.getNumColumns <= 0) {
-                  // Special case because java parquet reader does not like having 0 columns.
-                  val numRows = tableFooter.getNumRows
-                  val block = new BlockMetaData()
-                  block.setRowCount(numRows)
-                  val schema = new MessageType("root")
-                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
-                    schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
-                    hasInt96Timestamps = false)
-                }
+              if (tableFooter.getNumColumns <= 0) {
+                // Special case because java parquet reader does not like having 0 columns.
+                val numRows = tableFooter.getNumRows
+                val block = new BlockMetaData()
+                block.setRowCount(numRows)
+                val schema = new MessageType("root")
+                return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                  schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
+                  hasInt96Timestamps = false)
+              }
 
-                tableFooter.serializeThriftFile()
+              tableFooter.serializeThriftFile()
             }
             withResource(serialized) { serialized =>
               withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
@@ -761,9 +761,9 @@ private case class GpuParquetFileFilterHandler(
         }
       val hasDateTimeInReadSchema = DataTypeUtils.hasDateOrTimestampType(readDataSchema)
       val dateRebaseModeForThisFile = DateTimeRebaseUtils.datetimeRebaseMode(
-          footer.getFileMetaData.getKeyValueMetaData.get,
-          datetimeRebaseMode,
-          hasDateTimeInReadSchema)
+        footer.getFileMetaData.getKeyValueMetaData.get,
+        datetimeRebaseMode,
+        hasDateTimeInReadSchema)
       val hasInt96Timestamps = isParquetTimeInInt96(fileSchema)
       val timestampRebaseModeForThisFile = if (hasInt96Timestamps) {
         DateTimeRebaseUtils.int96RebaseMode(
@@ -787,19 +787,19 @@ private case class GpuParquetFileFilterHandler(
    * The function only accepts top-level schemas, which means structures of root columns. Based
    * on this assumption, it can infer root types from input schemas.
    *
-   * @param fileType input file's Parquet schema
-   * @param readType spark type read from Parquet file
+   * @param fileType      input file's Parquet schema
+   * @param readType      spark type read from Parquet file
    * @param errorCallback call back function to throw exception if type mismatch
-   * @param rootFileType file type of each root column
-   * @param rootReadType read type of each root column
+   * @param rootFileType  file type of each root column
+   * @param rootReadType  read type of each root column
    */
   private def checkSchemaCompat(fileType: Type,
-                                readType: DataType,
-                                errorCallback: (Type, DataType) => Unit,
-                                isCaseSensitive: Boolean,
-                                useFieldId: Boolean,
-                                rootFileType: Option[Type] = None,
-                                rootReadType: Option[DataType] = None): Unit = {
+      readType: DataType,
+      errorCallback: (Type, DataType) => Unit,
+      isCaseSensitive: Boolean,
+      useFieldId: Boolean,
+      rootFileType: Option[Type] = None,
+      rootReadType: Option[DataType] = None): Unit = {
     readType match {
       case struct: StructType =>
         val fileFieldMap = fileType.asGroupType().getFields.asScala
@@ -810,13 +810,14 @@ private case class GpuParquetFileFilterHandler(
         val fieldIdToFieldMap = ParquetSchemaClipShims.fieldIdToFieldMap(useFieldId, fileType)
 
         def getParquetType(f: StructField): Option[Type] = {
-          if(useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
+          if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
             // use field ID and Spark schema specified field ID
             fieldIdToFieldMap.get(ParquetSchemaClipShims.getFieldId(f))
           } else {
             fileFieldMap.get(if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT))
           }
         }
+
         struct.fields.foreach { f =>
           getParquetType(f).foreach { fieldType =>
             checkSchemaCompat(fieldType,
@@ -841,7 +842,7 @@ private case class GpuParquetFileFilterHandler(
         } else {
           val fileGroupType = fileType.asGroupType()
           if (fileGroupType.getFieldCount > 1 &&
-              fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
+            fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
             // legacy array format where struct child is directly repeated under array type group
             checkSchemaCompat(fileGroupType, array.elementType, errorCallback, isCaseSensitive,
               useFieldId, rootFileType, rootReadType)
@@ -944,15 +945,15 @@ private case class GpuParquetFileFilterHandler(
    */
   @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
   private def checkPrimitiveCompat(pt: PrimitiveType,
-                                   dt: DataType,
-                                   errorCallback: () => Unit): Unit = {
+      dt: DataType,
+      errorCallback: () => Unit): Unit = {
     pt.getPrimitiveTypeName match {
       case PrimitiveTypeName.BOOLEAN if dt == DataTypes.BooleanType =>
         return
 
       case PrimitiveTypeName.INT32 =>
         if (dt == DataTypes.IntegerType || GpuTypeShims.isSupportedYearMonthType(dt)
-            || canReadAsDecimal(pt, dt)) {
+          || canReadAsDecimal(pt, dt)) {
           // Year-month interval type is stored as int32 in parquet
           return
         }
@@ -966,8 +967,8 @@ private case class GpuParquetFileFilterHandler(
 
       case PrimitiveTypeName.INT64 =>
         if (dt == DataTypes.LongType || GpuTypeShims.isSupportedDayTimeType(dt) ||
-            // Day-time interval type is stored as int64 in parquet
-            canReadAsDecimal(pt, dt)) {
+          // Day-time interval type is stored as int64 in parquet
+          canReadAsDecimal(pt, dt)) {
           return
         }
         // TODO: After we deprecate Spark 3.1, replace OriginalType with LogicalTypeAnnotation
@@ -993,7 +994,7 @@ private case class GpuParquetFileFilterHandler(
         return
 
       case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
-        if dt == DataTypes.BinaryType  || canReadAsDecimal(pt, dt) =>
+        if dt == DataTypes.BinaryType || canReadAsDecimal(pt, dt) =>
         return
 
       case _ =>
@@ -1005,8 +1006,8 @@ private case class GpuParquetFileFilterHandler(
   }
 
   private def throwTypeIncompatibleError(parquetType: Type,
-                                         sparkType: DataType,
-                                         filePath: String): Unit = {
+      sparkType: DataType,
+      filePath: String): Unit = {
     val exception = new SchemaColumnConvertNotSupportedException(
       parquetType.getName,
       parquetType.toString,
@@ -1037,7 +1038,7 @@ private case class GpuParquetFileFilterHandler(
   // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
   @scala.annotation.nowarn("msg=class DecimalMetadata in package schema is deprecated")
   private def isDecimalTypeMatched(metadata: DecimalMetadata,
-                                   sparkType: DataType): Boolean = {
+      sparkType: DataType): Boolean = {
     if (metadata == null) {
       false
     } else {
@@ -1047,6 +1048,7 @@ private case class GpuParquetFileFilterHandler(
       scaleIncrease >= 0 && precisionIncrease >= scaleIncrease
     }
   }
+}
 
 /**
  * Similar to GpuParquetPartitionReaderFactory but extended for reading multiple files
