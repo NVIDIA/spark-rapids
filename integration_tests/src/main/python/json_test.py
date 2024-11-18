@@ -988,10 +988,37 @@ def test_from_json_struct_of_list(schema):
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
                                 r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}') \
         .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+def test_from_json_struct_of_list_with_mismatched_schema():
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": \["[A-Z]{1}[a-z]{2,5}"\]}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', 'struct<teacher:string,student:array<struct<name:string,class:string>>>')),
+        conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('schema', ['struct<teacher:string>',
+                                    'struct<student:array<struct<name:string,class:string>>>',
+                                    'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/17349')
+def test_from_json_struct_of_list_with_mixed_nested_types_input(schema):
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
+                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}') \
+        .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50) \
-        .with_special_pattern('{"student": \["[A-Z]{1}[a-z]{2,5}"\]}', weight=50) \
-        .with_special_pattern('{"student": \[[1-9]{1,5}\]}', weight=50) \
-        .with_special_pattern('{"student": {"[A-Z]{1}[a-z]{2,5}": "[A-Z]{1}[a-z]{2,5}"}}', weight=50)
+        .with_special_pattern('{"student": \["[A-Z]{1}[a-z]{2,5}"\]}', weight=100) \
+        .with_special_pattern('{"student": \[[1-9]{1,5}\]}', weight=100) \
+        .with_special_pattern('{"student": {"[A-Z]{1}[a-z]{2,5}": "[A-Z]{1}[a-z]{2,5}"}}', weight=100)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
