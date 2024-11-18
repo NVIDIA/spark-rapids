@@ -23,12 +23,14 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuCoalesceIterator, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator, NoopMetric, RequireSingleBatch}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.CoalesceReadOption
 import com.nvidia.spark.rapids.GpuShuffleCoalesceUtils
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 

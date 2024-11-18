@@ -87,8 +87,6 @@ case class GpuBroadcastHashJoinExec(
       leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
   import GpuMetric._
 
-  private val coalesceReadOption = CoalesceReadOption(new RapidsConf(conf))
-
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
