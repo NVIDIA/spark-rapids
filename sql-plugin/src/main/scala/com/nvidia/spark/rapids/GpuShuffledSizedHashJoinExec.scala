@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.GpuShuffledSizedHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.kudo.{KudoTable, KudoTableHeader}
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 import org.apache.spark.rdd.RDD
@@ -1125,11 +1126,34 @@ class CudfSpillableHostConcatResult(
   override def getDataLen: Long = header.getDataLen
 }
 
+class KudoSpillableHostConcatResult(kudoTableHeader: KudoTableHeader,
+    val hmb: HostMemoryBuffer
+) extends SpillableHostConcatResult  {
+  require(kudoTableHeader != null, "KudoTableHeader cannot be null")
+  require(hmb != null, "HostMemoryBuffer cannot be null")
+
+  override def toBatch: ColumnarBatch = closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+    KudoSerializedTableColumn.from(new KudoTable(kudoTableHeader, hostBuf))
+  }
+
+  override def getNumRows: Long = kudoTableHeader.getNumRows
+
+  override def getDataLen: Long = hmb.getLength
+}
+
 object SpillableHostConcatResult {
   def from(batch: ColumnarBatch): SpillableHostConcatResult = {
-    require(batch.numCols() > 0, "Batch must have at least 1 column")
+    require(batch.numCols() == 1, "Batch must have exactly 1 column")
     batch.column(0) match {
-      // TODO add the Kudo case
+      case col: KudoSerializedTableColumn => {
+        // This will be closed
+        val oldKudoTable = col.kudoTable
+        val buffer = col.kudoTable.getBuffer
+        if (buffer != null) {
+          buffer.incRefCount()
+        }
+        new KudoSpillableHostConcatResult(oldKudoTable.getHeader, buffer)
+      }
       case col: SerializedTableColumn =>
         val buffer = col.hostBuffer
         buffer.incRefCount()

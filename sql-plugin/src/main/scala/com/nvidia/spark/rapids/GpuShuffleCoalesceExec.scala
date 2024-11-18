@@ -143,7 +143,7 @@ object GpuShuffleCoalesceUtils {
   def getSerializedBufferSize(cb: ColumnarBatch): Long = {
     assert(cb.numCols() == 1)
     val hmb = cb.column(0) match {
-      // TODO add the Kudo case
+      case col: KudoSerializedTableColumn => col.kudoTable.getBuffer
       case serCol: SerializedTableColumn => serCol.hostBuffer
       case o => throw new IllegalStateException(s"unsupported type: ${o.getClass}")
     }
@@ -234,7 +234,7 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
 }
 
 class KudoTableOperator(
-    kudo: KudoSerializer,
+    kudo: Option[KudoSerializer] ,
     kudoMergeHeaderTime: GpuMetric,
     kudoMergeBufferTime: GpuMetric,
 ) extends
@@ -263,7 +263,7 @@ class KudoTableOperator(
         kudoTables.add(column.kudoTable)
       }
 
-      val result = kudo.mergeOnHost(kudoTables)
+      val result = kudo.get.mergeOnHost(kudoTables)
       kudoMergeHeaderTime += result.getRight.getCalcHeaderTime
       kudoMergeBufferTime += result.getRight.getMergeIntoHostBufferTime
 
@@ -392,10 +392,16 @@ class KudoHostShuffleCoalesceIterator(
     dataTypes: Array[DataType])
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize, metricsMap) {
   override protected def tableOperator = {
-    val schema = GpuColumnVector.from(dataTypes)
-    new KudoTableOperator(new KudoSerializer(schema),
-      metricsMap(CONCAT_HEADER_TIME),
-      metricsMap(CONCAT_BUFFER_TIME))
+    if (dataTypes.nonEmpty) {
+      val schema = GpuColumnVector.from(dataTypes)
+      new KudoTableOperator(Some(new KudoSerializer(schema)),
+        metricsMap(CONCAT_HEADER_TIME),
+        metricsMap(CONCAT_BUFFER_TIME))
+    } else {
+      new KudoTableOperator(None,
+        metricsMap(CONCAT_HEADER_TIME),
+        metricsMap(CONCAT_BUFFER_TIME))
+    }
   }
 }
 

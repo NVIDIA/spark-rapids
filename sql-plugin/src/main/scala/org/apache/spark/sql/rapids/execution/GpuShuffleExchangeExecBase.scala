@@ -169,7 +169,7 @@ abstract class GpuShuffleExchangeExecBase(
     child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
-  private lazy val rapidsConf = new RapidsConf(child.conf)
+  private lazy val useKudo = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf)
 
   private lazy val useGPUShuffle = {
     gpuOutputPartitioning match {
@@ -233,7 +233,7 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    gpuLongMetric("dataSize"), sparkTypes, rapidsConf.shuffleKudoSerializerEnabled)
+    gpuLongMetric("dataSize"), sparkTypes, useKudo)
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
