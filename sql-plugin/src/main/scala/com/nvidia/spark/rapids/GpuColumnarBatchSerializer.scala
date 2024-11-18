@@ -28,8 +28,8 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable}
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -480,20 +480,6 @@ object KudoSerializedTableColumn {
     val column = new KudoSerializedTableColumn(kudoTable)
     new ColumnarBatch(Array(column), kudoTable.getHeader.getNumRows)
   }
-
-//  def getMemoryUsed(batch: ColumnarBatch): Long = {
-//    if (batch.numCols == 1) {
-//      val cv = batch.column(0)
-//      cv match {
-//        case KudoSerializedTableColumn(kudoTable: KudoTable) =>
-//          Option(kudoTable.getBuffer).map(_.getLength).getOrElse(0)
-//        case _ => 0L
-//      }
-//    } else {
-//      throw new IllegalStateException(s"Expected 1 column, but got ${batch.numCols} in " +
-//        s"KudoSerializedTableColumn batch")
-//    }
-//  }
 }
 
 class KudoSerializedBatchIterator(dIn: DataInputStream)
