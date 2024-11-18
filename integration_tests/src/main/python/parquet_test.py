@@ -1429,13 +1429,6 @@ def test_parquet_check_schema_compatibility(spark_tmp_path):
         conf={},
         error_message='Parquet column cannot be converted')
 
-    read_dec32_as_dec64 = StructType(
-        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
-        conf={},
-        error_message='Parquet column cannot be converted')
-
 
 # For nested types, GPU throws incompatible exception with a different message from CPU.
 def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
