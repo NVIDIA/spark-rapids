@@ -57,6 +57,7 @@ initialize()
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
         wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /tmp
         tar xf /tmp/apache-maven-3.6.3-bin.tar.gz -C $HOME
+        rm -f /tmp/apache-maven-3.6.3-bin.tar.gz
         sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
     fi
 
@@ -72,6 +73,14 @@ initialize()
     # the version of Spark used when we install the Databricks jars in .m2
     BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
     SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}-databricks
+    DBR_VER=$(cat /databricks/DBR_VERSION)
+    if [ $DBR_VER == '14.3' ]; then 
+        DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
+        # We are appending 143 in addition to the base spark version because Databricks 14.3
+        # and Databricks 15.4 are both based on spark version 3.5.0
+        BUILDVER="$BUILDVER$DBR_VER"
+        SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS="$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-$DBR_VER"
+    fi
 
     # pull normal Spark artifacts and ignore errors then install databricks jars, then build again.
     # this should match the databricks init script.
@@ -152,11 +161,15 @@ else
 fi
 
 if [[ "$WITH_BLOOP" == "1" ]]; then
-    MVN_OPT="ch.epfl.scala:bloop-maven-plugin:bloopInstall $MVN_OPT"
+    MVN_OPT="-DbloopInstall $MVN_OPT"
+    MVN_PHASES="clean install"
+    export JAVA_HOME="/usr/lib/jvm/zulu11"
+else
+    MVN_PHASES="clean package"
 fi
 
 # Build the RAPIDS plugin by running package command for databricks
-$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
+$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER $MVN_PHASES -DskipTests $MVN_OPT
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creating a two-shim dist jar"

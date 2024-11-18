@@ -129,6 +129,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.join.leftOuter.enabled"></a>spark.rapids.sql.join.leftOuter.enabled|When set to true left outer joins are enabled on the GPU|true|Runtime
 <a name="sql.join.leftSemi.enabled"></a>spark.rapids.sql.join.leftSemi.enabled|When set to true left semi joins are enabled on the GPU|true|Runtime
 <a name="sql.join.rightOuter.enabled"></a>spark.rapids.sql.join.rightOuter.enabled|When set to true right outer joins are enabled on the GPU|true|Runtime
+<a name="sql.json.read.datetime.enabled"></a>spark.rapids.sql.json.read.datetime.enabled|JSON reading is not 100% compatible when reading dates and timestamps.|false|Runtime
 <a name="sql.json.read.decimal.enabled"></a>spark.rapids.sql.json.read.decimal.enabled|When reading a quoted string as a decimal Spark supports reading non-ascii unicode digits, and the RAPIDS Accelerator does not.|true|Runtime
 <a name="sql.json.read.double.enabled"></a>spark.rapids.sql.json.read.double.enabled|JSON reading is not 100% compatible when reading doubles.|true|Runtime
 <a name="sql.json.read.float.enabled"></a>spark.rapids.sql.json.read.float.enabled|JSON reading is not 100% compatible when reading floats.|true|Runtime
@@ -191,6 +192,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.ArrayExists"></a>spark.rapids.sql.expression.ArrayExists|`exists`|Return true if any element satisfies the predicate LambdaFunction|true|None|
 <a name="sql.expression.ArrayFilter"></a>spark.rapids.sql.expression.ArrayFilter|`filter`|Filter an input array using a given predicate|true|None|
 <a name="sql.expression.ArrayIntersect"></a>spark.rapids.sql.expression.ArrayIntersect|`array_intersect`|Returns an array of the elements in the intersection of array1 and array2, without duplicates|true|This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+|
+<a name="sql.expression.ArrayJoin"></a>spark.rapids.sql.expression.ArrayJoin|`array_join`|Concatenates the elements of the given array using the delimiter and an optional string to replace nulls. If no value is set for nullReplacement, any null value is filtered.|true|None|
 <a name="sql.expression.ArrayMax"></a>spark.rapids.sql.expression.ArrayMax|`array_max`|Returns the maximum value in the array|true|None|
 <a name="sql.expression.ArrayMin"></a>spark.rapids.sql.expression.ArrayMin|`array_min`|Returns the minimum value in the array|true|None|
 <a name="sql.expression.ArrayRemove"></a>spark.rapids.sql.expression.ArrayRemove|`array_remove`|Returns the array after removing all elements that equal to the input element (right) from the input array (left)|true|None|

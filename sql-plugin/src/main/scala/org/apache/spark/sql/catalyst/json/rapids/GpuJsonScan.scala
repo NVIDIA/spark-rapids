@@ -90,11 +90,6 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu(s"$op does not support allowUnquotedFieldNames")
     }
 
-    // {'name': 'Reynold Xin'} turning single quotes off is not supported by CUDF
-    if (!options.allowSingleQuotes) {
-      meta.willNotWorkOnGpu(s"$op does not support disabling allowSingleQuotes")
-    }
-
     // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
     if (options.allowBackslashEscapingAnyCharacter) {
       meta.willNotWorkOnGpu(s"$op does not support allowBackslashEscapingAnyCharacter")
@@ -177,6 +172,12 @@ object GpuJsonScan {
     }
 
     if (hasDates || hasTimestamps) {
+      if (!meta.conf.isJsonDateTimeReadEnabled) {
+        meta.willNotWorkOnGpu("JsonScan on GPU does not support DateType or TimestampType" +
+          " by default due to compatibility. " +
+          "Set `spark.rapids.sql.json.read.datetime.enabled` to `true` to enable them.")
+      }
+
       if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
@@ -319,7 +320,7 @@ object JsonPartitionReader {
         withResource(new NvtxWithMetrics(formatName + " decode",
           NvtxColor.DARK_GREEN, decodeTime)) { _ =>
           try {
-            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize, dataBufferer.getNumLines)
           } catch {
             case e: AssertionError if e.getMessage == "CudfColumns can't be null or empty" =>
               // this happens when every row in a JSON file is invalid (or we are
@@ -344,9 +345,10 @@ class JsonPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric])
-  extends GpuTextBasedPartitionReader[HostLineBufferer, HostLineBuffererFactory.type](conf,
+  extends GpuTextBasedPartitionReader[HostLineBufferer,
+    FilterEmptyHostLineBuffererFactory.type](conf,
     partFile, dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
-    maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
+    maxBytesPerChunk, execMetrics, FilterEmptyHostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions =
     GpuJsonReadCommon.cudfJsonOptions(parsedOptions)

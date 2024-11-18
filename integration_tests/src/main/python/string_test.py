@@ -23,7 +23,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_before_spark_320, is_before_spark_400
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -104,10 +104,6 @@ def test_substring_index(data_gen,delim):
 
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.skipif(condition=not is_before_spark_400(),
-                    reason="Bug in Apache Spark 4.0 causes NumberFormatExceptions from substring_index(), "
-                           "if called with index==null. For further information, see: "
-                           "https://issues.apache.org/jira/browse/SPARK-48989.")
 @pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
 def test_unsupported_fallback_substring_index(data_gen):
     delim_gen = StringGen(pattern="_")
@@ -327,6 +323,10 @@ def test_rtrim(data_gen):
                 'TRIM(TRAILING NULL FROM a)',
                 'TRIM(TRAILING "" FROM a)'))
 
+@pytest.mark.skipif(condition=is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
+                    reason="startsWith(None)/endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0, "
+                           "and Databricks 14.3."
+                           "See https://issues.apache.org/jira/browse/SPARK-48995.")
 def test_startswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -351,8 +351,9 @@ def test_unsupported_fallback_startswith():
     assert_gpu_did_fallback(f.col("a").startswith(f.col("a")))
 
 
-@pytest.mark.skipif(condition=not is_before_spark_400(),
-                    reason="endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0. "
+@pytest.mark.skipif(condition=is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
+                    reason="startsWith(None)/endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0, "
+                           "and Databricks 14.3."
                            "See https://issues.apache.org/jira/browse/SPARK-48995.")
 def test_endswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
@@ -505,6 +506,31 @@ def test_concat_ws_sql_arrays_all_null_col_sep():
                 'concat_ws(c, array(null, null)), ' +
                 'concat_ws(c, a, array(null), b, array()), ' +
                 'concat_ws(c, b, b, array(b)) from concat_ws_table')
+
+def test_array_join():
+    ar_gen = ArrayGen(StringGen("a{0,10}", nullable=True), max_length=3, nullable=True)
+    sep_gen = StringGen("b{0,2}", nullable=True)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: two_col_df(spark, ar_gen, sep_gen).selectExpr("*",
+                "array_join(a, '*')",
+                "array_join(a, b)",
+                "array_join(a, '**', 'WAS NULL')",
+                "array_join(a, b, 'WAS NULL')",
+                "array_join(a, null, 'WAS NULL')",
+                "array_join(a, b, null)",
+                "array_join(array('1', null, '3'), '*')",
+                "array_join(array('1', null, '3'), b)",
+                "array_join(array('1', null, '3'), '**', 'WAS NULL')",
+                "array_join(array('1', null, '3'), b, 'WAS NULL')",
+                "array_join(array('1', null, '3'), null, 'WAS NULL')",
+                "array_join(array('1', null, '3'), b, null)",
+                "array_join(null, '*')",
+                "array_join(null, b)",
+                "array_join(null, '**', 'WAS NULL')",
+                "array_join(null, b, 'WAS NULL')",
+                "array_join(null, null, 'WAS NULL')",
+                "array_join(null, b, null)",
+                "array_join(null, null, null)"))
 
 def test_substring():
     gen = mk_str_gen('.{0,30}')

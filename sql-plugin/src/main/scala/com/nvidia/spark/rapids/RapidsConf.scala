@@ -551,12 +551,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createWithDefault(2)
 
-  val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
-    .doc("Number of threads used to spill shuffle data to disk in the background.")
-    .commonlyUsed()
-    .integerConf
-    .createWithDefault(6)
-
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
@@ -827,6 +821,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .commonlyUsed()
     .booleanConf
     .createWithDefault(false)
+
+  val DFUDF_ENABLED = conf("spark.rapids.sql.dfudf.enabled")
+    .doc("When set to false, the DataFrame UDF plugin is disabled. True enables it.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
 
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
@@ -1249,6 +1249,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_COALESCE_AFTER_EXPAND = conf("spark.rapids.sql.coalesceAfterExpand.enabled")
+    .doc("When set to false disables the coalesce after GPU Expand. ")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
     .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
@@ -1360,6 +1366,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "unicode digits, and the RAPIDS Accelerator does not.")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_READ_JSON_DATE_TIME = conf("spark.rapids.sql.json.read.datetime.enabled")
+    .doc("JSON reading is not 100% compatible when reading dates and timestamps.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
     .doc("When set to true enables all avro input and output acceleration. " +
@@ -2377,6 +2388,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(true)
 
+  val TRACE_TASK_GPU_OWNERSHIP = conf("spark.rapids.sql.nvtx.traceTaskGpuOwnership")
+    .doc("Enable tracing of the GPU ownership of tasks. This can be useful for debugging " +
+      "deadlocks and other issues related to GPU semaphore.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2412,7 +2430,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.10.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.12.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2592,6 +2610,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_MODE).equals("explainonly")
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
+
+  lazy val isDfUdfEnabled: Boolean = get(DFUDF_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
@@ -2843,8 +2863,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-  
+
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
+
+  lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.
@@ -2948,6 +2970,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isJsonDoubleReadEnabled: Boolean = get(ENABLE_READ_JSON_DOUBLES)
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
+
+  lazy val isJsonDateTimeReadEnabled: Boolean = get(ENABLE_READ_JSON_DATE_TIME)
 
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 

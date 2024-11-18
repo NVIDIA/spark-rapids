@@ -21,13 +21,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
-        <version>24.10.0-SNAPSHOT</version>
+        <version>24.12.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-tests_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
-    <version>24.10.0-SNAPSHOT</version>
+    <version>24.12.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>tests</rapids.module>
@@ -154,6 +154,19 @@
                     <groupId>org.scalatestplus</groupId>
                     <artifactId>scalatestplus-scalacheck_${scala.binary.version}</artifactId>
                     <version>3.1.0.0-RC2</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-column</artifactId>
+                    <version>${parquet.hadoop.version}</version>
+                    <scope>test</scope>
+                    <classifier>tests</classifier>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-avro</artifactId>
+                    <version>${parquet.hadoop.version}</version>
                     <scope>test</scope>
                 </dependency>
             </dependencies>

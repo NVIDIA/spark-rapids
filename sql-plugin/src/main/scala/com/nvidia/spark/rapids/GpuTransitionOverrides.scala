@@ -370,6 +370,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
+    case _: ExpandExec => true
     case _ => false
   }
 
