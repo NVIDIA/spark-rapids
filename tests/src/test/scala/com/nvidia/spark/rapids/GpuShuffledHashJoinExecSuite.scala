@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 
-import scala.collection.JavaConverters.seqAsJavaListConverter
-
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, JCudfSerialization, Table}
 import com.nvidia.spark.rapids.Arm._
 import org.mockito.ArgumentMatchers._
@@ -60,7 +58,7 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
     when(mockStreamIter.hasNext).thenReturn(true)
     val (builtData, _) = GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(
       buildIter,
-      GpuColumnVector.dataTypesFromAttributes(buildAttrs.asJava),
+      buildAttrs.map(_.dataType).toArray,
       mockStreamIter,
       targetSize,
       buildAttrs,

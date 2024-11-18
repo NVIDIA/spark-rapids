@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.util
+
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
@@ -26,14 +27,13 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer, KudoTable}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import com.nvidia.spark.rapids.GpuMetric.{CONCAT_BUFFER_TIME, CONCAT_HEADER_TIME}
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.metric.SQLMetrics.createNanoTimingMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -42,11 +42,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Coalesces serialized tables on the host up to the target batch size before transferring
  * the coalesced result to the GPU. This reduces the overhead of copying data to the GPU
  * and also helps avoid holding onto the GPU semaphore while shuffle I/O is being performed.
+ *
  * @note This should ALWAYS appear in the plan after a GPU shuffle when RAPIDS shuffle is
  *       not being used.
  */
 case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
-    extends ShimUnaryExecNode with GpuExec {
+  extends ShimUnaryExecNode with GpuExec {
 
   import GpuMetric._
 
@@ -89,6 +90,10 @@ object CoalesceReadOption {
   def apply(conf: SQLConf): CoalesceReadOption = {
     CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf))
   }
+
+  def apply(conf: RapidsConf): CoalesceReadOption = {
+    CoalesceReadOption(conf.shuffleKudoSerializerEnabled)
+  }
 }
 
 object GpuShuffleCoalesceUtils {
@@ -99,11 +104,11 @@ object GpuShuffleCoalesceUtils {
    * The input iterator is expected to contain only serialized host batches just
    * returned from the Shuffle deserializer. Otherwise, it will blow up.
    *
-   * @param iter the input iterator containing only serialized host batches
-   * @param targetSize the target batch size for coalescing
-   * @param dataTypes the schema of the input batches
-   * @param readOption the coalesce read option
-   * @param metricsMap metrics map
+   * @param iter               the input iterator containing only serialized host batches
+   * @param targetSize         the target batch size for coalescing
+   * @param dataTypes          the schema of the input batches
+   * @param readOption         the coalesce read option
+   * @param metricsMap         metrics map
    * @param prefetchFirstBatch whether prefetching the first bundle of serialized
    *                           batches with the total size up to the "targetSize". The
    *                           prefetched batches will be cached on host until the "next()"
@@ -164,7 +169,9 @@ sealed trait CoalescedHostResult extends AutoCloseable {
  */
 sealed trait SerializedTableOperator[T <: AutoCloseable] {
   def getDataLen(table: T): Long
+
   def getNumRows(table: T): Int
+
   def concatOnHost(tables: Array[T]): CoalescedHostResult
 }
 
@@ -181,6 +188,7 @@ class JCudfCoalescedHostResult(hostConcatResult: HostConcatResult) extends Coale
 
 class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] {
   override def getDataLen(table: SerializedTableColumn): Long = table.header.getDataLen
+
   override def getNumRows(table: SerializedTableColumn): Int = table.header.getNumRows
 
   override def concatOnHost(tables: Array[SerializedTableColumn]): CoalescedHostResult = {
@@ -197,31 +205,32 @@ class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] 
   }
 }
 
-case class KudoHostMergeResultWrapper(inner: Either[KudoHostMergeResult, Int],
+case class KudoHostMergeResultWrapper(inner: KudoHostMergeResult,
     dataSize: Long) extends CoalescedHostResult {
 
   /** Convert itself to a GPU batch */
   override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
-    inner match {
-      case Left(result) =>
-        RmmRapidsRetryIterator.withRetryNoSplit {
-          closeOnExcept(result.toTable) { cudfTable =>
-            GpuColumnVector.from(cudfTable, dataTypes)
-          }
-        }
-      case Right(count) =>
-        // Row count only table
-        new ColumnarBatch(Array.empty, count)
+    RmmRapidsRetryIterator.withRetryNoSplit {
+      closeOnExcept(inner.toTable) { cudfTable =>
+        GpuColumnVector.from(cudfTable, dataTypes)
+      }
     }
   }
 
   /** Get the data size */
   override def getDataSize: Long = dataSize
 
-  override def close(): Unit = inner match {
-    case Left(result) => result.close()
-    case _ =>
+  override def close(): Unit = inner.close()
+}
+
+case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
+  override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
+    new ColumnarBatch(Array.empty, rowCount)
   }
+
+  override def getDataSize: Long = 0
+
+  override def close(): Unit = {}
 }
 
 class KudoTableOperator(
@@ -231,10 +240,12 @@ class KudoTableOperator(
 ) extends
   SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
+
   override def getDataLen(column: KudoSerializedTableColumn): Long = column
     .kudoTable
     .getHeader
     .getTotalDataLen
+
   override def getNumRows(column: KudoSerializedTableColumn): Int = column
     .kudoTable
     .getHeader
@@ -245,7 +256,7 @@ class KudoTableOperator(
     val numCols = columns.head.kudoTable.getHeader.getNumColumns
     if (numCols == 0) {
       val totalRowsNum = columns.map(getNumRows).sum
-      KudoHostMergeResultWrapper(Right(totalRowsNum), 0)
+      RowCountOnlyMergeResult(totalRowsNum)
     } else {
       val kudoTables = new util.ArrayList[KudoTable](columns.length)
       columns.foreach { column =>
@@ -256,7 +267,7 @@ class KudoTableOperator(
       kudoMergeHeaderTime += result.getRight.getCalcHeaderTime
       kudoMergeBufferTime += result.getRight.getMergeIntoHostBufferTime
 
-      KudoHostMergeResultWrapper(Left(result.getLeft), hostMergeResult.getDataLength)
+      KudoHostMergeResultWrapper(result.getLeft, result.getLeft.getDataLength)
     }
   }
 }
@@ -267,7 +278,7 @@ class KudoTableOperator(
  * to the target batch size and then concatenated on the host before handing
  * them to the caller on `.next()`
  */
-abstract class HostCoalesceIteratorBase[T <: AutoCloseable: ClassTag](
+abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     metricsMap: Map[String, GpuMetric])

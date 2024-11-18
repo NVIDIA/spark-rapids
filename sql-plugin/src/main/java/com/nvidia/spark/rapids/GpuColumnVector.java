@@ -517,14 +517,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new StructType(fields);
   }
 
-  public static DataType[] dataTypesFromAttributes(List<Attribute> schema) {
-    DataType[] types = new DataType[schema.size()];
-    for (int i = 0; i < schema.size(); i++) {
-      types[i] = schema.get(i).dataType();
-    }
-    return types;
-  }
-
   /**
    * Convert a Spark schema into a cudf schema
    * @param input the Spark schema to convert
@@ -537,8 +529,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Converts a list of spark data types to a cudf schema.
-   *
+   * Converts a list of Spark data types to a cudf schema.
    * <br/>
    *
    * This method correctly handles nested types, but will generate random field names.
