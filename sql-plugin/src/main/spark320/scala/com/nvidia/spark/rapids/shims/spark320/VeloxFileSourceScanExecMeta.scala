@@ -25,7 +25,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-import org.apache.spark.rapids.velox.VeloxFileSourceScanExec
+import org.apache.spark.rapids.hybrid.HybridFileSourceScanExec
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, DynamicPruningExpression}
 import org.apache.spark.sql.execution._
@@ -119,7 +119,7 @@ class VeloxFileSourceScanExecMeta(plan: FileSourceScanExec,
       wrapped.relation.fileFormat,
       options)(sparkSession)
 
-    VeloxFileSourceScanExec(
+    HybridFileSourceScanExec(
       newRelation,
       wrapped.output,
       wrapped.requiredSchema,
