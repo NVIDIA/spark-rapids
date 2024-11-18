@@ -144,6 +144,7 @@ object ProfilerOnExecutor extends Logging {
                   case Some(_) => {
                     activeStages.remove(stageId)
                   }
+                  case None =>
                 }
               }
             }
