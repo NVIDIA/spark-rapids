@@ -435,13 +435,14 @@ case class GpuMultiContains(left: Expression, targets: Seq[UTF8String], output: 
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val targetsBytes = targets.map(t => t.getBytes).toArray
-    withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
+    val boolCvs = withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
       withResource(left.columnarEval(batch)) { lhs =>
-        withResource(lhs.getBase.stringContains(targetsCv)) { boolCvs =>
-          val retView = ColumnView.makeStructView(batch.numRows(), boolCvs: _*)
-          GpuColumnVector.from(retView.copyToColumnVector(), dataType)
-        }
+        lhs.getBase.stringContains(targetsCv)
       }
+    }
+    withResource(boolCvs) { _ =>
+      val retView = ColumnView.makeStructView(batch.numRows(), boolCvs: _*)
+      GpuColumnVector.from(retView.copyToColumnVector(), dataType)
     }
   }
 

@@ -380,7 +380,7 @@ def test_case_when_all_then_values_are_scalars_with_nulls():
         sql_without_else,
         conf = {'spark.rapids.sql.case_when.fuse': 'true'})
 
-@pytest.mark.parametrize('combine_string_contains_enabled', ['true', 'false'])
+@pytest.mark.parametrize('combine_string_contains_enabled', [True, False])
 def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
     data_gen = [("c1", string_gen)]
     sql =  """
