@@ -383,16 +383,12 @@ class KudoHostShuffleCoalesceIterator(
     dataTypes: Array[DataType])
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize, metricsMap) {
   override protected def tableOperator = {
-    if (dataTypes.nonEmpty) {
-      val schema = GpuColumnVector.from(dataTypes)
-      new KudoTableOperator(Some(new KudoSerializer(schema)),
-        metricsMap(CONCAT_HEADER_TIME),
-        metricsMap(CONCAT_BUFFER_TIME))
+    val kudoSer = if (dataTypes.nonEmpty) {
+      Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
     } else {
-      new KudoTableOperator(None,
-        metricsMap(CONCAT_HEADER_TIME),
-        metricsMap(CONCAT_BUFFER_TIME))
+      None
     }
+    new KudoTableOperator(kudoSer, metricsMap(CONCAT_HEADER_TIME), metricsMap(CONCAT_BUFFER_TIME))
   }
 }
 
