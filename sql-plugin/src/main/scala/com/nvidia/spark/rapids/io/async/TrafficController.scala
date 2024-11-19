@@ -124,14 +124,14 @@ object TrafficController {
    * This is called once per executor.
    */
   def initialize(conf: RapidsConf): Unit = synchronized {
-    if (instance == null) {
+    if (conf.isAsyncOutputWriteEnabled && instance == null) {
       instance = new TrafficController(
         new HostMemoryThrottle(conf.asyncWriteMaxInFlightHostMemoryBytes))
     }
   }
 
-  def getInstance: TrafficController = synchronized {
-    instance
+  def getInstance: Option[TrafficController] = synchronized {
+    Option(instance)
   }
 
   def shutdown(): Unit = synchronized {

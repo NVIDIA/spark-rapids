@@ -73,14 +73,13 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
     includeRetry: Boolean,
-    enableAsyncWrite: Boolean = false,
     holdGpuBetweenBatches: Boolean = false) extends HostBufferConsumer with Logging {
 
   protected val tableWriter: TableWriter
 
   protected val conf: Configuration = context.getConfiguration
 
-  private val trafficController: TrafficController = TrafficController.getInstance
+  private val trafficController: Option[TrafficController] = TrafficController.getInstance
 
   private def openOutputStream(): OutputStream = {
     val hadoopPath = new Path(path)
@@ -91,12 +90,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   // This is implemented as a method to make it easier to subclass
   // ColumnarOutputWriter in the tests, and override this behavior.
   protected def getOutputStream: OutputStream = {
-    if (enableAsyncWrite) {
+    trafficController.map(controller => {
       logDebug("Async output write enabled")
-      new AsyncOutputStream(() => openOutputStream(), trafficController)
-    } else {
-      openOutputStream()
-    }
+      new AsyncOutputStream(() => openOutputStream(), controller)
+    }).getOrElse(openOutputStream())
   }
 
   protected val outputStream: OutputStream = getOutputStream

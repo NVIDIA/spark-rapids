@@ -42,17 +42,22 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
     ),
     trafficController)
 
+  // Open the underlying stream asynchronously as soon as the AsyncOutputStream is constructed,
+  // so that the open can be done in parallel with other operations. This could help with
+  // performance if the open is slow.
   private val openFuture = executor.submit(openFn, 0)
   // Let's give it enough time to open the stream. Something bad should have happened if it
   // takes more than 5 minutes to open a stream.
   private val openTimeoutMin = 5
 
-  private def delegate: OutputStream = {
+  private lazy val delegate: OutputStream = {
     openFuture.get(openTimeoutMin, TimeUnit.MINUTES)
   }
 
   class Metrics {
     var numBytesScheduled: Long = 0
+    // This is thread-safe as it is updated by the background thread and can be read by
+    // any threads.
     val numBytesWritten: AtomicLong = new AtomicLong(0)
   }
 
@@ -62,6 +67,8 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
    * The last error that occurred in the background thread, or None if no error occurred.
    * Once it is set, all subsequent writes that are already scheduled will fail and no new
    * writes will be accepted.
+   *
+   * This is thread-safe as it is set by the background thread and can be read by any threads.
    */
   val lastError: AtomicReference[Option[Throwable]] =
     new AtomicReference[Option[Throwable]](None)

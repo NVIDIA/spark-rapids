@@ -2422,7 +2422,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         "exceeds this value.")
       .internal()
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(2 * 1024 * 1024 * 1024)
+      .createWithDefault(2L * 1024 * 1024 * 1024)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
