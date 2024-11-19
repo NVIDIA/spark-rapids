@@ -131,7 +131,7 @@ object ProfilerOnExecutor extends Logging {
         } else {
           // Limited tasks per stage
           val currentCount = synchronized(stageTaskCount.getOrElseUpdate(stageId, 0))
-          if (currentCount< stageTaskLimit) {
+          if (currentCount < stageTaskLimit) {
             enable()
             startPollingDriver()
 
