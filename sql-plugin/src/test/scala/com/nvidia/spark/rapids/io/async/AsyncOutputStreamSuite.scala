@@ -81,21 +81,28 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
     }
   }
 
-  def assertThrowsWithMsg[T, E <: Throwable](fn: Callable[T], clue: String,
+  def assertThrowsWithMsg[T](fn: Callable[T], clue: String,
       expectedMsgPrefix: String): Unit = {
     withClue(clue) {
       try {
         fn.call()
       } catch {
         case t: Throwable =>
-          if (t.getClass.isAssignableFrom(classOf[IOException])) {
-            val msg = t.getMessage
-            if (!msg.contains(expectedMsgPrefix)) {
-              fail(s"Unexpected exception message: $msg")
-            }
-          } else {
-            fail(s"Unexpected exception: $t")
-          }
+          assertIOExceptionMsg(t, expectedMsgPrefix)
+      }
+    }
+  }
+
+  def assertIOExceptionMsg(t: Throwable, expectedMsgPrefix: String): Unit = {
+    if (t.getClass.isAssignableFrom(classOf[IOException])) {
+      if (!t.getMessage.contains(expectedMsgPrefix)) {
+        fail(s"Unexpected exception message: ${t.getMessage}")
+      }
+    } else {
+      if (t.getCause != null) {
+        assertIOExceptionMsg(t.getCause, expectedMsgPrefix)
+      } else {
+        fail(s"Unexpected exception: $t")
       }
     }
   }
