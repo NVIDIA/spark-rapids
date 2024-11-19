@@ -210,7 +210,7 @@ case class KudoHostMergeResultWrapper(inner: KudoHostMergeResult) extends Coales
   /** Convert itself to a GPU batch */
   override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
     RmmRapidsRetryIterator.withRetryNoSplit {
-      closeOnExcept(inner.toTable) { cudfTable =>
+      withResource(inner.toTable) { cudfTable =>
         GpuColumnVector.from(cudfTable, dataTypes)
       }
     }
