@@ -268,7 +268,7 @@ object ProfilerOnExecutor extends Logging {
   private def updateActiveFromDriver(): Unit = {
     writer.foreach { w =>
       val (jobs, stages) = synchronized {
-        (activeJobs.toArray, activeStages.toArray)
+        (activeJobs.toArray, (activeStages ++ stageTaskCount.keys).toArray)
       }
       val (completedJobs, completedStages, allDone) =
         w.pluginCtx.ask(ProfileJobStageQueryMsg(jobs, stages))
@@ -277,14 +277,10 @@ object ProfilerOnExecutor extends Logging {
         completedJobs.foreach(activeJobs.remove)
         completedStages.foreach(activeStages.remove)
         completedStages.foreach(stageTaskCount.remove)
-        lazy val allActiveTaskLimitStagesDone = activeStages.size > 0 && 
-            activeStages.forall(!stageTaskCount.contains(_))
-        if (activeJobs.isEmpty) {
-          if (activeStages.isEmpty) {
-            disable()
+        if (activeJobs.isEmpty && activeStages.isEmpty) {
+          disable()
+          if (stageTaskCount.isEmpty) {
             stopPollingDriver()
-          } else if (allActiveTaskLimitStagesDone) {
-            disable()
           }
         }
       }
