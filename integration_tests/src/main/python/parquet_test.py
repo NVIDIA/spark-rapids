@@ -1512,7 +1512,7 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
 
     # Create target schema for reading
     read_schema = StructType([
-        StructField("a", DecimalType(to_decimal_gen.precision, to_decimal_gen.scale))
+        StructField("a", to_decimal_gen.data_type)
     ])
 
     # Determine if we expect an error based on precision and scale changes
@@ -1524,6 +1524,10 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
 
     spark_conf = {}
     if is_before_spark_400():
+        # In Spark versions earlier than 4.0, the vectorized Parquet reader throws an exception
+        # if the read scale differs from the write scale. We disable the vectorized reader,
+        # forcing Spark to use the non-vectorized path for CPU case. This configuration
+        # is ignored by the plugin.
         spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
 
     if expect_error:
