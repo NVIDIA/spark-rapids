@@ -145,9 +145,6 @@ class GpuTaskMetrics extends Serializable {
 
   def decHostBytesAllocated(bytes: Long): Unit = {
     hostBytesAllocated -= bytes
-    // For some reason it's possible for the task to start out by releasing resources,
-    // possibly from a previous task, in such case we probably should just ignore it.
-    hostBytesAllocated = hostBytesAllocated.max(0)
   }
 
 

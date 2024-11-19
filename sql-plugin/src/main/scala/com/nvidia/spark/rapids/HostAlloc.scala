@@ -54,16 +54,13 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
   }
 
-  private def reportHostAllocMetrics(metrics: GpuTaskMetrics): String = {
-    try {
-      val taskId = TaskContext.get().taskAttemptId()
+  private def getHostAllocMetricsLogStr(metrics: GpuTaskMetrics): String = {
+    Option(TaskContext.get()).map({ context =>
+      val taskId = context.taskAttemptId()
       val totalSize = metrics.getHostBytesAllocated
       val maxSize = metrics.getMaxHostBytesAllocated
       s"total size for task $taskId is $totalSize, max size is $maxSize"
-    } catch {
-      case _: NullPointerException =>
-        "allocated memory outside of a task context"
-    }
+    }).getOrElse("allocated memory outside of a task context")
   }
 
   private def releasePinned(ptr: Long, amount: Long): Unit = {
@@ -72,7 +69,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
     val metrics = GpuTaskMetrics.get
     metrics.decHostBytesAllocated(amount)
-    logDebug(reportHostAllocMetrics(metrics))
+    logDebug(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -82,7 +79,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
     val metrics = GpuTaskMetrics.get
     metrics.decHostBytesAllocated(amount)
-    logDebug(reportHostAllocMetrics(metrics))
+    logDebug(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -206,11 +203,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       allocAttemptFinishedWithoutException = true
     } finally {
       if (ret.isDefined) {
-        // Alternatively we could do the host watermark tracking in the JNI code to make
-        // it consistent with how we handle device memory tracking
         val metrics = GpuTaskMetrics.get
         metrics.incHostBytesAllocated(amount)
-        logDebug(reportHostAllocMetrics(metrics))
+        logDebug(getHostAllocMetricsLogStr(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
       } else {
         // shouldRetry should indicate if spill did anything for us and we should try again.
