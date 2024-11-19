@@ -34,8 +34,19 @@ import org.apache.spark.serializer.{DeserializationStream, SerializationStream, 
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * Iterator that reads serialized tables from a stream.
+ */
+trait BaseSerializedTableIterator extends Iterator[(Int, ColumnarBatch)] {
+  /**
+   * Attempt to read the next batch size from the stream.
+   * @return the length of the data to read, or None if the stream is closed or ended
+   */
+  def peekNextBatchSize(): Option[Long]
+}
+
 class SerializedBatchIterator(dIn: DataInputStream)
-  extends Iterator[(Int, ColumnarBatch)] {
+  extends BaseSerializedTableIterator {
   private[this] var nextHeader: Option[SerializedTableHeader] = None
   private[this] var toBeReturned: Option[ColumnarBatch] = None
   private[this] var streamClosed: Boolean = false
@@ -49,7 +60,7 @@ class SerializedBatchIterator(dIn: DataInputStream)
     }
   }
 
-  def tryReadNextHeader(): Option[Long] = {
+  override def peekNextBatchSize(): Option[Long] = {
     if (streamClosed) {
       None
     } else {
@@ -69,7 +80,7 @@ class SerializedBatchIterator(dIn: DataInputStream)
     }
   }
 
-  def tryReadNext(): Option[ColumnarBatch] = {
+  private def tryReadNext(): Option[ColumnarBatch] = {
     if (nextHeader.isEmpty) {
       None
     } else {
@@ -91,13 +102,13 @@ class SerializedBatchIterator(dIn: DataInputStream)
   }
 
   override def hasNext: Boolean = {
-    tryReadNextHeader()
+    peekNextBatchSize()
     nextHeader.isDefined
   }
 
   override def next(): (Int, ColumnarBatch) = {
     if (toBeReturned.isEmpty) {
-      tryReadNextHeader()
+      peekNextBatchSize()
       toBeReturned = tryReadNext()
       if (nextHeader.isEmpty || toBeReturned.isEmpty) {
         throw new NoSuchElementException("Walked off of the end...")
@@ -483,50 +494,60 @@ object KudoSerializedTableColumn {
 }
 
 class KudoSerializedBatchIterator(dIn: DataInputStream)
-  extends Iterator[(Int, ColumnarBatch)] {
-  private[this] var nextBatch: Option[ColumnarBatch] = None
+  extends BaseSerializedTableIterator {
+  private[this] var nextTable: Option[KudoTable] = None
   private[this] var streamClosed: Boolean = false
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
-      nextBatch.foreach(_.close())
-      nextBatch = None
+      nextTable.foreach(_.close())
+      nextTable = None
       dIn.close()
     }
   }
 
-  def tryReadNext() = {
+  private def tryReadNext(): Unit = {
     if (!streamClosed) {
       withResource(new NvtxRange("Read Kudo Table", NvtxColor.YELLOW)) { _ =>
         val kudoTable = KudoTable.from(dIn)
         if (kudoTable.isPresent) {
-          nextBatch = Some(KudoSerializedTableColumn.from(kudoTable.get()))
+          nextTable = Some(kudoTable.get())
         } else {
           dIn.close()
           streamClosed = true
-          nextBatch = None
+          nextTable = None
         }
       }
     }
   }
 
   override def hasNext: Boolean = {
-    nextBatch match {
+    nextTable match {
       case Some(_) => true
       case None =>
         tryReadNext()
-        nextBatch.isDefined
+        nextTable.isDefined
     }
   }
 
   override def next(): (Int, ColumnarBatch) = {
     if (hasNext) {
-      val ret = nextBatch.get
-      nextBatch = None
+      val ret = KudoSerializedTableColumn.from(nextTable.get)
+      nextTable = None
       (0, ret)
     } else {
       throw new NoSuchElementException("Walked off of the end...")
     }
+  }
+
+  /**
+   * Attempt to read the next header from the stream.
+   *
+   * @return the length of the data to read, or None if the stream is closed or ended
+   */
+  override def peekNextBatchSize(): Option[Long] = {
+    tryReadNext()
+    nextTable.flatMap(t => Option(t.getBuffer)).map(_.getLength)
   }
 }

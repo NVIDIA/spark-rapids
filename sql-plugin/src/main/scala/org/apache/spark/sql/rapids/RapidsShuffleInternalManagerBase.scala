@@ -764,14 +764,14 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
     case class BlockState(
         blockId: BlockId,
-        batchIter: SerializedBatchIterator,
+        batchIter: BaseSerializedTableIterator,
         origStream: AutoCloseable)
       extends Iterator[(Any, Any)] with AutoCloseable {
 
       private var nextBatchSize = {
         var success = false
         try {
-          val res = batchIter.tryReadNextHeader().getOrElse(0L)
+          val res = batchIter.peekNextBatchSize().getOrElse(0L)
           success = true
           res
         } finally {
@@ -791,7 +791,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         val nextBatch = batchIter.next()
         var success = false
         try {
-          nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
+          nextBatchSize = batchIter.peekNextBatchSize().getOrElse(0L)
           success = true
           nextBatch
         } finally {
@@ -942,7 +942,8 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               readBlockedTime += System.nanoTime() - readBlockedStart
 
               val deserStream = serializerInstance.deserializeStream(inputStream)
-              val batchIter = deserStream.asKeyValueIterator.asInstanceOf[SerializedBatchIterator]
+              val batchIter = deserStream.asKeyValueIterator
+                .asInstanceOf[BaseSerializedTableIterator]
               val blockState = BlockState(blockId, batchIter, inputStream)
               // get the next known batch size (there could be multiple batches)
               if (limiter.acquire(blockState.getNextBatchSize)) {
