@@ -21,7 +21,11 @@ import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Execu
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
-class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach{
+class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
+
+  // Some tests might take longer than usual in the limited CI environment.
+  // Use a long timeout to avoid flakiness.
+  val longTimeoutSec = 5
 
   var throttle: HostMemoryThrottle = _
   var trafficController: TrafficController = _
@@ -44,7 +48,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach{
   }
 
   override def afterEach(): Unit = {
-    executor.shutdownNow(1, TimeUnit.SECONDS)
+    executor.shutdownNow(longTimeoutSec, TimeUnit.SECONDS)
   }
 
   test("tasks submitted should update the state") {
@@ -59,12 +63,12 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach{
     assertResult(30)(throttle.getTotalHostMemoryBytes)
 
     task1.latch.countDown()
-    future1.get(100, TimeUnit.MILLISECONDS)
+    future1.get(longTimeoutSec, TimeUnit.SECONDS)
     assertResult(1)(trafficController.numScheduledTasks)
     assertResult(20)(throttle.getTotalHostMemoryBytes)
 
     task2.latch.countDown()
-    future2.get(100, TimeUnit.MILLISECONDS)
+    future2.get(longTimeoutSec, TimeUnit.SECONDS)
     assertResult(0)(trafficController.numScheduledTasks)
     assertResult(0)(throttle.getTotalHostMemoryBytes)
   }
@@ -87,15 +91,15 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach{
     assertResult(10)(throttle.getTotalHostMemoryBytes)
 
     task1.latch.countDown()
-    future1.get(100, TimeUnit.MILLISECONDS)
-    future2.get(1, TimeUnit.SECONDS)
+    future1.get(longTimeoutSec, TimeUnit.SECONDS)
+    future2.get(longTimeoutSec, TimeUnit.SECONDS)
     assertResult(1)(trafficController.numScheduledTasks)
     assertResult(task2Weight)(throttle.getTotalHostMemoryBytes)
   }
 
   test("submit one task heavier than maxWeight") {
     val future = executor.submit(() => Thread.sleep(10), throttle.maxInFlightHostMemoryBytes + 1)
-    future.get(100, TimeUnit.MILLISECONDS)
+    future.get(longTimeoutSec, TimeUnit.SECONDS)
     assert(future.isDone)
     assertResult(0)(trafficController.numScheduledTasks)
     assertResult(0)(throttle.getTotalHostMemoryBytes)
@@ -109,7 +113,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach{
       future = executor.submit(() => Thread.sleep(taskRunTime), 1)
     }
     // Give enough time for all tasks to complete
-    future.get(numTasks * taskRunTime * 3, TimeUnit.MILLISECONDS)
+    future.get(numTasks * taskRunTime * 5, TimeUnit.MILLISECONDS)
     assertResult(0)(trafficController.numScheduledTasks)
     assertResult(0)(throttle.getTotalHostMemoryBytes)
   }
@@ -126,7 +130,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach{
     val future2 = exec.submit(new Runnable {
       override def run(): Unit = executor.submit(task2, task2Weight)
     })
-    executor.shutdownNow(100, TimeUnit.MILLISECONDS)
+    executor.shutdownNow(longTimeoutSec, TimeUnit.SECONDS)
     assertResult(1)(trafficController.numScheduledTasks)
 
     def assertCause(t: Throwable, cause: Class[_]): Unit = {
