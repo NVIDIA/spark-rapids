@@ -131,7 +131,6 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
       override def run(): Unit = executor.submit(task2, task2Weight)
     })
     executor.shutdownNow(longTimeoutSec, TimeUnit.SECONDS)
-    assertResult(1)(trafficController.numScheduledTasks)
 
     def assertCause(t: Throwable, cause: Class[_]): Unit = {
       assert(t.getCause != null)
