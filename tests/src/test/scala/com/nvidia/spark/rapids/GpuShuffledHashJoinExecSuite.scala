@@ -58,7 +58,6 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
     when(mockStreamIter.hasNext).thenReturn(true)
     val (builtData, _) = GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(
       buildIter,
-      buildAttrs.map(_.dataType).toArray,
       mockStreamIter,
       targetSize,
       buildAttrs,

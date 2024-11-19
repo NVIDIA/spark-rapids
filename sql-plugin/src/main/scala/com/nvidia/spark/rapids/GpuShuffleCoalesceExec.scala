@@ -205,8 +205,7 @@ class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] 
   }
 }
 
-case class KudoHostMergeResultWrapper(inner: KudoHostMergeResult,
-    dataSize: Long) extends CoalescedHostResult {
+case class KudoHostMergeResultWrapper(inner: KudoHostMergeResult) extends CoalescedHostResult {
 
   /** Convert itself to a GPU batch */
   override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
@@ -218,7 +217,7 @@ case class KudoHostMergeResultWrapper(inner: KudoHostMergeResult,
   }
 
   /** Get the data size */
-  override def getDataSize: Long = dataSize
+  override def getDataSize: Long = inner.getDataLength
 
   override def close(): Unit = inner.close()
 }
@@ -237,8 +236,7 @@ class KudoTableOperator(
     kudo: Option[KudoSerializer] ,
     kudoMergeHeaderTime: GpuMetric,
     kudoMergeBufferTime: GpuMetric,
-) extends
-  SerializedTableOperator[KudoSerializedTableColumn] {
+) extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
 
   override def getDataLen(column: KudoSerializedTableColumn): Long = column
@@ -267,7 +265,7 @@ class KudoTableOperator(
       kudoMergeHeaderTime += result.getRight.getCalcHeaderTime
       kudoMergeBufferTime += result.getRight.getMergeIntoHostBufferTime
 
-      KudoHostMergeResultWrapper(result.getLeft, result.getLeft.getDataLength)
+      KudoHostMergeResultWrapper(result.getLeft)
     }
   }
 }
@@ -380,9 +378,7 @@ class HostShuffleCoalesceIterator(
     targetBatchSize: Long,
     metricsMap: Map[String, GpuMetric])
   extends HostCoalesceIteratorBase[SerializedTableColumn](iter, targetBatchSize, metricsMap) {
-  override protected def tableOperator = {
-    new JCudfTableOperator
-  }
+  override protected def tableOperator = new JCudfTableOperator
 }
 
 class KudoHostShuffleCoalesceIterator(
