@@ -235,18 +235,13 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
 class KudoTableOperator(
     kudo: Option[KudoSerializer] ,
     kudoMergeHeaderTime: GpuMetric,
-    kudoMergeBufferTime: GpuMetric,
-) extends SerializedTableOperator[KudoSerializedTableColumn] {
+    kudoMergeBufferTime: GpuMetric) extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
 
-  override def getDataLen(column: KudoSerializedTableColumn): Long = column
-    .kudoTable
-    .getHeader
+  override def getDataLen(column: KudoSerializedTableColumn): Long = column.kudoTable.getHeader
     .getTotalDataLen
 
-  override def getNumRows(column: KudoSerializedTableColumn): Int = column
-    .kudoTable
-    .getHeader
+  override def getNumRows(column: KudoSerializedTableColumn): Int = column.kudoTable.getHeader
     .getNumRows
 
   override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
