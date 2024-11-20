@@ -362,7 +362,7 @@ object SpillableHostColumnarBatch {
  * Just like a SpillableColumnarBatch but for buffers.
  */
 class SpillableBuffer(
-    handle: RapidsBufferHandle) extends AutoCloseable {
+    handle: RapidsBufferHandle) extends AutoCloseable with RetrySizeAwareable {
 
   /**
    * Set a new spill priority.
@@ -386,6 +386,12 @@ class SpillableBuffer(
   override def close(): Unit = {
     handle.close()
   }
+
+  override def sizeInBytes: Long = {
+    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
+      rapidsBuffer.memoryUsedBytes
+    }
+  }
 }
 
 /**
@@ -398,9 +404,10 @@ class SpillableBuffer(
  * @param catalog this was added for tests, it defaults to
  *                `RapidsBufferCatalog.singleton` in the companion object.
  */
-class SpillableHostBuffer(handle: RapidsBufferHandle,
-                          val length: Long,
-                          catalog: RapidsBufferCatalog) extends AutoCloseable {
+class SpillableHostBuffer(
+    handle: RapidsBufferHandle,
+    val length: Long,
+    catalog: RapidsBufferCatalog) extends AutoCloseable with RetrySizeAwareable {
   /**
    * Set a new spill priority.
    */
@@ -418,6 +425,12 @@ class SpillableHostBuffer(handle: RapidsBufferHandle,
   def getHostBuffer(): HostMemoryBuffer = {
     withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
       rapidsBuffer.getHostMemoryBuffer
+    }
+  }
+
+  override def sizeInBytes: Long = {
+    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+      rapidsBuffer.memoryUsedBytes
     }
   }
 }

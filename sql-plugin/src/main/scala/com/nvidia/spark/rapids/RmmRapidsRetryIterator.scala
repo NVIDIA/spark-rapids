@@ -301,7 +301,7 @@ object RmmRapidsRetryIterator extends Logging {
    * @tparam T the type of the items in `ts`
    */
   private case class AutoCloseableSeqInternal[T <: AutoCloseable](ts: Seq[T])
-      extends Seq[T] with AutoCloseable {
+      extends Seq[T] with AutoCloseable with RetrySizeAwareable {
     override def close(): Unit = {
       ts.foreach(_.safeClose())
     }
@@ -311,6 +311,11 @@ object RmmRapidsRetryIterator extends Logging {
     override def iterator: Iterator[T] = ts.iterator
 
     override def apply(idx: Int): T = ts.apply(idx)
+
+    override def sizeInBytes: Long = ts.map {
+      case sizeAware: RetrySizeAwareable => sizeAware.sizeInBytes
+      case _ => 0L
+    }.sum
   }
 
   /**
