@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
+import org.apache.spark.rapids.hybrid.HybridBackend
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
@@ -1688,21 +1689,18 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val PARQUET_VELOX_READER = conf("spark.rapids.sql.parquet.useVelox")
-    .doc("Use velox to do ParquetScan (on CPUs)")
+  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
+    .doc("Use HybridScan to read Parquet data via CPUs")
     .internal()
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
-  object VeloxFilterPushdownType extends Enumeration {
-    val ALL_SUPPORTED, NONE, UNCHANGED = Value
-  }  
-
-  val LOAD_VELOX = conf("spark.rapids.sql.loadVelox")
-    .doc("Load Velox (through Gluten) as a spark driver plugin")
+  // spark.rapids.sql.hybrid.loadBackend defined at HybridPluginWrapper of spark-rapids-private
+  val LOAD_HYBRID_BACKEND = conf(HybridBackend.LOAD_BACKEND_KEY)
+    .doc("Load hybrid backend as an extra plugin of spark-rapids during launch time")
     .startupOnly()
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
@@ -2845,9 +2843,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
 
-  lazy val parquetVeloxReader: Boolean = get(PARQUET_VELOX_READER)
+  lazy val useHybridParquetReader: Boolean = get(HYBRID_PARQUET_READER)
 
-  lazy val loadVelox: Boolean = get(LOAD_VELOX)
+  lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 

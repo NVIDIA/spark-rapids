@@ -1650,3 +1650,82 @@ def test_parquet_partition_batch_row_count_only_splitting(spark_tmp_path):
     with_cpu_session(lambda spark: setup_table(spark))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path).select("p"),
                                          conf={"spark.rapids.sql.columnSizeBytes": "100"})
+
+"""
+VeloxScan:
+1. DecimalType is NOT fully supported
+2. TimestampType can NOT be the KeyType of MapType
+3. NestedMap is disabled because it may produce incorrect result (usually occurring when table is very small)
+"""
+velox_gens = [
+    [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+     string_gen, boolean_gen, date_gen,
+     TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)),
+     ArrayGen(byte_gen),
+     ArrayGen(long_gen), ArrayGen(string_gen), ArrayGen(date_gen),
+     ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
+     ArrayGen(ArrayGen(byte_gen)),
+     StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen], ['child2', float_gen],
+                ['child3', decimal_gen_64bit]]),
+     ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))
+     ],
+    [MapGen(f(nullable=False), f()) for f in [
+        BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen]
+     ],
+    [simple_string_to_string_map_gen,
+     MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen),
+            max_length=10),
+     MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+     # TODO: It seems that Velox Parquet Scan can NOT handle nested Map correctly
+     # MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)
+     ],
+]
+
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', velox_gens, ids=idfn)
+@pytest.mark.parametrize('gen_rows', [20, 100, 512, 1024, 4096], ids=idfn)
+@hybrid_test
+def test_parquet_read_round_trip_hybrid(spark_tmp_path, parquet_gens, gen_rows):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.parquet.useHybridReader': 'true',
+        })
+
+# Creating scenarios in which CoalesceConverter will coalesce several input batches by adjusting
+# reader_batch_size and coalesced_batch_size, tests if the CoalesceConverter functions correctly
+# when coalescing is needed.
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('reader_batch_size', [512, 1024, 2048], ids=idfn)
+@pytest.mark.parametrize('coalesced_batch_size', [1 << 25, 1 << 27], ids=idfn)
+@pytest.mark.parametrize('gen_rows', [8192, 10000], ids=idfn)
+@hybrid_test
+def test_parquet_read_round_trip_hybrid_multiple_batches(spark_tmp_path,
+                                                         reader_batch_size,
+                                                         coalesced_batch_size,
+                                                         gen_rows):
+    gens = []
+    for g in velox_gens:
+        gens.extend(g)
+
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.gluten.sql.columnar.maxBatchSize': reader_batch_size,
+            'spark.rapids.sql.batchSizeBytes': coalesced_batch_size,
+        })

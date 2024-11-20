@@ -32,18 +32,21 @@ import org.apache.spark.sql.rapids.GpuDataSourceScanExec
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * The SparkPlan for HybridParquetScan which does the same job as GpuFileSourceScanExec but in a
+ * different approach. Therefore, this class is similar to GpuFileSourceScanExec in a lot of way.
+ */
 case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
                                    )(@transient val rapidsConf: RapidsConf)
   extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
-  require(originPlan.relation.fileFormat.isInstanceOf[ParquetFileFormat],
+  require(originPlan.relation.fileFormat.getClass == classOf[ParquetFileFormat],
     "HybridScan only supports ParquetFormat")
 
   override def relation: BaseRelation = originPlan.relation
 
   override def tableIdentifier: Option[TableIdentifier] = originPlan.tableIdentifier
-
 
   // All expressions are on the CPU.
   override def gpuExpressions: Seq[Expression] = Nil

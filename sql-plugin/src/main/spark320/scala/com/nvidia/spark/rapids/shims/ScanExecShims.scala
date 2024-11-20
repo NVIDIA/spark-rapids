@@ -41,7 +41,15 @@ object ScanExecShims {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
           TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(),
         TypeSig.all),
-      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
+      (fsse, conf, p, r) => {
+        // TODO: HybridScan supports DataSourceV2
+        // TODO: HybridScan only supports Spark 32X for now.
+        if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+          new HybridFileSourceScanExecMeta(fsse, conf, p, r)
+        } else {
+          new FileSourceScanExecMeta(fsse, conf, p, r)
+        }
+      }),
     GpuOverrides.exec[BatchScanExec](
       "The backend for most file input",
       ExecChecks(

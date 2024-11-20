@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.{AcquireFailed, GpuColumnVector, GpuMetric, GpuSe
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter}
-import com.nvidia.spark.rapids.hybrid.HybridJniWrapper
 import com.nvidia.spark.rapids.hybrid.RapidsHostColumn
 
 import org.apache.spark.TaskContext
@@ -42,8 +41,6 @@ class CoalesceConvertIterator(veloxIter: Iterator[ColumnarBatch],
 
   private val converterMetrics = Map(
     "C2COutputSize" -> GpuMetric.unwrap(metrics("C2COutputSize")))
-
-  @transient private lazy val runtime: HybridJniWrapper = HybridJniWrapper.getOrCreate()
 
   override def hasNext(): Boolean = {
     // either converter holds data or upstreaming iterator holds data
@@ -101,7 +98,6 @@ class CoalesceConvertIterator(veloxIter: Iterator[ColumnarBatch],
           }
         }
         if (converterImpl.isEmpty) {
-          require(runtime != null, "Please setRuntime before fetching the iterator")
           val converter = NativeConverter(
             veloxIter.next(),
             targetBatchSizeInBytes, schema, converterMetrics
