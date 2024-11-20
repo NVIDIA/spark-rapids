@@ -21,8 +21,9 @@ import ai.rapids.cudf.{ColumnView, Cuda, DataSource, DeviceMemoryBuffer, HostMem
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression, HostAlloc}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.JSONUtils
+import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.json.JSONOptions
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -70,7 +71,7 @@ case class GpuJsonToStructs(
     child: Expression,
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
-        with NullIntolerant {
+        with NullIntolerantShim {
   import GpuJsonReadCommon._
 
   private lazy val parsedOptions = new JSONOptions(
@@ -84,7 +85,8 @@ case class GpuJsonToStructs(
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     withResource(new NvtxRange("GpuJsonToStructs", NvtxColor.YELLOW)) { _ =>
       schema match {
-        case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase)
+        case _: MapType =>
+          JSONUtils.extractRawMapFromJsonString(input.getBase, jsonOptionBuilder.build())
         case struct: StructType =>
           // if we ever need to support duplicate keys we need to keep track of the duplicates
           //  and make the first one null, but I don't think this will ever happen in practice

@@ -90,11 +90,6 @@ object GpuJsonScan {
       meta.willNotWorkOnGpu(s"$op does not support allowUnquotedFieldNames")
     }
 
-    // {'name': 'Reynold Xin'} turning single quotes off is not supported by CUDF
-    if (!options.allowSingleQuotes) {
-      meta.willNotWorkOnGpu(s"$op does not support disabling allowSingleQuotes")
-    }
-
     // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
     if (options.allowBackslashEscapingAnyCharacter) {
       meta.willNotWorkOnGpu(s"$op does not support allowBackslashEscapingAnyCharacter")

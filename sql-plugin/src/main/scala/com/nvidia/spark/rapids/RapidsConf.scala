@@ -757,6 +757,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val PROFILE_TASK_LIMIT_PER_STAGE = conf("spark.rapids.profile.taskLimitPerStage")
+    .doc("Limit the number of tasks to profile per stage. A value <= 0 will profile all tasks.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
   val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
     .doc("Whether the profiler should capture async CUDA allocation and free events")
     .internal()
@@ -2592,6 +2598,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val profileJobs: Option[String] = get(PROFILE_JOBS)
 
   lazy val profileStages: Option[String] = get(PROFILE_STAGES)
+
+  lazy val profileTaskLimitPerStage: Int = get(PROFILE_TASK_LIMIT_PER_STAGE)
 
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
 
