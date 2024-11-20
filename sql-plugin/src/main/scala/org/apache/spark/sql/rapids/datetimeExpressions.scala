@@ -1227,7 +1227,7 @@ class MonthsBetweenExprMeta(expr: MonthsBetween,
 }
 
 object GpuMonthsBetween {
-  val UTC = ZoneId.of("UTC").normalized()
+  val UTC = GpuOverrides.UTC_TIMEZONE_ID
 
   /**
    * Convert the given timestamp in UTC to a specific time zone and close the original input.
