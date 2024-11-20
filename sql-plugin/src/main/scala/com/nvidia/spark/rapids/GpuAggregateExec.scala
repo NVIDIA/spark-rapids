@@ -1048,7 +1048,7 @@ class GpuMergeAggregateIterator(
           spillCbs += tmp
         }
 
-        val concat = GpuAggregateIterator.concatenateBatches(metrics, spillCbs)
+        val concat = GpuAggregateIterator.concatenateBatches(metrics, spillCbs.toSeq)
         withResource(concat) { _ =>
           concat.getColumnarBatch()
         }

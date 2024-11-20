@@ -33,7 +33,7 @@ class AutoClosableArrayBuffer[T <: AutoCloseable] extends AutoCloseable {
 
   def foreach[U](f: T => U): Unit = data.foreach(f)
 
-  def map[U](f: T => U): Seq[U] = data.map(f)
+  def map[U](f: T => U): Seq[U] = data.map(f).toSeq
 
   def toArray[B >: T : ClassTag]: Array[B] = data.toArray
 
