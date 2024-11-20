@@ -55,12 +55,12 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
   }
 
   private def getHostAllocMetricsLogStr(metrics: GpuTaskMetrics): String = {
-    Option(TaskContext.get()).map({ context =>
+    Option(TaskContext.get()).map { context =>
       val taskId = context.taskAttemptId()
       val totalSize = metrics.getHostBytesAllocated
       val maxSize = metrics.getMaxHostBytesAllocated
       s"total size for task $taskId is $totalSize, max size is $maxSize"
-    }).getOrElse("allocated memory outside of a task context")
+    }.getOrElse("allocated memory outside of a task context")
   }
 
   private def releasePinned(ptr: Long, amount: Long): Unit = {
