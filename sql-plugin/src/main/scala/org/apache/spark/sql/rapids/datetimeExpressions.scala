@@ -1211,11 +1211,10 @@ case class GpuToUTCTimestamp(
   }
 }
 
-class MonthsBetweenExprMeta(
-                              expr: MonthsBetween,
-                              override val conf: RapidsConf,
-                              override val parent: Option[RapidsMeta[_, _, _]],
-                              rule: DataFromReplacementRule)
+class MonthsBetweenExprMeta(expr: MonthsBetween,
+                            override val conf: RapidsConf,
+                            override val parent: Option[RapidsMeta[_, _, _]],
+                            rule: DataFromReplacementRule)
   extends ExprMeta[MonthsBetween](expr, conf, parent, rule) {
 
   override def isTimeZoneSupported = true
@@ -1228,14 +1227,22 @@ class MonthsBetweenExprMeta(
 }
 
 object GpuMonthsBetween {
-  val UTC = ZoneId.of("Z")
+  val UTC = ZoneId.of("UTC").normalized()
 
-  private def convertToZoneAndClose(micros: GpuColumnVector, zoneId: ZoneId): ColumnVector = {
+  /**
+   * Convert the given timestamp in UTC to a specific time zone and close the original input.
+   * @param micros the timestamp in micros to convert
+   * @param normalizedZoneId the time zone to convert it to. Note that this should have
+   *                         already been normalized.
+   * @return the converted timestamp.
+   */
+  private def convertToZoneAndClose(micros: GpuColumnVector,
+                                    normalizedZoneId: ZoneId): ColumnVector = {
     withResource(micros) { _ =>
-      if (zoneId.equals(UTC)) {
+      if (normalizedZoneId.equals(UTC)) {
         micros.getBase.incRefCount()
       } else {
-        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, zoneId)
+        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, normalizedZoneId)
       }
     }
   }
@@ -1257,10 +1264,10 @@ object GpuMonthsBetween {
    * When a timestamp is truncated to a month, calculate how many months are different
    * between the two timestamps.
    * @param converted1 the first timestamp (in the desired time zone)
-   * @param converted2 the second timestamp (int the desired time zone)
+   * @param converted2 the second timestamp (in the desired time zone)
    * @return the number of months different as a float64
    */
-  private def clacMonthDiff(converted1: ColumnVector, converted2: ColumnVector): ColumnVector = {
+  private def calcMonthDiff(converted1: ColumnVector, converted2: ColumnVector): ColumnVector = {
     withResource(calcMonths(converted1)) { months1 =>
       withResource(calcMonths(converted2)) { months2 =>
         months1.sub(months2, DType.FLOAT64)
@@ -1306,13 +1313,12 @@ object GpuMonthsBetween {
    * we need to calculate that partial part of the month.
    *
    * @param converted1 the first timestamp (in the desired time zone)
-   * @param converted2 the second timestamp (int the desired time zone)
+   * @param converted2 the second timestamp (in the desired time zone)
    * @return a boolean column where true is return just the whole number months diff
    *         and false is return the diff with days/time taken into account.
    */
   private def calcJustMonth(converted1: ColumnVector,
-                                converted2: ColumnVector): ColumnVector = {
-
+                            converted2: ColumnVector): ColumnVector = {
     withResource(converted1.day()) { dayOfMonth1 =>
       withResource(converted2.day()) { dayOfMonth2 =>
         val bothLastDay = withResource(isLastDayOfTheMonth(converted1, dayOfMonth1)) { isLastDay1 =>
@@ -1335,7 +1341,7 @@ object GpuMonthsBetween {
    * already calculated that part.
    *
    * @param converted1 the first timestamp (in the desired time zone)
-   * @param converted2 the second timestamp (int the desired time zone)
+   * @param converted2 the second timestamp (in the desired time zone)
    * @return an INT64 column containing the diff in seconds.
    */
   private def calcSecondsDiff(converted1: ColumnVector,
@@ -1393,7 +1399,7 @@ case class GpuMonthsBetween(ts1: Expression,
     val zoneId = timeZoneId.map(s => ZoneId.of(s).normalized()).getOrElse(UTC)
     withResource(convertToZoneAndClose(ts1.columnarEval(batch), zoneId)) { converted1 =>
       withResource(convertToZoneAndClose(ts2.columnarEval(batch), zoneId)) { converted2 =>
-        withResource(clacMonthDiff(converted1, converted2)) { monthDiff =>
+        withResource(calcMonthDiff(converted1, converted2)) { monthDiff =>
           withResource(calcJustMonth(converted1, converted2)) { justMonthDiff =>
             withResource(calcSecondsDiff(converted1, converted2)) { secondsDiff =>
               val partialMonth = withResource(Scalar.fromDouble(DAYS.toSeconds(31))) {
