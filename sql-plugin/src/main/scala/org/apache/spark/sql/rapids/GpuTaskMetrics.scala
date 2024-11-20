@@ -155,6 +155,9 @@ class GpuTaskMetrics extends Serializable {
 
   def decDiskBytesAllocated(bytes: Long): Unit = {
     diskBytesAllocated -= bytes
+    // For some reason it's possible for the task to start out by releasing resources,
+    // possibly from a previous task, in such case we probably should just ignore it.
+    diskBytesAllocated = diskBytesAllocated.max(0)
   }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
