@@ -69,7 +69,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
     val metrics = GpuTaskMetrics.get
     metrics.decHostBytesAllocated(amount)
-    logDebug(getHostAllocMetricsLogStr(metrics))
+    logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -79,7 +79,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
     val metrics = GpuTaskMetrics.get
     metrics.decHostBytesAllocated(amount)
-    logDebug(getHostAllocMetricsLogStr(metrics))
+    logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -205,7 +205,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       if (ret.isDefined) {
         val metrics = GpuTaskMetrics.get
         metrics.incHostBytesAllocated(amount)
-        logDebug(getHostAllocMetricsLogStr(metrics))
+        logTrace(getHostAllocMetricsLogStr(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
       } else {
         // shouldRetry should indicate if spill did anything for us and we should try again.
