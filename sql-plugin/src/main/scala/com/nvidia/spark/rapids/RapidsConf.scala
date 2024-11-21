@@ -2405,7 +2405,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .createWithDefault(false)
 
   val ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK =
-    conf("spark.rapids.sql.asyncWrite.queryOutput.holdGpuInTask")
+    conf("spark.rapids.sql.queryOutput.holdGpuInTask")
       .doc("Option to hold GPU semaphore between batch processing during the final output write. " +
         "This option could degrade query performance if it is enabled without the async query " +
         "output write. It is recommended to consider enabling this option only when " +
