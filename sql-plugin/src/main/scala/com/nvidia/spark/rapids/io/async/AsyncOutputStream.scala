@@ -76,7 +76,7 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
   @throws[IOException]
   private def throwIfError(): Unit = {
     lastError.get() match {
-      case Some(t) if t.isInstanceOf[IOException] => throw t
+      case Some(t: IOException) => throw t
       case Some(t) => throw new IOException(t)
       case None =>
     }
