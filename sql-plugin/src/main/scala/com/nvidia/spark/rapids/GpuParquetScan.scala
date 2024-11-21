@@ -1569,7 +1569,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
    * metadata but with the file offsets updated to reflect the new position of the column data
    * as written to the output.
    *
-   * @param in  the input stream for the original Parquet file
+   * @param filePath the path to the Parquet file
    * @param out the output stream to receive the data
    * @param blocks block metadata from the original file that will appear in the computed file
    * @param realStartOffset starting file offset of the first block
@@ -1736,7 +1736,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
    * metadata but with the file offsets updated to reflect the new position of the column data
    * as written to the output.
    *
-   * @param in  the input stream for the original Parquet file
+   * @param filePath the path to the Parquet file
    * @param out the output stream to receive the data
    * @param blocks block metadata from the original file that will appear in the computed file
    * @param realStartOffset starting file offset of the first block

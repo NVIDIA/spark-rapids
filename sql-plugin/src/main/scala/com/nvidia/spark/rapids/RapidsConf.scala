@@ -1124,25 +1124,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val PARQUET_DECOMPRESS_CPU =
     conf("spark.rapids.sql.format.parquet.decompressCpu")
-        .doc("If true then the CPU is eligible to decompress Parquet data rather than the GPU. " +
-            s"See other spark.rapids.sql.format.parquet.decompressCpu.* configuration settings " +
-            "to control this for specific compression codecs.")
-        .booleanConf
-        .createWithDefault(false)
+      .doc("If true then the CPU is eligible to decompress Parquet data rather than the GPU. " +
+          s"See other spark.rapids.sql.format.parquet.decompressCpu.* configuration settings " +
+          "to control this for specific compression codecs.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
 
   val PARQUET_DECOMPRESS_CPU_SNAPPY =
     conf("spark.rapids.sql.format.parquet.decompressCpu.snappy")
       .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
           "Parquet Snappy data rather than the GPU")
+      .internal()
       .booleanConf
       .createWithDefault(true)
 
   val PARQUET_DECOMPRESS_CPU_ZSTD =
     conf("spark.rapids.sql.format.parquet.decompressCpu.zstd")
-        .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
-            "Parquet Zstandard data rather than the GPU")
-        .booleanConf
-        .createWithDefault(true)
+      .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
+          "Parquet Zstandard data rather than the GPU")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val READER_MULTITHREADED_COMBINE_THRESHOLD =
     conf("spark.rapids.sql.reader.multithreaded.combine.sizeBytes")

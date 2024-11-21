@@ -23,14 +23,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import scala.collection.Seq;
+
 import com.nvidia.spark.rapids.CpuCompressionConfig$;
 import com.nvidia.spark.rapids.DateTimeRebaseCorrected$;
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.GpuParquetUtils;
 import com.nvidia.spark.rapids.ParquetPartitionReader;
 import com.nvidia.spark.rapids.PartitionReaderWithBytesRead;
-import scala.collection.Seq;
-
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuIcebergReader;
