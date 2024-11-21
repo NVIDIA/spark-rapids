@@ -774,7 +774,11 @@ object RmmRapidsRetryIterator extends Logging {
  * `CpuSplitAndRetryOOM`, a split policy like `splitTargetSizeInHalfGpu` or
  * `splitTargetSizeInHalfCpu` can be used to retry the block with a smaller target size.
  */
-case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
+case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable
+  with RetrySizeAwareable {
+
+  override def sizeInBytes: Long = targetSize
+
   override def close(): Unit = ()
 }
 
