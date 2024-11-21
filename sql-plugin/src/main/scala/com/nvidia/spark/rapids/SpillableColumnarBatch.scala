@@ -428,11 +428,7 @@ class SpillableHostBuffer(
     }
   }
 
-  override def sizeInBytes: Long = {
-    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.memoryUsedBytes
-    }
-  }
+  override def sizeInBytes: Long = length
 }
 
 object SpillableBuffer {
