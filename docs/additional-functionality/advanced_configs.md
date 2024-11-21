@@ -311,6 +311,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Minute"></a>spark.rapids.sql.expression.Minute|`minute`|Returns the minute component of the string/timestamp|true|None|
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|`monotonically_increasing_id`|Returns monotonically increasing 64-bit integers|true|None|
 <a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|`month`|Returns the month from a date or timestamp|true|None|
+<a name="sql.expression.MonthsBetween"></a>spark.rapids.sql.expression.MonthsBetween|`months_between`|If `timestamp1` is later than `timestamp2`, then the result is positive. If `timestamp1` and `timestamp2` are on the same day of month, or both are the last day of month, time of day will be ignored. Otherwise, the difference is calculated based on 31 days per month, and rounded to 8 digits unless roundOff=false.|true|None|
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|`*`|Multiplication|true|None|
 <a name="sql.expression.Murmur3Hash"></a>spark.rapids.sql.expression.Murmur3Hash|`hash`|Murmur3 hash operator|true|None|
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|

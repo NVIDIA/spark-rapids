@@ -1810,6 +1810,17 @@ object GpuOverrides extends Logging {
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new ToUTCTimestampExprMeta(a, conf, p, r)
     ),
+    expr[MonthsBetween](
+      "If `timestamp1` is later than `timestamp2`, then the result " +
+        "is positive. If `timestamp1` and `timestamp2` are on the same day of month, or both " +
+        "are the last day of month, time of day will be ignored. Otherwise, the difference is " +
+        "calculated based on 31 days per month, and rounded to 8 digits unless roundOff=false.",
+      ExprChecks.projectOnly(TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("timestamp1", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ParamCheck("timestamp2", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ParamCheck("round", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.BOOLEAN))),
+      (a, conf, p, r) => new MonthsBetweenExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553

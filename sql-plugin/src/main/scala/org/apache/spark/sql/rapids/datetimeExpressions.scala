@@ -19,15 +19,18 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
+import scala.concurrent.duration.DAYS
+
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DateTimeRoundingFrequency, DType, RegexProgram, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuCast, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
+import com.nvidia.spark.rapids.ExprMeta
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
-import com.nvidia.spark.rapids.shims.ShimBinaryExpression
+import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimBinaryExpression, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression, ToUTCTimestamp}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, ToUTCTimestamp}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -43,7 +46,7 @@ trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTy
 }
 
 trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpression
-   with ImplicitCastInputTypes with NullIntolerant {
+   with ImplicitCastInputTypes with NullIntolerantShim {
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType)
 
   override def dataType: DataType = IntegerType
@@ -1137,7 +1140,7 @@ case class GpuFromUTCTimestamp(
     timestamp: Expression, timezone: Expression, zoneId: ZoneId)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant {
+      with NullIntolerantShim {
 
   override def left: Expression = timestamp
   override def right: Expression = timezone
@@ -1180,7 +1183,7 @@ case class GpuToUTCTimestamp(
     timestamp: Expression, timezone: Expression, zoneId: ZoneId)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant {
+      with NullIntolerantShim {
 
   override def left: Expression = timestamp
   override def right: Expression = timezone
@@ -1206,6 +1209,237 @@ case class GpuToUTCTimestamp(
       doColumnar(lhsCol, rhs)
     }
   }
+}
+
+class MonthsBetweenExprMeta(expr: MonthsBetween,
+                            override val conf: RapidsConf,
+                            override val parent: Option[RapidsMeta[_, _, _]],
+                            rule: DataFromReplacementRule)
+  extends ExprMeta[MonthsBetween](expr, conf, parent, rule) {
+
+  override def isTimeZoneSupported = true
+
+  override def convertToGpu(): GpuExpression = {
+    val gpuChildren = childExprs.map(_.convertToGpu())
+    assert(gpuChildren.length == 3)
+    GpuMonthsBetween(gpuChildren(0), gpuChildren(1), gpuChildren(2), expr.timeZoneId)
+  }
+}
+
+object GpuMonthsBetween {
+  val UTC = GpuOverrides.UTC_TIMEZONE_ID
+
+  /**
+   * Convert the given timestamp in UTC to a specific time zone and close the original input.
+   * @param micros the timestamp in micros to convert
+   * @param normalizedZoneId the time zone to convert it to. Note that this should have
+   *                         already been normalized.
+   * @return the converted timestamp.
+   */
+  private def convertToZoneAndClose(micros: GpuColumnVector,
+                                    normalizedZoneId: ZoneId): ColumnVector = {
+    withResource(micros) { _ =>
+      if (normalizedZoneId.equals(UTC)) {
+        micros.getBase.incRefCount()
+      } else {
+        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, normalizedZoneId)
+      }
+    }
+  }
+
+  private def calcMonths(converted: ColumnVector): ColumnVector = {
+    val yearInMonths = withResource(converted.year()) { year =>
+      withResource(Scalar.fromInt(12)) { monthsPerYear =>
+        year.mul(monthsPerYear)
+      }
+    }
+    withResource(yearInMonths) { _ =>
+      withResource(converted.month()) { month =>
+        yearInMonths.add(month)
+      }
+    }
+  }
+
+  /**
+   * When a timestamp is truncated to a month, calculate how many months are different
+   * between the two timestamps.
+   * @param converted1 the first timestamp (in the desired time zone)
+   * @param converted2 the second timestamp (in the desired time zone)
+   * @return the number of months different as a float64
+   */
+  private def calcMonthDiff(converted1: ColumnVector, converted2: ColumnVector): ColumnVector = {
+    withResource(calcMonths(converted1)) { months1 =>
+      withResource(calcMonths(converted2)) { months2 =>
+        months1.sub(months2, DType.FLOAT64)
+      }
+    }
+  }
+
+  private def isLastDayOfTheMonth(converted: ColumnVector, day: ColumnVector): ColumnVector = {
+    val lastDay = withResource(converted.lastDayOfMonth()) { ldm =>
+      ldm.day()
+    }
+    withResource(lastDay) { _ =>
+      lastDay.equalTo(day)
+    }
+  }
+
+  private def calcSecondsInDay(converted: ColumnVector): ColumnVector = {
+    // Find the number of seconds that are not counted for in a day
+
+    // find the micros over by finding the part that is not days
+    val microsInDay = withResource(converted.dateTimeFloor(DateTimeRoundingFrequency.DAY)) { days =>
+      // But we cannot subtract timestamps directly. They are both micros
+      assert(days.getType == DType.TIMESTAMP_MICROSECONDS)
+      assert(converted.getType == DType.TIMESTAMP_MICROSECONDS)
+      withResource(days.bitCastTo(DType.INT64)) { longDays =>
+        withResource(converted.bitCastTo(DType.INT64)) { longConverted =>
+          longConverted.sub(longDays)
+        }
+      }
+    }
+
+    // Then convert that to seconds (java does not round so we can be simple about it)
+    withResource(microsInDay) { _ =>
+      withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { mps =>
+        microsInDay.div(mps, DType.INT64)
+      }
+    }
+  }
+
+  /**
+   * In Spark if both dates have the same day of the month, or if both are
+   * the end of the month then we ignore diffs for days and below, otherwise
+   * we need to calculate that partial part of the month.
+   *
+   * @param converted1 the first timestamp (in the desired time zone)
+   * @param converted2 the second timestamp (in the desired time zone)
+   * @return a boolean column where true is return just the whole number months diff
+   *         and false is return the diff with days/time taken into account.
+   */
+  private def calcJustMonth(converted1: ColumnVector,
+                            converted2: ColumnVector): ColumnVector = {
+    withResource(converted1.day()) { dayOfMonth1 =>
+      withResource(converted2.day()) { dayOfMonth2 =>
+        val bothLastDay = withResource(isLastDayOfTheMonth(converted1, dayOfMonth1)) { isLastDay1 =>
+          withResource(isLastDayOfTheMonth(converted2, dayOfMonth2)) { isLastDay2 =>
+            isLastDay1.and(isLastDay2)
+          }
+        }
+        withResource(bothLastDay) { _ =>
+          withResource(dayOfMonth1.equalTo(dayOfMonth2)) { sameDayOfMonth =>
+            sameDayOfMonth.or(bothLastDay)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Calculate the number of seconds that are different between the two timestamps
+   * ignoring the year and the month. This is because calcMonthDiff will have
+   * already calculated that part.
+   *
+   * @param converted1 the first timestamp (in the desired time zone)
+   * @param converted2 the second timestamp (in the desired time zone)
+   * @return an INT64 column containing the diff in seconds.
+   */
+  private def calcSecondsDiff(converted1: ColumnVector,
+                              converted2: ColumnVector): ColumnVector = {
+    // In theory, we could go directly to seconds in the month, but there
+    // may be some overflow issues according to Spark. Also,
+    // CUDF does not have a way to floor a timestamp to MONTHS, so it would
+    // be a two-step process anyway.
+    val daysDiffAsSeconds = withResource(converted1.day()) { day1 =>
+      withResource(converted2.day()) { day2 =>
+        withResource(day1.sub(day2)) { daysDiff =>
+          withResource(Scalar.fromLong(DateTimeConstants.SECONDS_PER_DAY)) { secsPerDay =>
+            daysDiff.mul(secsPerDay)
+          }
+        }
+      }
+    }
+    withResource(daysDiffAsSeconds) { _ =>
+      val secsInDayDiff = withResource(calcSecondsInDay(converted1)) { sid1 =>
+        withResource(calcSecondsInDay(converted2)) { sid2 =>
+          sid1.sub(sid2)
+        }
+      }
+      withResource(secsInDayDiff) { _ =>
+        daysDiffAsSeconds.add(secsInDayDiff)
+      }
+    }
+  }
+}
+
+case class GpuMonthsBetween(ts1: Expression,
+                            ts2: Expression,
+                            roundOff: Expression,
+                            timeZoneId: Option[String] = None) extends GpuExpression
+  with ShimExpression with TimeZoneAwareExpression with ImplicitCastInputTypes
+  with NullIntolerantShim {
+  import GpuMonthsBetween._
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val needsRoundOff = withResourceIfAllowed(roundOff.columnarEvalAny(batch)) {
+      case s: GpuScalar if (s.isValid) => Some(s.getBase.getBoolean)
+      case _: GpuScalar => None
+      case other =>
+        throw new IllegalArgumentException(s"Only literal roundoff values are supported $other")
+    }
+    if (needsRoundOff.isEmpty) {
+      // Special case so we always return null for this.
+      withResource(Scalar.fromNull(DType.FLOAT64)) { s =>
+        closeOnExcept(ColumnVector.fromScalar(s, batch.numRows())) { result =>
+          return GpuColumnVector.from(result, dataType)
+        }
+      }
+    }
+
+    val zoneId = timeZoneId.map(s => ZoneId.of(s).normalized()).getOrElse(UTC)
+    withResource(convertToZoneAndClose(ts1.columnarEval(batch), zoneId)) { converted1 =>
+      withResource(convertToZoneAndClose(ts2.columnarEval(batch), zoneId)) { converted2 =>
+        withResource(calcMonthDiff(converted1, converted2)) { monthDiff =>
+          withResource(calcJustMonth(converted1, converted2)) { justMonthDiff =>
+            withResource(calcSecondsDiff(converted1, converted2)) { secondsDiff =>
+              val partialMonth = withResource(Scalar.fromDouble(DAYS.toSeconds(31))) {
+                secondsInMonth =>
+                  secondsDiff.trueDiv(secondsInMonth)
+              }
+              val roundedPartialMonth = if (needsRoundOff.get) {
+                withResource(partialMonth) { _ =>
+                  partialMonth.round(8)
+                }
+              } else {
+                partialMonth
+              }
+              val diff = withResource(roundedPartialMonth) { _ =>
+                roundedPartialMonth.add(monthDiff)
+              }
+              withResource(diff) { _ =>
+                GpuColumnVector.from(justMonthDiff.ifElse(monthDiff, diff), dataType)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, TimestampType, BooleanType)
+
+  override def dataType: DataType = DoubleType
+
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  override def nullable: Boolean = children.exists(_.nullable)
+
+  override def children: Seq[Expression] = Seq(ts1, ts2, roundOff)
+
+  override def prettyName: String = "months_between"
 }
 
 trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {

@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
-import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids.catalyst.expressions._
@@ -161,7 +161,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with Predicate
       with ImplicitCastInputTypes
-      with NullIntolerant {
+      with NullIntolerantShim {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
@@ -187,7 +187,7 @@ case class GpuEndsWith(left: Expression, right: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with Predicate
       with ImplicitCastInputTypes
-      with NullIntolerant {
+      with NullIntolerantShim {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
@@ -394,7 +394,7 @@ case class GpuContains(left: Expression, right: Expression)
     extends GpuBinaryExpressionArgsAnyScalar
         with Predicate
         with ImplicitCastInputTypes
-        with NullIntolerant
+        with NullIntolerantShim
         with GpuCombinable {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
@@ -518,7 +518,7 @@ class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombin
 }
 
 case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
-  extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = str.dataType
 
@@ -751,7 +751,7 @@ case class GpuInitCap(child: Expression) extends GpuUnaryExpression with Implici
 }
 
 case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
-    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
   override def left: Expression = input
   override def right: Expression = repeatTimes
   override def dataType: DataType = input.dataType
@@ -969,7 +969,7 @@ object CudfRegexp {
 case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant  {
+      with NullIntolerantShim {
 
   def this(left: Expression, right: Expression) = this(left, right, '\\')
 
@@ -1213,7 +1213,7 @@ class GpuRLikeMeta(
 case class GpuRLike(left: Expression, right: Expression, pattern: String)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant  {
+      with NullIntolerantShim {
 
   override def toString: String = s"$left gpurlike $right"
 
@@ -1234,7 +1234,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
 }
 
 case class GpuMultipleContains(input: Expression, searchList: Seq[String])
-  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
 
@@ -1262,7 +1262,7 @@ case class GpuMultipleContains(input: Expression, searchList: Seq[String])
 
 case class GpuLiteralRangePattern(left: Expression, right: Expression, 
     length: Int, start: Int, end: Int)
-  extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
 
@@ -1475,7 +1475,7 @@ case class GpuRegExpExtract(
     subject: Expression,
     regexp: Expression,
     idx: Expression)(cudfRegexPattern: String)
-  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
@@ -1604,7 +1604,7 @@ case class GpuRegExpExtractAll(
     str: Expression,
     regexp: Expression,
     idx: Expression)(cudfRegexPattern: String)
-  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def dataType: DataType = ArrayType(StringType, containsNull = true)
@@ -1737,7 +1737,7 @@ case class GpuSubstringIndex(strExpr: Expression,
 trait BasePad
     extends GpuTernaryExpressionArgsAnyScalarScalar
         with ImplicitCastInputTypes
-        with NullIntolerant {
+        with NullIntolerantShim {
   val str: Expression
   val len: Expression
   val pad: Expression
@@ -2106,7 +2106,7 @@ object GpuStringInstr {
 case class GpuStringInstr(str: Expression, substr: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant  {
+      with NullIntolerantShim {
   // Locate the position of the first occurrence of substr column in the given string.
   // returns null if one of the arguments is null
   // returns zero if not found
@@ -2236,7 +2236,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
 }
 
 case class GpuFormatNumber(x: Expression, d: Expression)
-    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerantShim {
   
   override def left: Expression = x
   override def right: Expression = d
