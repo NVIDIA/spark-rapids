@@ -27,11 +27,11 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{CastStrings, DecimalUtils, GpuTimeZoneDB}
-import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, NullIntolerantShim, SparkShimImpl, YearParseUtil}
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
@@ -41,8 +41,7 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
-final class CastExprMeta[
-      INPUT <: UnaryLike[Expression] with TimeZoneAwareExpression with NullIntolerant](
+final class CastExprMeta[INPUT <: UnaryLike[Expression] with TimeZoneAwareExpression](
     cast: INPUT,
     val evalMode: GpuEvalMode.Value,
     conf: RapidsConf,
@@ -1718,7 +1717,7 @@ case class GpuCast(
     timeZoneId: Option[String] = None,
     legacyCastComplexTypesToString: Boolean = false,
     stringToDateAnsiModeEnabled: Boolean = false)
-  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
+  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerantShim {
 
   import GpuCast._
 

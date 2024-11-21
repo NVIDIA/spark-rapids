@@ -23,10 +23,10 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{DecimalMultiply128, GpuTypeShims, NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -169,7 +169,7 @@ object GpuAnsi {
 }
 
 case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUnaryExpression
-    with ExpectsInputTypes with NullIntolerant {
+    with ExpectsInputTypes with NullIntolerantShim {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
 
   override def dataType: DataType = child.dataType
@@ -231,7 +231,7 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
 }
 
 case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
-    with ExpectsInputTypes with NullIntolerant {
+    with ExpectsInputTypes with NullIntolerantShim {
   override def prettyName: String = "positive"
 
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
@@ -248,7 +248,7 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
 }
 
 case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpression
-    with ExpectsInputTypes with NullIntolerant {
+    with ExpectsInputTypes with NullIntolerantShim {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
 
   override def dataType: DataType = child.dataType

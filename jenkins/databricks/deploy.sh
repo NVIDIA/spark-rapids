@@ -29,7 +29,12 @@ SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -
 VERSION_NUM=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS//.}
 SPARK_VERSION_STR=spark$VERSION_NUM
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
-DB_SHIM_NAME=${SPARK_VERSION_STR}db
+# Append 143 into the db shim version because Databricks 14.3.x and 15.4.x are both based on spark version 3.5.0
+if [[ "$DB_RUNTIME" == "14.3"* ]]; then
+    DB_SHIM_NAME="${SPARK_VERSION_STR}db143"
+else
+    DB_SHIM_NAME="${SPARK_VERSION_STR}db"
+fi
 DBJARFPATH=./aggregator/target/${DB_SHIM_NAME}/rapids-4-spark-aggregator_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${DB_SHIM_NAME}.jar
 echo "Databricks jar is: $DBJARFPATH"
 MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3"

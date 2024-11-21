@@ -25,10 +25,10 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GetSequenceSize, ShimExpression}
+import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, NullIntolerant, RowOrdering, Sequence, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -1065,7 +1065,7 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
 }
 
 // Base class for GpuArrayExcept, GpuArrayUnion, GpuArrayIntersect
-trait GpuArrayBinaryLike extends GpuComplexTypeMergingExpression with NullIntolerant {
+trait GpuArrayBinaryLike extends GpuComplexTypeMergingExpression with NullIntolerantShim {
   val left: Expression
   val right: Expression
 
@@ -1233,7 +1233,7 @@ case class GpuArrayUnion(left: Expression, right: Expression)
 }
 
 case class GpuArraysOverlap(left: Expression, right: Expression)
-    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerantShim {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
 
@@ -1552,7 +1552,7 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
   }
 }
 
-case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with NullIntolerant {
+case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with NullIntolerantShim {
   private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
   override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = childDataType.elementType

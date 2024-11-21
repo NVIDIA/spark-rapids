@@ -1429,13 +1429,6 @@ def test_parquet_check_schema_compatibility(spark_tmp_path):
         conf={},
         error_message='Parquet column cannot be converted')
 
-    read_dec32_as_dec64 = StructType(
-        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
-        conf={},
-        error_message='Parquet column cannot be converted')
-
 
 # For nested types, GPU throws incompatible exception with a different message from CPU.
 def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
@@ -1480,6 +1473,75 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
+
+
+@pytest.mark.parametrize('from_decimal_gen, to_decimal_gen', [
+    # Widening precision and scale by the same amount
+    (DecimalGen(5, 2), DecimalGen(7, 4)),
+    (DecimalGen(5, 2), DecimalGen(10, 7)),
+    (DecimalGen(5, 2), DecimalGen(20, 17)),
+    (DecimalGen(10, 2), DecimalGen(12, 4)),
+    (DecimalGen(10, 2), DecimalGen(20, 12)),
+    (DecimalGen(20, 2), DecimalGen(22, 4)),
+    # Increasing precision by larger amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 3)),
+    (DecimalGen(5, 2), DecimalGen(12, 5)),
+    (DecimalGen(5, 2), DecimalGen(22, 10)),
+    # Narrowing precision and scale
+    (DecimalGen(7, 4), DecimalGen(5, 2)),
+    (DecimalGen(10, 7), DecimalGen(5, 2)),
+    (DecimalGen(20, 17), DecimalGen(5, 2)),
+    # Increasing precision and decreasing scale
+    (DecimalGen(5, 4), DecimalGen(7, 2)),
+    (DecimalGen(10, 6), DecimalGen(12, 4)),
+    (DecimalGen(20, 7), DecimalGen(22, 5)),
+    # Increasing precision by a smaller amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 4)),
+    (DecimalGen(10, 4), DecimalGen(12, 7))
+], ids=idfn)
+def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen, to_decimal_gen):
+    """Test decimal precision and scale changes when reading Parquet files with RAPIDS acceleration."""
+    data_path = f"{spark_tmp_path}/PARQUET_DECIMAL_DATA"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_decimal_gen)
+        .coalesce(1)
+        .write.parquet(data_path)
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_decimal_gen.data_type)
+    ])
+
+    # Determine if we expect an error based on precision and scale changes
+    expect_error = (
+            to_decimal_gen.scale < from_decimal_gen.scale or
+            (to_decimal_gen.precision - to_decimal_gen.scale) <
+            (from_decimal_gen.precision - from_decimal_gen.scale)
+    )
+
+    spark_conf = {}
+    if is_before_spark_400():
+        # In Spark versions earlier than 4.0, the vectorized Parquet reader throws an exception
+        # if the read scale differs from the write scale. We disable the vectorized reader,
+        # forcing Spark to use the non-vectorized path for CPU case. This configuration
+        # is ignored by the plugin.
+        spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+
+    if expect_error:
+        assert_gpu_and_cpu_error(
+            lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
+            conf={},
+            error_message="Parquet column cannot be converted"
+        )
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.schema(read_schema).parquet(data_path),
+            conf=spark_conf
+        )
+
 
 @pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
 @pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')
