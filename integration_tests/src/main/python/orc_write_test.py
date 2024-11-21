@@ -91,6 +91,20 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
+@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_allow)
+def test_write_more_than_one_stripe_round_trip(spark_tmp_path, orc_gens, orc_impl):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            # Generate a large enough dataframe to produce more than one stripe(typically 64MB)
+            # Preferably use only one partition to avoid splitting the data
+            lambda spark, path: gen_df(spark, gen_list, 12800, num_slices=1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
+
 @pytest.mark.parametrize('orc_gen', orc_write_odd_empty_strings_gens_sample, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 def test_write_round_trip_corner(spark_tmp_path, orc_gen, orc_impl):
