@@ -813,7 +813,8 @@
 
     <properties>
         <!-- start dyn.shim properties -->
-	<dyn.shim.excluded.releases/>
+        <!-- TODO: will package 350db143 shim into the dist jar in branch-25.02 -->
+	<dyn.shim.excluded.releases>350db143</dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>
