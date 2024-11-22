@@ -320,7 +320,7 @@ object JsonPartitionReader {
         withResource(new NvtxWithMetrics(formatName + " decode",
           NvtxColor.DARK_GREEN, decodeTime)) { _ =>
           try {
-            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize, dataBufferer.getNumLines)
+            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
           } catch {
             case e: AssertionError if e.getMessage == "CudfColumns can't be null or empty" =>
               // this happens when every row in a JSON file is invalid (or we are
