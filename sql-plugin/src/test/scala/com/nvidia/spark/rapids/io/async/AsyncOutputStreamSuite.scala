@@ -114,7 +114,9 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
     os.write(buf)
 
     // Wait for the first write to fail
-    while (os.lastError.get().isEmpty) {}
+    while (os.lastError.get().isEmpty) {
+      Thread.sleep(100)
+    }
 
     // The second `write` call should fail with the exception thrown by the first write failure
     assertThrowsWithMsg(() => os.write(buf),

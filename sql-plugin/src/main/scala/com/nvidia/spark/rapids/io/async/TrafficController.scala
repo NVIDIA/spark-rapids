@@ -107,7 +107,7 @@ class TrafficController protected[rapids] (throttle: Throttle) {
   def taskCompleted[T](task: Task[T]): Unit = synchronized {
     numTasks -= 1
     throttle.taskCompleted(task)
-    notifyAll()
+    notify()
   }
 
   def numScheduledTasks: Int = synchronized {

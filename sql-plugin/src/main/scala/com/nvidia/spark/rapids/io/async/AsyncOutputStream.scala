@@ -89,13 +89,32 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
     }
   }
 
-  override def write(b: Int): Unit = {
+  private def scheduleWrite(fn: () => Unit, bytesToWrite: Int): Unit = {
     throwIfError()
     ensureOpen()
 
-    val buffer = new Array[Byte](1)
-    buffer(0) = b.toByte
-    write(buffer)
+    metrics.numBytesScheduled += bytesToWrite
+    executor.submit(() => {
+      throwIfError()
+      ensureOpen()
+
+      try {
+        fn()
+        metrics.numBytesWritten.addAndGet(bytesToWrite)
+      } catch {
+        case t: Throwable =>
+          // Update the error state
+          lastError.set(Some(t))
+      }
+    }, bytesToWrite)
+  }
+
+  override def write(b: Int): Unit = {
+    scheduleWrite(() => delegate.write(b), 1)
+  }
+
+  override def write(b: Array[Byte]): Unit = {
+    scheduleWrite(() => delegate.write(b), b.length)
   }
 
   /**
@@ -111,23 +130,7 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
    */
   @throws[IOException]
   override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-    throwIfError()
-    ensureOpen()
-
-    metrics.numBytesScheduled += len
-    executor.submit(() => {
-      throwIfError()
-      ensureOpen()
-
-      try {
-        delegate.write(b, off, len)
-        metrics.numBytesWritten.addAndGet(len)
-      } catch {
-        case t: Throwable =>
-          // Update the error state
-          lastError.set(Some(t))
-      }
-    }, len)
+    scheduleWrite(() => delegate.write(b, off, len), len)
   }
 
   /**

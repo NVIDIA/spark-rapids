@@ -91,7 +91,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   // ColumnarOutputWriter in the tests, and override this behavior.
   protected def getOutputStream: OutputStream = {
     trafficController.map(controller => {
-      logDebug("Async output write enabled")
+      logWarning("Async output write enabled")
       new AsyncOutputStream(() => openOutputStream(), controller)
     }).getOrElse(openOutputStream())
   }
