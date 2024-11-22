@@ -553,12 +553,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
-      "cudf row count limit of a column.")
+      "is covered by separate configs.")
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
-    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
-      s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
+    .checkValue(v => v > 0, "Batch size must be positive")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
