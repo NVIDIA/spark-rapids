@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types.DataType

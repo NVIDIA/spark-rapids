@@ -17,7 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.DeviceMemoryBuffer
-import com.nvidia.spark.rapids.{RapidsConf, SpillableBuffer, SpillFramework}
+import com.nvidia.spark.rapids.{RapidsConf, SpillableBuffer}
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 

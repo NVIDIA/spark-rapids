@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler}
 import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 

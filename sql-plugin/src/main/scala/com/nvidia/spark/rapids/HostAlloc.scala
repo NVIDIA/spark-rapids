@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.internal.Logging
 

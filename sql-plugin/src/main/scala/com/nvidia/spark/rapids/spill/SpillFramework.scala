@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.spill
 
-import java.io.{DataOutputStream, File, FileInputStream, InputStream, OutputStream}
+import java.io._
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
@@ -26,10 +26,12 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf._
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer, GpuCompressedColumnVector, GpuDeviceManager, HostAlloc, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, RapidsConf, RapidsHostColumnVector}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.internal.HostByteBufferIterator
 import org.apache.commons.io.IOUtils
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
@@ -154,7 +156,7 @@ trait SpillableHandle extends StoreHandle {
    *       is a `val`.
    * @return true if currently spillable, false otherwise
    */
-  def spillable: Boolean = sizeInBytes > 0
+  private[spill] def spillable: Boolean = sizeInBytes > 0
 }
 
 /**
@@ -163,9 +165,9 @@ trait SpillableHandle extends StoreHandle {
  *           on the device.
  */
 trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
-  var dev: Option[T]
+  private[spill] var dev: Option[T]
 
-  override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = synchronized {
     super.spillable && dev.isDefined
   }
 }
@@ -176,9 +178,9 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
  *           on the host.
  */
 trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
-  var host: Option[T]
+  private[spill] var host: Option[T]
 
-  override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = synchronized {
     super.spillable && host.isDefined
   }
 }
@@ -194,7 +196,7 @@ object SpillableHostBufferHandle extends Logging {
     handle
   }
 
-  def createHostHandleWithPacker(
+  private[spill] def createHostHandleWithPacker(
       chunkedPacker: ChunkedPacker): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(chunkedPacker.getTotalContiguousSize)
     withResource(
@@ -213,7 +215,7 @@ object SpillableHostBufferHandle extends Logging {
     }
   }
 
-  def createHostHandleFromDeviceBuff(
+  private[spill] def createHostHandleFromDeviceBuff(
       buff: DeviceMemoryBuffer): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(buff.getLength)
     withResource(
@@ -227,11 +229,11 @@ object SpillableHostBufferHandle extends Logging {
 
 class SpillableHostBufferHandle private (
     override val sizeInBytes: Long,
-    override var host: Option[HostMemoryBuffer] = None,
-    var disk: Option[DiskHandle] = None)
+    private[spill] override var host: Option[HostMemoryBuffer] = None,
+    private[spill] var disk: Option[DiskHandle] = None)
   extends HostSpillableHandle[HostMemoryBuffer] {
 
-  override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
       host.getOrElse {
         throw new IllegalStateException(
@@ -307,7 +309,7 @@ class SpillableHostBufferHandle private (
     }
   }
   
-  def getHostBuffer: Option[HostMemoryBuffer] = synchronized {
+  private[spill] def getHostBuffer: Option[HostMemoryBuffer] = synchronized {
     host.foreach(_.incRefCount())
     host
   }
@@ -320,7 +322,7 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
+  private[spill] def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
     var hostBuffer: HostMemoryBuffer = null
     var diskHandle: DiskHandle = null
     synchronized {
@@ -351,11 +353,11 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  def setHost(singleShotBuffer: HostMemoryBuffer): Unit = synchronized {
+  private[spill] def setHost(singleShotBuffer: HostMemoryBuffer): Unit = synchronized {
     host = Some(singleShotBuffer)
   }
 
-  def setDisk(handle: DiskHandle): Unit = synchronized {
+  private[spill] def setDisk(handle: DiskHandle): Unit = synchronized {
     disk = Some(handle)
   }
 }
@@ -370,11 +372,11 @@ object SpillableDeviceBufferHandle {
 
 class SpillableDeviceBufferHandle private (
     override val sizeInBytes: Long,
-    override var dev: Option[DeviceMemoryBuffer],
-    var host: Option[SpillableHostBufferHandle] = None)
+    private[spill] override var dev: Option[DeviceMemoryBuffer],
+    private[spill] var host: Option[SpillableHostBufferHandle] = None)
     extends DeviceSpillableHandle[DeviceMemoryBuffer] {
 
-  override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
       dev.getOrElse {
         throw new IllegalStateException(
@@ -445,8 +447,8 @@ class SpillableDeviceBufferHandle private (
 
 class SpillableColumnarBatchHandle private (
     override val sizeInBytes: Long,
-    override var dev: Option[ColumnarBatch],
-    var host: Option[SpillableHostBufferHandle] = None)
+    private[spill] override var dev: Option[ColumnarBatch],
+    private[spill] var host: Option[SpillableHostBufferHandle] = None)
   extends DeviceSpillableHandle[ColumnarBatch] with Logging {
 
   override def spillable: Boolean = synchronized {
@@ -573,13 +575,13 @@ object SpillableColumnarBatchFromBufferHandle {
 
 class SpillableColumnarBatchFromBufferHandle private (
     override val sizeInBytes: Long,
-    override var dev: Option[ColumnarBatch],
-    var host: Option[SpillableHostBufferHandle] = None)
+    private[spill] override var dev: Option[ColumnarBatch],
+    private[spill] var host: Option[SpillableHostBufferHandle] = None)
   extends DeviceSpillableHandle[ColumnarBatch] {
 
   private var meta: Option[TableMeta] = None
 
-  override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
       val dcvs = GpuColumnVector.extractBases(dev.get)
       val colRepetition = mutable.HashMap[ColumnVector, Int]()
@@ -670,8 +672,8 @@ object SpillableCompressedColumnarBatchHandle {
 
 class SpillableCompressedColumnarBatchHandle private (
     val compressedSizeInBytes: Long,
-    override var dev: Option[ColumnarBatch],
-    var host: Option[SpillableHostBufferHandle] = None)
+    private[spill] override var dev: Option[ColumnarBatch],
+    private[spill] var host: Option[SpillableHostBufferHandle] = None)
   extends DeviceSpillableHandle[ColumnarBatch] {
 
   override val sizeInBytes: Long = compressedSizeInBytes
@@ -760,8 +762,8 @@ object SpillableHostColumnarBatchHandle {
 class SpillableHostColumnarBatchHandle private (
     val sizeInBytes: Long,
     val numRows: Int,
-    override var host: Option[ColumnarBatch],
-    var disk: Option[DiskHandle] = None)
+    private[spill] override var host: Option[ColumnarBatch],
+    private[spill] var disk: Option[DiskHandle] = None)
   extends HostSpillableHandle[ColumnarBatch] {
 
   override def spillable: Boolean = synchronized {
@@ -1116,7 +1118,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       HostAlloc.tryAlloc(handle.sizeInBytes).foreach { hmb =>
         withResource(hmb) { _ =>
           if (trackInternal(handle)) {
-            hmb.incRefCount
+            hmb.incRefCount()
             // the host store made room or fit this buffer
             builder = Some(new SpillableHostBufferHandleBuilderForHost(handle, hmb))
           }

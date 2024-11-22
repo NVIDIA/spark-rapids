@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.spill.{SpillableDeviceBufferHandle, SpillableHandle}
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging

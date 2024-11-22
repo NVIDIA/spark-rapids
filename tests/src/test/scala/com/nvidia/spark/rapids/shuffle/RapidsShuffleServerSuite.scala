@@ -20,9 +20,10 @@ import java.io.IOException
 import java.nio.ByteBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata, SpillableDeviceBufferHandle}
+import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -233,7 +234,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         // acquire once at the beginning, and closed at the end
         verify(mockRequestHandler, times(1))
           .getShuffleHandle(ArgumentMatchers.eq(1))
-        assertResult(1)(rapidsBuffer.spillable.dev.get.getRefCount)
+        withResource(rapidsBuffer.spillable.materialize) { dmb =>
+          // refcount=2 because it was on the device, and we +1 to materialize.
+          // but it shows no leaks.
+          assertResult(2)(dmb.getRefCount)
+        }
       }
     }
   }
@@ -427,7 +432,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
           // this handle materializes, so make sure we close it
           verify(rapidsHandle2.spillable, times(1)).materialize
-          verify(rapidsHandle2.spillable.dev.get, times(1)).close()
+          withResource(rapidsHandle2.spillable.materialize) { dmb =>
+            // refcount=2 because it was on the device, and we +1 to materialize.
+            // but it shows no leaks.
+            assertResult(2)(dmb.getRefCount)
+          }
         }
       }
     }

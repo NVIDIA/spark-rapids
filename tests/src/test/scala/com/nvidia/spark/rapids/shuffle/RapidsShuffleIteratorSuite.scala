@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import com.nvidia.spark.rapids.{RapidsShuffleHandle, SpillableDeviceBufferHandle}
+import com.nvidia.spark.rapids.RapidsShuffleHandle
 import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._

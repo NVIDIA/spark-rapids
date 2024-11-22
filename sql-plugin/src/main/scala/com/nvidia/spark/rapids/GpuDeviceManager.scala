@@ -23,6 +23,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
