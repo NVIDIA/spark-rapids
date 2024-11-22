@@ -124,7 +124,7 @@ class DeviceMemoryEventHandler(
       val amountSpilled = store.spill(allocSize)
       retryState.resetIfNeeded(retryCount, amountSpilled > 0)
       logInfo(s"Device allocation of $allocSize bytes failed. " +
-        s"Device store spilled $amountSpilled bytes. $attemptMsg " +
+        s"Device store spilled $amountSpilled bytes. $attemptMsg" +
         s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
       val shouldRetry = if (amountSpilled == 0) {
         if (retryState.shouldTrySynchronizing(retryCount)) {

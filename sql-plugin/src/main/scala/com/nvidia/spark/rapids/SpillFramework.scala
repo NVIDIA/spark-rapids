@@ -84,7 +84,7 @@ import org.apache.spark.storage.BlockId
  *
  * Every store handle supports a `materialize` method that isn't part of the interface.
  * The reason is that to materialize certain objects, you may need some data (for example,
- * spark schema descriptors). `materialize` incRefCounts the object if it's resident in the
+ * Spark schema descriptors). `materialize` incRefCounts the object if it's resident in the
  * intended store (`DeviceSpillableHandle` incRefCounts an object if it is in the device store),
  * and otherwise it will create a new copy from the spilled version and hand it to the user.
  * Any time a user calls `materialize`, they are responsible for closing the returned object.
@@ -120,8 +120,8 @@ import org.apache.spark.storage.BlockId
  *
  * We hold the handle lock when we are spilling (performing IO). That means that no other consumer
  * can access this spillable device handle while it is being spilled, including a second thread
- * trying to spill and asking each of the handles wether they are spillable or not, as that requires
- * the handle lock. We will relax this likely in follow on work.
+ * trying to spill and asking each of the handles whether they are spillable or not, as that
+ * requires the handle lock. We will relax this likely in follow on work.
  *
  * We never hold a store-wide coarse grain lock in the stores when we do IO.
  */
