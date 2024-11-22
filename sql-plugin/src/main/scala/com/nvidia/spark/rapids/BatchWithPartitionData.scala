@@ -62,9 +62,7 @@ object PartitionRowData {
 case class BatchWithPartitionData(
     inputBatch: SpillableColumnarBatch,
     partitionedRowsData: Array[PartitionRowData],
-    partitionSchema: StructType) extends AutoCloseable with RetrySizeAwareable {
-
-  override def sizeInBytes: Long = inputBatch.sizeInBytes
+    partitionSchema: StructType) extends AutoCloseable {
 
   /**
    * Merges the partitioned data with the input ColumnarBatch.

@@ -688,12 +688,15 @@ abstract class AbstractGpuCoalesceIterator(
  * @param batches a sequence of `SpillableColumnarBatch` to manage.
  */
 case class BatchesToCoalesce(batches: Array[SpillableColumnarBatch])
-    extends AutoCloseable with RetrySizeAwareable {
+    extends AutoCloseable {
   override def close(): Unit = {
     batches.safeClose()
   }
 
-  override def sizeInBytes: Long = batches.map(_.sizeInBytes).sum
+  override def toString: String = {
+    val totalSize = batches.map(_.sizeInBytes).sum
+    s"BatchesToCoalesce totalSize:$totalSize, batches:[${batches.mkString(";")}]"
+  }
 }
 
 class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],

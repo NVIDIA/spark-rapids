@@ -301,7 +301,7 @@ object RmmRapidsRetryIterator extends Logging {
    * @tparam T the type of the items in `ts`
    */
   private case class AutoCloseableSeqInternal[T <: AutoCloseable](ts: Seq[T])
-      extends Seq[T] with AutoCloseable with RetrySizeAwareable {
+      extends Seq[T] with AutoCloseable {
     override def close(): Unit = {
       ts.foreach(_.safeClose())
     }
@@ -312,10 +312,13 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def apply(idx: Int): T = ts.apply(idx)
 
-    override def sizeInBytes: Long = ts.map {
-      case sizeAware: RetrySizeAwareable => sizeAware.sizeInBytes
-      case _ => 0L
-    }.sum
+    override def toString(): String = {
+      val totalSize = ts.map {
+        case scb: SpillableColumnarBatch => scb.sizeInBytes
+        case _ => 0L
+      }.sum
+      s"AutoCloseableSeqInternal totalSize:$totalSize, inner:[${ts.mkString(";")}]"
+    }
   }
 
   /**
@@ -459,34 +462,46 @@ object RmmRapidsRetryIterator extends Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        val message = s"could not split inputs and retry. The current input size: " +
-          s"${sizeAsString(attemptStack.head)}"
-        logWarning(message)
+        val message = s"could not split inputs and retry. The current attempt: " +
+          s"{${attemptStack.head}}"
         if (isFromGpuOom) {
           throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
         } else {
           throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
         }
       }
-      // splitPolicy must take ownership of the argument
       val curAttempt = attemptStack.pop()
-      val curSize = closeOnExcept(curAttempt)(sizeAsString)
+      // Get the info before running the split, since the attempt may be closed after splitting.
+      val attemptAsString = closeOnExcept(curAttempt)(_.toString)
       val splitted = try {
+        // splitPolicy must take ownership of the argument
         splitPolicy(curAttempt)
       } catch {
-        case ex: Throwable =>
-          // We can not change the root exception instance so print the size info to console
-          logWarning(s"Failed to split the input with size: $curSize")
-          throw ex
+          // We only care about OOM exceptions and wrap it by a new exception with the
+          // same type to provide more context for the OOM.
+          // This looks a little odd, because we can not change the type of root exception.
+          // Otherwise, some unit tests will fail due to the wrong exception type returned.
+        case go: GpuRetryOOM =>
+          throw new GpuRetryOOM(
+            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case go: GpuSplitAndRetryOOM =>
+          throw new GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case co: CpuRetryOOM =>
+          throw new CpuRetryOOM(
+            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+        case co: CpuSplitAndRetryOOM =>
+          throw new CpuSplitAndRetryOOM(
+            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+        case ex: Throwable => throw ex
       }
       // the splitted sequence needs to be inserted in reverse order
       // so we try the first item first.
       splitted.reverse.foreach(attemptStack.push)
-    }
-
-    private def sizeAsString(maybeSizeAwareable: T): String = maybeSizeAwareable match {
-      case sizeAware: RetrySizeAwareable => s"${sizeAware.sizeInBytes} bytes"
-      case _ => s"unknown for a ${maybeSizeAwareable.getClass.getSimpleName}"
     }
 
     override def next(): K = {
@@ -774,14 +789,6 @@ object RmmRapidsRetryIterator extends Logging {
  * `CpuSplitAndRetryOOM`, a split policy like `splitTargetSizeInHalfGpu` or
  * `splitTargetSizeInHalfCpu` can be used to retry the block with a smaller target size.
  */
-case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable
-  with RetrySizeAwareable {
-
-  override def sizeInBytes: Long = targetSize
-
+case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
   override def close(): Unit = ()
-}
-
-trait RetrySizeAwareable {
-  def sizeInBytes: Long
 }

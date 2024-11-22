@@ -949,12 +949,13 @@ case class GpuGenerateExec(
 }
 
 class BatchToGenerate(val fixUpOffset: Long, val spillable: SpillableColumnarBatch)
-  extends AutoCloseable with RetrySizeAwareable {
+  extends AutoCloseable {
   override def close(): Unit = {
     spillable.close()
   }
 
-  override def sizeInBytes: Long = spillable.sizeInBytes
+  override def toString: String =
+    s"BatchToGenerate fixUpOffset:$fixUpOffset, spillable:$spillable"
 }
 
 class GpuGenerateIterator(

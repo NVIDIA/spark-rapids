@@ -26,7 +26,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * Holds a ColumnarBatch that the backing buffers on it can be spilled.
  */
-trait SpillableColumnarBatch extends AutoCloseable with RetrySizeAwareable {
+trait SpillableColumnarBatch extends AutoCloseable {
   /**
    * The number of rows stored in this batch.
    */
@@ -52,7 +52,12 @@ trait SpillableColumnarBatch extends AutoCloseable with RetrySizeAwareable {
    */
   def getColumnarBatch(): ColumnarBatch
 
+  def sizeInBytes: Long
+
   def dataTypes: Array[DataType]
+
+  override def toString: String =
+    s"SCB size:$sizeInBytes, types:${dataTypes.toList}, rows:${numRows()}"
 }
 
 /**
@@ -77,6 +82,8 @@ class JustRowsColumnarBatch(numRows: Int)
 
   // There is no off heap data and close is a noop so just return this
   override def incRefCount(): SpillableColumnarBatch = this
+
+  override def toString: String = s"JustRowsSCB size:$sizeInBytes, rows:$numRows"
 }
 
 /**
@@ -146,7 +153,8 @@ class SpillableColumnarBatchImpl (
   }
 
   override def toString: String =
-    s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
+    s"GpuSCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 class JustRowsHostColumnarBatch(numRows: Int)
@@ -165,6 +173,8 @@ class JustRowsHostColumnarBatch(numRows: Int)
 
   // There is no off heap data and close is a noop so just return this
   override def incRefCount(): SpillableColumnarBatch = this
+
+  override def toString: String = s"JustRowsHostSCB size:$sizeInBytes, rows:$numRows"
 }
 
 /**
@@ -231,6 +241,10 @@ class SpillableHostColumnarBatchImpl (
       throw new IllegalStateException("Double free on SpillableHostColumnarBatchImpl")
     }
   }
+
+  override def toString: String =
+    s"HostSCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 object SpillableColumnarBatch {
@@ -362,7 +376,7 @@ object SpillableHostColumnarBatch {
  * Just like a SpillableColumnarBatch but for buffers.
  */
 class SpillableBuffer(
-    handle: RapidsBufferHandle) extends AutoCloseable with RetrySizeAwareable {
+    handle: RapidsBufferHandle) extends AutoCloseable {
 
   /**
    * Set a new spill priority.
@@ -387,10 +401,11 @@ class SpillableBuffer(
     handle.close()
   }
 
-  override def sizeInBytes: Long = {
-    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
+  override def toString: String = {
+    val size = withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
       rapidsBuffer.memoryUsedBytes
     }
+    s"SpillableBuffer size:$size, handle:$handle"
   }
 }
 
@@ -404,10 +419,9 @@ class SpillableBuffer(
  * @param catalog this was added for tests, it defaults to
  *                `RapidsBufferCatalog.singleton` in the companion object.
  */
-class SpillableHostBuffer(
-    handle: RapidsBufferHandle,
-    val length: Long,
-    catalog: RapidsBufferCatalog) extends AutoCloseable with RetrySizeAwareable {
+class SpillableHostBuffer(handle: RapidsBufferHandle,
+                          val length: Long,
+                          catalog: RapidsBufferCatalog) extends AutoCloseable {
   /**
    * Set a new spill priority.
    */
@@ -428,7 +442,8 @@ class SpillableHostBuffer(
     }
   }
 
-  override def sizeInBytes: Long = length
+  override def toString: String =
+    s"SpillableHostBuffer length:$length, handle:$handle"
 }
 
 object SpillableBuffer {
