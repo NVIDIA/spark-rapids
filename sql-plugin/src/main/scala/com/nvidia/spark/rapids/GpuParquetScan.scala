@@ -1442,26 +1442,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       schema: MessageType,
       handleCoalesceFiles: Boolean): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
-    var size: Long = PARQUET_META_SIZE
-
-    // Calculate the total amount of column data that will be copied
-    // NOTE: Avoid using block.getTotalByteSize here as that is the
-    //       uncompressed size rather than the size in the file.
-    size += currentChunkedBlocks.flatMap { block =>
-      block.getColumns.asScala.map { c =>
-        if ((c.getCodec == CompressionCodecName.SNAPPY && compressCfg.decompressSnappyCpu)
-            || (c.getCodec == CompressionCodecName.ZSTD && compressCfg.decompressZstdCpu)) {
-          // Page headers need to be rewritten when CPU decompresses, and that may
-          // increase the size of the page header. Guess how many pages there may be
-          // and add a fudge factor per page to try to avoid a late realloc+copy.
-          val estimatedPageCount = (c.getTotalUncompressedSize / (1024 * 1024)) + 1
-          c.getTotalUncompressedSize + estimatedPageCount * 8
-        } else {
-          c.getTotalSize
-        }
-      }
-    }.sum
-
+    val headerSize: Long = PARQUET_META_SIZE
+    val blocksSize = ParquetPartitionReader.computeOutputSize(currentChunkedBlocks, compressCfg)
     val footerSize = calculateParquetFooterSize(currentChunkedBlocks, schema)
     val extraMemory = if (handleCoalesceFiles) {
       val numCols = currentChunkedBlocks.head.getColumns().size()
@@ -1469,8 +1451,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     } else {
       0
     }
-    val totalSize = size + footerSize + extraMemory
-    totalSize
+    headerSize + blocksSize + footerSize + extraMemory
   }
 
   protected def writeFooter(
@@ -2111,23 +2092,7 @@ private case class ParquetDataBlock(
   override def getRowCount: Long = dataBlock.getRowCount
   override def getReadDataSize: Long = dataBlock.getTotalByteSize
   override def getBlockSize: Long = {
-    // TODO: Refactor with logic in calculateParquetOutputSize
-    if (compressCfg.decompressAnyCpu) {
-      dataBlock.getColumns.asScala.map { c =>
-        if ((c.getCodec == CompressionCodecName.SNAPPY && compressCfg.decompressSnappyCpu)
-            || (c.getCodec == CompressionCodecName.ZSTD && compressCfg.decompressZstdCpu)) {
-          // Page headers need to be rewritten when CPU decompresses, and that may
-          // increase the size of the page header. Guess how many pages there may be
-          // and add a fudge factor per page to try to avoid a late realloc+copy.
-          val estimatedPageCount = (c.getTotalUncompressedSize / (1024 * 1024)) + 1
-          c.getTotalUncompressedSize + estimatedPageCount * 8
-        } else {
-          c.getTotalSize
-        }
-      }.sum
-    } else {
-      dataBlock.getColumns.asScala.map(_.getTotalSize).sum
-    }
+    ParquetPartitionReader.computeOutputSize(dataBlock, compressCfg)
   }
 }
 
@@ -3192,26 +3157,34 @@ object ParquetPartitionReader {
       length: Long,
       outputOffset: Long) extends CopyItem
 
-  /**
-   * Build a new BlockMetaData
-   *
-   * @param rowCount the number of rows in this block
-   * @param columns the new column chunks to reference in the new BlockMetaData
-   * @return the new BlockMetaData
-   */
-  private[rapids] def newParquetBlock(
-      rowCount: Long,
-      columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
-    val block = new BlockMetaData
-    block.setRowCount(rowCount)
+  private[rapids] def computeOutputSize(
+      blocks: Seq[BlockMetaData],
+      compressCfg: CpuCompressionConfig): Long = {
+    blocks.map { block =>
+      computeOutputSize(block, compressCfg)
+    }.sum
+  }
 
-    var totalSize: Long = 0
-    columns.foreach { column =>
-      block.addColumn(column)
-      totalSize += column.getTotalUncompressedSize
+  private[rapids] def computeOutputSize(
+      block: BlockMetaData,
+      compressCfg: CpuCompressionConfig): Long = {
+    if (compressCfg.decompressAnyCpu) {
+      block.getColumns.asScala.map { c =>
+        if ((c.getCodec == CompressionCodecName.SNAPPY && compressCfg.decompressSnappyCpu)
+            || (c.getCodec == CompressionCodecName.ZSTD && compressCfg.decompressZstdCpu)) {
+          // Page headers need to be rewritten when CPU decompresses, and that may
+          // increase the size of the page header. Guess how many pages there may be
+          // and add a fudge factor per page to try to avoid a late realloc+copy.
+          // NOTE: Avoid using block.getTotalByteSize as that is the
+          //       uncompressed size rather than the size in the file.
+          val estimatedPageCount = (c.getTotalUncompressedSize / (1024 * 1024)) + 1
+          c.getTotalUncompressedSize + estimatedPageCount * 8
+        } else {
+          c.getTotalSize
+        }
+      }.sum
+    } else {
+      block.getColumns.asScala.map(_.getTotalSize).sum
     }
-    block.setTotalByteSize(totalSize)
-
-    block
   }
 }
