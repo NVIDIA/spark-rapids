@@ -1239,6 +1239,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_NULLABLE_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
+    .doc("When set to false disables nullable boolean columns for ORC writes." +
+      "Set to true if your data does not have null booleans and want tp experiment" +
+      "See https://github.com/NVIDIA/spark-rapids/issues/11736.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
       "Pre-projection leverages the tiered projection to evaluate expressions that " +
@@ -2936,6 +2944,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isOrcBoolNullTypeEnabled: Boolean = get(ENABLE_ORC_NULLABLE_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
