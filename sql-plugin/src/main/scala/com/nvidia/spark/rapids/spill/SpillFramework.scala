@@ -1271,7 +1271,6 @@ class DiskHandleStore(conf: SparkConf)
     }
   }
 
-  // TODO: AB: yeah GpuTaskMetrics are messed up
   override def track(handle: DiskHandle): Unit = {
     // protects the off chance that someone adds this handle twice..
     if (doTrack(handle)) {
