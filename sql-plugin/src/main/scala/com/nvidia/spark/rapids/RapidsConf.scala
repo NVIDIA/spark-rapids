@@ -1350,12 +1350,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
