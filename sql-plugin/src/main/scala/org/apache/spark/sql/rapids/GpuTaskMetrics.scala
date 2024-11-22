@@ -124,40 +124,35 @@ class GpuTaskMetrics extends Serializable {
   private val maxHostMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
 
-  private var hostBytesAllocated: Long = 0
   private var maxHostBytesAllocated: Long = 0
 
-  private var diskBytesAllocated: Long = 0
   private var maxDiskBytesAllocated: Long = 0
 
-  def getDiskBytesAllocated: Long = diskBytesAllocated
+  def getDiskBytesAllocated: Long = GpuTaskMetrics.diskBytesAllocated
 
   def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
 
-  def getHostBytesAllocated: Long = hostBytesAllocated
+  def getHostBytesAllocated: Long = GpuTaskMetrics.hostBytesAllocated
 
   def getMaxHostBytesAllocated: Long = maxHostBytesAllocated
 
   def incHostBytesAllocated(bytes: Long): Unit = {
-    hostBytesAllocated += bytes
-    maxHostBytesAllocated = maxHostBytesAllocated.max(hostBytesAllocated)
+    GpuTaskMetrics.incHostBytesAllocated(bytes)
+    maxHostBytesAllocated = maxHostBytesAllocated.max(GpuTaskMetrics.hostBytesAllocated)
   }
 
   def decHostBytesAllocated(bytes: Long): Unit = {
-    hostBytesAllocated -= bytes
+    GpuTaskMetrics.decHostBytesAllocated(bytes)
   }
 
 
   def incDiskBytesAllocated(bytes: Long): Unit = {
-    diskBytesAllocated += bytes
-    maxDiskBytesAllocated = maxDiskBytesAllocated.max(diskBytesAllocated)
+    GpuTaskMetrics.incDiskBytesAllocated(bytes)
+    maxDiskBytesAllocated = maxDiskBytesAllocated.max(GpuTaskMetrics.diskBytesAllocated)
   }
 
   def decDiskBytesAllocated(bytes: Long): Unit = {
-    diskBytesAllocated -= bytes
-    // For some reason it's possible for the task to start out by releasing resources,
-    // possibly from a previous task, in such case we probably should just ignore it.
-    diskBytesAllocated = diskBytesAllocated.max(0)
+    GpuTaskMetrics.decHostBytesAllocated(bytes)
   }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
@@ -275,6 +270,25 @@ class GpuTaskMetrics extends Serializable {
  */
 object GpuTaskMetrics extends Logging {
   private val taskLevelMetrics = mutable.Map[Long, GpuTaskMetrics]()
+
+  private var hostBytesAllocated: Long = 0
+  private var diskBytesAllocated: Long = 0
+
+  private def incHostBytesAllocated(bytes: Long): Unit = synchronized {
+    hostBytesAllocated += bytes
+  }
+
+  private def decHostBytesAllocated(bytes: Long): Unit = synchronized {
+    hostBytesAllocated -= bytes
+  }
+
+  def incDiskBytesAllocated(bytes: Long): Unit = synchronized {
+    diskBytesAllocated += bytes
+  }
+
+  def decDiskBytesAllocated(bytes: Long): Unit = synchronized {
+    diskBytesAllocated -= bytes
+  }
 
   def registerOnTask(metrics: GpuTaskMetrics): Unit = synchronized {
     val tc = TaskContext.get()
