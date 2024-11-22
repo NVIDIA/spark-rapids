@@ -307,7 +307,7 @@ class SpillableHostBufferHandle private (
     }
   }
   
-  private[spill] def getHostBuffer: Option[HostMemoryBuffer] = synchronized {
+  private def getHostBuffer: Option[HostMemoryBuffer] = synchronized {
     host.foreach(_.incRefCount())
     host
   }
