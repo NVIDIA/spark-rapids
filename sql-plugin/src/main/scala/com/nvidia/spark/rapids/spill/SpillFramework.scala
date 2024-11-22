@@ -205,9 +205,8 @@ object SpillableHostBufferHandle extends Logging {
         while (chunkedPacker.hasNext) {
           withResource(chunkedPacker.next(bb)) { n =>
             builder.copyNext(n, Cuda.DEFAULT_STREAM)
-            // we are calling chunked packer on `bb` again each time, we need
-            // to synchronize before we ask for the next chunk
-            Cuda.DEFAULT_STREAM.sync()
+            // copyNext is synchronous w.r.t. the cuda stream passed,
+            // no need to synchronize here.
           }
         }
       }
@@ -221,7 +220,6 @@ object SpillableHostBufferHandle extends Logging {
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
       builder.copyNext(buff, Cuda.DEFAULT_STREAM)
-      Cuda.DEFAULT_STREAM.sync()
       builder.build
     }
   }
@@ -1163,7 +1161,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
 
     override def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit = {
       GpuTaskMetrics.get.spillToHostTime {
-        singleShotBuffer.copyFromMemoryBufferAsync(
+        singleShotBuffer.copyFromMemoryBuffer(
           copied,
           mb,
           0,
