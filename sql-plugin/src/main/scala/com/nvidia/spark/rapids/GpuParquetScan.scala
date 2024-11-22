@@ -1773,7 +1773,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
             columnTotalSize,
             columnTotalSize)
         }
-        GpuParquetUtils.newBlockMeta(block.getRowCount, newColumns)
+        GpuParquetUtils.newBlockMeta(block.getRowCount, newColumns.toSeq)
       }
       newBlocks
     }
