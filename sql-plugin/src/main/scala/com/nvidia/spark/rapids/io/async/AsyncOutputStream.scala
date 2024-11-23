@@ -17,11 +17,12 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.io.{IOException, OutputStream}
-import java.util.concurrent.{Callable, Executors, TimeUnit}
+import java.util.concurrent.{Callable, TimeUnit}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.ThreadFactoryBuilder
+
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
  * OutputStream that performs writes asynchronously. Writes are scheduled on a background thread
@@ -34,12 +35,7 @@ class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: Traff
   private var closed = false
 
   private val executor = new ThrottlingExecutor(
-    Executors.newSingleThreadExecutor(
-      new ThreadFactoryBuilder()
-        .setDaemon(true)
-        .setNameFormat("AsyncOutputStream")
-        .build()
-    ),
+    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1),
     trafficController)
 
   // Open the underlying stream asynchronously as soon as the AsyncOutputStream is constructed,
