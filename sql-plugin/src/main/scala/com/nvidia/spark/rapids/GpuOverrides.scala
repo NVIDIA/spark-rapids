@@ -3320,7 +3320,7 @@ object GpuOverrides extends Logging {
               case at: ArrayType => 1 + getMaxNestedDepth(at.elementType)
               case st: StructType =>
                 1 + st.map(f => getMaxNestedDepth(f.dataType)).max
-              case _ => 1 // primitive types
+              case _ => 0 // primitive types
             }
           }
           val maxDepth = a.children.map(c => getMaxNestedDepth(c.dataType)).max
