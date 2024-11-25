@@ -31,6 +31,7 @@ import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
+import com.nvidia.spark.rapids.io.async.TrafficController
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
@@ -554,6 +555,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize()
       FileCache.init(pluginContext)
+      TrafficController.initialize(conf)
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
       // sticks around without any useful info until it hearbeat times out. Print what happened
@@ -656,6 +658,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
     GpuCoreDumpHandler.shutdown()
+    TrafficController.shutdown()
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
