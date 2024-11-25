@@ -321,10 +321,9 @@ some invalid JSON to be parsed. We have tried to provide JSON parsing that is co
 what Apache Spark does support. Note that Spark itself has changed through different releases, and we will
 try to call out which releases we offer different results for. JSON parsing is enabled by default
 except for date and timestamp types where we still have work to complete. If you wish to disable
-it you can set `spark.rapids.sql.format.json.enabled` or
-`spark.rapids.sql.format.json.read.enabled` to false. Note that these configs apply only to the JSON scan
-`from_json` is based on the same code base as JSON scan and has similar checks, but to disable it you need to
-disable the `JsonToStructs` expression.
+JSON Scan you can set `spark.rapids.sql.format.json.enabled` or
+`spark.rapids.sql.format.json.read.enabled` to false. To disable `from_json` you can set 
+`spark.rapids.sql.expression.StructsToJson` to false.
 
 ### Limits
 
@@ -346,7 +345,7 @@ Spark supports the option `allowNonNumericNumbers`. Versions of Spark prior to 3
 quoted and non-quoted values ([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The
 GPU implementation is consistent with 3.3.0 and above.
 
-### JSON Floating Point types
+### JSON Floating Point Types
 
 Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
@@ -356,16 +355,16 @@ Versions of Spark prior to 3.3.0 would parse quoted integer values, like "1". Bu
 these to be invalid and will return `null` when parsed as an Integral types. The GPU implementation
 follows 3.3.0 and above.
 
-### JSON Decimal types
+### JSON Decimal Types
 
 Spark supports parsing decimal types either formatted as floating point number or integral numbers, even if it is
 in a quoted string. If it is in a quoted string the local of the JVM is used to determine the number format.
 If the local is not for the `US`, which is the default we will fall back to the CPU because we do not currently
-parse those numbers correctly. The `US` format removes all commas ',' from the string.
+parse those numbers correctly. The `US` format removes all commas ',' from the quoted string.
 As a part of this, though, non-arabic numbers are also supported. We do not support parsing these numbers
 see (issue 10532)[https://github.com/NVIDIA/spark-rapids/issues/10532].
 
-### JSON Date/Timestamp types 
+### JSON Date/Timestamp Types 
 
 Dates and timestamps are not supported by default in JSON parser, since the GPU implementation is not 100%
 compatible with Apache Spark.
@@ -403,7 +402,7 @@ escaped characters are converted back to their simplest form. We try to support 
 will be converted to double quotes. Only `get_json_object` and `json_tuple` attempt to normalize floating point
 numbers. There is no implementation on the GPU right now that tries to normalize escape characters.
 
-### `from_json` function
+### `from_json` Function
 
 `JsonToStructs` or `from_json` is based on the same code as reading a JSON lines file.  There are
 a few differences with it.
@@ -412,10 +411,7 @@ The main difference is that `from_json` supports parsing Maps and Arrays directl
 JSON Scan only supports parsing top level structs. The GPU implementation of `from_json` has support for parsing
 a `MAP<STRING,STRING>` as a top level schema, but does not currently support arrays at the top level.
 
-### `to_json` function
-
-The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
-with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsToJson=true`.
+### `to_json` Function
 
 Known issues are:
 
@@ -423,7 +419,7 @@ Known issues are:
   produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
 - Not all JSON options are respected
 
-### get_json_object
+### `get_json_object` Function
 
 Known issue:
 - [Floating-point number normalization error](https://github.com/NVIDIA/spark-rapids-jni/issues/1922). `get_json_object` floating-point number normalization on the GPU could sometimes return incorrect results if the string contains high-precision values, see the String to Float and Float to String section for more details.
