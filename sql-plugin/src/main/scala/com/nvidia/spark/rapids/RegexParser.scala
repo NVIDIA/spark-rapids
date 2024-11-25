@@ -1084,20 +1084,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // line terminator sequences, so we just output the anchor and we are finished
               // for example: \r$ -> \r$ (no transpilation)
               RegexChar('$')
-            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
-              // when using any other line terminator character, you can match any of the other
-              // line terminator characters individually as part of the line anchor match.
-              // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
-              if (mode == RegexReplaceMode) {
-                replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
-                  case _ =>
-                }
-              }
-              RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(excludeCRLF = true,
-                    capture = mode == RegexReplaceMode), SimpleQuantifier('?')),
-                RegexChar('$')))
             case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
               throw new RegexUnsupportedException(
                       "Regex sequences with \\b or \\B not supported around $", regex.position)
@@ -1350,45 +1336,23 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // when the previous character is a line anchor ($), the JVM has special handling
               // when matching against line terminator characters
               case Some(RegexChar('$')) | Some(RegexEscaped('Z')) =>
-                val j = r.lastIndexWhere {
-                  case RegexEmpty() => false
-                  case _ => true
-                }
                 part match {
                   case RegexGroup(capture, RegexSequence(
                       ListBuffer(RegexCharacterClass(true, parts))), _)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(
-                      ListBuffer(lineTerminatorMatcher(excludeCRLF = true, capture = capture),
-                        RegexChar('$')))
                     popBackrefIfNecessary(capture)
                   case RegexGroup(capture, RegexCharacterClass(true, parts), _)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(
-                      lineTerminatorMatcher(excludeCRLF = true, capture = capture),
-                        RegexChar('$')))
                     popBackrefIfNecessary(capture)
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(
-                      lineTerminatorMatcher(excludeCRLF = true, capture = false),
-                        RegexChar('$')))
                     popBackrefIfNecessary(false)
-                  case RegexChar(ch) if ch == '\n' =>
+                  case RegexChar(ch) if lineTerminatorChars.contains(ch) =>
                     // what's really needed here is negative lookahead, but that is not
                     // supported by cuDF
                     // in this case: $\n would transpile to (?!\r)\n$
-                    throw new RegexUnsupportedException("Regex sequence $\\n is not supported",
+                    throw new RegexUnsupportedException(s"Regex sequence $$\\$ch is not supported",
                       part.position)
-                  case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
-                    r(j) = RegexSequence(
-                      ListBuffer(
-                        rewrite(part, replacement, None, flags),
-                        RegexSequence(ListBuffer(
-                          RegexRepetition(
-                            lineTerminatorMatcher(excludeCRLF = true, capture = false),
-                            SimpleQuantifier('?')), RegexChar('$')))))
-                    popBackrefIfNecessary(false)
                   case RegexEscaped('z') =>
                     // since \z is not supported by cudf
                     // we need to transpile $\z to $(?![\r\n\u0085\u2028\u2029])

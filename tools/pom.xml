@@ -94,7 +94,7 @@
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <not>
-                                        <matches pattern="db$" string="${buildver}"/>
+                                        <matches pattern="db" string="${buildver}"/>
                                     </not>
                                     <then>
                                     <mkdir dir="${tools.datagen.dir}"/>
