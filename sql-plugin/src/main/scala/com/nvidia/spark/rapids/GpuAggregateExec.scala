@@ -120,7 +120,8 @@ object AggregateUtils extends Logging {
     }
 
     // Calculate the max rows that can be processed during computation within the budget
-    val maxRows = totalBudget / computationBytesPerRow
+    // Make sure it's not less than 1, otherwise some corner test cases may fail
+    val maxRows = Math.max(totalBudget / computationBytesPerRow, 1)
 
     // Finally compute the input target batching size taking into account the cudf row limits
     Math.min(inputRowSize * maxRows, Int.MaxValue)
