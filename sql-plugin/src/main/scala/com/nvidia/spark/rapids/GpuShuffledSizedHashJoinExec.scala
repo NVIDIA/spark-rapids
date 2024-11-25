@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.GpuShuffledSizedHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.kudo.{KudoTable, KudoTableHeader}
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 import org.apache.spark.rdd.RDD
@@ -223,6 +224,8 @@ object GpuShuffledSizedHashJoinExec {
    * grabbing the GPU semaphore.
    */
   trait HostHostJoinSizer extends JoinSizer[SpillableHostConcatResult] {
+    def readOption: CoalesceReadOption
+
     override def setupForProbe(
         iter: Iterator[ColumnarBatch]): Iterator[SpillableHostConcatResult] = {
       new SpillableHostConcatResultFromColumnarBatchIterator(iter)
@@ -235,24 +238,21 @@ object GpuShuffledSizedHashJoinExec {
         gpuBatchSizeBytes: Long,
         metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
       val concatMetrics = getConcatMetrics(metrics)
-      val bufferedCoalesceIter = new CloseableBufferedIterator(
-        new HostShuffleCoalesceIterator(
-          new HostQueueBatchIterator(queue, remainingIter),
-          gpuBatchSizeBytes,
-          concatMetrics))
-      withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
-        // Force a coalesce of the first batch before we grab the GPU semaphore
-        bufferedCoalesceIter.headOption
-      }
-      new GpuShuffleCoalesceIterator(bufferedCoalesceIter, batchTypes, concatMetrics)
+      GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
+        new HostQueueBatchIterator(queue, remainingIter),
+        gpuBatchSizeBytes,
+        batchTypes,
+        readOption,
+        concatMetrics,
+        prefetchFirstBatch = true)
     }
 
     override def getProbeBatchRowCount(batch: SpillableHostConcatResult): Long = {
-      batch.header.getNumRows
+      batch.getNumRows
     }
 
     override def getProbeBatchDataSize(batch: SpillableHostConcatResult): Long = {
-      batch.header.getDataLen
+      batch.getDataLen
     }
   }
 
@@ -265,6 +265,8 @@ object GpuShuffledSizedHashJoinExec {
    * See https://github.com/NVIDIA/spark-rapids/issues/11322.
    */
   trait HostHostUnspillableJoinSizer extends JoinSizer[ColumnarBatch] {
+    def readOption: CoalesceReadOption
+
     override def setupForProbe(
         iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = iter
 
@@ -275,31 +277,25 @@ object GpuShuffledSizedHashJoinExec {
         gpuBatchSizeBytes: Long,
         metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
       val concatMetrics = getConcatMetrics(metrics)
-      val bufferedCoalesceIter = new CloseableBufferedIterator(
-        new HostShuffleCoalesceIterator(
-          queue.iterator ++ remainingIter,
-          gpuBatchSizeBytes,
-          concatMetrics))
-      withResource(new NvtxRange("fetch first batch", NvtxColor.YELLOW)) { _ =>
-        // Force a coalesce of the first batch before we grab the GPU semaphore
-        bufferedCoalesceIter.headOption
-      }
-      new GpuShuffleCoalesceIterator(bufferedCoalesceIter, batchTypes, concatMetrics)
+      GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
+        queue.iterator ++ remainingIter,
+        gpuBatchSizeBytes,
+        batchTypes,
+        readOption,
+        concatMetrics,
+        prefetchFirstBatch = true)
     }
 
     override def getProbeBatchRowCount(batch: ColumnarBatch): Long = batch.numRows()
 
     override def getProbeBatchDataSize(batch: ColumnarBatch): Long = {
-      SerializedTableColumn.getMemoryUsed(batch)
+      GpuShuffleCoalesceUtils.getSerializedBufferSize(batch)
     }
   }
 
   /**
    * Join sizer to use when at least one side of the join is coming from another GPU exec node
    * such that the GPU semaphore is already held. Caches input batches on the GPU.
-   *
-   * @param startWithLeftSide whether to prefer fetching from the left or right side first
-   *                          when probing for table sizes.
    */
   trait SpillableColumnarBatchJoinSizer extends JoinSizer[SpillableColumnarBatch] {
     override def setupForProbe(iter: Iterator[ColumnarBatch]): Iterator[SpillableColumnarBatch] = {
@@ -324,7 +320,10 @@ object GpuShuffledSizedHashJoinExec {
     // Use a filtered metrics map to avoid output batch counts and other unrelated metric updates
     Map(
       OP_TIME -> metrics(OP_TIME),
-      CONCAT_TIME -> metrics(CONCAT_TIME)).withDefaultValue(NoopMetric)
+      CONCAT_TIME -> metrics(CONCAT_TIME),
+      CONCAT_HEADER_TIME -> metrics(CONCAT_HEADER_TIME),
+      CONCAT_BUFFER_TIME -> metrics(CONCAT_BUFFER_TIME)
+    ).withDefaultValue(NoopMetric)
   }
 
   def createJoinIterator(
@@ -377,8 +376,10 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   def isSkewJoin: Boolean
   def cpuLeftKeys: Seq[Expression]
   def cpuRightKeys: Seq[Expression]
+  def readOption: CoalesceReadOption
 
-  protected def createHostHostSizer(): JoinSizer[HOST_BATCH_TYPE]
+  protected def createHostHostSizer(
+      readOption: CoalesceReadOption): JoinSizer[HOST_BATCH_TYPE]
 
   protected def createSpillableColumnarBatchSizer(
       startWithLeftSide: Boolean): JoinSizer[SpillableColumnarBatch]
@@ -388,6 +389,8 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
+    CONCAT_HEADER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_HEADER_TIME),
+    CONCAT_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_BUFFER_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
@@ -425,20 +428,21 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     val localCondition = condition
     val localGpuBatchSizeBytes = gpuBatchSizeBytes
     val localMetrics = allMetrics.withDefaultValue(NoopMetric)
+    val localReadOption = readOption
     left.executeColumnar().zipPartitions(right.executeColumnar()) { case (leftIter, rightIter) =>
       val joinInfo = (isLeftHost, isRightHost) match {
         case (true, true) =>
           getHostHostJoinInfo(localJoinType, localLeftKeys, leftOutput, leftIter,
-            localRightKeys, rightOutput, rightIter,
-            localCondition, localGpuBatchSizeBytes, localMetrics)
+            localRightKeys, rightOutput, rightIter, localCondition,
+            localGpuBatchSizeBytes, localReadOption, localMetrics)
         case (true, false) =>
           getHostGpuJoinInfo(localJoinType, localLeftKeys, leftOutput, leftIter,
-            localRightKeys, rightOutput, rightIter,
-            localCondition, localGpuBatchSizeBytes, localMetrics)
+            localRightKeys, rightOutput, rightIter, localCondition,
+            localGpuBatchSizeBytes, localReadOption, localMetrics)
         case (false, true) =>
           getGpuHostJoinInfo(localJoinType, localLeftKeys, leftOutput, leftIter,
-            localRightKeys, rightOutput, rightIter,
-            localCondition, localGpuBatchSizeBytes, localMetrics)
+            localRightKeys, rightOutput, rightIter, localCondition,
+            localGpuBatchSizeBytes, localReadOption, localMetrics)
         case (false, false) =>
           getGpuGpuJoinInfo(localJoinType, localLeftKeys, leftOutput, leftIter,
             localRightKeys, rightOutput, rightIter,
@@ -539,8 +543,9 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       rightIter: Iterator[ColumnarBatch],
       condition: Option[Expression],
       gpuBatchSizeBytes: Long,
+      readOption: CoalesceReadOption,
       metrics: Map[String, GpuMetric]): JoinInfo = {
-    val sizer = createHostHostSizer()
+    val sizer = createHostHostSizer(readOption)
     sizer.getJoinInfo(joinType, leftKeys, leftOutput, leftIter, rightKeys, rightOutput, rightIter,
       condition, gpuBatchSizeBytes, metrics)
   }
@@ -559,12 +564,15 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       rightIter: Iterator[ColumnarBatch],
       condition: Option[Expression],
       gpuBatchSizeBytes: Long,
+      readOption: CoalesceReadOption,
       metrics: Map[String, GpuMetric]): JoinInfo = {
     val sizer = createSpillableColumnarBatchSizer(startWithLeftSide = true)
     val concatMetrics = getConcatMetrics(metrics)
-    val leftIter = new GpuShuffleCoalesceIterator(
-      new HostShuffleCoalesceIterator(rawLeftIter, gpuBatchSizeBytes, concatMetrics),
+    val leftIter = GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
+      rawLeftIter,
+      gpuBatchSizeBytes,
       leftOutput.map(_.dataType).toArray,
+      readOption,
       concatMetrics)
     sizer.getJoinInfo(joinType, leftKeys, leftOutput, leftIter, rightKeys, rightOutput, rightIter,
       condition, gpuBatchSizeBytes, metrics)
@@ -584,12 +592,15 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       rawRightIter: Iterator[ColumnarBatch],
       condition: Option[Expression],
       gpuBatchSizeBytes: Long,
+      readOption: CoalesceReadOption,
       metrics: Map[String, GpuMetric]): JoinInfo = {
     val sizer = createSpillableColumnarBatchSizer(startWithLeftSide = false)
     val concatMetrics = getConcatMetrics(metrics)
-    val rightIter = new GpuShuffleCoalesceIterator(
-      new HostShuffleCoalesceIterator(rawRightIter, gpuBatchSizeBytes, concatMetrics),
+    val rightIter = GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
+      rawRightIter,
+      gpuBatchSizeBytes,
       rightOutput.map(_.dataType).toArray,
+      readOption,
       concatMetrics)
     sizer.getJoinInfo(joinType, leftKeys, leftOutput, leftIter, rightKeys, rightOutput, rightIter,
       condition, gpuBatchSizeBytes, metrics)
@@ -728,8 +739,9 @@ object GpuShuffledSymmetricHashJoinExec {
     }
   }
 
-  class HostHostSymmetricJoinSizer extends SymmetricJoinSizer[SpillableHostConcatResult]
-      with HostHostJoinSizer {
+  class HostHostSymmetricJoinSizer(override val readOption: CoalesceReadOption)
+    extends SymmetricJoinSizer[SpillableHostConcatResult] with HostHostJoinSizer {
+
     override val startWithLeftSide: Boolean = true
   }
 
@@ -762,6 +774,7 @@ case class GpuShuffledSymmetricHashJoinExec(
     override val right: SparkPlan,
     override val isGpuShuffle: Boolean,
     override val gpuBatchSizeBytes: Long,
+    override val readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     override val cpuLeftKeys: Seq[Expression],
     override val cpuRightKeys: Seq[Expression])
@@ -771,8 +784,9 @@ case class GpuShuffledSymmetricHashJoinExec(
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys)
 
-  override protected def createHostHostSizer(): JoinSizer[SpillableHostConcatResult] = {
-    new HostHostSymmetricJoinSizer()
+  override protected def createHostHostSizer(
+      readOption: CoalesceReadOption): JoinSizer[SpillableHostConcatResult] = {
+    new HostHostSymmetricJoinSizer(readOption)
   }
 
   override protected def createSpillableColumnarBatchSizer(
@@ -1022,7 +1036,9 @@ object GpuShuffledAsymmetricHashJoinExec {
     }
   }
 
-  class HostHostAsymmetricJoinSizer(override val magnificationThreshold: Int)
+  class HostHostAsymmetricJoinSizer(
+      override val magnificationThreshold: Int,
+      override val readOption: CoalesceReadOption)
     extends AsymmetricJoinSizer[ColumnarBatch] with HostHostUnspillableJoinSizer {
   }
 
@@ -1055,6 +1071,7 @@ case class GpuShuffledAsymmetricHashJoinExec(
     override val right: SparkPlan,
     override val isGpuShuffle: Boolean,
     override val gpuBatchSizeBytes: Long,
+    override val readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     override val cpuLeftKeys: Seq[Expression],
     override val cpuRightKeys: Seq[Expression],
@@ -1064,8 +1081,9 @@ case class GpuShuffledAsymmetricHashJoinExec(
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(cpuLeftKeys, cpuRightKeys, magnificationThreshold)
 
-  override protected def createHostHostSizer(): JoinSizer[ColumnarBatch] = {
-    new HostHostAsymmetricJoinSizer(magnificationThreshold)
+  override protected def createHostHostSizer(
+      readOption: CoalesceReadOption): JoinSizer[ColumnarBatch] = {
+    new HostHostAsymmetricJoinSizer(magnificationThreshold, readOption)
   }
 
   override protected def createSpillableColumnarBatchSizer(
@@ -1077,24 +1095,72 @@ case class GpuShuffledAsymmetricHashJoinExec(
 /**
  * A spillable form of a HostConcatResult. Takes ownership of the specified host buffer.
  */
-class SpillableHostConcatResult(
-    val header: SerializedTableHeader,
-    hmb: HostMemoryBuffer) extends AutoCloseable {
-  private var buffer = {
-    SpillableHostBuffer(hmb, hmb.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-  }
+sealed trait SpillableHostConcatResult extends AutoCloseable {
+  def hmb: HostMemoryBuffer
+  def toBatch: ColumnarBatch
+  def getNumRows: Long
+  def getDataLen: Long
 
-  def getHostMemoryBufferAndClose(): HostMemoryBuffer = {
-    val hostBuffer = buffer.getHostBuffer()
-    closeOnExcept(hostBuffer) { _ =>
-      close()
-    }
-    hostBuffer
+  protected var buffer = {
+    SpillableHostBuffer(hmb, hmb.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
   override def close(): Unit = {
     buffer.close()
     buffer = null
+  }
+}
+
+class CudfSpillableHostConcatResult(
+    header: SerializedTableHeader,
+    val hmb: HostMemoryBuffer) extends SpillableHostConcatResult {
+
+  override def toBatch: ColumnarBatch = {
+    closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+      SerializedTableColumn.from(header, hostBuf)
+    }
+  }
+
+  override def getNumRows: Long = header.getNumRows
+
+  override def getDataLen: Long = header.getDataLen
+}
+
+class KudoSpillableHostConcatResult(kudoTableHeader: KudoTableHeader,
+    val hmb: HostMemoryBuffer
+) extends SpillableHostConcatResult  {
+  require(kudoTableHeader != null, "KudoTableHeader cannot be null")
+  require(hmb != null, "HostMemoryBuffer cannot be null")
+
+  override def toBatch: ColumnarBatch = closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+    KudoSerializedTableColumn.from(new KudoTable(kudoTableHeader, hostBuf))
+  }
+
+  override def getNumRows: Long = kudoTableHeader.getNumRows
+
+  override def getDataLen: Long = hmb.getLength
+}
+
+object SpillableHostConcatResult {
+  def from(batch: ColumnarBatch): SpillableHostConcatResult = {
+    require(batch.numCols() == 1, "Batch must have exactly 1 column")
+    batch.column(0) match {
+      case col: KudoSerializedTableColumn => {
+        // This will be closed
+        val oldKudoTable = col.kudoTable
+        val buffer = col.kudoTable.getBuffer
+        if (buffer != null) {
+          buffer.incRefCount()
+        }
+        new KudoSpillableHostConcatResult(oldKudoTable.getHeader, buffer)
+      }
+      case col: SerializedTableColumn =>
+        val buffer = col.hostBuffer
+        buffer.incRefCount()
+        new CudfSpillableHostConcatResult(col.header, buffer)
+      case c =>
+        throw new IllegalStateException(s"Expected SerializedTableColumn, got ${c.getClass}")
+    }
   }
 }
 
@@ -1107,17 +1173,7 @@ class SpillableHostConcatResultFromColumnarBatchIterator(
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): SpillableHostConcatResult = {
-    withResource(iter.next()) { batch =>
-      require(batch.numCols() > 0, "Batch must have at least 1 column")
-      batch.column(0) match {
-        case col: SerializedTableColumn =>
-          val buffer = col.hostBuffer
-          buffer.incRefCount()
-          new SpillableHostConcatResult(col.header, buffer)
-        case c =>
-          throw new IllegalStateException(s"Expected SerializedTableColumn, got ${c.getClass}")
-      }
-    }
+    withResource(iter.next())(SpillableHostConcatResult.from)
   }
 }
 
@@ -1137,10 +1193,7 @@ class HostQueueBatchIterator(
 
   override def next(): ColumnarBatch = {
     if (spillableQueue.nonEmpty) {
-      val shcr = spillableQueue.dequeue()
-      closeOnExcept(shcr.getHostMemoryBufferAndClose()) { hostBuffer =>
-        SerializedTableColumn.from(shcr.header, hostBuffer)
-      }
+      withResource(spillableQueue.dequeue())(_.toBatch)
     } else {
       batchIter.next()
     }

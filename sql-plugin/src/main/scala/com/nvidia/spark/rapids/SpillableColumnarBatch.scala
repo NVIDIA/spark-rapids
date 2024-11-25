@@ -55,6 +55,9 @@ trait SpillableColumnarBatch extends AutoCloseable {
   def sizeInBytes: Long
 
   def dataTypes: Array[DataType]
+
+  override def toString: String =
+    s"SCB size:$sizeInBytes, types:${dataTypes.toList}, rows:${numRows()}"
 }
 
 /**
@@ -79,6 +82,8 @@ class JustRowsColumnarBatch(numRows: Int)
 
   // There is no off heap data and close is a noop so just return this
   override def incRefCount(): SpillableColumnarBatch = this
+
+  override def toString: String = s"JustRowsSCB size:$sizeInBytes, rows:$numRows"
 }
 
 /**
@@ -148,7 +153,8 @@ class SpillableColumnarBatchImpl (
   }
 
   override def toString: String =
-    s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
+    s"GpuSCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 class JustRowsHostColumnarBatch(numRows: Int)
@@ -167,6 +173,8 @@ class JustRowsHostColumnarBatch(numRows: Int)
 
   // There is no off heap data and close is a noop so just return this
   override def incRefCount(): SpillableColumnarBatch = this
+
+  override def toString: String = s"JustRowsHostSCB size:$sizeInBytes, rows:$numRows"
 }
 
 /**
@@ -233,6 +241,10 @@ class SpillableHostColumnarBatchImpl (
       throw new IllegalStateException("Double free on SpillableHostColumnarBatchImpl")
     }
   }
+
+  override def toString: String =
+    s"HostSCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 object SpillableColumnarBatch {
@@ -388,6 +400,13 @@ class SpillableBuffer(
   override def close(): Unit = {
     handle.close()
   }
+
+  override def toString: String = {
+    val size = withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
+      rapidsBuffer.memoryUsedBytes
+    }
+    s"SpillableBuffer size:$size, handle:$handle"
+  }
 }
 
 /**
@@ -422,6 +441,9 @@ class SpillableHostBuffer(handle: RapidsBufferHandle,
       rapidsBuffer.getHostMemoryBuffer
     }
   }
+
+  override def toString: String =
+    s"SpillableHostBuffer length:$length, handle:$handle"
 }
 
 object SpillableBuffer {

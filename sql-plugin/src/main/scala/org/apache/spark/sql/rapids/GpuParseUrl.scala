@@ -40,10 +40,10 @@ object GpuParseUrl {
 
   def isSupportedPart(part: String): Boolean = {
     part match {
-      case PROTOCOL | HOST | QUERY | PATH =>
-        true
-      case _ =>
+      case REF | FILE | AUTHORITY | USERINFO =>
         false
+      case _ => // PROTOCOL, HOST, QUERY, PATH and invalid parts are supported
+        true
     }
   }
 }
@@ -73,7 +73,7 @@ case class GpuParseUrl(children: Seq[Expression])
         throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
             s"Only PROTOCOL, HOST, QUERY and PATH are supported")
       case _ =>
-        throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
+        return GpuColumnVector.columnVectorFromNull(url.getRowCount.toInt, StringType)
     }
   }
 

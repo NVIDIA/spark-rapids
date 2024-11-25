@@ -141,6 +141,12 @@ abstract class BackendTestSettings {
       this
     }
 
+    def excludeBySuffix(suffixes: String, reason: ExcludeReason): SuiteSettings = {
+      exclusion.add(ExcludeBySuffix(suffixes))
+      excludeReasons.add(reason)
+      this
+    }
+
     def includeRapidsTestsByPrefix(prefixes: String*): SuiteSettings = {
       inclusion.add(IncludeRapidsTestByPrefix(prefixes: _*))
       this
@@ -152,6 +158,12 @@ abstract class BackendTestSettings {
       this
     }
 
+    def excludeRapidsTestsBySuffix(suffixes: String, reason: ExcludeReason): SuiteSettings = {
+      exclusion.add(ExcludeRadpisTestByPrefix(suffixes))
+      excludeReasons.add(reason)
+      this
+    }
+
     def includeAllRapidsTests(): SuiteSettings = {
       inclusion.add(IncludeByPrefix(RAPIDS_TEST))
       this
@@ -159,6 +171,7 @@ abstract class BackendTestSettings {
 
     def excludeAllRapidsTests(reason: ExcludeReason): SuiteSettings = {
       exclusion.add(ExcludeByPrefix(RAPIDS_TEST))
+      exclusion.add(ExcludeBySuffix(RAPIDS_TEST))
       excludeReasons.add(reason)
       this
     }
@@ -204,6 +217,15 @@ abstract class BackendTestSettings {
   private case class ExcludeByPrefix(prefixes: String*) extends ExcludeBase {
     override def isExcluded(testName: String): Boolean = {
       if (prefixes.exists(prefix => testName.startsWith(prefix))) {
+        return true
+      }
+      false
+    }
+  }
+
+  private case class ExcludeBySuffix(suffixes: String*) extends ExcludeBase {
+    override def isExcluded(testName: String): Boolean = {
+      if (suffixes.exists(suffix => testName.endsWith(suffix))) {
         return true
       }
       false

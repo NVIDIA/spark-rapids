@@ -27,7 +27,8 @@ The plugin is tested on the following architectures:
 
 ### Software Requirements:
 
-	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
 
 	NVIDIA Driver*: R470+
 

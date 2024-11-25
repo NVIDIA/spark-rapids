@@ -551,20 +551,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .integerConf
       .createWithDefault(2)
 
-  val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
-    .doc("Number of threads used to spill shuffle data to disk in the background.")
-    .commonlyUsed()
-    .integerConf
-    .createWithDefault(6)
-
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
-      "cudf row count limit of a column.")
+      "is covered by separate configs.")
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
-    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
-      s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
+    .checkValue(v => v > 0, "Batch size must be positive")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
@@ -763,6 +755,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val PROFILE_TASK_LIMIT_PER_STAGE = conf("spark.rapids.profile.taskLimitPerStage")
+    .doc("Limit the number of tasks to profile per stage. A value <= 0 will profile all tasks.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
   val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
     .doc("Whether the profiler should capture async CUDA allocation and free events")
     .internal()
@@ -827,6 +825,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .commonlyUsed()
     .booleanConf
     .createWithDefault(false)
+
+  val DFUDF_ENABLED = conf("spark.rapids.sql.dfudf.enabled")
+    .doc("When set to false, the DataFrame UDF plugin is disabled. True enables it.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
 
   val INCOMPATIBLE_OPS = conf("spark.rapids.sql.incompatibleOps.enabled")
     .doc("For operations that work, but are not 100% compatible with the Spark equivalent " +
@@ -1352,12 +1356,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
@@ -1374,6 +1378,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "unicode digits, and the RAPIDS Accelerator does not.")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_READ_JSON_DATE_TIME = conf("spark.rapids.sql.json.read.datetime.enabled")
+    .doc("JSON reading is not 100% compatible when reading dates and timestamps.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_AVRO = conf("spark.rapids.sql.format.avro.enabled")
     .doc("When set to true enables all avro input and output acceleration. " +
@@ -1935,6 +1944,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         .integerConf
         .createWithDefault(20)
 
+  val SHUFFLE_KUDO_SERIALIZER_ENABLED = conf("spark.rapids.shuffle.kudo.serializer.enabled")
+    .doc("Enable or disable the Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   // ALLUXIO CONFIGS
   val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
     .doc("The Alluxio master hostname. If not set, read Alluxio master URL from " +
@@ -2391,6 +2407,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(true)
 
+  val TRACE_TASK_GPU_OWNERSHIP = conf("spark.rapids.sql.nvtx.traceTaskGpuOwnership")
+    .doc("Enable tracing of the GPU ownership of tasks. This can be useful for debugging " +
+      "deadlocks and other issues related to GPU semaphore.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2426,7 +2449,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.10.1-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.12.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2589,6 +2612,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val profileStages: Option[String] = get(PROFILE_STAGES)
 
+  lazy val profileTaskLimitPerStage: Int = get(PROFILE_TASK_LIMIT_PER_STAGE)
+
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
 
   lazy val profileAsyncAllocCapture: Boolean = get(PROFILE_ASYNC_ALLOC_CAPTURE)
@@ -2606,6 +2631,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_MODE).equals("explainonly")
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
+
+  lazy val isDfUdfEnabled: Boolean = get(DFUDF_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
@@ -2857,7 +2884,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCombinedExpressionsEnabled: Boolean = get(ENABLE_COMBINED_EXPRESSIONS)
 
   lazy val isRlikeRegexRewriteEnabled: Boolean = get(ENABLE_RLIKE_REGEX_REWRITE)
-  
+
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
@@ -2967,6 +2994,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isJsonDecimalReadEnabled: Boolean = get(ENABLE_READ_JSON_DECIMALS)
 
+  lazy val isJsonDateTimeReadEnabled: Boolean = get(ENABLE_READ_JSON_DATE_TIME)
+
   lazy val isAvroEnabled: Boolean = get(ENABLE_AVRO)
 
   lazy val isAvroReadEnabled: Boolean = get(ENABLE_AVRO_READ)
@@ -3060,6 +3089,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
 
   lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
+
+  lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode

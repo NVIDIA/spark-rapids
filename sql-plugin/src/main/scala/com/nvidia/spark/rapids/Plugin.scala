@@ -27,6 +27,7 @@ import scala.sys.process._
 import scala.util.Try
 
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner, NvtxColor, NvtxRange}
+import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
@@ -65,6 +66,7 @@ object RapidsPluginUtils extends Logging {
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
+  private val DFUDF_PLUGIN_NAME = classOf[DFUDFPlugin].getName
   private val SQL_PLUGIN_CONF_KEY = StaticSQLConf.SPARK_SESSION_EXTENSIONS.key
   private val SERIALIZER_CONF_KEY = "spark.serializer"
   private val JAVA_SERIALIZER_NAME = classOf[JavaSerializer].getName
@@ -131,11 +133,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.10.1-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.12.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-24.10.1-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.12.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-24.10.1-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-24.12.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -226,9 +228,10 @@ object RapidsPluginUtils extends Logging {
   }
 
   def fixupConfigsOnDriver(conf: SparkConf): Unit = {
+    val plugins = Array(SQL_PLUGIN_NAME, UDF_PLUGIN_NAME, DFUDF_PLUGIN_NAME)
     // First add in the SQL executor plugin because that is what we need at a minimum
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
-      for (pluginName <- Array(SQL_PLUGIN_NAME, UDF_PLUGIN_NAME)){
+      for (pluginName <- plugins){
         val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
         if (!previousValue.contains(pluginName)) {
           conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ pluginName).mkString(","))
@@ -237,7 +240,7 @@ object RapidsPluginUtils extends Logging {
         }
       }
     } else {
-      conf.set(SQL_PLUGIN_CONF_KEY, Array(SQL_PLUGIN_NAME,UDF_PLUGIN_NAME).mkString(","))
+      conf.set(SQL_PLUGIN_CONF_KEY, plugins.mkString(","))
     }
 
     val serializer = conf.get(SERIALIZER_CONF_KEY, JAVA_SERIALIZER_NAME)
