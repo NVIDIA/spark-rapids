@@ -323,7 +323,7 @@ try to call out which releases we offer different results for. JSON parsing is e
 except for date and timestamp types where we still have work to complete. If you wish to disable
 JSON Scan you can set `spark.rapids.sql.format.json.enabled` or
 `spark.rapids.sql.format.json.read.enabled` to false. To disable `from_json` you can set 
-`spark.rapids.sql.expression.StructsToJson` to false.
+`spark.rapids.sql.expression.JsonToStructs` to false.
 
 ### Limits
 
