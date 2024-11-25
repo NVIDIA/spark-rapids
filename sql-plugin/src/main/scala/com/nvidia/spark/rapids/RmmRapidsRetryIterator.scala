@@ -464,6 +464,7 @@ object RmmRapidsRetryIterator extends Logging {
       if (splitPolicy == null) {
         val message = s"could not split inputs and retry. The current attempt: " +
           s"{${attemptStack.head}}"
+        logWarning(message)
         if (isFromGpuOom) {
           throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
         } else {
@@ -482,22 +483,25 @@ object RmmRapidsRetryIterator extends Logging {
           // This looks a little odd, because we can not change the type of root exception.
           // Otherwise, some unit tests will fail due to the wrong exception type returned.
         case go: GpuRetryOOM =>
+          logWarning(s"1Could not split the current attempt: {$attemptAsString}")
           throw new GpuRetryOOM(
             s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case go: GpuSplitAndRetryOOM =>
+          logWarning(s"2Could not split the current attempt: {$attemptAsString}")
           throw new GpuSplitAndRetryOOM(
             s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case co: CpuRetryOOM =>
+          logWarning(s"3Could not split the current attempt: {$attemptAsString}")
           throw new CpuRetryOOM(
             s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
           ).initCause(co)
         case co: CpuSplitAndRetryOOM =>
+          logWarning(s"4Could not split the current attempt: {$attemptAsString}")
           throw new CpuSplitAndRetryOOM(
             s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
           ).initCause(co)
-        case ex: Throwable => throw ex
       }
       // the splitted sequence needs to be inserted in reverse order
       // so we try the first item first.
