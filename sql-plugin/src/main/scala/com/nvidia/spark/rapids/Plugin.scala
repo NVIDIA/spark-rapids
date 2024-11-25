@@ -31,6 +31,7 @@ import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
+import com.nvidia.spark.rapids.hybrid.HybridPluginWrapper
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
@@ -98,7 +99,8 @@ object RapidsPluginUtils extends Logging {
       s"private revision ${privateRev}")
   }
 
-  val extraPlugins = getExtraPlugins
+  val extraPlugins = getExtraPlugins ++
+      Seq(new HybridPluginWrapper().asInstanceOf[SparkPlugin])
 
   def logPluginMode(conf: RapidsConf): Unit = {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
