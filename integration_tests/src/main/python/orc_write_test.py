@@ -29,7 +29,14 @@ orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, doubl
         string_gen, BooleanGen(nullable=False), DateGen(start=date(1590, 1, 1)),
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
         decimal_gens
-
+# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# https://github.com/rapidsai/cudf/issues/6763 .
+# Once the first issue is fixed, we can replace this list with
+# orc_write_basic_gens
+orc_write_basic_gens_for_structs = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, DateGen(start=date(1590, 1, 1)),
+        TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
+        decimal_gens
 all_nulls_string_gen = SetValuesGen(StringType(), [None])
 empty_or_null_string_gen = SetValuesGen(StringType(), [None, ""])
 all_empty_string_gen = SetValuesGen(StringType(), [""])
@@ -52,7 +59,8 @@ orc_write_odd_empty_strings_gens_sample = [all_nulls_string_gen,
         all_nulls_map_gen,
         all_empty_map_gen]
 
-orc_write_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_write_basic_gens)])
+orc_write_basic_struct_gen = StructGen(
+    [['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_write_basic_gens_for_structs)])
 
 orc_write_struct_gens_sample = [orc_write_basic_struct_gen,
     StructGen([['child0', byte_gen], ['child1', orc_write_basic_struct_gen]]),
