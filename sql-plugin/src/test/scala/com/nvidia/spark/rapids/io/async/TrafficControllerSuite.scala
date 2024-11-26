@@ -19,9 +19,14 @@ package com.nvidia.spark.rapids.io.async
 import java.util.concurrent.{ExecutionException, Executors, ExecutorService, TimeUnit}
 
 import org.scalatest.BeforeAndAfterEach
+import org.scalatest.concurrent.TimeLimitedTests
 import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.time.Span
+import org.scalatest.time.SpanSugar._
 
-class TrafficControllerSuite extends AnyFunSuite with BeforeAndAfterEach {
+class TrafficControllerSuite extends AnyFunSuite with BeforeAndAfterEach with TimeLimitedTests {
+
+  val timeLimit: Span = 10.seconds
 
   private var throttle: HostMemoryThrottle = _
   private var controller: TrafficController = _
@@ -68,6 +73,22 @@ class TrafficControllerSuite extends AnyFunSuite with BeforeAndAfterEach {
     val t3 = new TestTask(taskMemoryBytes)
     val f = executor.submit(new Runnable {
       override def run(): Unit = controller.blockUntilRunnable(t3)
+    })
+    Thread.sleep(100)
+    assert(!f.isDone)
+
+    controller.taskCompleted(t1)
+    f.get(1, TimeUnit.SECONDS)
+  }
+
+  test("big task should be scheduled after all running tasks are completed") {
+    val taskMemoryBytes = 50
+    val t1 = new TestTask(taskMemoryBytes)
+    controller.blockUntilRunnable(t1)
+
+    val t2 = new TestTask(150)
+    val f = executor.submit(new Runnable {
+      override def run(): Unit = controller.blockUntilRunnable(t2)
     })
     Thread.sleep(100)
     assert(!f.isDone)
