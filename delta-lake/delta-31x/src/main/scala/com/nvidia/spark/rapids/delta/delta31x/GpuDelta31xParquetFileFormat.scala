@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta
+package com.nvidia.spark.rapids.delta.delta31x
 
 import java.net.URI
 
-import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
-import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
-import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.nvidia.spark.rapids.{GpuMetric, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.delta.{GpuDeltaParquetFileFormat, RoaringBitmapWrapper}
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -31,7 +29,8 @@ import scala.util.control.NonFatal
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.delta.RowIndexFilterType
+import org.apache.spark.sql.delta.{DeltaColumnMappingMode, IdMapping, RowIndexFilterType}
+import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
@@ -42,7 +41,7 @@ import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnarBatchRow, ColumnVector}
 import org.apache.spark.util.SerializableConfiguration
 
-case class GpuDeltaParquetFileFormat(
+case class GpuDelta31xParquetFileFormat(
     override val columnMappingMode: DeltaColumnMappingMode,
     override val referenceSchema: StructType,
     isSplittable: Boolean,
@@ -50,7 +49,7 @@ case class GpuDeltaParquetFileFormat(
     broadcastDvMap: Option[Broadcast[Map[URI, DeletionVectorDescriptorWithFilterType]]],
     tablePath: Option[String] = None,
     broadcastHadoopConf: Option[Broadcast[SerializableConfiguration]] = None
-  ) extends GpuDeltaParquetFileFormatBase {
+  ) extends GpuDeltaParquetFileFormat {
 
   if (hasDeletionVectorMap) {
     require(tablePath.isDefined && !isSplittable && disablePushDowns,
@@ -87,12 +86,14 @@ case class GpuDeltaParquetFileFormat(
       alluxioPathReplacementMap: Option[Map[String, String]])
   : PartitionedFile => Iterator[InternalRow] = {
 
+    val pushdownFilters = if (disablePushDowns) Seq.empty else filters
+
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
       dataSchema,
       partitionSchema,
       requiredSchema,
-      filters,
+      pushdownFilters,
       options,
       hadoopConf,
       metrics,
@@ -150,7 +151,7 @@ case class GpuDeltaParquetFileFormat(
       } catch {
         case NonFatal(e) =>
           dataReader match {
-            case resource: AutoCloseable => GpuDeltaParquetFileFormat.closeQuietly(resource)
+            case resource: AutoCloseable => GpuDelta31xParquetFileFormat.closeQuietly(resource)
             case _ => // do nothing
           }
           throw e
@@ -200,7 +201,7 @@ case class GpuDeltaParquetFileFormat(
     iterator.map {
       case batch: ColumnarBatch =>
         val size = batch.numRows()
-        GpuDeltaParquetFileFormat.trySafely(useOffHeapBuffers, size, metadataColumns) {
+        GpuDelta31xParquetFileFormat.trySafely(useOffHeapBuffers, size, metadataColumns) {
           writableVectors =>
             val indexVectorTuples = new ArrayBuffer[(Int, ColumnVector)]()
             var index = 0
@@ -224,7 +225,8 @@ case class GpuDeltaParquetFileFormat(
               index += 1
             }
 
-            val newBatch = GpuDeltaParquetFileFormat.replaceVectors(batch, indexVectorTuples.toSeq)
+            val newBatch =
+              GpuDelta31xParquetFileFormat.replaceVectors(batch, indexVectorTuples.toSeq)
             rowIndex += size
             newBatch
         }
@@ -241,7 +243,7 @@ case class GpuDeltaParquetFileFormat(
   }
 }
 
-object GpuDeltaParquetFileFormat {
+object GpuDelta31xParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
   }
 
@@ -294,10 +296,5 @@ object GpuDeltaParquetFileFormat {
     }
 
     new ColumnarBatch(vectors.toArray, batch.numRows())
-  }
-
-  def convertToGpu(fmt: DeltaParquetFileFormat): GpuDeltaParquetFileFormat = {
-    GpuDeltaParquetFileFormat(fmt.columnMappingMode, fmt.referenceSchema, fmt.isSplittable,
-      fmt.disablePushDowns, fmt.broadcastDvMap, fmt.tablePath, fmt.broadcastHadoopConf)
   }
 }
