@@ -553,12 +553,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
-      "cudf row count limit of a column.")
+      "is covered by separate configs.")
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
-    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
-      s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
+    .checkValue(v => v > 0, "Batch size must be positive")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
@@ -756,6 +754,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .stringConf
     .createOptional
+
+  val PROFILE_TASK_LIMIT_PER_STAGE = conf("spark.rapids.profile.taskLimitPerStage")
+    .doc("Limit the number of tasks to profile per stage. A value <= 0 will profile all tasks.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
 
   val PROFILE_ASYNC_ALLOC_CAPTURE = conf("spark.rapids.profile.asyncAllocCapture")
     .doc("Whether the profiler should capture async CUDA allocation and free events")
@@ -1344,12 +1348,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
@@ -1932,6 +1936,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         .integerConf
         .createWithDefault(20)
 
+  val SHUFFLE_KUDO_SERIALIZER_ENABLED = conf("spark.rapids.shuffle.kudo.serializer.enabled")
+    .doc("Enable or disable the Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   // ALLUXIO CONFIGS
   val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
     .doc("The Alluxio master hostname. If not set, read Alluxio master URL from " +
@@ -2395,6 +2406,36 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_ASYNC_OUTPUT_WRITE =
+    conf("spark.rapids.sql.asyncWrite.queryOutput.enabled")
+      .doc("Option to turn on the async query output write. During the final output write, the " +
+        "task first copies the output to the host memory, and then writes it into the storage. " +
+        "When this option is enabled, the task will asynchronously write the output in the host " +
+        "memory to the storage. Only the Parquet format is supported currently.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK =
+    conf("spark.rapids.sql.queryOutput.holdGpuInTask")
+      .doc("Option to hold GPU semaphore between batch processing during the final output write. " +
+        "This option could degrade query performance if it is enabled without the async query " +
+        "output write. It is recommended to consider enabling this option only when " +
+        s"${ENABLE_ASYNC_OUTPUT_WRITE.key} is set. This option is off by default when the async " +
+        "query output write is disabled; otherwise, it is on.")
+      .internal()
+      .booleanConf
+      .createOptional
+
+  val ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
+    conf("spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes")
+      .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
+        "query output write. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(2L * 1024 * 1024 * 1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2593,6 +2634,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val profileStages: Option[String] = get(PROFILE_STAGES)
 
+  lazy val profileTaskLimitPerStage: Int = get(PROFILE_TASK_LIMIT_PER_STAGE)
+
   lazy val profileDriverPollMillis: Int = get(PROFILE_DRIVER_POLL_MILLIS)
 
   lazy val profileAsyncAllocCapture: Boolean = get(PROFILE_ASYNC_ALLOC_CAPTURE)
@@ -2649,6 +2692,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
+
+  lazy val asyncWriteMaxInFlightHostMemoryBytes: Long =
+    get(ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
 
   /**
    * Convert a string value to the injection configuration OomInjection.
@@ -3067,6 +3113,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
+  lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
+
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.UCX
@@ -3232,6 +3280,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
   lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
+
+  lazy val isAsyncOutputWriteEnabled: Boolean = get(ENABLE_ASYNC_OUTPUT_WRITE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

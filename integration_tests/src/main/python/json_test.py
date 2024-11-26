@@ -679,6 +679,53 @@ def test_from_json_map():
             .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
         conf=_enable_all_types_conf)
 
+@allow_non_gpu(*non_utc_allow)
+def test_from_json_map_with_invalid():
+    # The test here is working around some inconsistencies in how the keys are parsed for maps
+    # on the GPU the keys are dense, but on the CPU they are sparse
+    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}"(, "b": "[A-Z]{0,5}")?}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('  ', weight=50) \
+        .with_special_pattern('null', weight=50) \
+        .with_special_pattern('invalid', weight=50) \
+        .with_special_pattern(r'{"a": "[0-9]{0,5}"', weight=50) \
+        .with_special_pattern(r'{"a": "[0-9]{0,5}', weight=50) \
+        .with_special_pattern(r'{"a": "[0-9]{0,5}"}abc', weight=50) \
+        .with_special_pattern(r'{"a": "[0-9]{0,5}"}{"b": "B"}', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.parametrize('allow_single_quotes', ['true', 'false'])
+@pytest.mark.parametrize('allow_non_numeric_numbers', ['true', 'false'])
+@pytest.mark.parametrize('allow_unquoted_chars', ['true', 'false'])
+def test_from_json_map_with_options(allow_single_quotes,  
+                                    allow_non_numeric_numbers,
+                                    allow_unquoted_chars):
+    # Test the input with:
+    #  - Double quotes
+    #  - Single quotes
+    #  - Numbers with leading zeros
+    #  - Non-numeric numbers
+    #  - Unquoted control characters in quoted strings
+    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}"}') \
+        .with_special_pattern(r"""{'a': "[0-9]{0,5}"}""", weight=50) \
+        .with_special_pattern(r'{"a": 0[0-9]{0,5}}', weight=50) \
+        .with_special_pattern(r'{"a": [+-]?(INF|Infinity|NaN)}', weight=50) \
+        .with_special_pattern(r'{"(a|a\r\n\tb)": "(xyz|01\r\n\t23)"}', weight=50)
+    options = {"allowSingleQuotes": allow_single_quotes,
+                # Cannot test `allowNumericLeadingZeros==true` because the GPU output always has
+                # leading zeros while the CPU output does not, thus test will always fail.
+               "allowNumericLeadingZeros": "false",
+               "allowNonNumericNumbers": allow_non_numeric_numbers,
+               "allowUnquotedControlChars": allow_unquoted_chars}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen, length=20) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>', options)),
+        conf=_enable_all_types_conf)
+
 @allow_non_gpu('ProjectExec', 'JsonToStructs')
 def test_from_json_map_fallback():
     # The test here is working around some inconsistencies in how the keys are parsed for maps
@@ -942,6 +989,36 @@ def test_from_json_struct_of_list(schema):
                                 r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+def test_from_json_struct_of_list_with_mismatched_schema():
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": \["[A-Z]{1}[a-z]{2,5}"\]}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', 'struct<teacher:string,student:array<struct<name:string,class:string>>>')),
+        conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('schema', ['struct<teacher:string>',
+                                    'struct<student:array<struct<name:string,class:string>>>',
+                                    'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/17349')
+def test_from_json_struct_of_list_with_mixed_nested_types_input(schema):
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
+                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50) \
+        .with_special_pattern('{"student": \["[A-Z]{1}[a-z]{2,5}"\]}', weight=100) \
+        .with_special_pattern('{"student": \[[1-9]{1,5}\]}', weight=100) \
+        .with_special_pattern('{"student": {"[A-Z]{1}[a-z]{2,5}": "[A-Z]{1}[a-z]{2,5}"}}', weight=100)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
