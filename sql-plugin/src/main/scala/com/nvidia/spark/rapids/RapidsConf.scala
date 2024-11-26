@@ -1120,6 +1120,31 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
+  val PARQUET_DECOMPRESS_CPU =
+    conf("spark.rapids.sql.format.parquet.decompressCpu")
+      .doc("If true then the CPU is eligible to decompress Parquet data rather than the GPU. " +
+          s"See other spark.rapids.sql.format.parquet.decompressCpu.* configuration settings " +
+          "to control this for specific compression codecs.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val PARQUET_DECOMPRESS_CPU_SNAPPY =
+    conf("spark.rapids.sql.format.parquet.decompressCpu.snappy")
+      .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
+          "Parquet Snappy data rather than the GPU")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val PARQUET_DECOMPRESS_CPU_ZSTD =
+    conf("spark.rapids.sql.format.parquet.decompressCpu.zstd")
+      .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
+          "Parquet Zstandard data rather than the GPU")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val READER_MULTITHREADED_COMBINE_THRESHOLD =
     conf("spark.rapids.sql.reader.multithreaded.combine.sizeBytes")
       .doc("The target size in bytes to combine multiple small files together when using the " +
@@ -2959,6 +2984,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
     RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.MULTITHREADED
+
+  lazy val parquetDecompressCpu: Boolean = get(PARQUET_DECOMPRESS_CPU)
+
+  lazy val parquetDecompressCpuSnappy: Boolean = get(PARQUET_DECOMPRESS_CPU_SNAPPY)
+
+  lazy val parquetDecompressCpuZstd: Boolean = get(PARQUET_DECOMPRESS_CPU_ZSTD)
 
   lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
