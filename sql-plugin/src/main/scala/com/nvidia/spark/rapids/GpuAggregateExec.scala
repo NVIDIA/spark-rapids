@@ -635,13 +635,13 @@ object GpuAggFinalPassIterator {
       boundResultReferences)
   }
 
-  private[this] def reorderFinalBatch(finalBatch: ColumnarBatch,
+  private[this] def reorderFinalBatch(finalBatch: SpillableColumnarBatch,
       boundExpressions: BoundExpressionsModeAggregates,
       metrics: GpuHashAggregateMetrics): ColumnarBatch = {
     // Perform the last project to get the correct shape that Spark expects. Note this may
     // add things like literals that were not part of the aggregate into the batch.
-    closeOnExcept(GpuProjectExec.projectAndClose(finalBatch,
-      boundExpressions.boundResultReferences, NoopMetric)) { ret =>
+    closeOnExcept(GpuProjectExec.projectAndCloseWithRetrySingleBatch(finalBatch,
+      boundExpressions.boundResultReferences)) { ret =>
       metrics.numOutputRows += ret.numRows()
       metrics.numOutputBatches += 1
       ret
@@ -657,9 +657,12 @@ object GpuAggFinalPassIterator {
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
         val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
-          GpuProjectExec.projectAndClose(batch, exprs, NoopMetric)
+          GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+            SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY), exprs)
         }.getOrElse(batch)
-        reorderFinalBatch(finalBatch, boundExpressions, metrics)
+        val finalSCB =
+          SpillableColumnarBatch(finalBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        reorderFinalBatch(finalSCB, boundExpressions, metrics)
       }
     }
   }
@@ -673,12 +676,10 @@ object GpuAggFinalPassIterator {
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
         val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
-          GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs)
-        }.getOrElse {
-          withRetryNoSplit(sb) { _ =>
-            sb.getColumnarBatch()
-          }
-        }
+          SpillableColumnarBatch(
+            GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs),
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        }.getOrElse(sb)
         reorderFinalBatch(finalBatch, boundExpressions, metrics)
       }
     }
