@@ -2188,7 +2188,6 @@ class DynamicGpuPartialAggregateIterator(
       }
       val newIter = if (doSinglePassAgg) {
         metrics.singlePassTasks += 1
-        // TO discuss in PR: is singlePassSortedAgg still necessary?
         singlePassSortedAgg(inputIter, preProcessAggHelper)
       } else {
         // Not sorting so go back to that
