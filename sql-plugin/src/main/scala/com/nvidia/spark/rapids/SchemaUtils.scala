@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -247,19 +247,19 @@ object SchemaUtils {
 
     dataType match {
       case dt: DecimalType =>
-        if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+        if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withDecimalColumn(name, dt.precision, nullable, parquetFieldId.get)
         } else {
           builder.withDecimalColumn(name, dt.precision, nullable)
         }
       case TimestampType =>
-        if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+        if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withTimestampColumn(name, writeInt96, nullable, parquetFieldId.get)
         } else {
           builder.withTimestampColumn(name, writeInt96, nullable)
         }
       case s: StructType =>
-        val structB = if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+        val structB = if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           structBuilder(name, nullable, parquetFieldId.get)
         } else {
           structBuilder(name, nullable)
@@ -267,7 +267,9 @@ object SchemaUtils {
         builder.withStructColumn(writerOptionsFromSchema(
           structB,
           s,
-          writeInt96, parquetFieldIdWriteEnabled).build())
+          writeInt96,
+          parquetFieldIdWriteEnabled,
+          nullable = nullable).build())
       case a: ArrayType =>
         builder.withListColumn(
           writerOptionsFromField(
@@ -329,10 +331,13 @@ object SchemaUtils {
       builder: NestedBuilder[T, V],
       schema: StructType,
       writeInt96: Boolean = false,
-      parquetFieldIdEnabled: Boolean = false): T = {
+      parquetFieldIdEnabled: Boolean = false,
+      nullable: Boolean = true): T = {
     schema.foreach(field =>
-      writerOptionsFromField(builder, field.dataType, field.name, field.nullable, writeInt96,
-        field.metadata, parquetFieldIdEnabled)
+      // CUDF has issues if the child of a struct is not-nullable, but the struct itself is
+      // So we have to work around it and tell CUDF what it expects.
+      writerOptionsFromField(builder, field.dataType, field.name, nullable || field.nullable,
+        writeInt96, field.metadata, parquetFieldIdWriteEnabled = parquetFieldIdEnabled)
     )
     builder.asInstanceOf[T]
   }
