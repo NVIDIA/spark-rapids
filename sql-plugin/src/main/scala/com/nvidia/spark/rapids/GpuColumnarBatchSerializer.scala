@@ -27,7 +27,7 @@ import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable}
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
@@ -495,47 +495,52 @@ object KudoSerializedTableColumn {
 
 class KudoSerializedBatchIterator(dIn: DataInputStream)
   extends BaseSerializedTableIterator {
-  private[this] var nextTable: Option[KudoTable] = None
+  private[this] var nextHeader: Option[KudoTableHeader] = None
   private[this] var streamClosed: Boolean = false
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
-      nextTable.foreach(_.close())
-      nextTable = None
       dIn.close()
     }
   }
 
-  private def tryReadNext(): Unit = {
+  private def tryReadNextHeader(): Unit = {
     if (!streamClosed) {
-      withResource(new NvtxRange("Read Kudo Table", NvtxColor.YELLOW)) { _ =>
-        val kudoTable = KudoTable.from(dIn)
-        if (kudoTable.isPresent) {
-          nextTable = Some(kudoTable.get())
-        } else {
+      withResource(new NvtxRange("Read Kudo Header", NvtxColor.YELLOW)) { _ =>
+        require(nextHeader.isEmpty)
+        nextHeader = Option(KudoTableHeader.readFrom(dIn).orElse(null))
+        if (nextHeader.isEmpty) {
           dIn.close()
           streamClosed = true
-          nextTable = None
         }
       }
     }
   }
 
   override def hasNext: Boolean = {
-    nextTable match {
-      case Some(_) => true
-      case None =>
-        tryReadNext()
-        nextTable.isDefined
+    if (nextHeader.isEmpty) {
+      tryReadNextHeader()
     }
+    nextHeader.isDefined
   }
 
   override def next(): (Int, ColumnarBatch) = {
     if (hasNext) {
-      val ret = KudoSerializedTableColumn.from(nextTable.get)
-      nextTable = None
-      (0, ret)
+      val header = nextHeader.get
+      nextHeader = None
+      val buffer = if (header.getNumColumns == 0) {
+        null
+      } else {
+        withResource(new NvtxRange("Read Kudo Body", NvtxColor.YELLOW)) { _ =>
+          val buffer = HostMemoryBuffer.allocate(header.getTotalDataLen, false)
+          closeOnExcept(buffer) { _ =>
+            buffer.copyFromStream(0, dIn, header.getTotalDataLen)
+          }
+          buffer
+        }
+      }
+      (0, KudoSerializedTableColumn.from(new KudoTable(header, buffer)))
     } else {
       throw new NoSuchElementException("Walked off of the end...")
     }
@@ -547,7 +552,9 @@ class KudoSerializedBatchIterator(dIn: DataInputStream)
    * @return the length of the data to read, or None if the stream is closed or ended
    */
   override def peekNextBatchSize(): Option[Long] = {
-    tryReadNext()
-    nextTable.flatMap(t => Option(t.getBuffer)).map(_.getLength)
+    if (nextHeader.isEmpty) {
+      tryReadNextHeader()
+    }
+    nextHeader.map(_.getTotalDataLen)
   }
 }
