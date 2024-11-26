@@ -21,7 +21,6 @@ import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
-import scala.collection
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
