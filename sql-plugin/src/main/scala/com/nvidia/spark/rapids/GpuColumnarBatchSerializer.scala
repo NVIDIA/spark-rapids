@@ -320,9 +320,9 @@ object SerializedTableColumn {
       val cv = batch.column(0)
       cv match {
         case serializedTableColumn: SerializedTableColumn =>
-          sum += Some(serializedTableColumn.hostBuffer).map(_.getLength).getOrElse(0L)
+          sum += Option(serializedTableColumn.hostBuffer).map(_.getLength).getOrElse(0L)
         case kudo: KudoSerializedTableColumn =>
-          sum += Some(kudo.kudoTable.getBuffer).map(_.getLength).getOrElse(0L)
+          sum += Option(kudo.kudoTable.getBuffer).map(_.getLength).getOrElse(0L)
         case _ =>
           throw new IllegalStateException(s"Unexpected column type: ${cv.getClass}" )
       }
