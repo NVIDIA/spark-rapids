@@ -1637,6 +1637,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         if (bufferPos == bufferSize) {
           fillBuffer()
         }
+        // downcast is safe because bufferSize is an int
         val numBytes = Math.min(bytesLeft, bufferSize - bufferPos).toInt
         out.write(buffer, bufferPos, numBytes)
         bufferPos += numBytes
@@ -1650,6 +1651,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         if (bufferPos == bufferSize) {
           fillBuffer()
         }
+        // downcast is safe because bufferSize is an int
         val numBytes = Math.min(bytesLeft, bufferSize - bufferPos).toInt
         out.setBytes(len - bytesLeft, buffer, bufferPos, numBytes)
         bufferPos += numBytes
@@ -1684,7 +1686,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     }
 
     private def fillBuffer(): Unit = {
-      // TODO: Add FileCache support
+      // TODO: Add FileCache support https://github.com/NVIDIA/spark-rapids/issues/11775
       var bytesToCopy = currentColumn.map { c =>
         Math.max(0, c.getStartingPos + c.getTotalSize - getPos)
       }.getOrElse(0L)
@@ -2187,7 +2189,7 @@ class MultiFileParquetPartitionReader(
         val startBytesRead = fileSystemBytesRead()
         val outputBlocks = withResource(outhmb) { _ =>
           withResource(new HostMemoryOutputStream(outhmb)) { out =>
-            if (compressCfg.decompressSnappyCpu || compressCfg.decompressSnappyCpu) {
+            if (compressCfg.decompressAnyCpu) {
               copyAndUncompressBlocksData(file, out, blocks.toSeq, offset, metrics, compressCfg)
             } else {
               copyBlocksData(file, out, blocks.toSeq, offset, metrics)
