@@ -64,7 +64,8 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate {
 
   override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.hostUDF(
-      AggregationUtils.createTestHostUDF(AggregationUtils.AggregationType.Reduction)), DType.INT64)
+      AggregationUtils.createTestHostUDF(AggregationUtils.AggregationType.Reduction)), 
+      DType.FLOAT64)
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.hostUDF(
     AggregationUtils.createTestHostUDF(AggregationUtils.AggregationType.GroupByAggregation))
