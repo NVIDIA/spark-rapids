@@ -101,10 +101,8 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
   def blockUntilRunnable[T](task: Task[T]): Unit = {
     lock.lockInterruptibly()
     try {
-      if (numTasks > 0) {
-        while (!throttle.canAccept(task) && numTasks > 0) {
-          condition.await()
-        }
+      while (numTasks > 0 && !throttle.canAccept(task)) {
+        condition.await()
       }
       numTasks += 1
       throttle.taskScheduled(task)
