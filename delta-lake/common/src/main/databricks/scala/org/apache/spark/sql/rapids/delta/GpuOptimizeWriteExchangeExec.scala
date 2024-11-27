@@ -28,8 +28,8 @@ import scala.concurrent.duration.Duration
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
-import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 
+import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -39,7 +39,7 @@ import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShufflePartitionS
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.{SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, ShuffledBatchRDD}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_DESC_DATA_READ_SIZE, METRIC_DESC_DATA_SIZE, METRIC_DESC_SHUFFLE_COMBINE_TIME, METRIC_DESC_SHUFFLE_DESERIALIZATION_TIME, METRIC_DESC_SHUFFLE_PARTITION_TIME, METRIC_DESC_SHUFFLE_READ_TIME, METRIC_DESC_SHUFFLE_SERIALIZATION_TIME, METRIC_DESC_SHUFFLE_WRITE_IO_TIME, METRIC_DESC_SHUFFLE_WRITE_TIME, METRIC_SHUFFLE_COMBINE_TIME, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_PARTITION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_SHUFFLE_SERIALIZATION_TIME, METRIC_SHUFFLE_WRITE_IO_TIME, METRIC_SHUFFLE_WRITE_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.createAdditionalExchangeMetris
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
@@ -72,24 +72,11 @@ case class GpuOptimizeWriteExchangeExec(
   private[sql] lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    METRIC_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, METRIC_DESC_DATA_SIZE),
-    METRIC_DATA_READ_SIZE -> createSizeMetric(MODERATE_LEVEL, METRIC_DESC_DATA_READ_SIZE),
-    METRIC_SHUFFLE_SERIALIZATION_TIME ->
-      createNanoTimingMetric(DEBUG_LEVEL,METRIC_DESC_SHUFFLE_SERIALIZATION_TIME),
-    METRIC_SHUFFLE_DESERIALIZATION_TIME  ->
-      createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_DESERIALIZATION_TIME),
-    METRIC_SHUFFLE_PARTITION_TIME ->
-      createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_PARTITION_TIME),
-    METRIC_SHUFFLE_WRITE_TIME ->
-      createNanoTimingMetric(ESSENTIAL_LEVEL, METRIC_DESC_SHUFFLE_WRITE_TIME),
-    METRIC_SHUFFLE_COMBINE_TIME ->
-      createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_COMBINE_TIME),
-    METRIC_SHUFFLE_WRITE_IO_TIME ->
-      createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_WRITE_IO_TIME),
-    METRIC_SHUFFLE_READ_TIME ->
-      createNanoTimingMetric(ESSENTIAL_LEVEL, METRIC_DESC_SHUFFLE_READ_TIME)
-  ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)
+  override lazy val additionalMetrics : Map[String, GpuMetric] = {
+    createAdditionalExchangeMetris(this) ++
+      GpuMetric.wrap(readMetrics) ++
+      GpuMetric.wrap(writeMetrics)
+  }
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
