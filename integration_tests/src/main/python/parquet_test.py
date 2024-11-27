@@ -18,7 +18,7 @@ import pytest
 from asserts import *
 from conftest import is_not_utc
 from data_gen import *
-from parquet_write_test import parquet_nested_datetime_gen, parquet_ts_write_options
+from parquet_write_test import parquet_datetime_gen_simple, parquet_nested_datetime_gen, parquet_ts_write_options
 from marks import *
 import pyarrow as pa
 import pyarrow.parquet as pa_pq
@@ -299,12 +299,19 @@ if not is_before_spark_320():
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('cpu_decompress', [True, False])
+def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs, cpu_decompress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
             conf={'spark.sql.parquet.compression.codec': compress})
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if cpu_decompress:
+        all_confs = copy_and_update(all_confs, {
+            'spark.rapids.sql.format.parquet.decompressCpu' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.snappy' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.zstd' : 'true'
+        })
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -359,6 +366,38 @@ def test_parquet_read_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, parq
                                                 int96RebaseModeInReadKey : ts_rebase_read[1]})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
+        conf=read_confs)
+
+
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
+@pytest.mark.parametrize('parquet_gens', [parquet_datetime_gen_simple], ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_roundtrip_datetime_with_legacy_rebase_mismatch_files(spark_tmp_path, parquet_gens,
+                                                            reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path2 = spark_tmp_path + '/PARQUET_DATA2'
+    write_confs = {'spark.sql.parquet.datetimeRebaseModeInWrite': 'LEGACY',
+                   'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'}
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=write_confs)
+    # we want to test having multiple files that have the same column with different
+    # types - INT96 and INT64 (TIMESTAMP_MICROS)
+    write_confs2 = {'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                   'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
+                   'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path2),
+        conf=write_confs2)
+
+    read_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 'spark.sql.parquet.datetimeRebaseModeInRead': 'LEGACY',
+                                 'spark.sql.parquet.int96RebaseModeInRead': 'LEGACY'})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path, data_path2).filter("_c0 is not null and _c1 is not null"),
         conf=read_confs)
 
 # This is legacy format, which is totally different from datatime legacy rebase mode.
@@ -1397,13 +1436,6 @@ def test_parquet_check_schema_compatibility(spark_tmp_path):
         conf={},
         error_message='Parquet column cannot be converted')
 
-    read_dec32_as_dec64 = StructType(
-        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
-        conf={},
-        error_message='Parquet column cannot be converted')
-
 
 # For nested types, GPU throws incompatible exception with a different message from CPU.
 def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
@@ -1448,6 +1480,75 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
+
+
+@pytest.mark.parametrize('from_decimal_gen, to_decimal_gen', [
+    # Widening precision and scale by the same amount
+    (DecimalGen(5, 2), DecimalGen(7, 4)),
+    (DecimalGen(5, 2), DecimalGen(10, 7)),
+    (DecimalGen(5, 2), DecimalGen(20, 17)),
+    (DecimalGen(10, 2), DecimalGen(12, 4)),
+    (DecimalGen(10, 2), DecimalGen(20, 12)),
+    (DecimalGen(20, 2), DecimalGen(22, 4)),
+    # Increasing precision by larger amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 3)),
+    (DecimalGen(5, 2), DecimalGen(12, 5)),
+    (DecimalGen(5, 2), DecimalGen(22, 10)),
+    # Narrowing precision and scale
+    (DecimalGen(7, 4), DecimalGen(5, 2)),
+    (DecimalGen(10, 7), DecimalGen(5, 2)),
+    (DecimalGen(20, 17), DecimalGen(5, 2)),
+    # Increasing precision and decreasing scale
+    (DecimalGen(5, 4), DecimalGen(7, 2)),
+    (DecimalGen(10, 6), DecimalGen(12, 4)),
+    (DecimalGen(20, 7), DecimalGen(22, 5)),
+    # Increasing precision by a smaller amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 4)),
+    (DecimalGen(10, 4), DecimalGen(12, 7))
+], ids=idfn)
+def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen, to_decimal_gen):
+    """Test decimal precision and scale changes when reading Parquet files with RAPIDS acceleration."""
+    data_path = f"{spark_tmp_path}/PARQUET_DECIMAL_DATA"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_decimal_gen)
+        .coalesce(1)
+        .write.parquet(data_path)
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_decimal_gen.data_type)
+    ])
+
+    # Determine if we expect an error based on precision and scale changes
+    expect_error = (
+            to_decimal_gen.scale < from_decimal_gen.scale or
+            (to_decimal_gen.precision - to_decimal_gen.scale) <
+            (from_decimal_gen.precision - from_decimal_gen.scale)
+    )
+
+    spark_conf = {}
+    if is_before_spark_400():
+        # In Spark versions earlier than 4.0, the vectorized Parquet reader throws an exception
+        # if the read scale differs from the write scale. We disable the vectorized reader,
+        # forcing Spark to use the non-vectorized path for CPU case. This configuration
+        # is ignored by the plugin.
+        spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+
+    if expect_error:
+        assert_gpu_and_cpu_error(
+            lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
+            conf={},
+            error_message="Parquet column cannot be converted"
+        )
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.schema(read_schema).parquet(data_path),
+            conf=spark_conf
+        )
+
 
 @pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
 @pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')

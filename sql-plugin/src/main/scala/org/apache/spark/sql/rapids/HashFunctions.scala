@@ -21,16 +21,16 @@ import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.Hash
-import com.nvidia.spark.rapids.shims.{HashUtils, ShimExpression}
+import com.nvidia.spark.rapids.shims.{HashUtils, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuMd5(child: Expression)
-  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
   override def toString: String = s"md5($child)"
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
   override def dataType: DataType = StringType
