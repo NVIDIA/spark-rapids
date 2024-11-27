@@ -20,7 +20,6 @@ import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplace
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
-import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
@@ -53,19 +52,19 @@ object Delta31xProvider extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
-      val requiredSchema = meta.wrapped.requiredSchema
-      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
-      }
-      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
-      }
-      if (deltaFormat.hasDeletionVectorMap()) {
-        meta.willNotWorkOnGpu("deletion vectors are not supported")
-      }
+//      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
+//      val requiredSchema = meta.wrapped.requiredSchema
+//      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
+//        meta.willNotWorkOnGpu(
+//          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
+//      }
+//      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
+//        meta.willNotWorkOnGpu(
+//          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
+//      }
+//      if (deltaFormat.hasDeletionVectorMap()) {
+//        meta.willNotWorkOnGpu("deletion vectors are not supported")
+//      }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")

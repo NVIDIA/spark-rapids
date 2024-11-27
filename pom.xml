@@ -586,6 +586,7 @@
         <profile>
             <id>release350</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>350</value>
@@ -608,7 +609,6 @@
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=350db143 -->
             <id>release350db143</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>350db143</value>

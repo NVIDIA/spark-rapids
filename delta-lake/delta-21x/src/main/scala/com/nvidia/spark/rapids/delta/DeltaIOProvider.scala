@@ -36,7 +36,7 @@ abstract class DeltaIOProvider extends DeltaIOProviderBase {
     }
     checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions, cpuExec.session)
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
   }
 
   override def tagForGpu(
@@ -49,6 +49,6 @@ abstract class DeltaIOProvider extends DeltaIOProviderBase {
     }
     checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions, cpuExec.session)
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
   }
 }
