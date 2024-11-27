@@ -21,6 +21,7 @@ import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, Group
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.jni.AggregationUtils
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, TypeUtilsShims}
 import com.nvidia.spark.rapids.window._
 
@@ -59,13 +60,14 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate {
   // sum(shorts): bigint
   // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
   //
-  @transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+  //@transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
   override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
-
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.hostUDF(
+      AggregationUtils.createTestHostUDF(AggregationUtils.AggregationType.Reduction)), DType.INT64)
   override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.sum()
+    GroupByAggregation.hostUDF(
+    AggregationUtils.createTestHostUDF(AggregationUtils.AggregationType.GroupByAggregation))
 
   override val name: String = "CudfSum"
 }
