@@ -31,8 +31,8 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
+
 import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.io.CompressionCodec
@@ -42,6 +42,7 @@ import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_COMBINE_TIME, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_SHUFFLE_SERIALIZATION_TIME, METRIC_SHUFFLE_WRITE_IO_TIME, METRIC_SHUFFLE_WRITE_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -245,14 +246,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       extends RapidsShuffleWriter[K, V]
         with RapidsShuffleWriterShimHelper {
   private val metrics = handle.metrics
-  private val serializationTimeMetric =
-    metrics.get("rapidsShuffleSerializationTime")
   private val shuffleWriteTimeMetric =
-    metrics.get("rapidsShuffleWriteTime")
+    metrics.get(METRIC_SHUFFLE_WRITE_TIME)
   private val shuffleCombineTimeMetric =
-    metrics.get("rapidsShuffleCombineTime")
+    metrics.get(METRIC_SHUFFLE_COMBINE_TIME)
   private val ioTimeMetric =
-    metrics.get("rapidsShuffleWriteIoTime")
+    metrics.get(METRIC_SHUFFLE_WRITE_IO_TIME)
   private val dep: ShuffleDependency[K, V, V] = handle.dependency
   private val shuffleId = dep.shuffleId
   private val partitioner = dep.partitioner
@@ -429,11 +428,9 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // counted in the ioTime
             val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
             val ioRatio = (ioTimeNs.toDouble/totalPerRecordWriteTime)
-            val serializationRatio = 1.0 - ioRatio
 
             // update metrics, note that we expect them to be relative to the task
             ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
-            serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
             // we add all three here because this metric is meant to show the time
             // we are blocked on writes
             shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
@@ -596,9 +593,8 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
   private val sqlMetrics = handle.metrics
   private val dep = handle.dependency
-  private val deserializationTimeNs = sqlMetrics.get("rapidsShuffleDeserializationTime")
-  private val shuffleReadTimeNs = sqlMetrics.get("rapidsShuffleReadTime")
-  private val dataReadSize = sqlMetrics.get("dataReadSize")
+  private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
+  private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
 
   private var shuffleReadRange: NvtxRange =
     new NvtxRange("ThreadedReader.read", NvtxColor.PURPLE)
@@ -679,7 +675,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             }
             val res = currentIter.next()
             val fetchTime = System.nanoTime() - fetchTimeStart
-            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
             shuffleReadTimeNs.foreach(_ += fetchTime)
             res
           }
@@ -852,7 +847,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             case _ => 0 // TODO: do we need to handle other types here?
           }
           waitTime += System.nanoTime() - waitTimeStart
-          deserializationTimeNs.foreach(_ += waitTime)
           shuffleReadTimeNs.foreach(_ += waitTime)
           res
         }
@@ -958,7 +952,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             }
             // keep track of the overall metric which includes blocked time
             val fetchTime = System.nanoTime() - fetchTimeStart
-            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
             shuffleReadTimeNs.foreach(_ += fetchTime)
           }
         }
@@ -1048,7 +1041,7 @@ class RapidsCachingWriter[K, V](
     metrics: Map[String, SQLMetric])
   extends RapidsCachingWriterBase[K, V](blockManager, handle, mapId, rapidsShuffleServer, catalog) {
 
-  private val uncompressedMetric: SQLMetric = metrics("dataSize")
+  private val uncompressedMetric: SQLMetric = metrics(METRIC_DATA_SIZE)
 
   // This is here for the special case where we have no columns like with the .count
   // case or when we have 0-byte columns. We pick 100 as an arbitrary number so that
