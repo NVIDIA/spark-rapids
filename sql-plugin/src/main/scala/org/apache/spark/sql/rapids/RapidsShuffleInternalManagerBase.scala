@@ -246,6 +246,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       extends RapidsShuffleWriter[K, V]
         with RapidsShuffleWriterShimHelper {
   private val metrics = handle.metrics
+  private val serializationTimeMetric =
+    metrics.get(METRIC_SHUFFLE_SERIALIZATION_TIME)
   private val shuffleWriteTimeMetric =
     metrics.get(METRIC_SHUFFLE_WRITE_TIME)
   private val shuffleCombineTimeMetric =
@@ -428,9 +430,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             // counted in the ioTime
             val totalPerRecordWriteTime = recordWriteTime.get() + ioTimeNs
             val ioRatio = (ioTimeNs.toDouble/totalPerRecordWriteTime)
+            val serializationRatio = 1.0 - ioRatio
 
             // update metrics, note that we expect them to be relative to the task
             ioTimeMetric.foreach(_ += (ioRatio * writeTimeNs).toLong)
+            serializationTimeMetric.foreach(_ += (serializationRatio * writeTimeNs).toLong)
             // we add all three here because this metric is meant to show the time
             // we are blocked on writes
             shuffleWriteTimeMetric.foreach(_ += (writeTimeNs + combineTimeNs))
@@ -593,6 +597,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
   private val sqlMetrics = handle.metrics
   private val dep = handle.dependency
+  private val deserializationTimeNs = sqlMetrics.get(METRIC_SHUFFLE_DESERIALIZATION_TIME)
   private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
   private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
 
@@ -675,6 +680,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             }
             val res = currentIter.next()
             val fetchTime = System.nanoTime() - fetchTimeStart
+            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
             shuffleReadTimeNs.foreach(_ += fetchTime)
             res
           }
@@ -847,6 +853,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             case _ => 0 // TODO: do we need to handle other types here?
           }
           waitTime += System.nanoTime() - waitTimeStart
+          deserializationTimeNs.foreach(_ += waitTime)
           shuffleReadTimeNs.foreach(_ += waitTime)
           res
         }
@@ -952,6 +959,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             }
             // keep track of the overall metric which includes blocked time
             val fetchTime = System.nanoTime() - fetchTimeStart
+            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
             shuffleReadTimeNs.foreach(_ += fetchTime)
           }
         }

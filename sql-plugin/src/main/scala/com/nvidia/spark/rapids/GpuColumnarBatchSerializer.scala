@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHea
 import org.apache.spark.TaskContext
 
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_SER_CALC_HEADER_TIME, METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_COPY_HEADER_TIME, METRIC_SHUFFLE_SERIALIZATION_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE, METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_SER_CALC_HEADER_TIME, METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_COPY_HEADER_TIME, METRIC_SHUFFLE_SER_STREAM_TIME, METRIC_SHUFFLE_SERIALIZATION_TIME}
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -79,7 +79,7 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
     }
   }
 
-  private def readNextBatch(): ColumnarBatch = {
+  private def readNextBatch(): ColumnarBatch = deserTime.ns {
     withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
       val header = nextHeader.get
       nextHeader = None
@@ -143,8 +143,8 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
 private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]) extends
   SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
-  private val serTime = metrics(METRIC_SHUFFLE_SERIALIZATION_TIME)
-  private val deserTime = metrics(METRIC_SHUFFLE_DESERIALIZATION_TIME)
+  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
+  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
@@ -337,11 +337,11 @@ private class KudoSerializerInstance(
     val metrics: Map[String, GpuMetric],
     val dataTypes: Array[DataType]) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
-  private val serTime = metrics(METRIC_SHUFFLE_SERIALIZATION_TIME)
+  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
   private val serCalcHeaderTime = metrics(METRIC_SHUFFLE_SER_CALC_HEADER_TIME)
   private val serCopyHeaderTime = metrics(METRIC_SHUFFLE_SER_COPY_HEADER_TIME)
   private val serCopyBufferTime = metrics(METRIC_SHUFFLE_SER_COPY_BUFFER_TIME)
-  private val deserTime = metrics(METRIC_SHUFFLE_DESERIALIZATION_TIME)
+  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
   private lazy val kudo = new KudoSerializer(GpuColumnVector.from(dataTypes))
 
@@ -534,7 +534,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
     }
   }
 
-  private def readNextBatch(): ColumnarBatch = {
+  private def readNextBatch(): ColumnarBatch = deserTime.ns {
     withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
       val header = nextHeader.get
       nextHeader = None
