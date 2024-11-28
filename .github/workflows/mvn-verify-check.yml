@@ -53,14 +53,8 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          jniVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-jni.version -DforceStdout)
-          privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
-          jniTimestamp=$(curl -s -H "Accept: application/json" \
-           "https://oss.sonatype.org/service/local/artifact/maven/resolve?r=snapshots&g=com.nvidia&a=spark-rapids-jni&v=${jniVer}&c=&e=jar&wt=json" \
-            | jq .data.snapshotTimeStamp) || $(date +'%Y-%m-%d')
-          privateTimestamp=$(curl -s -H "Accept: application/json" \
-           "https://oss.sonatype.org/service/local/artifact/maven/resolve?r=snapshots&g=com.nvidia&a=rapids-4-spark-private_2.12&v=${privateVer}&c=&e=jar&wt=json" \
-            | jq .data.snapshotTimeStamp) || $(date +'%Y-%m-%d')
+          jniTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh spark-rapids-jni)
+          privateTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh rapids-4-spark-private_2.12)
           cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${jniTimestamp}-${privateTimestamp}"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
@@ -173,15 +167,9 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          jniVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-jni.version -DforceStdout)
-          privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
-          jniTimestamp=$(curl -s -H "Accept: application/json" \
-           "https://oss.sonatype.org/service/local/artifact/maven/resolve?r=snapshots&g=com.nvidia&a=spark-rapids-jni&v=${jniVer}&c=&e=jar&wt=json" \
-            | jq .data.snapshotTimeStamp) || $(date +'%Y-%m-%d')
-          privateTimestamp=$(curl -s -H "Accept: application/json" \
-           "https://oss.sonatype.org/service/local/artifact/maven/resolve?r=snapshots&g=com.nvidia&a=rapids-4-spark-private_2.13&v=${privateVer}&c=&e=jar&wt=json" \
-            | jq .data.snapshotTimeStamp) || $(date +'%Y-%m-%d')
-          cacheKey="${{ runner.os }}-maven-scala213-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${jniTimestamp}-${privateTimestamp}"
+          jniTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh spark-rapids-jni)
+          privateTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh rapids-4-spark-private_2.13)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${jniTimestamp}-${privateTimestamp}"
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
