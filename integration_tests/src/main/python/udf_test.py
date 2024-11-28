@@ -474,3 +474,15 @@ def test_pandas_udf_rows_only():
         lambda spark: unary_op_df(spark, int_gen, num_slices=4, length=52345)
             .select(my_udf(f.lit(0))),
         conf=arrow_udf_conf)
+
+
+@ignore_order(local=True)
+def test_pandas_math_udf_with_rand():
+    def add(rand_value):
+        return rand_value
+    my_udf = f.pandas_udf(add, returnType=IntegerType())
+    assert_gpu_and_cpu_are_equal_collect(
+        # Ensure there is only one partition to make the output comparable.
+        lambda spark: unary_op_df(spark, int_gen, length=10, num_slices=1).select(
+            my_udf(f.rand(42))),
+        conf=arrow_udf_conf)

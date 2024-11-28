@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import *
+from spark_session import is_before_spark_350
 
 import pyspark.sql.functions as f
 
@@ -51,7 +52,7 @@ def test_group_agg_with_rand():
     const_int_gen = IntegerGen(nullable=False, min_val=1, max_val=1, special_cases=[])
 
     def test(spark):
-        return unary_op_df(spark, const_int_gen).groupby('a').agg(f.rand(42))
+        return unary_op_df(spark, const_int_gen, num_slices=1).groupby('a').agg(f.rand(42))
     assert_gpu_and_cpu_are_equal_collect(test)
 
 
@@ -61,7 +62,7 @@ def test_project_with_rand():
     # Not sure if Project could have the same order issue as groupBy, but still just in case.
     const_int_gen = IntegerGen(nullable=False, min_val=1, max_val=1, special_cases=[])
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, const_int_gen).select('a', f.rand(42))
+        lambda spark: unary_op_df(spark, const_int_gen, num_slices=1).select('a', f.rand(42))
     )
 
 
@@ -69,5 +70,16 @@ def test_project_with_rand():
 def test_filter_with_rand():
     const_int_gen = IntegerGen(nullable=False, min_val=1, max_val=1, special_cases=[])
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, const_int_gen).filter(f.rand(42) > 0.5)
+        lambda spark: unary_op_df(spark, const_int_gen, num_slices=1).filter(f.rand(42) > 0.5)
+    )
+
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason='Generate supports nondeterministic inputs from Spark 3.5.0')
+def test_generate_with_rand():
+    const_int_gen = IntegerGen(nullable=False, min_val=1, max_val=1, special_cases=[])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, const_int_gen, num_slices=1).select(
+            f.explode(f.array(f.rand(42))))
     )
