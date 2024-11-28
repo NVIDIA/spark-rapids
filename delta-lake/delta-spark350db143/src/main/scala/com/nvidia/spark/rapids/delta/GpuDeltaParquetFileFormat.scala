@@ -21,7 +21,8 @@ import java.net.URI
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
 import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
-import com.nvidia.spark.rapids.{GpuMetric, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsConf, RapidsHostColumnBuilder, SparkPlanMeta}
+import com.nvidia.spark.rapids.delta.RoaringBitmapWrapper
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -87,12 +88,14 @@ case class GpuDeltaParquetFileFormat(
       alluxioPathReplacementMap: Option[Map[String, String]])
   : PartitionedFile => Iterator[InternalRow] = {
 
+    val pushdownFilters = if (disablePushDowns) Seq.empty else filters
+
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
       dataSchema,
       partitionSchema,
       requiredSchema,
-      filters,
+      pushdownFilters,
       options,
       hadoopConf,
       metrics,
@@ -132,21 +135,29 @@ case class GpuDeltaParquetFileFormat(
 
     (file: PartitionedFile) => {
       val input = dataReader(file)
-      val dv = delVecs.flatMap(_.value.get(new URI(file.filePath.toString())))
+      val inlinedDv = delVecs.flatMap(_.value.get(new URI(file.filePath.toString())))
         .map { dv =>
-          delVecSizeMetric += dv.descriptor.inlineData.length
-          RoaringBitmapWrapper.deserializeFromBytes(dv.descriptor.inlineData).inner
+          if (dv.descriptor.inlineData != null) {
+            delVecSizeMetric += dv.descriptor.inlineData.length
+            RoaringBitmapWrapper.deserializeFromBytes(dv.descriptor.inlineData).inner
+          } else {
+            null
+          }
         }
       val useOffHeapBuffers = sparkSession.sessionState.conf.offHeapColumnVectorEnabled
       try {
-        val iter = addMetadataColumnToIterator(prepareSchema(requiredSchema),
-          dv,
-          input.asInstanceOf[Iterator[ColumnarBatch]],
-          maxDelVecScatterBatchSize,
-          delVecScatterTimeMetric
-        ).asInstanceOf[Iterator[InternalRow]]
-        iteratorWithAdditionalMetadataColumns(file, iter, isRowDeletedColumn, isRowDeletedColumn,
-          useOffHeapBuffers).asInstanceOf[Iterator[InternalRow]]
+        val iter = if (inlinedDv.isDefined) {
+           addMetadataColumnToIterator(prepareSchema(requiredSchema),
+            inlinedDv,
+            input.asInstanceOf[Iterator[ColumnarBatch]],
+            maxDelVecScatterBatchSize,
+            delVecScatterTimeMetric
+          ).asInstanceOf[Iterator[InternalRow]]
+        } else {
+          input
+        }
+        iteratorWithAdditionalMetadataColumns(file, iter, isRowDeletedColumn,
+          rowIndexColumn, useOffHeapBuffers).asInstanceOf[Iterator[InternalRow]]
       } catch {
         case NonFatal(e) =>
           dataReader match {
@@ -246,22 +257,16 @@ object GpuDeltaParquetFileFormat {
   }
 
   /** Utility method to create a new writable vector */
-  private def newVector(useOffHeapBuffers: Boolean,
-    size: Int, dataType: StructField): WritableColumnVector = {
-    if (useOffHeapBuffers) {
-      OffHeapColumnVector.allocateColumns(size, Seq(dataType).toArray)(0)
-    } else {
-      OnHeapColumnVector.allocateColumns(size, Seq(dataType).toArray)(0)
-    }
+  private def newVector(size: Int, dataType: StructField): WritableColumnVector = {
+    OffHeapColumnVector.allocateColumns(size, Seq(dataType).toArray)(0)
   }
 
   /** Try the operation, if the operation fails release the created resource */
-  private def trySafely[R <: WritableColumnVector, T](useOffHeapBuffers: Boolean,
-     size: Int,
+  private def trySafely[R <: WritableColumnVector, T](size: Int,
      columns: Seq[ColumnMetadata])(f: Seq[WritableColumnVector] => T): T = {
     val resources = new ArrayBuffer[WritableColumnVector](columns.size)
     try {
-      columns.foreach(col => resources.append(newVector(useOffHeapBuffers, size, col.structField)))
+      columns.foreach(col => resources.append(newVector(size, col.structField)))
       f(resources.toSeq)
     } catch {
       case NonFatal(e) =>
@@ -288,7 +293,12 @@ object GpuDeltaParquetFileFormat {
 
     for (i <- 0 until batch.numCols()) {
       indexVectorTuples.find(_._1 == i) match {
-        case Some((_, newVector)) => vectors += newVector
+        case Some((_, newVector)) => vectors += {
+          val builder = new RapidsHostColumnBuilder(
+            GpuColumnVector.convertFrom(newVector.dataType(), newVector.hasNull), batch.numRows())
+          HostColumnarToGpu.columnarCopy(newVector, builder, newVector.dataType(), batch.numRows())
+          GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+        }
         case None => vectors += batch.column(i)
       }
     }
