@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import *
-from spark_session import is_before_spark_350
+from spark_session import is_before_spark_351
 
 import pyspark.sql.functions as f
 
@@ -73,10 +73,10 @@ def test_filter_with_rand():
         lambda spark: unary_op_df(spark, const_int_gen, num_slices=1).filter(f.rand(42) > 0.5)
     )
 
-
+# See https://github.com/apache/spark/commit/9c0b803ba124a6e70762aec1e5559b0d66529f4d
 @ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_350(),
-                    reason='Generate supports nondeterministic inputs from Spark 3.5.0')
+@pytest.mark.skipif(is_before_spark_351(),
+                    reason='Generate supports nondeterministic inputs from Spark 3.5.1')
 def test_generate_with_rand():
     const_int_gen = IntegerGen(nullable=False, min_val=1, max_val=1, special_cases=[])
     assert_gpu_and_cpu_are_equal_collect(
