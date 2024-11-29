@@ -16,7 +16,7 @@ import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run, is_databricks_runtime
-from spark_session import is_before_spark_330, is_before_spark_350, is_spark_341
+from spark_session import is_before_spark_330, is_before_spark_331, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -476,7 +476,11 @@ def test_pandas_udf_rows_only():
         conf=arrow_udf_conf)
 
 
+# Python UDFs support nondeterministic expressions from Spark 3.3.1.
+# See https://github.com/apache/spark/commit/1a01a492c051bb861c480f224a3c310e133e4d01
 @ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_331(),
+                    reason='Nondeterministic expressions are supported from Spark 3.3.1')
 def test_pandas_math_udf_with_rand():
     def add(rand_value):
         return rand_value
