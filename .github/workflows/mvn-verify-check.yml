@@ -53,9 +53,8 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          jniTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh spark-rapids-jni)
-          privateTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh rapids-4-spark-private_2.12)
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${jniTimestamp}-${privateTimestamp}"
+          depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.12)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
@@ -167,9 +166,8 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          jniTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh spark-rapids-jni)
-          privateTimestamp=$(. .github/workflows/mvn-verify-check/get-artifact-timestamp.sh rapids-4-spark-private_2.13)
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${jniTimestamp}-${privateTimestamp}"
+          depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.13)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
