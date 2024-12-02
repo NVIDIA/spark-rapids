@@ -274,7 +274,7 @@ class SpillableHostBufferHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (disk.isEmpty) {
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
@@ -293,14 +293,14 @@ class SpillableHostBufferHandle private (
               }
             }
             disk = Some(diskHandleBuilder.build)
-            disk
+            sizeInBytes
           }
         } else {
-          None
+          0L
         }
       }
       releaseHostResource()
-      sizeInBytes
+      spilled
     }
   }
 
@@ -423,13 +423,16 @@ class SpillableDeviceBufferHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (host.isEmpty) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
+          sizeInBytes
+        } else {
+          0L
         }
       }
       releaseDeviceResources()
-      sizeInBytes
+      spilled
     }
   }
 
@@ -505,19 +508,22 @@ class SpillableColumnarBatchHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (host.isEmpty) {
           withChunkedPacker { chunkedPacker =>
             meta = Some(chunkedPacker.getPackedMeta)
             host = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
           }
+          approxSizeInBytes
+        } else {
+          0L
         }
       }
       releaseDeviceResource()
       // We return the size we were created with. This is not the actual size
       // of this batch when it is packed, and it is used by the calling code
       // to figure out more or less how much did we free in the device.
-      approxSizeInBytes
+      spilled
     }
   }
 
@@ -635,16 +641,19 @@ class SpillableColumnarBatchFromBufferHandle private (
     if (!spillable) {
       0
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (host.isEmpty) {
           val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
           meta = Some(cvFromBuffer.getTableMeta)
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
             cvFromBuffer.getBuffer))
+          sizeInBytes
+        } else {
+          0L
         }
       }
       releaseDeviceResource()
-      sizeInBytes
+      spilled
     }
   }
 
@@ -726,16 +735,19 @@ class SpillableCompressedColumnarBatchHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (host.isEmpty) {
           val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuCompressedColumnVector]
           meta = Some(cvFromBuffer.getTableMeta)
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
             cvFromBuffer.getTableBuffer))
+          compressedSizeInBytes
+        } else {
+          0L
         }
       }
       releaseDeviceResource()
-      compressedSizeInBytes
+      spilled
     }
   }
 
@@ -817,7 +829,7 @@ class SpillableHostColumnarBatchHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (disk.isEmpty) {
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
@@ -826,14 +838,14 @@ class SpillableHostColumnarBatchHandle private (
               JCudfSerialization.writeToStream(columns, dos, 0, host.get.numRows())
             }
             disk = Some(diskHandleBuilder.build)
-            disk
+            approxSizeInBytes
           }
         } else {
-          None
+          0L
         }
       }
       releaseHostResource()
-      approxSizeInBytes
+      spilled
     }
   }
 
