@@ -267,9 +267,9 @@ object SchemaUtils {
         builder.withStructColumn(writerOptionsFromSchema(
           structB,
           s,
+          nullable = nullable,
           writeInt96,
-          parquetFieldIdWriteEnabled,
-          nullable = nullable).build())
+          parquetFieldIdWriteEnabled).build())
       case a: ArrayType =>
         builder.withListColumn(
           writerOptionsFromField(
@@ -330,9 +330,9 @@ object SchemaUtils {
   def writerOptionsFromSchema[T <: NestedBuilder[T, V], V <: ColumnWriterOptions](
       builder: NestedBuilder[T, V],
       schema: StructType,
+      nullable: Boolean,
       writeInt96: Boolean = false,
-      parquetFieldIdEnabled: Boolean = false,
-      nullable: Boolean = true): T = {
+      parquetFieldIdEnabled: Boolean = false): T = {
     schema.foreach(field =>
       // CUDF has issues if the child of a struct is not-nullable, but the struct itself is
       // So we have to work around it and tell CUDF what it expects.

@@ -430,8 +430,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       schema: StructType): ParquetWriterOptions = {
     val compressionType = if (useCompression) CompressionType.SNAPPY else CompressionType.NONE
     SchemaUtils
-        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false,
-          nullable = false)
+        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, nullable = false,
+          writeInt96 = false)
         .withCompressionType(compressionType)
         .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
   }

@@ -389,9 +389,9 @@ class GpuParquetWriter(
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
-        parquetFieldIdEnabled,
-        nullable = false)
+        parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
     Table.writeParquetChunked(builder.build(), this)
