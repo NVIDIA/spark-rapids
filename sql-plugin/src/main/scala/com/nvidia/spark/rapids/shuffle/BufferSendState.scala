@@ -214,7 +214,7 @@ class BufferSendState(
           }
           needsCleanup = false
         } catch {
-          case ex: Throwable =>
+          case ex: Exception =>
             throw new RapidsShuffleSendPrepareException(
               s"Error while copying to bounce buffer for executor ${peerExecutorId} and " +
                   s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}", ex)
