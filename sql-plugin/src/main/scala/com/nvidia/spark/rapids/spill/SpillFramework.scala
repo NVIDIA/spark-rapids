@@ -62,10 +62,11 @@ import org.apache.spark.storage.BlockId
  * CUDA/Host synchronization:
  *
  * We assume all device backed handles are completely materialized on the device (before adding
- * to the store, the CUDA stream has been synchronized with the CPU thread creating the handle).
- *
- * We assume all host memory backed handles are completely materialized and not mutated by
- * other CPU threads once handed to the framework.
+ * to the store, the CUDA stream has been synchronized with the CPU thread creating the handle),
+ * and that all host memory backed handles are completely materialized and not mutated by
+ * other CPU threads, because the contents of the handle may spill at any time, using any CUDA
+ * stream or thread, without synchronization. If handles added to the store are not synchronized
+ * we could write incomplete data to host memory or to disk.
  *
  * Spillability:
  *
@@ -113,17 +114,17 @@ import org.apache.spark.storage.BlockId
  * with extra locking is the `SpillableHostStore`, to maintain a `totalSize` number that is
  * used to figure out cheaply when it is full.
  *
- * Handles hold a lock to protect the user against when it is either in the middle of
- * spilling, or closed. Most handles, except for disk handles, hold a reference to an object
- * in their respective store (`SpillableDeviceBufferHandle` has a `dev` reference that holds
- * a `DeviceMemoryBuffer`, and a `host` reference to `SpillableHostBufferHandle` that is only
- * set if spilled), and the handle guarantees that one of these will be set, or none if the handle
- * is closed.
+ * All handles, except for disk handles, hold a reference to an object in their respective store:
+ * `SpillableDeviceBufferHandle` has a `dev` reference that holds a `DeviceMemoryBuffer`, and a
+ * `host` reference to `SpillableHostBufferHandle` that is only set if spilled. Disk handles are
+ * different because they don't spill, as disk is considered the final store. When a user calls
+ * `materialize` on a handle, the handle must guarantee that it can satisfy that, even if the caller
+ * should wait until a spill happens. This is currently implemented using the handle lock.
  *
- * We hold the handle lock when we are spilling (performing IO). That means that no other consumer
- * can access this spillable device handle while it is being spilled, including a second thread
- * trying to spill and asking each of the handles whether they are spillable or not, as that
- * requires the handle lock. We will relax this likely in follow on work.
+ * Note that we hold the handle lock while we are spilling (performing IO). That means that no other
+ * consumer can access this spillable device handle while it is being spilled, including a second
+ * thread that is trying to spill and is generating a spill plan, as the handle lock is likely held
+ * up with IO. We will relax this likely in follow on work.
  *
  * We never hold a store-wide coarse grain lock in the stores when we do IO.
  */
