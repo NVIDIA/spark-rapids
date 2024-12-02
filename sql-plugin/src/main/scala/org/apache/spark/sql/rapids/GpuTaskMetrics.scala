@@ -145,7 +145,6 @@ class GpuTaskMetrics extends Serializable {
     GpuTaskMetrics.decHostBytesAllocated(bytes)
   }
 
-
   def incDiskBytesAllocated(bytes: Long): Unit = {
     GpuTaskMetrics.incDiskBytesAllocated(bytes)
     maxDiskBytesAllocated = maxDiskBytesAllocated.max(GpuTaskMetrics.diskBytesAllocated)
@@ -153,7 +152,6 @@ class GpuTaskMetrics extends Serializable {
 
   def decDiskBytesAllocated(bytes: Long): Unit = {
     GpuTaskMetrics.decHostBytesAllocated(bytes)
->>>>>>> nvidia/branch-25.02
   }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](

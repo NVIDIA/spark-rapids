@@ -445,9 +445,7 @@ class SpillableBuffer(
   }
 
   override def toString: String = {
-    val size = withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.memoryUsedBytes
-    }
+    val size = handle.sizeInBytes
     s"SpillableBuffer size:$size, handle:$handle"
   }
 }

@@ -1132,7 +1132,7 @@ class KudoSpillableHostConcatResult(kudoTableHeader: KudoTableHeader,
   require(kudoTableHeader != null, "KudoTableHeader cannot be null")
   require(hmb != null, "HostMemoryBuffer cannot be null")
 
-  override def toBatch: ColumnarBatch = closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+  override def toBatch: ColumnarBatch = closeOnExcept(buffer.getHostBuffer) { hostBuf =>
     KudoSerializedTableColumn.from(new KudoTable(kudoTableHeader, hostBuf))
   }
 
