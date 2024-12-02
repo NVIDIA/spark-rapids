@@ -106,7 +106,7 @@ class SpillableColumnarBatchImpl (
    */
   override def numRows(): Int = rowCount
 
-  override lazy val sizeInBytes: Long = handle.sizeInBytes
+  override lazy val sizeInBytes: Long = handle.approxSizeInBytes
 
   /**
    * Set a new spill priority.
@@ -299,9 +299,7 @@ class SpillableHostColumnarBatchImpl (
    */
   override def numRows(): Int = rowCount
 
-  override lazy val sizeInBytes: Long = {
-    handle.sizeInBytes
-  }
+  override lazy val sizeInBytes: Long = handle.approxSizeInBytes
 
   /**
    * Set a new spill priority.

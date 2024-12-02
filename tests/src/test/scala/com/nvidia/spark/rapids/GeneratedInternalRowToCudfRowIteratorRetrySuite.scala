@@ -125,7 +125,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
           RmmSpark.OomInjectionType.GPU.ordinal, 0)
         // at this point we have created a buffer in the Spill Framework
         // lets spill it
-        SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+        SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
         true
       }
     }).when(SpillFramework.stores.deviceStore)

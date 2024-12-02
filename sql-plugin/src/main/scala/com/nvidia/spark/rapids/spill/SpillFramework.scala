@@ -70,7 +70,7 @@ import org.apache.spark.storage.BlockId
  * Spillability:
  *
  * An object is spillable (it will be copied to host or disk during OOM) if:
- * - it has a sizeInBytes > 0
+ * - it has a approxSizeInBytes > 0
  * - it is not actively being referenced by the user (call to `materialize`, or aliased)
  * - it hasn't already spilled
  * - it hasn't been closed
@@ -133,30 +133,31 @@ import org.apache.spark.storage.BlockId
  */
 trait StoreHandle extends AutoCloseable {
   /**
-   * Approximate size of this handle, used in two scenarios:
+   * Approximate size of this handle, used in three scenarios:
+   * - Used by callers when accumulating up to a batch size for size goals.
    * - Used from the host store to figure out how much host memory total it is tracking.
-   * - If sizeInBytes is 0, the object is tracked by the stores so it can be
+   * - If approxSizeInBytes  is 0, the object is tracked by the stores so it can be
    *   removed on shutdown, or by handle.close, but 0-byte handles are not spillable.
    */
-  val sizeInBytes: Long
+  val approxSizeInBytes: Long
 }
 
 trait SpillableHandle extends StoreHandle {
   /**
    * Method called to spill this handle. It can be triggered from the spill store,
    * or directly against the handle.
-   * @return sizeInBytes if spilled, 0 for any other reason (not spillable, closed)
+   * @return approxSizeInBytes if spilled, 0 for any other reason (not spillable, closed)
    */
   def spill: Long
 
   /**
    * Method used to determine whether a handle tracks an object that could be spilled
    * @note At the level of `SpillableHandle`, the only requirement of spillability
-   *       is that the size of the handle is > 0. `sizeInBytes` is known at construction, and
-   *       is a `val`.
+   *       is that the size of the handle is > 0. `approxSizeInBytes` is known at
+   *       construction, and is immutable.
    * @return true if currently spillable, false otherwise
    */
-  private[spill] def spillable: Boolean = sizeInBytes > 0
+  private[spill] def spillable: Boolean = approxSizeInBytes > 0
 }
 
 /**
@@ -225,10 +226,12 @@ object SpillableHostBufferHandle extends Logging {
 }
 
 class SpillableHostBufferHandle private (
-    override val sizeInBytes: Long,
+    val sizeInBytes: Long,
     private[spill] override var host: Option[HostMemoryBuffer] = None,
     private[spill] var disk: Option[DiskHandle] = None)
   extends HostSpillableHandle[HostMemoryBuffer] {
+
+  override val approxSizeInBytes: Long = sizeInBytes
 
   private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
@@ -368,10 +371,12 @@ object SpillableDeviceBufferHandle {
 }
 
 class SpillableDeviceBufferHandle private (
-    override val sizeInBytes: Long,
+    val sizeInBytes: Long,
     private[spill] override var dev: Option[DeviceMemoryBuffer],
     private[spill] var host: Option[SpillableHostBufferHandle] = None)
     extends DeviceSpillableHandle[DeviceMemoryBuffer] {
+
+  override val approxSizeInBytes: Long = sizeInBytes
 
   private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
@@ -443,7 +448,7 @@ class SpillableDeviceBufferHandle private (
 }
 
 class SpillableColumnarBatchHandle private (
-    override val sizeInBytes: Long,
+    override val approxSizeInBytes: Long,
     private[spill] override var dev: Option[ColumnarBatch],
     private[spill] var host: Option[SpillableHostBufferHandle] = None)
   extends DeviceSpillableHandle[ColumnarBatch] with Logging {
@@ -509,7 +514,7 @@ class SpillableColumnarBatchHandle private (
       // We return the size we were created with. This is not the actual size
       // of this batch when it is packed, and it is used by the calling code
       // to figure out more or less how much did we free in the device.
-      sizeInBytes
+      approxSizeInBytes
     }
   }
 
@@ -571,10 +576,12 @@ object SpillableColumnarBatchFromBufferHandle {
 }
 
 class SpillableColumnarBatchFromBufferHandle private (
-    override val sizeInBytes: Long,
+    val sizeInBytes: Long,
     private[spill] override var dev: Option[ColumnarBatch],
     private[spill] var host: Option[SpillableHostBufferHandle] = None)
   extends DeviceSpillableHandle[ColumnarBatch] {
+
+  override val approxSizeInBytes: Long = sizeInBytes
 
   private var meta: Option[TableMeta] = None
 
@@ -673,7 +680,7 @@ class SpillableCompressedColumnarBatchHandle private (
     private[spill] var host: Option[SpillableHostBufferHandle] = None)
   extends DeviceSpillableHandle[ColumnarBatch] {
 
-  override val sizeInBytes: Long = compressedSizeInBytes
+  override val approxSizeInBytes: Long = compressedSizeInBytes
 
   protected var meta: Option[TableMeta] = None
 
@@ -757,7 +764,7 @@ object SpillableHostColumnarBatchHandle {
 }
 
 class SpillableHostColumnarBatchHandle private (
-    val sizeInBytes: Long,
+    override val approxSizeInBytes: Long,
     val numRows: Int,
     private[spill] override var host: Option[ColumnarBatch],
     private[spill] var disk: Option[DiskHandle] = None)
@@ -823,7 +830,7 @@ class SpillableHostColumnarBatchHandle private (
         }
       }
       releaseHostResource()
-      sizeInBytes
+      approxSizeInBytes
     }
   }
 
@@ -865,8 +872,10 @@ object DiskHandle {
 class DiskHandle private(
     val blockId: BlockId,
     val offset: Long,
-    override val sizeInBytes: Long)
+    val sizeInBytes: Long)
   extends StoreHandle {
+
+  override val approxSizeInBytes: Long = sizeInBytes
 
   private def withInputChannel[T](body: FileChannel => T): T = synchronized {
     val file = SpillFramework.stores.diskStore.diskBlockManager.getFile(blockId)
@@ -979,7 +988,7 @@ trait SpillableStore extends HandleStore[SpillableHandle] with Logging {
         while (allHandles.hasNext && amountToSpill < spillNeeded) {
           val handle = allHandles.next()
           if (handle.spillable) {
-            amountToSpill += handle.sizeInBytes
+            amountToSpill += handle.approxSizeInBytes
             spillables.add(handle)
           }
         }
@@ -1011,24 +1020,24 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
   private var totalSize: Long = 0L
 
   private def tryTrack(handle: SpillableHandle): Boolean = {
-    if (maxSize.isEmpty || handle.sizeInBytes == 0) {
+    if (maxSize.isEmpty || handle.approxSizeInBytes == 0) {
       super.doTrack(handle)
       // for now, keep this totalSize part, we technically
       // do not need to track `totalSize` if we don't have a limit
       synchronized {
-        totalSize += handle.sizeInBytes
+        totalSize += handle.approxSizeInBytes
       }
       true
     } else {
       synchronized {
         val storeMaxSize = maxSize.get
-        if (totalSize + handle.sizeInBytes > storeMaxSize) {
+        if (totalSize + handle.approxSizeInBytes > storeMaxSize) {
           // we want to try to make room for this buffer
           false
         } else {
           // it fits
           if (super.doTrack(handle)) {
-            totalSize += handle.sizeInBytes
+            totalSize += handle.approxSizeInBytes
           }
           true
         }
@@ -1051,7 +1060,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       // we are going to try to track again, in a loop,
       // since we want to release
       var canFit = true
-      val handleSize = handle.sizeInBytes
+      val handleSize = handle.approxSizeInBytes
       var amountSpilled = 0L
       val hadHandlesToSpill = !handles.isEmpty
       while (canFit && !tracked && numRetries < 5) {
@@ -1093,7 +1102,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
   override def remove(handle: SpillableHandle): Unit = {
     synchronized {
       if (doRemove(handle)) {
-        totalSize -= handle.sizeInBytes
+        totalSize -= handle.approxSizeInBytes
       }
     }
   }

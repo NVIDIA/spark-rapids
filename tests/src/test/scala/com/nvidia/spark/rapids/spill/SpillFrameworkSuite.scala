@@ -105,8 +105,8 @@ class SpillFrameworkSuite
     val (_, handle, _) = addContiguousTableToCatalog()
     var path: File = null
     withResource(handle) { _ =>
-      SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
-      SpillFramework.stores.hostStore.spill(handle.sizeInBytes)
+      SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
+      SpillFramework.stores.hostStore.spill(handle.approxSizeInBytes)
       assert(handle.host.isDefined)
       assert(handle.host.map(_.disk.isDefined).get)
       path = SpillFramework.stores.diskStore.getFile(handle.host.flatMap(_.disk).get.blockId)
@@ -193,11 +193,12 @@ class SpillFrameworkSuite
       withResource(handle.materialize(dataTypes)) { _ =>
         assertResult(1)(SpillFramework.stores.deviceStore.numHandles)
         assert(!handle.spillable)
-        assertResult(0)(SpillFramework.stores.deviceStore.spill(handle.sizeInBytes))
+        assertResult(0)(SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes))
       }
       assert(handle.spillable)
       assertResult(1)(SpillFramework.stores.deviceStore.numHandles)
-      assertResult(handle.sizeInBytes)(SpillFramework.stores.deviceStore.spill(handle.sizeInBytes))
+      assertResult(handle.approxSizeInBytes)(
+        SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes))
     }
   }
 
@@ -349,7 +350,7 @@ class SpillFrameworkSuite
     withResource(decompressBach(ct)) { decompressedExpected =>
       withResource(SpillableCompressedColumnarBatchHandle(ct)) { handle =>
         assert(handle.spillable)
-        SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+        SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
         assert(!handle.spillable)
         assert(handle.dev.isEmpty)
         assert(handle.host.isDefined)
@@ -367,9 +368,9 @@ class SpillFrameworkSuite
     withResource(decompressBach(ct)) { decompressedExpected =>
       withResource(SpillableCompressedColumnarBatchHandle(ct)) { handle =>
         assert(handle.spillable)
-        SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+        SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
         assert(!handle.spillable)
-        SpillFramework.stores.hostStore.spill(handle.sizeInBytes)
+        SpillFramework.stores.hostStore.spill(handle.approxSizeInBytes)
         assert(handle.dev.isEmpty)
         assert(handle.host.isDefined)
         assert(handle.host.get.host.isEmpty)
@@ -466,7 +467,7 @@ class SpillFrameworkSuite
     withResource(SpillableColumnarBatchFromBufferHandle(
       ct, dataTypes)) { handle =>
       withResource(expectedBatch) { _ =>
-        SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+        SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
         withResource(handle.materialize(dataTypes)) { cb =>
           TestUtils.compareBatches(expectedBatch, cb)
         }
@@ -486,9 +487,9 @@ class SpillFrameworkSuite
     val handle = SpillableColumnarBatchFromBufferHandle(ct, dataTypes)
     withResource(handle) { _ =>
       withResource(expectedBatch) { _ =>
-        assertResult(SpillFramework.stores.deviceStore.spill(handle.sizeInBytes))(
-          handle.sizeInBytes)
-        val hostSize = handle.host.get.sizeInBytes
+        assertResult(SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes))(
+          handle.approxSizeInBytes)
+        val hostSize = handle.host.get.approxSizeInBytes
         assertResult(SpillFramework.stores.hostStore.spill(hostSize))(hostSize)
         withResource(handle.materialize(dataTypes)) { actualBatch =>
           TestUtils.compareBatches(expectedBatch, actualBatch)
@@ -646,7 +647,7 @@ class SpillFrameworkSuite
           withResource(bigHandle.materialize(sparkTypes)) { actualBatch =>
             TestUtils.compareBatches(expectedBatch, actualBatch)
           }
-          SpillFramework.stores.deviceStore.spill(bigHandle.sizeInBytes)
+          SpillFramework.stores.deviceStore.spill(bigHandle.approxSizeInBytes)
           assertResult(true)(bigHandle.dev.isEmpty)
           assertResult(true)(bigHandle.host.get.host.isEmpty)
           assertResult(false)(bigHandle.host.get.disk.isEmpty)
@@ -714,8 +715,8 @@ class SpillFrameworkSuite
           }
         }
       withResource(expectedBuffer) { expectedBuffer =>
-        deviceStore.spill(handle.sizeInBytes)
-        hostStore.spill(handle.sizeInBytes)
+        deviceStore.spill(handle.approxSizeInBytes)
+        hostStore.spill(handle.approxSizeInBytes)
         withResource(handle.host.map(_.materialize).get) { actualHostBuffer =>
           assertResult(expectedBuffer.
             asByteBuffer.limit())(actualHostBuffer.asByteBuffer.limit())
@@ -833,8 +834,10 @@ class SpillFrameworkSuite
             GpuColumnVector.from(expectedTbl, dataTypes)
           }
           withResource(expectedBatch) { _ =>
-            assertResult(true)(SpillFramework.stores.deviceStore.spill(handle.sizeInBytes) > 0)
-            assertResult(true)(SpillFramework.stores.hostStore.spill(handle.sizeInBytes) > 0)
+            assertResult(true)(
+              SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes) > 0)
+            assertResult(true)(
+              SpillFramework.stores.hostStore.spill(handle.approxSizeInBytes) > 0)
             withResource(handle.materialize(dataTypes)) { actualBatch =>
               TestUtils.compareBatches(expectedBatch, actualBatch)
             }
@@ -865,7 +868,7 @@ class SpillFrameworkSuite
 
         withResource(expectedBuffer) { _ =>
           // host store will fail to spill
-          deviceStore.spill(handle.sizeInBytes)
+          deviceStore.spill(handle.approxSizeInBytes)
           assert(handle.host.map(_.host.isEmpty).get)
           assert(handle.host.map(_.disk.isDefined).get)
           withResource(handle.host.map(_.materialize).get) { buffer =>
@@ -894,7 +897,7 @@ class SpillFrameworkSuite
             withResource(expectedTable) { _ =>
               withResource(
                 GpuColumnVector.from(expectedTable, dataTypes)) { expectedBatch =>
-                SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+                SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
                 assert(handle.host.map(_.host.isEmpty).get)
                 assert(handle.host.map(_.disk.isDefined).get)
                 withResource(handle.materialize(dataTypes)) { fromDiskBatch =>
@@ -929,7 +932,7 @@ class SpillFrameworkSuite
         withResource(expectedTable) { _ =>
           withResource(
             GpuColumnVector.from(expectedTable, dataTypes)) { expectedBatch =>
-            SpillFramework.stores.deviceStore.spill(handle.sizeInBytes)
+            SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
             assert(handle.dev.isEmpty)
             assert(handle.host.map(_.host.isEmpty).get)
             assert(handle.host.map(_.disk.isDefined).get)
@@ -955,8 +958,10 @@ class SpillFrameworkSuite
         withResource(expectedTable) { _ =>
           withResource(
             GpuColumnVector.from(expectedTable, expectedTypes)) { expectedCb =>
-            SpillFramework.stores.deviceStore.spill(handle.sizeInBytes + handle2.sizeInBytes)
-            SpillFramework.stores.hostStore.spill(handle.sizeInBytes + handle2.sizeInBytes)
+            SpillFramework.stores.deviceStore.spill(
+              handle.approxSizeInBytes + handle2.approxSizeInBytes)
+            SpillFramework.stores.hostStore.spill(
+              handle.approxSizeInBytes + handle2.approxSizeInBytes)
             // the 0-byte table never moved from device. It is not spillable
             assert(handle.host.isEmpty)
             assert(!handle.spillable)
