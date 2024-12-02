@@ -50,8 +50,8 @@ class ShuffleBufferCatalog extends Logging {
    *
    * @param blockMap mapping of block ID to array of buffers for the block
    */
-  private case class ShuffleInfo(
-    blockMap: ConcurrentHashMap[ShuffleBlockId, ArrayBuffer[ShuffleBufferId]])
+  private type ShuffleInfo =
+    ConcurrentHashMap[ShuffleBlockId, ArrayBuffer[ShuffleBufferId]]
 
   private val bufferIdToHandle =
     new ConcurrentHashMap[
@@ -117,8 +117,7 @@ class ShuffleBufferCatalog extends Logging {
    * Adds a buffer to the device storage, taking ownership of the buffer.
    *
    * @param blockId              Spark's `ShuffleBlockId` that identifies this buffer
-   * @param buffer               buffer that will be owned by the store
-   * @param tableMeta            metadata describing the buffer layout
+   * @param compressedBatch      Compressed ColumnarBatch
    * @param initialSpillPriority starting spill priority value for the buffer
    * @return RapidsBufferHandle associated with this buffer
    */
@@ -157,8 +156,7 @@ class ShuffleBufferCatalog extends Logging {
    * @param shuffleId shuffle identifier
    */
   def registerShuffle(shuffleId: Int): Unit = {
-    activeShuffles.computeIfAbsent(shuffleId, _ => ShuffleInfo(
-      new ConcurrentHashMap[ShuffleBlockId, ArrayBuffer[ShuffleBufferId]]))
+    activeShuffles.computeIfAbsent(shuffleId, _ => new ShuffleInfo)
   }
 
   /** Frees all buffers that correspond to the specified shuffle. */
@@ -176,7 +174,7 @@ class ShuffleBufferCatalog extends Logging {
           handleAndMeta._1.foreach(_.close())
         }
       }
-      info.blockMap.forEachValue(Long.MaxValue, bufferRemover)
+      info.forEachValue(Long.MaxValue, bufferRemover)
     } else {
       // currently shuffle unregister can get called on the driver which never saw a register
       if (!TrampolineUtil.isDriver(SparkEnv.get)) {
@@ -193,7 +191,7 @@ class ShuffleBufferCatalog extends Logging {
     if (info == null) {
       throw new NoSuchElementException(s"unknown shuffle ${blockId.shuffleId}")
     }
-    val entries = info.blockMap.get(blockId)
+    val entries = info.get(blockId)
     if (entries == null) {
       throw new NoSuchElementException(s"unknown shuffle block $blockId")
     }
@@ -244,7 +242,7 @@ class ShuffleBufferCatalog extends Logging {
     if (info == null) {
       throw new NoSuchElementException(s"unknown shuffle ${blockId.shuffleId}")
     }
-    val entries = info.blockMap.get(blockId)
+    val entries = info.get(blockId)
     if (entries == null) {
       throw new NoSuchElementException(s"unknown shuffle block $blockId")
     }
@@ -270,7 +268,7 @@ class ShuffleBufferCatalog extends Logging {
     }
 
     // associate this new buffer with the shuffle block
-    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ =>
+    val blockBufferIds = info.computeIfAbsent(blockId, _ =>
       new ArrayBuffer[ShuffleBufferId])
     blockBufferIds.synchronized {
       blockBufferIds.append(id)
