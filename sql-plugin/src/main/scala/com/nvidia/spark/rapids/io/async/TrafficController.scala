@@ -102,7 +102,7 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
     lock.lockInterruptibly()
     try {
       while (numTasks > 0 && !throttle.canAccept(task)) {
-        condition.await()
+        canBeScheduled.await()
       }
       numTasks += 1
       throttle.taskScheduled(task)
@@ -116,7 +116,7 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
     try {
       numTasks -= 1
       throttle.taskCompleted(task)
-      condition.signal()
+      canBeScheduled.signal()
     } finally {
       lock.unlock()
     }
