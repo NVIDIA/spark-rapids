@@ -20,7 +20,9 @@ import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemo
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 import com.nvidia.spark.rapids.spill.SpillFramework
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
@@ -53,10 +55,22 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
   }
 
+  private def getHostAllocMetricsLogStr(metrics: GpuTaskMetrics): String = {
+    Option(TaskContext.get()).map { context =>
+      val taskId = context.taskAttemptId()
+      val totalSize = metrics.getHostBytesAllocated
+      val maxSize = metrics.getMaxHostBytesAllocated
+      s"total size for task $taskId is $totalSize, max size is $maxSize"
+    }.getOrElse("allocated memory outside of a task context")
+  }
+
   private def releasePinned(ptr: Long, amount: Long): Unit = {
     synchronized {
       currentPinnedAllocated -= amount
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.decHostBytesAllocated(amount)
+    logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -64,6 +78,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     synchronized {
       currentNonPinnedAllocated -= amount
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.decHostBytesAllocated(amount)
+    logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -179,6 +196,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       allocAttemptFinishedWithoutException = true
     } finally {
       if (ret.isDefined) {
+        val metrics = GpuTaskMetrics.get
+        metrics.incHostBytesAllocated(amount)
+        logTrace(getHostAllocMetricsLogStr(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
       } else {
         // shouldRetry should indicate if spill did anything for us and we should try again.

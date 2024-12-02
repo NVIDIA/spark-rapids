@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -337,7 +337,7 @@ class DeltaCreatableRelationProviderMeta(
     }
     val path = saveCmd.options.get("path")
     if (path.isDefined) {
-      val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
+      val deltaLog = DeltaLog.forTable(SparkSession.active, new Path(path.get), saveCmd.options)
       RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
         saveCmd.options, SparkSession.active)
     } else {

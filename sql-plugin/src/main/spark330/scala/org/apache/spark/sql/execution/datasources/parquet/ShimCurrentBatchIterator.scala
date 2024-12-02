@@ -29,7 +29,9 @@
 {"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
@@ -154,7 +156,7 @@ class ShimCurrentBatchIterator(
     if (!missingColumns.contains(cv.getColumn)) {
       if (cv.getColumn.isPrimitive) {
         val column = cv.getColumn
-        val reader = new VectorizedColumnReader(
+        val reader = RapidsVectorizedColumnReader(
           column.descriptor.get,
           column.required,
           pages,

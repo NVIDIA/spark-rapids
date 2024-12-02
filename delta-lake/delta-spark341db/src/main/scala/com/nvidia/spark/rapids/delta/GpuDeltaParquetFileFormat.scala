@@ -113,7 +113,7 @@ object GpuDeltaParquetFileFormat {
       meta.willNotWorkOnGpu(
         s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
     }
-    if (format.hasDeletionVectorMap()) {
+    if (format.hasDeletionVectorMap) {
       meta.willNotWorkOnGpu("deletion vectors are not supported")
     }
   }

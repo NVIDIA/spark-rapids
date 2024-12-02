@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import allow_non_gpu, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
+from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -138,6 +138,39 @@ def test_datediff(data_gen):
             'datediff(a, \'2016-03-02\')'))
 
 hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
+
+@allow_non_gpu(*hms_fallback)
+def test_months_between():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, false)'))
+
+@allow_non_gpu(*hms_fallback)
+def test_months_between_first_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", false)'))
+
+@allow_non_gpu(*hms_fallback)
+def test_months_between_last_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", false)'))
+
+@allow_non_gpu(*hms_fallback)
+@approximate_float()
+def test_months_between_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, true)'))
+
+@allow_non_gpu(*hms_fallback)
+@approximate_float()
+def test_months_between_first_day_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", true)'))
+
+@allow_non_gpu(*hms_fallback)
+@approximate_float()
+def test_months_between_last_day_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", true)'))
 
 @allow_non_gpu(*hms_fallback)
 def test_hour():

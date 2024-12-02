@@ -53,7 +53,8 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.12)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
@@ -165,7 +166,8 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          cacheKey="${{ runner.os }}-maven-scala213-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.13)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
