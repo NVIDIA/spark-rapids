@@ -170,7 +170,7 @@ class SpillableCompressedColumnarBatchImpl(
 
   override def getColumnarBatch(): ColumnarBatch = {
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    handle.materialize
+    handle.materialize()
   }
 
   override def incRefCount(): SpillableColumnarBatch = {
@@ -432,7 +432,7 @@ class SpillableBuffer(
    * Use the device buffer.
    */
   def getDeviceBuffer(): DeviceMemoryBuffer = {
-    handle.materialize
+    handle.materialize()
   }
 
   /**
@@ -473,8 +473,8 @@ class SpillableHostBuffer(handle: SpillableHostBufferHandle,
     handle.close()
   }
 
-  def getHostBuffer: HostMemoryBuffer = {
-    handle.materialize
+  def getHostBuffer(): HostMemoryBuffer = {
+    handle.materialize()
   }
 
   override def toString: String =

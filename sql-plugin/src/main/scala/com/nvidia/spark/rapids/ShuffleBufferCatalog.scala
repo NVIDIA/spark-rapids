@@ -210,7 +210,7 @@ class ShuffleBufferCatalog extends Logging {
       GpuSemaphore.acquireIfNecessary(TaskContext.get)
       val (maybeHandle, meta) = bufferIdToHandle.get(bId)
       maybeHandle.map { handle =>
-        withResource(handle.materialize) { buff =>
+        withResource(handle.materialize()) { buff =>
           val bufferMeta = meta.bufferMeta()
           if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
             MetaUtils.getBatchFromMeta(buff, meta, sparkTypes)

@@ -182,7 +182,7 @@ class BufferSendState(
             // using `releaseAcquiredToCatalog`
             //these are closed later, after we synchronize streams
             val spillable = blockRange.block.bufferHandle.spillable
-            val buff = spillable.materialize
+            val buff = spillable.materialize()
             buff match {
               case _: DeviceMemoryBuffer =>
                 deviceBuffs += blockRange.rangeSize()

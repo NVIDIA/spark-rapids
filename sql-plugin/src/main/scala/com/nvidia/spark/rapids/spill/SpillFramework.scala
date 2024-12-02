@@ -151,7 +151,7 @@ trait SpillableHandle extends StoreHandle {
    *       that's the size that it used when it first started tracking the object.
    * @return approxSizeInBytes if spilled, 0 for any other reason (not spillable, closed)
    */
-  def spill: Long
+  def spill(): Long
 
   /**
    * Method used to determine whether a handle tracks an object that could be spilled
@@ -247,7 +247,7 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  def materialize: HostMemoryBuffer = {
+  def materialize(): HostMemoryBuffer = {
     var materialized: HostMemoryBuffer = null
     var diskHandle: DiskHandle = null
     synchronized {
@@ -270,7 +270,7 @@ class SpillableHostBufferHandle private (
     materialized
   }
 
-  override def spill: Long = {
+  override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
@@ -392,7 +392,7 @@ class SpillableDeviceBufferHandle private (
     }
   }
 
-  def materialize: DeviceMemoryBuffer = {
+  def materialize(): DeviceMemoryBuffer = {
     var materialized: DeviceMemoryBuffer = null
     var hostHandle: SpillableHostBufferHandle = null
     synchronized {
@@ -419,7 +419,7 @@ class SpillableDeviceBufferHandle private (
     materialized
   }
 
-  override def spill: Long = {
+  override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
@@ -501,7 +501,7 @@ class SpillableColumnarBatchHandle private (
     materialized
   }
 
-  override def spill: Long = {
+  override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
@@ -631,7 +631,7 @@ class SpillableColumnarBatchFromBufferHandle private (
     materialized
   }
 
-  override def spill: Long = {
+  override def spill(): Long = {
     if (!spillable) {
       0
     } else {
@@ -697,7 +697,7 @@ class SpillableCompressedColumnarBatchHandle private (
     }
   }
 
-  def materialize: ColumnarBatch = {
+  def materialize(): ColumnarBatch = {
     var materialized: ColumnarBatch = null
     var hostHandle: SpillableHostBufferHandle = null
     synchronized {
@@ -722,7 +722,7 @@ class SpillableCompressedColumnarBatchHandle private (
     materialized
   }
 
-  override def spill: Long = {
+  override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
@@ -813,7 +813,7 @@ class SpillableHostColumnarBatchHandle private (
     materialized
   }
 
-  override def spill: Long = {
+  override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
@@ -999,7 +999,7 @@ trait SpillableStore extends HandleStore[SpillableHandle] with Logging {
         var numSpilled = 0
         while (it.hasNext) {
           val handle = it.next()
-          val spilled = handle.spill
+          val spilled = handle.spill()
           if (spilled > 0) {
             // this thread was successful at spilling handle.
             amountSpilled += spilled
@@ -1187,7 +1187,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       // add some sort of setter method to Host Handle
       require(handle != null, "Called build too many times")
       require(copied == handle.sizeInBytes,
-        s"Expected ${handle.sizeInBytes} B but copied ${copied} B instead")
+        s"Expected ${handle.sizeInBytes} B but copied $copied B instead")
       handle.setHost(singleShotBuffer)
       singleShotBuffer = null
       val res = handle
@@ -1241,7 +1241,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       // add some sort of setter method to Host Handle
       require(handle != null, "Called build too many times")
       require(copied == handle.sizeInBytes,
-        s"Expected ${handle.sizeInBytes} B but copied ${copied} B instead")
+        s"Expected ${handle.sizeInBytes} B but copied $copied B instead")
       handle.setDisk(diskHandleBuilder.build)
       val res = handle
       handle = null
@@ -1319,7 +1319,7 @@ object DiskHandleStore {
     // as it is, we could use `DiskWriter` to start writing at other offsets
     private var closed = false
 
-    private var fc: FileChannel = null
+    private var fc: FileChannel = _
 
     private def getFileChannel: FileChannel = {
       val options = Seq(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
@@ -1428,7 +1428,7 @@ object SpillFramework extends Logging {
   // public for tests
   var storesInternal: SpillableStores = _
   
-  def stores = {
+  def stores: SpillableStores = {
     if (storesInternal == null) {
       throw new IllegalStateException(
         "Cannot use SpillFramework without calling SpillFramework.initialize first")
@@ -1504,7 +1504,7 @@ object SpillFramework extends Logging {
       body(hostSpillBounceBuffer)
     }
 
-  var chunkedPackBounceBufferPool: DeviceBounceBufferPool = null
+  var chunkedPackBounceBufferPool: DeviceBounceBufferPool = _
 
   def removeFromDeviceStore(value: SpillableHandle): Unit = {
     // if the stores have already shut down, we don't want to create them here
@@ -1676,6 +1676,6 @@ class ChunkedPacker(table: Table,
   }
 }
 
-object ChunkedPacker {
+private object ChunkedPacker {
   private var warnedAboutPoolFallback: Boolean = false
 }

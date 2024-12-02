@@ -234,7 +234,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         // acquire once at the beginning, and closed at the end
         verify(mockRequestHandler, times(1))
           .getShuffleHandle(ArgumentMatchers.eq(1))
-        withResource(rapidsBuffer.spillable.materialize) { dmb =>
+        withResource(rapidsBuffer.spillable.materialize()) { dmb =>
           // refcount=2 because it was on the device, and we +1 to materialize.
           // but it shows no leaks.
           assertResult(2)(dmb.getRefCount)
@@ -271,11 +271,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       val mockHandleThatThrows = mock[SpillableDeviceBufferHandle]
       val mockMaterialized = mock[DeviceMemoryBuffer]
       when(mockHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
-      when(mockHandle.materialize).thenAnswer(_ => mockMaterialized)
+      when(mockHandle.materialize()).thenAnswer(_ => mockMaterialized)
 
       when(mockHandleThatThrows.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
       val ex = new IllegalStateException("something happened")
-      when(mockHandleThatThrows.materialize).thenThrow(ex)
+      when(mockHandleThatThrows.materialize()).thenThrow(ex)
 
       val rapidsBuffer = RapidsShuffleHandle(mockHandle, tableMeta)
       val rapidsBufferThatThrows = RapidsShuffleHandle(mockHandleThatThrows, tableMeta)
@@ -362,7 +362,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           val rapidsBuffer = RapidsShuffleHandle(mockHandle, tableMeta)
           when(mockHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
           // mock an error with the copy
-          when(rapidsBuffer.spillable.materialize)
+          when(rapidsBuffer.spillable.materialize())
             .thenAnswer(_ => {
               throw new IOException("mmap failed in test")
             })
@@ -428,11 +428,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           verify(mockRequestHandler, times(1))
               .getShuffleHandle(ArgumentMatchers.eq(2))
           // this handle fails to materialize
-          verify(rapidsHandle.spillable, times(1)).materialize
+          verify(rapidsHandle.spillable, times(1)).materialize()
 
           // this handle materializes, so make sure we close it
-          verify(rapidsHandle2.spillable, times(1)).materialize
-          withResource(rapidsHandle2.spillable.materialize) { dmb =>
+          verify(rapidsHandle2.spillable, times(1)).materialize()
+          withResource(rapidsHandle2.spillable.materialize()) { dmb =>
             // refcount=2 because it was on the device, and we +1 to materialize.
             // but it shows no leaks.
             assertResult(2)(dmb.getRefCount)

@@ -71,7 +71,7 @@ class ShuffleReceivedBufferCatalog() extends Logging {
       var memoryUsedBytes = 0L
       val cb = if (spillable != null) {
         memoryUsedBytes = spillable.sizeInBytes
-        withResource(spillable.materialize) { buff =>
+        withResource(spillable.materialize()) { buff =>
           MetaUtils.getBatchFromMeta(buff, handle.tableMeta, sparkTypes)
         }
       } else {

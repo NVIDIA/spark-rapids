@@ -334,7 +334,7 @@ class SpillFrameworkSuite
     val ct = buildCompressedBatch(0, 1000)
     withResource(SpillableCompressedColumnarBatchHandle(ct)) { handle =>
       assert(handle.spillable)
-      withResource(handle.materialize) { materialized =>
+      withResource(handle.materialize()) { materialized =>
         assert(!handle.spillable)
         // since we didn't spill, these buffers are exactly the same
         assert(
@@ -354,7 +354,7 @@ class SpillFrameworkSuite
         assert(!handle.spillable)
         assert(handle.dev.isEmpty)
         assert(handle.host.isDefined)
-        withResource(handle.materialize) { materialized =>
+        withResource(handle.materialize()) { materialized =>
           withResource(decompressBach(materialized)) { decompressed =>
             TestUtils.compareBatches(decompressedExpected, decompressed)
           }
@@ -375,7 +375,7 @@ class SpillFrameworkSuite
         assert(handle.host.isDefined)
         assert(handle.host.get.host.isEmpty)
         assert(handle.host.get.disk.isDefined)
-        withResource(handle.materialize) { materialized =>
+        withResource(handle.materialize()) { materialized =>
           withResource(decompressBach(materialized)) { decompressed =>
             TestUtils.compareBatches(decompressedExpected, decompressed)
           }
@@ -390,7 +390,7 @@ class SpillFrameworkSuite
     val handle1 = SpillableDeviceBufferHandle(buffer)
     // materialize will incRefCount `buffer`. This looks a little weird
     // but it simulates aliasing as it happens in real code
-    val handle2 = SpillableDeviceBufferHandle(handle1.materialize)
+    val handle2 = SpillableDeviceBufferHandle(handle1.materialize())
 
     withResource(handle1) { _ =>
       withResource(handle2) { _ =>
@@ -505,7 +505,7 @@ class SpillFrameworkSuite
     withResource(spillableBuffer) { _ =>
       // the refcount of 1 is the store
       assertResult(1)(hmb.getRefCount)
-      withResource(spillableBuffer.getHostBuffer) { memoryBuffer =>
+      withResource(spillableBuffer.getHostBuffer()) { memoryBuffer =>
         assertResult(hmb)(memoryBuffer)
         assertResult(2)(memoryBuffer.getRefCount)
       }
@@ -526,7 +526,7 @@ class SpillFrameworkSuite
     withResource(spillableBuffer) { _ =>
       // the refcount of the original buffer is 0 because it spilled
       assertResult(0)(hmb.getRefCount)
-      withResource(spillableBuffer.getHostBuffer) { memoryBuffer =>
+      withResource(spillableBuffer.getHostBuffer()) { memoryBuffer =>
         assertResult(memoryBuffer.getLength)(hmb.getLength)
       }
     }
@@ -536,7 +536,7 @@ class SpillFrameworkSuite
     val spillPriority = -10
     val hmb = HostMemoryBuffer.allocate(1L * 1024)
     withResource(SpillableHostBuffer(hmb, hmb.getLength, spillPriority)) { spillableBuffer =>
-      withResource(spillableBuffer.getHostBuffer) { _ =>
+      withResource(spillableBuffer.getHostBuffer()) { _ =>
         assertResult(0)(SpillFramework.stores.hostStore.spill(hmb.getLength))
       }
       assertResult(hmb.getLength)(SpillFramework.stores.hostStore.spill(hmb.getLength))
@@ -708,7 +708,7 @@ class SpillFrameworkSuite
       assertResult(0)(diskStore.numHandles)
       assertResult(0)(hostStore.numHandles)
       val expectedBuffer =
-        withResource(handle.materialize) { devbuf =>
+        withResource(handle.materialize()) { devbuf =>
           closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
             hostbuf.copyFromDeviceBuffer(devbuf)
             hostbuf
@@ -717,7 +717,7 @@ class SpillFrameworkSuite
       withResource(expectedBuffer) { expectedBuffer =>
         deviceStore.spill(handle.approxSizeInBytes)
         hostStore.spill(handle.approxSizeInBytes)
-        withResource(handle.host.map(_.materialize).get) { actualHostBuffer =>
+        withResource(handle.host.map(_.materialize()).get) { actualHostBuffer =>
           assertResult(expectedBuffer.
             asByteBuffer.limit())(actualHostBuffer.asByteBuffer.limit())
         }
@@ -859,7 +859,7 @@ class SpillFrameworkSuite
       val deviceStore = SpillFramework.stores.deviceStore
       withResource(handle) { _ =>
         val expectedBuffer =
-          withResource(handle.materialize) { devbuf =>
+          withResource(handle.materialize()) { devbuf =>
             closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
               hostbuf.copyFromDeviceBuffer(devbuf)
               hostbuf
@@ -871,7 +871,7 @@ class SpillFrameworkSuite
           deviceStore.spill(handle.approxSizeInBytes)
           assert(handle.host.map(_.host.isEmpty).get)
           assert(handle.host.map(_.disk.isDefined).get)
-          withResource(handle.host.map(_.materialize).get) { buffer =>
+          withResource(handle.host.map(_.materialize()).get) { buffer =>
             assertResult(expectedBuffer.asByteBuffer)(buffer.asByteBuffer)
           }
         }
@@ -890,7 +890,7 @@ class SpillFrameworkSuite
       // fill up the host store
       withResource(SpillableHostBufferHandle(HostMemoryBuffer.allocate(1024))) { hostHandle =>
         // make sure the host handle isn't spillable
-        withResource(hostHandle.materialize) { _ =>
+        withResource(hostHandle.materialize()) { _ =>
           val (handle, _) = addTableToCatalog()
           withResource(handle) { _ =>
             val (expectedTable, dataTypes) = buildTable()
