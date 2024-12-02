@@ -201,13 +201,12 @@ object SpillableHostBufferHandle extends Logging {
     val handle = new SpillableHostBufferHandle(chunkedPacker.getTotalContiguousSize)
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
-      SpillFramework.withChunkedPackBounceBuffer { bb =>
-        while (chunkedPacker.hasNext) {
-          withResource(chunkedPacker.next(bb)) { n =>
-            builder.copyNext(n, Cuda.DEFAULT_STREAM)
-            // copyNext is synchronous w.r.t. the cuda stream passed,
-            // no need to synchronize here.
-          }
+      while (chunkedPacker.hasNext) {
+        val (bb, len) = chunkedPacker.next()
+        withResource(bb) { _ =>
+          builder.copyNext(bb.dmb, len, Cuda.DEFAULT_STREAM)
+          // copyNext is synchronous w.r.t. the cuda stream passed,
+          // no need to synchronize here.
         }
       }
       builder.build
@@ -219,7 +218,7 @@ object SpillableHostBufferHandle extends Logging {
     val handle = new SpillableHostBufferHandle(buff.getLength)
     withResource(
       SpillFramework.stores.hostStore.makeBuilder(handle)) { builder =>
-      builder.copyNext(buff, Cuda.DEFAULT_STREAM)
+      builder.copyNext(buff, buff.getLength, Cuda.DEFAULT_STREAM)
       builder.build
     }
   }
@@ -522,7 +521,7 @@ class SpillableColumnarBatchHandle private (
       GpuColumnVector.from(dev.get)
     }
     withResource(tbl) { _ =>
-      withResource(new ChunkedPacker(tbl, SpillFramework.chunkedPackBounceBufferSize)) { packer =>
+      withResource(new ChunkedPacker(tbl, SpillFramework.chunkedPackBounceBufferPool)) { packer =>
         body(packer)
       }
     }
@@ -1131,15 +1130,16 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
 
   trait SpillableHostBufferHandleBuilder extends AutoCloseable {
     /**
-     * Copy the entirety of `mb` (0 to getLength) to host or disk.
+     * Copy `mb` from offset 0 to len to host or disk.
      *
      * We synchronize after each copy since we do not manage the lifetime
      * of `mb`.
      *
      * @param mb buffer to copy from
+     * @param len the amount of bytes that should be copied from `mb`
      * @param stream CUDA stream to use, and synchronize against
      */
-    def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit
+    def copyNext(mb: DeviceMemoryBuffer, len: Long, stream: Cuda.Stream): Unit
 
     /**
      * Returns a usable `SpillableHostBufferHandle` with either the
@@ -1159,15 +1159,15 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
       extends SpillableHostBufferHandleBuilder with Logging {
     private var copied = 0L
 
-    override def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit = {
+    override def copyNext(mb: DeviceMemoryBuffer, len: Long, stream: Cuda.Stream): Unit = {
       GpuTaskMetrics.get.spillToHostTime {
         singleShotBuffer.copyFromMemoryBuffer(
           copied,
           mb,
           0,
-          mb.getLength,
+          len,
           stream)
-        copied += mb.getLength
+        copied += len
       }
     }
 
@@ -1201,22 +1201,24 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     private var copied = 0L
     private var diskHandleBuilder = DiskHandleStore.makeBuilder
 
-    override def copyNext(mb: DeviceMemoryBuffer, stream: Cuda.Stream): Unit = {
+    override def copyNext(mb: DeviceMemoryBuffer, len: Long, stream: Cuda.Stream): Unit = {
       SpillFramework.withHostSpillBounceBuffer { hostSpillBounceBuffer =>
         GpuTaskMetrics.get.spillToDiskTime {
           val outputChannel = diskHandleBuilder.getChannel
-          val iter = new MemoryBufferToHostByteBufferIterator(
-            mb,
-            hostSpillBounceBuffer,
-            Cuda.DEFAULT_STREAM)
-          iter.foreach { byteBuff =>
-            try {
-              while (byteBuff.hasRemaining) {
-                outputChannel.write(byteBuff)
+          withResource(mb.slice(0, len)) { slice =>
+            val iter = new MemoryBufferToHostByteBufferIterator(
+              slice,
+              hostSpillBounceBuffer,
+              Cuda.DEFAULT_STREAM)
+            iter.foreach { byteBuff =>
+              try {
+                while (byteBuff.hasRemaining) {
+                  outputChannel.write(byteBuff)
+                }
+                copied += byteBuff.capacity()
+              } finally {
+                RapidsStorageUtils.dispose(byteBuff)
               }
-              copied += byteBuff.capacity()
-            } finally {
-              RapidsStorageUtils.dispose(byteBuff)
             }
           }
         }
@@ -1422,12 +1424,8 @@ object SpillFramework extends Logging {
     storesInternal
   }
 
-  // used by the chunked packer to construct the cuDF-side packer object
-  var chunkedPackBounceBufferSize: Long = -1L
-
   // TODO: these should be pools, instead of individual buffers
   private var hostSpillBounceBuffer: HostMemoryBuffer = _
-  private var chunkedPackBounceBuffer: DeviceMemoryBuffer = _
 
   private lazy val conf: SparkConf = {
     val env = SparkEnv.get
@@ -1449,10 +1447,22 @@ object SpillFramework extends Logging {
     } else {
       Some(rapidsConf.hostSpillStorageSize)
     }
-    chunkedPackBounceBufferSize = rapidsConf.chunkedPackBounceBufferSize
     // this should hopefully be pinned, but it would work without
     hostSpillBounceBuffer = HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize)
-    chunkedPackBounceBuffer = DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize)
+
+    chunkedPackBounceBufferPool = new DeviceBounceBufferPool {
+      private val bounceBuffer: DeviceBounceBuffer =
+        DeviceBounceBuffer(DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize))
+      override def bufferSize: Long = rapidsConf.chunkedPackBounceBufferSize
+      override def nextBuffer(): DeviceBounceBuffer = {
+        // can block waiting for bounceBuffer to be released
+        bounceBuffer.acquire()
+      }
+      override def close(): Unit = {
+        // this closes the DeviceMemoryBuffer wrapped by the bounce buffer class
+        bounceBuffer.release()
+      }
+    }
     storesInternal = new SpillableStores {
       override var deviceStore: SpillableDeviceStore = new SpillableDeviceStore
       override var hostStore: SpillableHostStore = new SpillableHostStore(hostSpillStorageSize)
@@ -1467,9 +1477,9 @@ object SpillFramework extends Logging {
       hostSpillBounceBuffer.close()
       hostSpillBounceBuffer = null
     }
-    if (chunkedPackBounceBuffer != null) {
-      chunkedPackBounceBuffer.close()
-      chunkedPackBounceBuffer = null
+    if (chunkedPackBounceBufferPool != null) {
+      chunkedPackBounceBufferPool.close()
+      chunkedPackBounceBufferPool = null
     }
     if (storesInternal != null) {
       storesInternal.close()
@@ -1482,10 +1492,7 @@ object SpillFramework extends Logging {
       body(hostSpillBounceBuffer)
     }
 
-  def withChunkedPackBounceBuffer[T](body: DeviceMemoryBuffer => T): T =
-    chunkedPackBounceBuffer.synchronized {
-      body(chunkedPackBounceBuffer)
-    }
+  var chunkedPackBounceBufferPool: DeviceBounceBufferPool = null
 
   def removeFromDeviceStore(value: SpillableHandle): Unit = {
     // if the stores have already shut down, we don't want to create them here
@@ -1510,6 +1517,65 @@ object SpillFramework extends Logging {
     }
     maybeStores.foreach(_.remove(value))
   }
+
+}
+
+/**
+ * A bounce buffer wrapper class that supports the concept of acquisition.
+ *
+ * The bounce buffer is acquired exclusively. So any calls to acquire while the
+ * buffer is in use will block at `acquire`. Calls to `release` notify the blocked
+ * threads, and they will check to see if they can acquire.
+ *
+ * `close` is the interface to unacquire the bounce buffer.
+ *
+ * `release` actually closes the underlying DeviceMemoryBuffer, and should be called
+ * once at the end of the lifetime of the executor.
+ *
+ * @param dmb - actual cudf DeviceMemoryBuffer that this class is protecting.
+ */
+private[spill] case class DeviceBounceBuffer(var dmb: DeviceMemoryBuffer) extends AutoCloseable {
+  private var acquired: Boolean = false
+  def acquire(): DeviceBounceBuffer = synchronized {
+    while (acquired) {
+      wait()
+    }
+    acquired = true
+    this
+  }
+
+  private def unaquire(): Unit = synchronized {
+    acquired = false
+    notifyAll()
+  }
+
+  override def close(): Unit = {
+    unaquire()
+  }
+
+  def release(): Unit = synchronized {
+    if (acquired) {
+      throw new IllegalStateException(
+        "closing device buffer pool, but some bounce buffers are in use.")
+    }
+    if (dmb != null) {
+      dmb.close()
+      dmb = null
+    }
+  }
+}
+
+/**
+ * A bounce buffer pool with buffers of size `bufferSize`
+ *
+ * This pool returns instances of `DeviceBounceBuffer`, that should
+ * be closed in order to be reused.
+ *
+ * Callers should synchronize before calling close on their `DeviceMemoryBuffer`s.
+ */
+trait DeviceBounceBufferPool extends AutoCloseable {
+  def bufferSize: Long
+  def nextBuffer(): DeviceBounceBuffer
 }
 
 /**
@@ -1524,12 +1590,11 @@ object SpillFramework extends Logging {
  *       associated with it.
  *
  * @param table cuDF Table to chunk_pack
- * @param bounceBufferSize size of GPU memory to be used for packing. The buffer will be
- *                         obtained during the iterator-like 'next(DeviceMemoryBuffer)'
+ * @param bounceBufferPool bounce buffer pool to use during the lifetime of this packer.
  */
 class ChunkedPacker(table: Table,
-                    bounceBufferSize: Long)
-  extends Logging with AutoCloseable {
+                    bounceBufferPool: DeviceBounceBufferPool)
+  extends Iterator[(DeviceBounceBuffer, Long)] with Logging with AutoCloseable {
 
   private var closed: Boolean = false
 
@@ -1539,7 +1604,7 @@ class ChunkedPacker(table: Table,
     val pool = GpuDeviceManager.chunkedPackMemoryResource
     val cudfChunkedPack = try {
       pool.flatMap { chunkedPool =>
-        Some(table.makeChunkedPack(bounceBufferSize, chunkedPool))
+        Some(table.makeChunkedPack(bounceBufferPool.bufferSize, chunkedPool))
       }
     } catch {
       case _: OutOfMemoryError =>
@@ -1554,7 +1619,7 @@ class ChunkedPacker(table: Table,
 
     // if the pool is not configured, or we got an OOM, try again with the per-device pool
     cudfChunkedPack.getOrElse {
-      table.makeChunkedPack(bounceBufferSize)
+      table.makeChunkedPack(bounceBufferPool.bufferSize)
     }
   }
 
@@ -1572,24 +1637,23 @@ class ChunkedPacker(table: Table,
     packedMeta
   }
 
-  def hasNext: Boolean = {
+  override def hasNext: Boolean = {
     if (closed) {
       throw new IllegalStateException(s"ChunkedPacker is closed")
     }
     chunkedPack.hasNext
   }
 
-  def next(bounceBuffer: DeviceMemoryBuffer): DeviceMemoryBuffer = {
-    require(bounceBuffer.getLength == bounceBufferSize,
-      s"Bounce buffer ${bounceBuffer} doesn't match size ${bounceBufferSize} B.")
-
-    if (closed) {
-      throw new IllegalStateException(s"ChunkedPacker is closed")
+  override def next(): (DeviceBounceBuffer, Long) = {
+    withResource(bounceBufferPool.nextBuffer()) { bounceBuffer =>
+      if (closed) {
+        throw new IllegalStateException(s"ChunkedPacker is closed")
+      }
+      val bytesWritten = chunkedPack.next(bounceBuffer.dmb)
+      // we increment the refcount because the caller has no idea where
+      // this memory came from, so it should close it.
+      (bounceBuffer, bytesWritten)
     }
-    val bytesWritten = chunkedPack.next(bounceBuffer)
-    // we increment the refcount because the caller has no idea where
-    // this memory came from, so it should close it.
-    bounceBuffer.slice(0, bytesWritten)
   }
 
   override def close(): Unit = {
