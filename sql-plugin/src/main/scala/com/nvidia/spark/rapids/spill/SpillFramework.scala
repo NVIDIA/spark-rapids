@@ -146,6 +146,9 @@ trait SpillableHandle extends StoreHandle {
   /**
    * Method called to spill this handle. It can be triggered from the spill store,
    * or directly against the handle.
+   * @note The size returned from this method is only used by the spill framework
+   *       to track the approximate size. It should just return `approxSizeInBytes`, as
+   *       that's the size that it used when it first started tracking the object.
    * @return approxSizeInBytes if spilled, 0 for any other reason (not spillable, closed)
    */
   def spill: Long
