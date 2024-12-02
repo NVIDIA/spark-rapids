@@ -92,7 +92,7 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
   private var numTasks: Int = 0
 
   private val lock = new ReentrantLock()
-  private val condition = lock.newCondition()
+  private val canBeScheduled = lock.newCondition()
 
   /**
    * Blocks the task from being scheduled until the throttle allows it. If there is no task
