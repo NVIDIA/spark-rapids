@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object GpuOrcFileFormat extends Logging {
@@ -42,27 +43,6 @@ object GpuOrcFileFormat extends Logging {
 
   def isSparkOrcFormat(cls: Class[_ <: FileFormat]): Boolean = {
     cls == classOf[OrcFileFormat] || cls.getCanonicalName.equals(HIVE_IMPL_CLASS)
-  }
-
-  private def checkForBoolNulls(dataType: DataType): Boolean = {
-    dataType match {
-      case ArrayType(elementType, t) => elementType == BooleanType && t
-      case StructType(fields) =>
-        fields.exists { f =>
-          hasBoolNulls(f.dataType, f.nullable)
-        }
-      case MapType(_, valueType, t) => hasBoolNulls(valueType, t)
-    }
-  }
-
-  private def hasBoolNulls(d: DataType, nulls: Boolean) = {
-    if (nulls && d == BooleanType) {
-      true
-    } else if (DataTypeUtils.isNestedType(d)) {
-      checkForBoolNulls(d)
-    } else {
-      false
-    }
   }
 
   def tagGpuSupport(meta: RapidsMeta[_, _, _],
@@ -104,10 +84,9 @@ object GpuOrcFileFormat extends Logging {
     // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
     // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
     val types = schema.map(_.dataType).toSet
-    val res = schema.exists {
-      case field if field.dataType == BooleanType && field.nullable => true
-      case field if DataTypeUtils.isNestedType(field.dataType) => checkForBoolNulls(field.dataType)
-      case _ => false
+    val hasBools = schema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
+        t.isInstanceOf[BooleanType])
     }
 
     if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
@@ -118,7 +97,7 @@ object GpuOrcFileFormat extends Logging {
       }
     }
 
-    if (res && !meta.conf.isOrcBoolNullTypeEnabled) {
+    if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
       meta.willNotWorkOnGpu("Nullable Booleans can not work in certain cases with ORC writer." +
         "See https://github.com/rapidsai/cudf/issues/6763")
     }

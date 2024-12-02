@@ -28,6 +28,9 @@ _write_to_hive_conf = {"spark.sql.hive.convertMetastoreParquet": False}
 _hive_bucket_gens = [
     boolean_gen, byte_gen, short_gen, int_gen, long_gen, string_gen, float_gen, double_gen,
     DateGen(start=date(1590, 1, 1)), _restricted_timestamp()]
+_hive_bucket_gens_sans_bools = [
+    byte_gen, short_gen, int_gen, long_gen, string_gen, float_gen, double_gen,
+    DateGen(start=date(1590, 1, 1)), _restricted_timestamp()]
 
 _hive_basic_gens = _hive_bucket_gens + [
     DecimalGen(precision=19, scale=1, nullable=True),

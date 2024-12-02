@@ -1243,9 +1243,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_ORC_NULLABLE_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
-    .doc("When set to false disables nullable boolean columns for ORC writes." +
-      "Set to true if your data does not have null booleans and want tp experiment" +
+  val ENABLE_ORC_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
+    .doc("When set to false disables boolean columns for ORC writes." +
+      "Set to true if you want to experiment" +
       "See https://github.com/NVIDIA/spark-rapids/issues/11736.")
     .internal()
     .booleanConf
@@ -2972,7 +2972,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
-  lazy val isOrcBoolNullTypeEnabled: Boolean = get(ENABLE_ORC_NULLABLE_BOOL)
+  lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 

@@ -112,8 +112,11 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 #E                   	at org.apache.orc.TypeDescription.parseInt(TypeDescription.java:244)
 #E                   	at org.apache.orc.TypeDescription.parseType(TypeDescription.java:362)
 # ...
+# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# https://github.com/rapidsai/cudf/issues/6763 .
+# Once the first issue is fixed, add back boolean_gen
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    string_gen, DateGen(start=date(1590, 1, 1)),
     orc_timestamp_gen] + decimal_gens
 
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
@@ -201,8 +204,11 @@ def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_e
             read_func(data_path),
             conf=all_confs)
 
+# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# https://github.com/rapidsai/cudf/issues/6763 .
+# Once the first issue is fixed, add back boolean_gen
 orc_pred_push_gens = [
-        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
+        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen,
         # Once https://github.com/NVIDIA/spark-rapids/issues/139 is fixed replace this with
         # date_gen
@@ -277,8 +283,11 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
     # we should go with a more standard set of generators
+    # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    string_gen, DateGen(start=date(1590, 1, 1)),
     orc_timestamp_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
@@ -344,8 +353,11 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
 def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
     # we should go with a more standard set of generators
+    # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    string_gen, DateGen(start=date(1590, 1, 1)),
     orc_timestamp_gen]
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
@@ -825,8 +837,11 @@ def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
 @allow_non_gpu(*non_utc_allow_orc_scan)
 def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, keep_order):
+    # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+                string_gen, DateGen(start=date(1590, 1, 1)),
                 orc_timestamp_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
@@ -927,7 +942,7 @@ def test_orc_column_name_with_dots(spark_tmp_path, reader_confs):
                 ("f.g", int_gen),
                 ("h", string_gen)])),
             ("i.j", long_gen)])),
-        ("k", boolean_gen)]
+        ("k", int_gen)]
     with_cpu_session(lambda spark: gen_df(spark, gens).write.orc(data_path))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark), conf=all_confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
@@ -945,7 +960,7 @@ def test_orc_with_null_column(spark_tmp_path, reader_confs):
     def gen_null_df(spark):
         return spark.createDataFrame(
             [(None, None, None, None, None)],
-            "c1 int, c2 long, c3 float, c4 double, c5 boolean")
+            "c1 int, c2 long, c3 float, c4 double, c5 int")
 
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_null_df(spark).write.orc(path),
@@ -966,7 +981,7 @@ def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
     def gen_null_df(spark):
         return spark.createDataFrame(
             data,
-            "c1 int, c2 long, c3 float, c4 double, c5 boolean")
+            "c1 int, c2 long, c3 float, c4 double, c5 int")
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_null_df(spark).write.orc(path),
         lambda spark, path: spark.read.orc(path),
