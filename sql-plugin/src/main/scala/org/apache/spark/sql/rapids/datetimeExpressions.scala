@@ -1217,7 +1217,8 @@ class MonthsBetweenExprMeta(expr: MonthsBetween,
                             rule: DataFromReplacementRule)
   extends ExprMeta[MonthsBetween](expr, conf, parent, rule) {
 
-  override def isTimeZoneSupported = true
+  // See https://github.com/NVIDIA/spark-rapids/issues/11800
+  override def isTimeZoneSupported = false
 
   override def convertToGpu(): GpuExpression = {
     val gpuChildren = childExprs.map(_.convertToGpu())
@@ -1286,6 +1287,13 @@ object GpuMonthsBetween {
 
   private def calcSecondsInDay(converted: ColumnVector): ColumnVector = {
     // Find the number of seconds that are not counted for in a day
+
+    // Rounding down to the current day, only works if you are in a time zone with no
+    // transition rules. This is because if a transition happens in between the start
+    // of the day and the timestamp we will be off. As such this will need to change to
+    // support other time zones, and it will need to take the timezone into account when
+    // calculating this.
+    // https://github.com/NVIDIA/spark-rapids/issues/11800
 
     // find the micros over by finding the part that is not days
     val microsInDay = withResource(converted.dateTimeFloor(DateTimeRoundingFrequency.DAY)) { days =>
