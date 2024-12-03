@@ -102,6 +102,26 @@ def test_write_round_trip_corner(spark_tmp_path, orc_gen, orc_impl):
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
+@pytest.mark.parametrize('gen', [ByteGen(nullable=False),
+    ShortGen(nullable=False),
+    IntegerGen(nullable=False),
+    LongGen(nullable=False),
+    FloatGen(nullable=False),
+    DoubleGen(nullable=False),
+    BooleanGen(nullable=False),
+    StringGen(nullable=False),
+    StructGen([('b', LongGen(nullable=False))], nullable=False)], ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_allow)
+def test_write_round_trip_nullable_struct(spark_tmp_path, gen, orc_impl):
+    gen_for_struct = StructGen([('c', gen)], nullable=True)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, gen_for_struct, num_slices=1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
+
 orc_part_write_gens = [
         byte_gen, short_gen, int_gen, long_gen, boolean_gen,
         # Some file systems have issues with UTF8 strings so to help the test pass even there

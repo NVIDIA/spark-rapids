@@ -105,6 +105,25 @@ def test_write_round_trip(spark_tmp_path, parquet_gens):
             data_path,
             conf=writer_confs)
 
+@pytest.mark.parametrize('gen', [ByteGen(nullable=False),
+    ShortGen(nullable=False),
+    IntegerGen(nullable=False),
+    LongGen(nullable=False),
+    FloatGen(nullable=False),
+    DoubleGen(nullable=False),
+    BooleanGen(nullable=False),
+    StringGen(nullable=False),
+    StructGen([('b', LongGen(nullable=False))], nullable=False)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_write_round_trip_nullable_struct(spark_tmp_path, gen):
+    gen_for_struct = StructGen([('c', gen)], nullable=True)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, gen_for_struct, num_slices=1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=writer_confs)
+
 all_nulls_string_gen = SetValuesGen(StringType(), [None])
 empty_or_null_string_gen = SetValuesGen(StringType(), [None, ""])
 all_empty_string_gen = SetValuesGen(StringType(), [""])
