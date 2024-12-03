@@ -2091,9 +2091,9 @@ class DynamicGpuPartialAggregateIterator(
       helper: AggHelper): (Iterator[ColumnarBatch], Boolean) = {
     // we need to decide if we are going to sort the data or not, so the very
     // first thing we need to do is get a batch and make a choice.
+    val cb = cbIter.next()
     withResource(new NvtxWithMetrics("dynamic sort heuristic", NvtxColor.BLUE,
       metrics.opTime, metrics.heuristicTime)) { _ =>
-      val cb = cbIter.next()
       lazy val estimatedGrowthAfterAgg: Double = closeOnExcept(cb) { cb =>
         val numRows = cb.numRows()
         val cardinality = estimateCardinality(cb)
