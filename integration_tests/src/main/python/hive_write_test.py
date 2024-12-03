@@ -29,7 +29,6 @@ def _restricted_timestamp(nullable=True):
                         end=datetime(2262, 4, 11, tzinfo=timezone.utc),
                         nullable=nullable)
 
-
 # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
 # https://github.com/rapidsai/cudf/issues/6763 .
 # Once the first issue is fixed, add back boolean_gen

@@ -103,7 +103,7 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
 @pytest.mark.parametrize('orc_gens', bool_gen, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @allow_non_gpu('ExecutedCommandExec', 'DataWritingCommandExec', 'WriteFilesExec')
-def test_write_round_trip_bools_only(spark_tmp_path, orc_gens, orc_impl):
+def test_write_round_trip_bools_only_fallback(spark_tmp_path, orc_gens, orc_impl):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(

@@ -18,10 +18,11 @@ package org.apache.spark.sql.rapids
 
 import java.sql.Timestamp
 
-import com.nvidia.spark.rapids.{GpuFilterExec, SparkQueryCompareTestSuite}
+import com.nvidia.spark.rapids.{GpuFilterExec, RapidsConf, SparkQueryCompareTestSuite}
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.FilterExec
+import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
 
 class OrcFilterSuite extends SparkQueryCompareTestSuite {
 
@@ -39,22 +40,43 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
 
   test("Support for pushing down filters for boolean types gpu write gpu read") {
     withTempPath { file =>
-      withGpuSparkSession(spark => {
-        val data = (0 until 10).map(i => Tuple1(i == 2))
-        val df = spark.createDataFrame(data).toDF("a")
-        df.repartition(10).write.orc(file.getCanonicalPath)
-        checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
-      })
+      var gpuPlans: Array[SparkPlan] = Array.empty
+      val testConf = new SparkConf().set(
+        RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
+      ExecutionPlanCaptureCallback.startCapture()
+      try {
+        withGpuSparkSession(spark => {
+          val data = (0 until 10).map(i => Tuple1(i == 2))
+          val df = spark.createDataFrame(data).toDF("a")
+          df.repartition(10).write.orc(file.getCanonicalPath)
+          checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
+
+        }, testConf)
+      } finally {
+          gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+      }
+      ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlans.head, "DataWritingCommandExec")
     }
   }
 
   test("Support for pushing down filters for boolean types gpu write cpu read") {
     withTempPath { file =>
-      withGpuSparkSession(spark => {
-        val data = (0 until 10).map(i => Tuple1(i == 2))
-        val df = spark.createDataFrame(data).toDF("a")
-        df.repartition(10).write.orc(file.getCanonicalPath)
-      })
+      var gpuPlans: Array[SparkPlan] = Array.empty
+      val testConf = new SparkConf().set(
+        RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
+      ExecutionPlanCaptureCallback.startCapture()
+      try {
+        withGpuSparkSession(spark => {
+          val data = (0 until 10).map(i => Tuple1(i == 2))
+          val df = spark.createDataFrame(data).toDF("a")
+          df.repartition(10).write.orc(file.getCanonicalPath)
+        }, testConf)
+      } finally {
+          gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+        }
+      ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlans.head, "DataWritingCommandExec")
       withCpuSparkSession(spark => {
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
       })
