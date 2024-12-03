@@ -593,8 +593,9 @@ object GpuOverrides extends Logging {
   }
 
   def isSupportedStringReplacePattern(strLit: String): Boolean = {
-    // check for regex special characters, except for \u0000 which we can support
-    !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+    // check for regex special characters, except for \u0000, \n, \r, and \t which we can support
+    val supported = Seq("\u0000", "\n", "\r", "\t")
+    !regexList.filterNot(supported.contains(_)).exists(pattern => strLit.contains(pattern))
   }
 
   def isSupportedStringReplacePattern(exp: Expression): Boolean = {

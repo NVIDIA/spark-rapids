@@ -1012,7 +1012,9 @@ def test_regexp_replace_simple(regexp_enabled):
             'REGEXP_REPLACE(a, "ab", "PROD")',
             'REGEXP_REPLACE(a, "ae", "PROD")',
             'REGEXP_REPLACE(a, "bc", "PROD")',
-            'REGEXP_REPLACE(a, "fa", "PROD")'
+            'REGEXP_REPLACE(a, "fa", "PROD")',
+            'REGEXP_REPLACE(a, "a\n", "PROD")',
+            'REGEXP_REPLACE(a, "\n", "PROD")'
         ),
         conf=conf
     )
@@ -1032,7 +1034,8 @@ def test_regexp_replace_multi_optimization(regexp_enabled):
             'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
             'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
-            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")',
+            'REGEXP_REPLACE(a, "a\n|b\a|c\t", "PROD")'
         ),
         conf=conf
     )
