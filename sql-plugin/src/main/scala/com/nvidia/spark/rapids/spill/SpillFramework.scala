@@ -104,6 +104,21 @@ import org.apache.spark.storage.BlockId
  * will either create a host handle tracking an object on the host store (if we made room), or it
  * will create a host handle that points to a disk handle, tracking a file on disk.
  *
+ * Host handles created directly, via the factory methods `SpillableHostBufferHandle(...)` or
+ * `SpillableHostColumnarBatchHandle(...)`, can trigger immediate spills, if we have host store
+ * limits. For example: if the host store limit is set to 1GB, and we add a 1.5GB host buffer via
+ * its factory method, we are going to spill all 1GB that we had in the store, and then track the
+ * 1.5GB buffer, which is above the limit. Next time we add a host object in this way, or via a
+ * device -> host spill, we are going to spill the 1.5GB buffer. This is a departure from how
+ * the spill framework used to work, where the host memory added directly did not cause spills
+ * directly, and only device->host spills would trigger the spill.
+ *
+ * If we don't have a host store limit, spilling from the host store is done entirely via
+ * host memory allocation failure callbacks. All objects added to the host store are tracked
+ * immediately, since they were successfully allocated. If we fail to allocate host memory
+ * during a device->host spill, however, the spill framework will bypass host memory and
+ * go straight to disk (this last part works the same whether there are host limits or not).
+ *
  * If the disk is full, we do not handle this in any special way. We expect this to be a
  * terminal state to the executor. Every handle spills to its own file on disk, identified
  * as a "temporary block" `BlockId` from Spark.
@@ -194,10 +209,6 @@ object SpillableHostBufferHandle extends Logging {
   def apply(hmb: HostMemoryBuffer): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(hmb.getLength, host = Some(hmb))
     SpillFramework.stores.hostStore.track(handle)
-    // do we care if:
-    // handle didn't fit in the store as it is too large.
-    // we made memory for this so we are going to hold our noses and keep going
-    // we could spill `handle` at this point.
     handle
   }
 
