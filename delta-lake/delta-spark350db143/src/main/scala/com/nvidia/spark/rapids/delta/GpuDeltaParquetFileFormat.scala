@@ -18,11 +18,11 @@ package com.nvidia.spark.rapids.delta
 
 import java.net.URI
 
+import com.databricks.sql.io.RowIndexFilterType
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
 import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsConf, RapidsHostColumnBuilder, SparkPlanMeta}
-import com.nvidia.spark.rapids.delta.RoaringBitmapWrapper
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -32,11 +32,9 @@ import scala.util.control.NonFatal
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.delta.RowIndexFilterType
-import org.apache.spark.sql.delta.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, OnHeapColumnVector, WritableColumnVector}
+import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{StructField, StructType}
@@ -211,7 +209,7 @@ case class GpuDeltaParquetFileFormat(
     iterator.map {
       case batch: ColumnarBatch =>
         val size = batch.numRows()
-        GpuDeltaParquetFileFormat.trySafely(useOffHeapBuffers, size, metadataColumns) {
+        GpuDeltaParquetFileFormat.trySafely(size, metadataColumns) {
           writableVectors =>
             val indexVectorTuples = new ArrayBuffer[(Int, ColumnVector)]()
             var index = 0
