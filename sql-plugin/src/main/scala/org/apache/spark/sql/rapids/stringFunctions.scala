@@ -1202,7 +1202,9 @@ class GpuRLikeMeta(
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(UTF8String.fromString(s), StringType))
-        case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
+        case MultipleContains(ls) => {
+          GpuContainsAny(lhs, ls)
+        }
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
         case _ => throw new IllegalStateException("Unexpected optimization type")
@@ -1233,7 +1235,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def dataType: DataType = BooleanType
 }
 
-case class GpuMultipleContains(input: Expression, searchList: Seq[String])
+case class GpuContainsAny(input: Expression, targets: Seq[UTF8String])
   extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
@@ -1243,17 +1245,15 @@ case class GpuMultipleContains(input: Expression, searchList: Seq[String])
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    assert(searchList.length > 1)
-    val accInit = withResource(Scalar.fromString(searchList.head)) { searchScalar =>
-      input.getBase.stringContains(searchScalar)
+    val targetsBytes = targets.map(t => t.getBytes).toArray
+    val boolCvs = withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
+      input.getBase.stringContains(targetsCv)
     }
-    searchList.tail.foldLeft(accInit) { (acc, search) =>
-      val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
-        input.getBase.stringContains(searchScalar)
-      }
-      withResource(acc) { _ =>
-        withResource(containsSearch) { _ =>
-          acc.or(containsSearch)
+    // boolCvs is a sequence of ColumnVectors, we need to OR them together
+    boolCvs.reduce {
+      (cv1, cv2) => withResource(cv1) { cv1 =>
+        withResource(cv2) { cv2 =>
+          cv1.or(cv2)
         }
       }
     }

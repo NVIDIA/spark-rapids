@@ -22,6 +22,8 @@ import scala.collection.mutable.ListBuffer
 import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 
+import org.apache.spark.unsafe.types.UTF8String
+
 /**
  * Regular expression parser based on a Pratt Parser design.
  *
@@ -1988,7 +1990,7 @@ object RegexOptimizationType {
   case class Contains(literal: String) extends RegexOptimizationType
   case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
     extends RegexOptimizationType
-  case class MultipleContains(literals: Seq[String]) extends RegexOptimizationType
+  case class MultipleContains(literals: Seq[UTF8String]) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
 
@@ -2057,16 +2059,17 @@ object RegexRewrite {
     }
   }
 
-  private def getMultipleContainsLiterals(ast: RegexAST): Seq[String] = {
+  private def getMultipleContainsLiterals(ast: RegexAST): Seq[UTF8String] = {
     ast match {
       case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
       case RegexChoice(RegexSequence(parts), ls) if isLiteralString(parts) => {
         getMultipleContainsLiterals(ls) match {
           case Seq() => Seq.empty
-          case literals => RegexCharsToString(parts) +: literals
+          case literals => UTF8String.fromString(RegexCharsToString(parts)) +: literals
         }
       }
-      case RegexSequence(parts) if (isLiteralString(parts)) => Seq(RegexCharsToString(parts))
+      case RegexSequence(parts) if (isLiteralString(parts)) => 
+          Seq(UTF8String.fromString(RegexCharsToString(parts)))
       case _ => Seq.empty
     }
   }
