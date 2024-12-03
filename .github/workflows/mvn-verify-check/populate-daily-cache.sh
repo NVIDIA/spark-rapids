@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -x
+set -x -o pipefail
+
 max_retry=3; delay=30; i=1
 if [[ $SCALA_VER == '2.12' ]]; then
     pom='pom.xml'
