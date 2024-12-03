@@ -14,23 +14,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -ex
+set -e
+set -o pipefail
 
-max_retry=3; delay=30; i=1
 if [[ $SCALA_VER == '2.12' ]]; then
     pom='pom.xml'
 elif [[ $SCALA_VER == '2.13' ]]; then
     pom='scala2.13/pom.xml'
 fi
-while true; do
-    {
-        python build/get_buildvers.py "buildvers.no_snapshots" $pom | tr -d ',' | \
-            xargs -n 1 -I {} bash -c \
-                "mvn $COMMON_MVN_FLAGS --file $pom -Dbuildver={} de.qaware.maven:go-offline-maven-plugin:resolve-dependencies"
 
+max_retry=3; delay=30; i=1
+while true; do
+    buildvers=($(python build/get_buildvers.py no_snapshots $pom | tr -d ',')) &&
+    {
+        for buildver in "${buildvers[@]}"; do
+            mvn $COMMON_MVN_FLAGS --file $pom -Dbuildver=$buildver de.qaware.maven:go-offline-maven-plugin:resolve-dependencies
+        done
+    } && {
         # compile base versions to cache scala compiler and compiler bridge
-        mvn $COMMON_MVN_FLAGS --file $pom \
-            process-test-resources -pl sql-plugin-api -am
+        mvn $COMMON_MVN_FLAGS --file $pom process-test-resources -pl sql-plugin-api -am
     } && break || {
     if [[ $i -le $max_retry ]]; then
         echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
