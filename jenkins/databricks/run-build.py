@@ -46,10 +46,12 @@ def main():
   print("ssh command: %s" % ssh_command)
   subprocess.check_call(ssh_command, shell = True)
 
-  print("Copying built tarball back")
-  rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (ssh_args, master_addr)
-  print("rsync command to get built tarball: %s" % rsync_command)
-  subprocess.check_call(rsync_command, shell = True)
+  # Only the nightly build needs to copy the spark-rapids-built.tgz back
+  if params.test_type == 'nightly':
+      print("Copying built tarball back")
+      rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:/home/ubuntu/spark-rapids-built.tgz ./" % (ssh_args, master_addr)
+      print("rsync command to get built tarball: %s" % rsync_command)
+      subprocess.check_call(rsync_command, shell = True)
 
 if __name__ == '__main__':
   main()

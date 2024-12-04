@@ -37,9 +37,9 @@ def main():
     subprocess.check_call(rsync_command, shell=True)
 
     ssh_command = "ssh %s ubuntu@%s " % (ssh_args, master_addr) + \
-        "'LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VERSION=%s EXTRA_ENVS=%s bash %s %s 2>&1 | tee testout; " \
+        "'LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VERSION=%s EXTRA_ENVS=%s TEST_TYPE=%s bash %s %s 2>&1 | tee testout; " \
         "if [ ${PIPESTATUS[0]} -ne 0 ]; then false; else true; fi'" % \
-        (params.jar_path, params.spark_conf, params.base_spark_pom_version, params.extra_envs,
+        (params.jar_path, params.spark_conf, params.base_spark_pom_version, params.extra_envs, params.test_type,
          params.script_dest, ' '.join(params.script_args))
     print("ssh command: %s" % ssh_command)
     try:
