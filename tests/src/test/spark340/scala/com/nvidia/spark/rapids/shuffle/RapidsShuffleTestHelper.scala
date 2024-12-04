@@ -205,7 +205,7 @@ object RapidsShuffleTestHelper extends MockitoSugar {
   def mockMetaResponse(
       mockTransaction: Transaction,
       numRows: Long,
-      numBatches: Int): (Seq[TableMeta], MetadataTransportBuffer) =
+      numBatches: Int): (collection.Seq[TableMeta], MetadataTransportBuffer) =
     withMockContiguousTable(numRows) { ct =>
       val tableMetas = (0 until numBatches).map(b => buildMockTableMeta(b, ct))
       val res = ShuffleMetadata.buildMetaResponse(tableMetas)
@@ -216,7 +216,7 @@ object RapidsShuffleTestHelper extends MockitoSugar {
 
   def mockDegenerateMetaResponse(
       mockTransaction: Transaction,
-      numBatches: Int): (Seq[TableMeta], MetadataTransportBuffer) = {
+      numBatches: Int): (collection.Seq[TableMeta], MetadataTransportBuffer) = {
     val tableMetas = (0 until numBatches).map(b => buildDegenerateMockTableMeta())
     val res = ShuffleMetadata.buildMetaResponse(tableMetas)
     val refCountedRes = new MetadataTransportBuffer(new RefCountedDirectByteBuffer(res))
@@ -248,8 +248,8 @@ object RapidsShuffleTestHelper extends MockitoSugar {
       tableMeta
     }
 
-  def getShuffleBlocks: collection.Seq[(ShuffleBlockBatchId, Long, Int)] = {
-    collection.Seq(
+  def getShuffleBlocks: Array[(ShuffleBlockBatchId, Long, Int)] = {
+    Array(
       (ShuffleBlockBatchId(1,1,1,1), 123L, 1),
       (ShuffleBlockBatchId(2,2,2,2), 456L, 2),
       (ShuffleBlockBatchId(3,3,3,3), 456L, 3)

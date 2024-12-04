@@ -1058,7 +1058,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     } else {
       synchronized {
         val storeMaxSize = maxSize.get
-        if (totalSize + handle.approxSizeInBytes > storeMaxSize) {
+        if (totalSize > 0 && totalSize + handle.approxSizeInBytes > storeMaxSize) {
           // we want to try to make room for this buffer
           false
         } else {
