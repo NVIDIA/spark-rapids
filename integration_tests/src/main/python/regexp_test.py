@@ -1035,7 +1035,8 @@ def test_regexp_replace_multi_optimization(regexp_enabled):
             'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")',
-            'REGEXP_REPLACE(a, "a\n|b\a|c\t", "PROD")'
+            'REGEXP_REPLACE(a, "a\n|b\a|c\t", "PROD")',
+            'REGEXP_REPLACE(a, "a\ta|b\nb", "PROD")'
         ),
         conf=conf
     )
