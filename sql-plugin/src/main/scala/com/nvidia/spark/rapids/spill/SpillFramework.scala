@@ -287,20 +287,18 @@ class SpillableHostBufferHandle private (
       0L
     } else {
       val spilled = synchronized {
-        if (disk.isEmpty) {
+        if (disk.isEmpty && host.isDefined) {
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
             GpuTaskMetrics.get.spillToDiskTime {
-              withResource(getHostBuffer.get) { hmb =>
-                val iter = new HostByteBufferIterator(hmb)
-                iter.foreach { bb =>
-                  try {
-                    while (bb.hasRemaining) {
-                      outputChannel.write(bb)
-                    }
-                  } finally {
-                    RapidsStorageUtils.dispose(bb)
+              val iter = new HostByteBufferIterator(host.get)
+              iter.foreach { bb =>
+                try {
+                  while (bb.hasRemaining) {
+                    outputChannel.write(bb)
                   }
+                } finally {
+                  RapidsStorageUtils.dispose(bb)
                 }
               }
             }
@@ -324,11 +322,6 @@ class SpillableHostBufferHandle private (
     }
   }
   
-  private def getHostBuffer: Option[HostMemoryBuffer] = synchronized {
-    host.foreach(_.incRefCount())
-    host
-  }
-
   override def close(): Unit = {
     releaseHostResource()
     synchronized {
@@ -436,7 +429,7 @@ class SpillableDeviceBufferHandle private (
       0L
     } else {
       val spilled = synchronized {
-        if (host.isEmpty) {
+        if (host.isEmpty && dev.isDefined) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
           sizeInBytes
         } else {
@@ -521,7 +514,7 @@ class SpillableColumnarBatchHandle private (
       0L
     } else {
       val spilled = synchronized {
-        if (host.isEmpty) {
+        if (host.isEmpty && dev.isDefined) {
           withChunkedPacker { chunkedPacker =>
             meta = Some(chunkedPacker.getPackedMeta)
             host = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
@@ -654,7 +647,7 @@ class SpillableColumnarBatchFromBufferHandle private (
       0
     } else {
       val spilled = synchronized {
-        if (host.isEmpty) {
+        if (host.isEmpty && dev.isDefined) {
           val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
           meta = Some(cvFromBuffer.getTableMeta)
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
@@ -748,7 +741,7 @@ class SpillableCompressedColumnarBatchHandle private (
       0L
     } else {
       val spilled = synchronized {
-        if (host.isEmpty) {
+        if (host.isEmpty && dev.isDefined) {
           val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuCompressedColumnVector]
           meta = Some(cvFromBuffer.getTableMeta)
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
@@ -842,7 +835,7 @@ class SpillableHostColumnarBatchHandle private (
       0L
     } else {
       val spilled = synchronized {
-        if (disk.isEmpty) {
+        if (disk.isEmpty && host.isDefined) {
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
               val dos = diskHandleBuilder.getDataOutputStream
