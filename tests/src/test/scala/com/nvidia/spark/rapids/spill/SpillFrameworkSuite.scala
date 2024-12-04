@@ -67,6 +67,16 @@ class SpillFrameworkSuite
     }
   }
 
+  private def buildNonContiguousTableOfLongs(
+      numRows: Int): (Table, Array[DataType])= {
+    val vals = (0 until numRows).map(_.toLong)
+    withResource(HostColumnVector.fromLongs(vals: _*)) { hcv =>
+      withResource(hcv.copyToDevice()) { cv =>
+        (new Table(cv), Array[DataType](LongType))
+      }
+    }
+  }
+
   private def buildTable(): (Table, Array[DataType]) = {
     val tbl = new Table.TestBuilder()
       .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
@@ -102,7 +112,7 @@ class SpillFrameworkSuite
   }
 
   private def testBufferFileDeletion(canShareDiskPaths: Boolean): Unit = {
-    val (_, handle, _) = addContiguousTableToCatalog()
+    val (_, handle, _) = addContiguousTableToFramework()
     var path: File = null
     withResource(handle) { _ =>
       SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
@@ -115,7 +125,7 @@ class SpillFrameworkSuite
     assert(!path.exists)
   }
 
-  private def addContiguousTableToCatalog(): (
+  private def addContiguousTableToFramework(): (
     Long, SpillableColumnarBatchFromBufferHandle, Array[DataType]) = {
     val (ct, dataTypes) = buildContiguousTable()
     val bufferSize = ct.getBuffer.getLength
@@ -123,7 +133,7 @@ class SpillFrameworkSuite
     (bufferSize, handle, dataTypes)
   }
 
-  private def addTableToCatalog(): (SpillableColumnarBatchHandle, Array[DataType]) = {
+  private def addTableToFramework(): (SpillableColumnarBatchHandle, Array[DataType]) = {
     // store takes ownership of the table
     val (tbl, dataTypes) = buildTable()
     val cb = withResource(tbl) { _ => GpuColumnVector.from(tbl, dataTypes) }
@@ -131,7 +141,7 @@ class SpillFrameworkSuite
     (handle, dataTypes)
   }
 
-  private def addZeroRowsTableToCatalog(): (SpillableColumnarBatchHandle, Array[DataType]) = {
+  private def addZeroRowsTableToFramework(): (SpillableColumnarBatchHandle, Array[DataType]) = {
     val (table, dataTypes) = buildEmptyTable()
     val cb = withResource(table) { _ => GpuColumnVector.from(table, dataTypes) }
     val handle = SpillableColumnarBatchHandle(cb)
@@ -166,9 +176,6 @@ class SpillFrameworkSuite
         new RapidsHostColumnVector(dataType, hostCol)
       }, hostCols.head.getRowCount.toInt), dataTypes)
   }
-
-  // TODO: AB: add tests that span multiple byte buffers for host->disk, and
-  //   test that span multiple chunked pack bounce buffers
 
   test("add table registers with device store") {
     val (ct, dataTypes) = buildContiguousTable()
@@ -435,13 +442,13 @@ class SpillFrameworkSuite
     assertResult(0)(SpillFramework.stores.diskStore.numHandles)
   }
 
-  test("spill updates catalog") {
+  test("spill updates store state") {
     val diskStore = SpillFramework.stores.diskStore
     val hostStore = SpillFramework.stores.hostStore
     val deviceStore = SpillFramework.stores.deviceStore
 
     val (bufferSize, handle, _) =
-      addContiguousTableToCatalog()
+      addContiguousTableToFramework()
 
     withResource(handle) { _ =>
       assertResult(1)(deviceStore.numHandles)
@@ -661,7 +668,7 @@ class SpillFrameworkSuite
   }
 
   test("get columnar batch after spilling to disk") {
-    val (size, handle, dataTypes) = addContiguousTableToCatalog()
+    val (size, handle, dataTypes) = addContiguousTableToFramework()
     val diskStore = SpillFramework.stores.diskStore
     val hostStore = SpillFramework.stores.hostStore
     val deviceStore = SpillFramework.stores.deviceStore
@@ -692,6 +699,67 @@ class SpillFrameworkSuite
           assert(path.exists)
           withResource(handle.materialize(dataTypes)) { actualBatch =>
             TestUtils.compareBatches(expectedBatch, actualBatch)
+          }
+        }
+      }
+    }
+  }
+
+  val hostSpillStorageSizes = Seq("-1", "1MB", "16MB")
+  val spillToDiskBounceBuffers = Seq("128KB", "2MB", "128MB")
+  val chunkedPackBounceBuffers = Seq("1MB", "8MB", "128MB")
+  hostSpillStorageSizes.foreach { hostSpillStorageSize =>
+    spillToDiskBounceBuffers.foreach { spillToDiskBounceBufferSize =>
+      chunkedPackBounceBuffers.foreach { chunkedPackBounceBufferSize =>
+        test("materialize non-contiguous batch after " +
+          s"host_storage_size=$hostSpillStorageSize " +
+          s"spilling chunked_pack_bb=$chunkedPackBounceBufferSize " +
+          s"spill_to_disk_bb=$spillToDiskBounceBufferSize") {
+          SpillFramework.shutdown()
+          try {
+            val sc = new SparkConf
+            sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, hostSpillStorageSize)
+            sc.set(RapidsConf.CHUNKED_PACK_BOUNCE_BUFFER_SIZE.key, chunkedPackBounceBufferSize)
+            sc.set(RapidsConf.SPILL_TO_DISK_BOUNCE_BUFFER_SIZE.key, spillToDiskBounceBufferSize)
+            SpillFramework.initialize(new RapidsConf(sc))
+            val (largeTable, dataTypes) = buildNonContiguousTableOfLongs(numRows = 1000000)
+            val handle = SpillableColumnarBatchHandle(largeTable, dataTypes)
+            val diskStore = SpillFramework.stores.diskStore
+            val hostStore = SpillFramework.stores.hostStore
+            val deviceStore = SpillFramework.stores.deviceStore
+            withResource(handle) { _ =>
+              assertResult(1)(deviceStore.numHandles)
+              assertResult(0)(diskStore.numHandles)
+              assertResult(0)(hostStore.numHandles)
+
+              val expectedTable =
+                withResource(handle.materialize(dataTypes)) { beforeSpill =>
+                  withResource(GpuColumnVector.from(beforeSpill)) { table =>
+                    table.contiguousSplit()(0)
+                  }
+                } // closing the batch from the store so that we can spill it
+
+              withResource(expectedTable) { _ =>
+                withResource(
+                  GpuColumnVector.from(expectedTable.getTable, dataTypes)) { expectedBatch =>
+                  deviceStore.spill(handle.approxSizeInBytes)
+                  hostStore.spill(handle.approxSizeInBytes)
+
+                  assertResult(0)(deviceStore.numHandles)
+                  assertResult(0)(hostStore.numHandles)
+                  assertResult(1)(diskStore.numHandles)
+
+                  val diskHandle = handle.host.flatMap(_.disk).get
+                  val path = diskStore.getFile(diskHandle.blockId)
+                  assert(path.exists)
+                  withResource(handle.materialize(dataTypes)) { actualBatch =>
+                    TestUtils.compareBatches(expectedBatch, actualBatch)
+                  }
+                }
+              }
+            }
+          } finally {
+            SpillFramework.shutdown()
           }
         }
       }
@@ -822,7 +890,7 @@ class SpillFrameworkSuite
       .thenReturn(new RapidsSerializerManager(conf))
 
     shareDiskPaths.foreach { _ =>
-      val (_, handle, dataTypes) = addContiguousTableToCatalog()
+      val (_, handle, dataTypes) = addContiguousTableToFramework()
       withResource(handle) { _ =>
         val expectedCt = withResource(handle.materialize(dataTypes)) { devbatch =>
           withResource(GpuColumnVector.from(devbatch)) { tmpTbl =>
@@ -891,7 +959,7 @@ class SpillFrameworkSuite
       withResource(SpillableHostBufferHandle(HostMemoryBuffer.allocate(1024))) { hostHandle =>
         // make sure the host handle isn't spillable
         withResource(hostHandle.materialize()) { _ =>
-          val (handle, _) = addTableToCatalog()
+          val (handle, _) = addTableToFramework()
           withResource(handle) { _ =>
             val (expectedTable, dataTypes) = buildTable()
             withResource(expectedTable) { _ =>
@@ -926,7 +994,7 @@ class SpillFrameworkSuite
       sc.set(RapidsConf.CHUNKED_PACK_BOUNCE_BUFFER_SIZE.key, "1MB")
       val rapidsConf = new RapidsConf(sc)
       SpillFramework.initialize(rapidsConf)
-      val (handle, _) = addTableToCatalog()
+      val (handle, _) = addTableToFramework()
       withResource(handle) { _ =>
         val (expectedTable, dataTypes) = buildTable()
         withResource(expectedTable) { _ =>
@@ -948,8 +1016,8 @@ class SpillFrameworkSuite
   }
 
   test("0-byte table is never spillable") {
-    val (handle, _) = addZeroRowsTableToCatalog()
-    val (handle2, _) = addTableToCatalog()
+    val (handle, _) = addZeroRowsTableToFramework()
+    val (handle2, _) = addTableToFramework()
 
     withResource(handle) { _ =>
       withResource(handle2) { _ =>
