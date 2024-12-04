@@ -1821,6 +1821,53 @@ object GpuOverrides extends Logging {
           ParamCheck("round", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.BOOLEAN))),
       (a, conf, p, r) => new MonthsBetweenExprMeta(a, conf, p, r)
     ),
+    expr[TruncDate](
+      "Truncate the date to the unit specified by the given string format",
+      ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
+        ("date", TypeSig.DATE, TypeSig.DATE),
+        ("format", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
+          TypeSig.STRING)),
+      (a, conf, p, r) => new BinaryExprMeta[TruncDate](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          def isSupported(format: String): Boolean = {
+            format.toUpperCase match {
+              case "YEAR" | "YYYY" | "YY" | "MONTH" | "MM" | "MON" => true
+              case _ => false
+            }
+          }
+          extractStringLit(a.format) match {
+            case Some(format) if isSupported(format) =>
+            case _ =>
+              willNotWorkOnGpu("Truncation format is not supported")
+          }
+        }
+        override def convertToGpu(child: Expression): GpuExpression = GpuTruncDate(child)
+    }),
+    expr[TruncTimestamp](
+      "Truncate the timestamp to the unit specified by the given string format",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("date", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("format", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
+          TypeSig.STRING)),
+      (a, conf, p, r) => new BinaryExprMeta[TruncDate](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          def isSupported(format: String): Boolean = {
+            format.toUpperCase match {
+              case "YEAR" | "YYYY" | "YY" | "MONTH" | "MM" | "MON" | "DAY" | "DD" |
+                   "HOUR" | "MINUTE" | "SECOND" | "MILLISECOND" | "MICROSECOND" => true
+              case _ => false
+            }
+          }
+          extractStringLit(a.format) match {
+            case Some(format) if isSupported(format) =>
+            case _ =>
+              willNotWorkOnGpu("Truncation format is not supported")
+          }
+        }
+        override def convertToGpu(child: Expression): GpuExpression = GpuTruncTimestamp(child)
+    }),
     expr[Pmod](
       "Pmod",
       // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553
