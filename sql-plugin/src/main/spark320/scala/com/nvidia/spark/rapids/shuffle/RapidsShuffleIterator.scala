@@ -36,6 +36,7 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
+import scala.collection
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
@@ -71,7 +72,7 @@ class RapidsShuffleIterator(
     localBlockManagerId: BlockManagerId,
     rapidsConf: RapidsConf,
     transport: RapidsShuffleTransport,
-    blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+    blocksByAddress: Array[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
     sparkTypes: Array[DataType],
     taskAttemptId: Long,
@@ -180,7 +181,7 @@ class RapidsShuffleIterator(
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)
 
     (local ++ remote).foreach {
-      case (blockManagerId: BlockManagerId, blockIds: Seq[(BlockId, Long, Int)]) => {
+      case (blockManagerId: BlockManagerId, blockIds: collection.Seq[(BlockId, Long, Int)]) => {
         val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
           blockIds.map { case (blockId, _, mapIndex) =>
             /**
@@ -200,7 +201,7 @@ class RapidsShuffleIterator(
                 throw new IllegalArgumentException(
                   s"${blockId.getClass} $blockId is not currently supported")
             }
-          }
+          }.toSeq
 
         val client = try {
           transport.makeClient(blockManagerId)

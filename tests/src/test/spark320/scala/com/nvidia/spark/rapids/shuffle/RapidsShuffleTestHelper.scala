@@ -266,11 +266,24 @@ object RapidsShuffleTestHelper extends MockitoSugar {
     bmId
   }
 
-  def getBlocksByAddress: Array[(BlockManagerId, immutable.Seq[(BlockId, Long, Int)])] = {
-    val blocksByAddress = new ArrayBuffer[(BlockManagerId, immutable.Seq[(BlockId, Long, Int)])]()
+  def makeIterator(conf: RapidsConf,
+                   transport: RapidsShuffleTransport,
+                   testMetricsUpdater: TestShuffleMetricsUpdater,
+                   taskId: Long,
+                   catalog: ShuffleReceivedBufferCatalog): RapidsShuffleIterator = {
+    val blocksByAddress = new ArrayBuffer[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])]()
     val blocks = getShuffleBlocks
     blocksByAddress.append((makeMockBlockManager("2", "2"), blocks))
-    blocksByAddress.toArray
+    spy(new RapidsShuffleIterator(
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
+      conf,
+      transport,
+      blocksByAddress.toArray,
+      testMetricsUpdater,
+      Array.empty,
+      taskId,
+      catalog,
+      123))
   }
 }
 

@@ -31,18 +31,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val taskId = 1
     try {
       RmmSpark.currentThreadIsDedicatedToTask(taskId)
-      val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
-
-      val cl = new RapidsShuffleIterator(
-        RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        mockConf,
-        mockTransport,
-        blocksByAddress,
-        testMetricsUpdater,
-        Array.empty,
-        taskId,
-        mockCatalog,
-        123)
+      val cl =
+        RapidsShuffleTestHelper.makeIterator(
+          mockConf, mockTransport, testMetricsUpdater, taskId, mockCatalog)
 
       when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
 
@@ -65,18 +56,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       RmmSpark.currentThreadIsDedicatedToTask(taskId)
       when(mockTransaction.getStatus).thenReturn(status)
 
-      val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
-
-      val cl = spy(new RapidsShuffleIterator(
-        RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        mockConf,
-        mockTransport,
-        blocksByAddress,
-        testMetricsUpdater,
-        Array.empty,
-        taskId,
-        mockCatalog,
-        123))
+      val cl =
+        RapidsShuffleTestHelper.makeIterator(
+          mockConf, mockTransport, testMetricsUpdater, taskId, mockCatalog)
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any())).thenReturn(client)
@@ -113,18 +95,10 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val taskId = 1
     try {
       RmmSpark.currentThreadIsDedicatedToTask(taskId)
-      val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-      val cl = spy(new RapidsShuffleIterator(
-        RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        mockConf,
-        mockTransport,
-        blocksByAddress,
-        testMetricsUpdater,
-        Array.empty,
-        taskId,
-        mockCatalog,
-        123))
+      val cl =
+        RapidsShuffleTestHelper.makeIterator(
+          mockConf, mockTransport, testMetricsUpdater, taskId, mockCatalog)
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any())).thenReturn(client)
@@ -163,18 +137,10 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val taskId = 1
     try {
       RmmSpark.currentThreadIsDedicatedToTask(taskId)
-      val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-      val cl = spy(new RapidsShuffleIterator(
-        RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        mockConf,
-        mockTransport,
-        blocksByAddress,
-        testMetricsUpdater,
-        Array.empty,
-        taskId,
-        mockCatalog,
-        123))
+      val cl =
+        RapidsShuffleTestHelper.makeIterator(
+          mockConf, mockTransport, testMetricsUpdater, taskId, mockCatalog)
 
       when(mockTransport.makeClient(any())).thenReturn(client)
       doNothing().when(client).doFetch(any(), any())
@@ -199,18 +165,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val taskId = 1
     try {
       RmmSpark.currentThreadIsDedicatedToTask(taskId)
-      val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
-
-      val cl = new RapidsShuffleIterator(
-        RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        mockConf,
-        mockTransport,
-        blocksByAddress,
-        testMetricsUpdater,
-        Array.empty,
-        taskId,
-        mockCatalog,
-        123)
+      val cl =
+        RapidsShuffleTestHelper.makeIterator(
+          mockConf, mockTransport, testMetricsUpdater, taskId, mockCatalog)
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any())).thenReturn(client)
