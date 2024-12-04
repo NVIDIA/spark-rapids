@@ -60,7 +60,7 @@ class CoalesceConvertIterator(veloxIter: Iterator[ColumnarBatch],
         // release the native instance when upstreaming iterator has been exhausted
         val detailedMetrics = c.close()
         val tID = TaskContext.get().taskAttemptId()
-        logError(s"task[$tID] CoalesceNativeConverter finished:\n$detailedMetrics")
+        logDebug(s"task[$tID] CoalesceNativeConverter finished:\n$detailedMetrics")
         converterImpl = None
       }
     }

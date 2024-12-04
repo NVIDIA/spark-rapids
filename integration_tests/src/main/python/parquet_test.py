@@ -1652,12 +1652,12 @@ def test_parquet_partition_batch_row_count_only_splitting(spark_tmp_path):
                                          conf={"spark.rapids.sql.columnSizeBytes": "100"})
 
 """
-VeloxScan:
+Hybrid Scan:
 1. DecimalType is NOT fully supported
 2. TimestampType can NOT be the KeyType of MapType
 3. NestedMap is disabled because it may produce incorrect result (usually occurring when table is very small)
 """
-velox_gens = [
+hybrid_gens = [
     [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
      string_gen, boolean_gen, date_gen,
      TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)),
@@ -1676,13 +1676,13 @@ velox_gens = [
      MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen),
             max_length=10),
      MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-     # TODO: It seems that Velox Parquet Scan can NOT handle nested Map correctly
+     # TODO: It seems that Hybrid Parquet Scan (underlying) can NOT handle nested Map correctly
      # MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)
      ],
 ]
 
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
-@pytest.mark.parametrize('parquet_gens', velox_gens, ids=idfn)
+@pytest.mark.parametrize('parquet_gens', hybrid_gens, ids=idfn)
 @pytest.mark.parametrize('gen_rows', [20, 100, 512, 1024, 4096], ids=idfn)
 @hybrid_test
 def test_parquet_read_round_trip_hybrid(spark_tmp_path, parquet_gens, gen_rows):
@@ -1712,7 +1712,7 @@ def test_parquet_read_round_trip_hybrid_multiple_batches(spark_tmp_path,
                                                          coalesced_batch_size,
                                                          gen_rows):
     gens = []
-    for g in velox_gens:
+    for g in hybrid_gens:
         gens.extend(g)
 
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]

@@ -34,7 +34,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuRowToColumnConverter(schema: StructType) extends Serializable {
+private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
     f => GpuRowToColumnConverter.getConverterForType(f.dataType, f.nullable)
   }
@@ -594,8 +594,7 @@ class RowToColumnarIterator(
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
     streamTime: GpuMetric = NoopMetric,
-    opTime: GpuMetric = NoopMetric,
-    acquireGpuTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -651,11 +650,7 @@ class RowToColumnarIterator(
         // note that TaskContext.get() can return null during unit testing so we wrap it in an
         // option here
         Option(TaskContext.get())
-          .foreach { ctx =>
-            val acquireGpuStart = System.nanoTime()
-            GpuSemaphore.acquireIfNecessary(ctx)
-            acquireGpuTime += System.nanoTime() - acquireGpuStart
-          }
+            .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
         val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
             opTime)) { _ =>

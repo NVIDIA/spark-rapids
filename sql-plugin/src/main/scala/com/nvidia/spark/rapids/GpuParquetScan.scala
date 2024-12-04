@@ -2723,12 +2723,6 @@ case class ParquetTableReader(
   }
 
   override def close(): Unit = {
-    debugDumpPrefix.foreach { prefix =>
-      if (debugDumpAlways) {
-        val p = DumpUtils.dumpBuffer(conf, buffer, offset, len, prefix, ".parquet")
-        logWarning(s"Wrote data for $splitsString to $p")
-      }
-    }
     reader.close()
     buffer.close()
   }

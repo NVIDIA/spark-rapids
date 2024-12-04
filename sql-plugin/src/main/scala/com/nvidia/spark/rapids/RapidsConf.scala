@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
-import org.apache.spark.rapids.hybrid.HybridBackend
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
@@ -1690,14 +1689,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(false)
 
   val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
-    .doc("Use HybridScan to read Parquet data via CPUs")
+    .doc("Use HybridScan to read Parquet data using CPUs. The underlying implementation " +
+        "leverages both Gluten and Velox.")
     .internal()
     .booleanConf
     .createWithDefault(false)
 
   // spark.rapids.sql.hybrid.loadBackend defined at HybridPluginWrapper of spark-rapids-private
-  val LOAD_HYBRID_BACKEND = conf(HybridBackend.LOAD_BACKEND_KEY)
+  val LOAD_HYBRID_BACKEND = conf("spark.rapids.sql.hybrid.loadBackend")
     .doc("Load hybrid backend as an extra plugin of spark-rapids during launch time")
+    .internal()
     .startupOnly()
     .booleanConf
     .createWithDefault(false)
