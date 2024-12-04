@@ -39,6 +39,8 @@ def skipped = false
 def db_build = false
 def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
     'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
+// The path where the CI_PART1 job shares rapids plugin built tars with the CI_PART job
+def plugin_built_dir = "dbfs:/cicd/$BUILD_TAG"
 
 pipeline {
     agent {
@@ -281,12 +283,14 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     steps {
                         script {
                             githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
+                            //CI_PART1 upload plugin buit tars to PLUGIN_BUILT_DIR for CI_PART2
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'TEST_MODE', value: 'CI_PART1')
+                                        string(name: 'TEST_MODE', value: 'CI_PART1'),
+                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
@@ -304,13 +308,18 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     }
                     steps {
                         script {
+                            container('cpu') {
+                                waitForPluginBuiltTar(plugin_built_dir)
+                            }
+
                             githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'TEST_MODE', value: 'CI_PART2')
+                                        string(name: 'TEST_MODE', value: 'CI_PART2'),
+                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
@@ -434,4 +443,28 @@ boolean databricksCodeChanged() {
         return true
     }
     return false
+}
+
+// Wait for the rapids plgin built tars to be ready
+def waitForPluginBuiltTar(String tar_path, String db_type='aws', int timeout=60) {
+    // get DB runtimes from Jenkinsfile: "DB_RUNTIME [space]+ values 'x.y', 'a.b'"
+    def dbJenkinsfile = 'jenkins/Jenkinsfile-blossom.premerge-databricks'
+    def DBRuntimes = sh(script: "grep -Pzo 'DB_RUNTIME.*\\n\\s*values.*' $dbJenkinsfile", returnStdout: true)
+    // DB_RUNTIME\n values 'x.y', 'a.b' --> x.y,a.b
+    DBRuntimes = DBRuntimes.replaceAll("DB_RUNTIME.*|.*values|[\"']|\\s+", '').trim()
+    // x.y,a.b --> /path/x.y/,/path/x.y/
+
+    def DBFiles = DBRuntimes.split(',').collect { "$tar_path/$it/" }.join(',')
+    def databricks_host = DbUtils.getHost("$db_type")
+    def dbTokenId = DbUtils.getToken("$db_type")
+    withCredentials([string(credentialsId: dbTokenId, variable: 'DATABRICKS_TOKEN')]) {
+        withEnv(["DATABRICKS_HOST=$databricks_host"]) {
+            // wait for all the rapids plugin tars built in CI_PART1 to be ready
+            if (DbUtils.allFilesExist(this, DBFiles, timeout)) {
+                println('Rapids plugin built tars are ready for CI_PART2')
+            } else {
+                error "Timeout, rapids plugin built tars are not ready for CI_PART2"
+            }
+        }
+    }
 }
