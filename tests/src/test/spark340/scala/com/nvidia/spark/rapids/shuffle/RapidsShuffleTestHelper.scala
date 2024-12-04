@@ -182,18 +182,23 @@ object RapidsShuffleTestHelper extends MockitoSugar {
     MetaUtils.buildDegenerateTableMeta(new ColumnarBatch(Array.empty, 123))
   }
 
-  def withMockContiguousTable[T](numRows: Long)(body: ContiguousTable => T): T = {
+  def buildContiguousTable(numRows: Long): ContiguousTable = {
     val rows: Seq[Integer] = (0 until numRows.toInt).map(Int.box)
     withResource(ColumnVector.fromBoxedInts(rows:_*)) { cvBase =>
       cvBase.incRefCount()
       val gpuCv = GpuColumnVector.from(cvBase, IntegerType)
       withResource(new ColumnarBatch(Array(gpuCv))) { cb =>
         withResource(GpuColumnVector.from(cb)) { table =>
-          withResource(table.contiguousSplit(0, numRows.toInt)) { ct =>
-            body(ct(1)) // we get a degenerate table at 0 and another at 2
-          }
+          val cts = table.contiguousSplit()
+          cts(0)
         }
       }
+    }
+  }
+
+  def withMockContiguousTable[T](numRows: Long)(body: ContiguousTable => T): T = {
+    withResource(buildContiguousTable(numRows)) { ct =>
+      body(ct)
     }
   }
 
