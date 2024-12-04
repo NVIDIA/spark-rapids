@@ -143,19 +143,24 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       currentPinnedAllocated + currentNonPinnedAllocated
     }
 
-    // TODO: AB fix this
-    //val attemptMsg = if (retryCount > 0) {
-    //  s"Attempt $retryCount"
-    //} else {
-    //  "First attempt"
-    //}
+    val attemptMsg = if (retryCount > 0) {
+      s"Attempt $retryCount"
+    } else {
+      "First attempt"
+    }
 
     val amountSpilled = store.spill(allocSize)
 
     if (amountSpilled == 0) {
-      logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
-          s"Total host allocated is $totalSize bytes.")
-      false
+      val shouldRetry = store.numHandles > 0
+      val exhaustedMsg = s"Host store exhausted, unable to allocate $allocSize bytes. " +
+          s"Total host allocated is $totalSize bytes. $attemptMsg."
+      if (!shouldRetry) {
+        logWarning(exhaustedMsg)
+      } else {
+        logWarning(s"$exhaustedMsg Attempting a retry.")
+      }
+      shouldRetry
     } else {
       logInfo(s"Spilled $amountSpilled bytes from the host store")
       true
