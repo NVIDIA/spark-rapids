@@ -250,7 +250,7 @@ class ShuffleBufferCatalog extends Logging {
       entries.map(bufferIdToHandle.get).map { case (_, meta) =>
         meta
       }
-    }
+    }.toSeq
   }
 
   /** Allocate a new shuffle buffer identifier and update the shuffle block mapping. */
