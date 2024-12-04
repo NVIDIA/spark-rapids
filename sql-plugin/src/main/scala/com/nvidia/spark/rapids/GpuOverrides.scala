@@ -606,7 +606,6 @@ object GpuOverrides extends Logging {
         if (strLit.isEmpty) {
           false
         } else {
-          // check for regex special characters, except for \u0000 which we can support
           isSupportedStringReplacePattern(strLit)
         }
       case _ => false
