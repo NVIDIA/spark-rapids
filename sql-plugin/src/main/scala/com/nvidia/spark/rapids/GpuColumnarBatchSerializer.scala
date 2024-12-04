@@ -381,7 +381,7 @@ private class KudoSerializerInstance(
           }
 
           withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
-            val writeMetric = kudo.writeToStream(columns, dOut, startRow, numRows)
+            val writeMetric = kudo.writeToStreamWithMetrics(columns, dOut, startRow, numRows)
 
             dataSize += writeMetric.getWrittenBytes
             serCalcHeaderTime += writeMetric.getCalcHeaderTime
