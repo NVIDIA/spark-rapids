@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.spill
 import java.io.File
 import java.math.RoundingMode
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -633,6 +635,49 @@ class SpillFrameworkSuite
         }
         assertResult(true)(handle.spillable)
       }
+    } finally {
+      SpillFramework.shutdown()
+    }
+  }
+
+  // this is a key behavior that we wanted to keep during the spill refactor
+  // where host objects that are added directly to the store do not cause a
+  // host->disk spill on their own, instead they will get spilled later
+  // due to device->host spills.
+  test("host factory methods do not spill on addition") {
+    SpillFramework.shutdown()
+    val sc = new SparkConf
+    // set a very small store size
+    sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1KB")
+    SpillFramework.initialize(new RapidsConf(sc))
+
+    try {
+      // add a lot of batches, surpassing the limits of the store
+      val handles = new ArrayBuffer[SpillableHostColumnarBatchHandle]()
+      var dataTypes: Array[DataType] = null
+      (0 until 100).foreach { _ =>
+        val (hostBatch, dt) = buildHostBatch()
+        if (dataTypes == null) {
+          dataTypes = dt
+        }
+        handles.append(SpillableHostColumnarBatchHandle(hostBatch))
+      }
+      // no spill to disk
+      assertResult(100)(SpillFramework.stores.hostStore.numHandles)
+
+      val dmb = DeviceMemoryBuffer.allocate(1024)
+      withResource(SpillableDeviceBufferHandle(dmb)) { _ =>
+        // simulate an OOM by spilling device memory
+        SpillFramework.stores.deviceStore.spill(1024)
+        assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
+      }
+
+      val buffersSpilledToDisk = SpillFramework.stores.diskStore.numHandles
+      // we spilled to disk
+      assert(SpillFramework.stores.diskStore.numHandles > 0)
+      // and the remaining objects that didn't spill, are still in the host store
+      assertResult(100 - buffersSpilledToDisk)(SpillFramework.stores.hostStore.numHandles)
+      assert(SpillFramework.stores.hostStore.totalSize <= 1024)
     } finally {
       SpillFramework.shutdown()
     }

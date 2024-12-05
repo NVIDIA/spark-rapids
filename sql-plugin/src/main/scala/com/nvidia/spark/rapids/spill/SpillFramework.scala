@@ -105,13 +105,11 @@ import org.apache.spark.storage.BlockId
  * will create a host handle that points to a disk handle, tracking a file on disk.
  *
  * Host handles created directly, via the factory methods `SpillableHostBufferHandle(...)` or
- * `SpillableHostColumnarBatchHandle(...)`, can trigger immediate spills, if we have host store
- * limits. For example: if the host store limit is set to 1GB, and we add a 1.5GB host buffer via
- * its factory method, we are going to spill all 1GB that we had in the store, and then track the
- * 1.5GB buffer, which is above the limit. Next time we add a host object in this way, or via a
- * device -> host spill, we are going to spill the 1.5GB buffer. This is a departure from how
- * the spill framework used to work, where the host memory added directly did not cause spills
- * directly, and only device->host spills would trigger the spill.
+ * `SpillableHostColumnarBatchHandle(...)`, do not trigger immediate spills. For example:
+ * if the host store limit is set to 1GB, and we add a 1.5GB host buffer via
+ * its factory method, we are going to have 2.5GB worth of host memory in the host store.
+ * That said, if we run out of device memory and we need to spill to host, 1.5GB will be spilled
+ * to disk, as device OOM triggers the pipeline spill.
  *
  * If we don't have a host store limit, spilling from the host store is done entirely via
  * host memory allocation failure callbacks. All objects added to the host store are tracked
@@ -208,7 +206,7 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
 object SpillableHostBufferHandle extends Logging {
   def apply(hmb: HostMemoryBuffer): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(hmb.getLength, host = Some(hmb))
-    SpillFramework.stores.hostStore.track(handle)
+    SpillFramework.stores.hostStore.trackNoSpill(handle)
     handle
   }
 
@@ -778,7 +776,7 @@ object SpillableHostColumnarBatchHandle {
   def apply(cb: ColumnarBatch): SpillableHostColumnarBatchHandle = {
     val sizeInBytes = RapidsHostColumnVector.getTotalHostMemoryUsed(cb)
     val handle = new SpillableHostColumnarBatchHandle(sizeInBytes, cb.numRows(), host = Some(cb))
-    SpillFramework.stores.hostStore.track(handle)
+    SpillFramework.stores.hostStore.trackNoSpill(handle)
     handle
   }
 }
@@ -1037,7 +1035,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
   extends SpillableStore
     with Logging {
 
-  private var totalSize: Long = 0L
+  private[spill] var totalSize: Long = 0L
 
   private def tryTrack(handle: SpillableHandle): Boolean = {
     if (maxSize.isEmpty || handle.approxSizeInBytes == 0) {
@@ -1119,6 +1117,20 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     tracked
   }
 
+  /**
+   * This is a special method in the host store where spillable handles can be added
+   * but they will not trigger the cascade host->disk spill logic. This is to replicate
+   * how the stores used to work in the past, and is only called from factory
+   * methods that are used by client code.
+   */
+  def trackNoSpill(handle: SpillableHandle): Unit = {
+    synchronized {
+      if (doTrack(handle)) {
+        totalSize += handle.approxSizeInBytes
+      }
+    }
+  }
+
   override def remove(handle: SpillableHandle): Unit = {
     synchronized {
       if (doRemove(handle)) {
@@ -1135,12 +1147,15 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
    * Host store locks and disk store locks will be taken/released during this call, but
    * after the builder is created, no locks are held in the store.
    *
+   * @note When creating the host buffer handle, never call the factory Spillable* methods,
+   *       instead, construct the handles directly. This is because the factory methods
+   *       trigger a spill to disk, and that standard behavior of the spill framework so far.
    * @param handle a host handle that only has a size set, and no backing store.
    * @return the builder to be closed by caller
    */
   def makeBuilder(handle: SpillableHostBufferHandle): SpillableHostBufferHandleBuilder = {
     var builder: Option[SpillableHostBufferHandleBuilder] = None
-    if (handle.sizeInBytes < maxSize.getOrElse(Long.MaxValue)) {
+    if (handle.sizeInBytes <= maxSize.getOrElse(Long.MaxValue)) {
       HostAlloc.tryAlloc(handle.sizeInBytes).foreach { hmb =>
         withResource(hmb) { _ =>
           if (trackInternal(handle)) {
