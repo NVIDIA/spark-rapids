@@ -24,7 +24,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   type TestPrioritySemaphore = PrioritySemaphore[Long]
 
   test("tryAcquire should return true if permits are available") {
-    val semaphore = new TestPrioritySemaphore(10, 0L)
+    val semaphore = new TestPrioritySemaphore(10, GpuSemaphore.DEFAULT_PRIORITY )
 
     assert(semaphore.tryAcquire(5, 0, 0))
     assert(semaphore.tryAcquire(3, 0, 0))
@@ -33,7 +33,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   }
 
   test("acquire and release should work correctly") {
-    val semaphore = new TestPrioritySemaphore(1, 0L)
+    val semaphore = new TestPrioritySemaphore(1, GpuSemaphore.DEFAULT_PRIORITY)
 
     assert(semaphore.tryAcquire(1, 0, 0))
 
@@ -57,7 +57,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   }
 
   test("multiple threads should handle permits and priority correctly") {
-    val semaphore = new TestPrioritySemaphore(0, 0L)
+    val semaphore = new TestPrioritySemaphore(0, GpuSemaphore.DEFAULT_PRIORITY)
     val results = new java.util.ArrayList[Int]()
 
     def taskWithPriority(priority: Int) = new Runnable {
@@ -83,7 +83,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   }
 
   test("low priority thread cannot surpass high priority thread") {
-    val semaphore = new TestPrioritySemaphore(10, 0L)
+    val semaphore = new TestPrioritySemaphore(10, GpuSemaphore.DEFAULT_PRIORITY)
     semaphore.acquire(5, 0, 0)
     val t = new Thread(() => {
       semaphore.acquire(10, 2, 0)
@@ -103,7 +103,7 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
 
   // this case is described at https://github.com/NVIDIA/spark-rapids/pull/11574/files#r1795652488
   test("thread with larger task id should not surpass smaller task id in the waiting queue") {
-    val semaphore = new TestPrioritySemaphore(10, 0L)
+    val semaphore = new TestPrioritySemaphore(10, GpuSemaphore.DEFAULT_PRIORITY)
     semaphore.acquire(8, 0, 0)
     val t = new Thread(() => {
       semaphore.acquire(5, 0, 0)

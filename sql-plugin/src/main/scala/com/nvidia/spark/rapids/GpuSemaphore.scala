@@ -133,6 +133,7 @@ object GpuSemaphore {
   }
 
   private val MAX_PERMITS = 1000
+  val DEFAULT_PRIORITY = 0L
 
   def computeNumPermits(conf: SQLConf): Int = {
     val concurrentStr = conf.getConfString(RapidsConf.CONCURRENT_GPU_TASKS.key, null)
@@ -184,8 +185,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
    * If this task holds the GPU semaphore or not.
    */
   private var hasSemaphore = false
-  private var lastAcquired: Long = 0
-  private var lastReleased: Long = 0
+  private var lastAcquired: Long = GpuSemaphore.DEFAULT_PRIORITY
+  private var lastReleased: Long = GpuSemaphore.DEFAULT_PRIORITY
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
 
@@ -337,7 +338,7 @@ private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
-  private val semaphore = new GpuBackingSemaphore(MAX_PERMITS, 0L)
+  private val semaphore = new GpuBackingSemaphore(MAX_PERMITS, GpuSemaphore.DEFAULT_PRIORITY)
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
