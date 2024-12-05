@@ -127,7 +127,7 @@ object GpuHiveFileFormat extends Logging {
         s"only $lazySimpleSerDe is currently supported for text")
     }
 
-    val serializationFormat = storage.properties.getOrElse(serializationKey, "1")
+    val serializationFormat = storage.properties.getOrElse(serializationKey, "")
     if (serializationFormat != ctrlASeparatedFormat) {
       meta.willNotWorkOnGpu(s"unsupported serialization format found: " +
         s"$serializationFormat, " +
