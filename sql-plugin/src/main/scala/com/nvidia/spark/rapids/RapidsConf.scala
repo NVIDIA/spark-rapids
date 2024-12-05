@@ -1695,7 +1695,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  // spark.rapids.sql.hybrid.loadBackend defined at HybridPluginWrapper of spark-rapids-private
+  // This config name is the same as HybridPluginWrapper in Hybrid jar,
+  // can not refer to Hybrid jar because of the jar is optional.
   val LOAD_HYBRID_BACKEND = conf("spark.rapids.sql.hybrid.loadBackend")
     .doc("Load hybrid backend as an extra plugin of spark-rapids during launch time")
     .internal()
