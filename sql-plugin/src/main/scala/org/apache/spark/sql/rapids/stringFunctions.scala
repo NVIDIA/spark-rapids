@@ -1202,9 +1202,7 @@ class GpuRLikeMeta(
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(UTF8String.fromString(s), StringType))
-        case MultipleContains(ls) => {
-          GpuContainsAny(lhs, ls)
-        }
+        case MultipleContains(ls) => GpuContainsAny(lhs, ls)
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
         case _ => throw new IllegalStateException("Unexpected optimization type")
