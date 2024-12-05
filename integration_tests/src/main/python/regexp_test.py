@@ -1021,7 +1021,7 @@ def test_regexp_replace_simple(regexp_enabled):
 
 @pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
 def test_regexp_replace_multi_optimization(regexp_enabled):
-    gen = mk_str_gen('[abcdef]{0,2}')
+    gen = mk_str_gen('[abcdef\t\n\a]{0,3}')
 
     conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
 
