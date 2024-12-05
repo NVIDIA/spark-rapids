@@ -31,8 +31,8 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 
+import org.apache.spark.{InterruptibleIterator, MapOutputTracker, ShuffleDependency, SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.io.CompressionCodec
