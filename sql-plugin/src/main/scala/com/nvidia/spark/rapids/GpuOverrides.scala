@@ -1829,19 +1829,6 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
           TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[TruncDate](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          def isSupported(format: String): Boolean = {
-            format.toUpperCase match {
-              case "YEAR" | "YYYY" | "YY" | "MONTH" | "MM" | "MON" => true
-              case _ => false
-            }
-          }
-          extractStringLit(a.format) match {
-            case Some(format) if isSupported(format) =>
-            case _ =>
-              willNotWorkOnGpu("Truncation format is not supported")
-          }
-        }
         override def convertToGpu(date: Expression, format: Expression): GpuExpression =
           GpuTruncDate(date, format)
     }),
@@ -1853,20 +1840,6 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
           TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[TruncTimestamp](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          def isSupported(format: String): Boolean = {
-            format.toUpperCase match {
-              case "YEAR" | "YYYY" | "YY" | "MONTH" | "MM" | "MON" | "DAY" | "DD" |
-                   "HOUR" | "MINUTE" | "SECOND" | "MILLISECOND" | "MICROSECOND" => true
-              case _ => false
-            }
-          }
-          extractStringLit(a.format) match {
-            case Some(format) if isSupported(format) =>
-            case _ =>
-              willNotWorkOnGpu("Truncation format is not supported")
-          }
-        }
         override def convertToGpu(format: Expression, timestamp: Expression): GpuExpression =
           GpuTruncTimestamp(format, timestamp)
     }),

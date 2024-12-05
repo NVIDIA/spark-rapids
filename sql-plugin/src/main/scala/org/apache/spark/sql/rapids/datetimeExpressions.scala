@@ -1527,12 +1527,12 @@ case class GpuLastDay(startDate: Expression)
 
 abstract class GpuTruncDateTime(datetime: Expression, format: Expression)
     extends GpuBinaryExpression with ImplicitCastInputTypes {
-  override def left: Expression = datetime
 
+  // We always store date/time to the left and format to the right expressions.
+  override def left: Expression = datetime
   override def right: Expression = format
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    // We always store date/time to the left and format to the right expression.
     DateTimeUtils.truncate(lhs.getBase, rhs.getBase)
   }
 
