@@ -1842,7 +1842,8 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("Truncation format is not supported")
           }
         }
-        override def convertToGpu(child: Expression): GpuExpression = GpuTruncDate(child)
+        override def convertToGpu(date: Expression, format: Expression): GpuExpression =
+          GpuTruncDate(date, format)
     }),
     expr[TruncTimestamp](
       "Truncate the timestamp to the unit specified by the given string format",
@@ -1851,7 +1852,7 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
           .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
           TypeSig.STRING)),
-      (a, conf, p, r) => new BinaryExprMeta[TruncDate](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryExprMeta[TruncTimestamp](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           def isSupported(format: String): Boolean = {
             format.toUpperCase match {
@@ -1866,7 +1867,8 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("Truncation format is not supported")
           }
         }
-        override def convertToGpu(child: Expression): GpuExpression = GpuTruncTimestamp(child)
+        override def convertToGpu(format: Expression, timestamp: Expression): GpuExpression =
+          GpuTruncTimestamp(format, timestamp)
     }),
     expr[Pmod](
       "Pmod",
