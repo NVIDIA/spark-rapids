@@ -219,9 +219,6 @@ object AggregateUtils extends Logging {
   ): Boolean = {
 
     var repartitionHappened = false
-    if (hashSeed > 200) {
-      throw new IllegalStateException("Too many times of repartition, may hit a bug?")
-    }
 
     def repartitionAndClose(batch: SpillableColumnarBatch): Unit = {
 
@@ -280,15 +277,23 @@ object AggregateUtils extends Logging {
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
         if (needRepartitionAgain(bucket)) {
-          val nextLayerBuckets =
-            ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
-          // Recursively merge and repartition the over sized bucket
-          repartitionHappened =
-            iterateAndRepartition(
-              new CloseableBufferedIterator(bucket.iterator), metrics, targetMergeBatchSize,
-              helper, hashKeys, hashBucketNum, hashSeed + 7,
-              nextLayerBuckets) || repartitionHappened
-          nextLayerBuckets
+          if (hashSeed + 7 > 200) {
+            log.warn("Too many times of repartition, may hit a bug? Size for each batch in " +
+              "current bucket: " + bucket.map(_.sizeInBytes).mkString(", ") + " rows: " +
+              bucket.map(_.numRows()).mkString(", ") + " targetMergeBatchSize: "
+              + targetMergeBatchSize)
+            ArrayBuffer.apply(bucket)
+          } else {
+            val nextLayerBuckets =
+              ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
+            // Recursively merge and repartition the over sized bucket
+            repartitionHappened =
+              iterateAndRepartition(
+                new CloseableBufferedIterator(bucket.iterator), metrics, targetMergeBatchSize,
+                helper, hashKeys, hashBucketNum, hashSeed + 7,
+                nextLayerBuckets) || repartitionHappened
+            nextLayerBuckets
+          }
         } else {
           ArrayBuffer.apply(bucket)
         }
@@ -1075,8 +1080,8 @@ class GpuMergeAggregateIterator(
           closeOnExcept(new ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]) {
             toAggregateBuckets =>
               var currentSize = 0L
-              while (batchesByBucket.nonEmpty &&
-                batchesByBucket.last.size() + currentSize < targetMergeBatchSize) {
+              while (batchesByBucket.nonEmpty && (toAggregateBuckets.isEmpty ||
+                batchesByBucket.last.size() + currentSize < targetMergeBatchSize)) {
                 val bucket = batchesByBucket.remove(batchesByBucket.size - 1)
                 currentSize += bucket.map(_.sizeInBytes).sum
                 toAggregateBuckets += bucket
@@ -2086,9 +2091,9 @@ class DynamicGpuPartialAggregateIterator(
       helper: AggHelper): (Iterator[ColumnarBatch], Boolean) = {
     // we need to decide if we are going to sort the data or not, so the very
     // first thing we need to do is get a batch and make a choice.
+    val cb = cbIter.next()
     withResource(new NvtxWithMetrics("dynamic sort heuristic", NvtxColor.BLUE,
       metrics.opTime, metrics.heuristicTime)) { _ =>
-      val cb = cbIter.next()
       lazy val estimatedGrowthAfterAgg: Double = closeOnExcept(cb) { cb =>
         val numRows = cb.numRows()
         val cardinality = estimateCardinality(cb)

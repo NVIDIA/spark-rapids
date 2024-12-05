@@ -178,5 +178,17 @@ if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
         -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
 
+# "Delete the unused object files to reduce the size of the Spark Rapids built tar."
+rm -rf dist/target/jni-deps/
+find dist/target/parallel-world/ -mindepth 1 -maxdepth 1 ! -name META-INF -exec rm -rf {} +
+
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
+
+# Back up spark rapids built jars for the CI_PART2 job to run integration tests
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
+PLUGIN_BUILT_TGZ=${PLUGIN_BUILT_TGZ:-"$1"}
+if [[ "$TEST_MODE" == "CI_PART1"  && -n "$PLUGIN_BUILT_TGZ" ]]; then
+   mkdir -p $(dirname $PLUGIN_BUILT_TGZ)
+   cp spark-rapids-built.tgz $PLUGIN_BUILT_TGZ
+fi
