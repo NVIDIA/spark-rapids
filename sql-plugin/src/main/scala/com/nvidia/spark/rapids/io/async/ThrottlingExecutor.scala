@@ -20,6 +20,8 @@ import java.util.concurrent.{Callable, ExecutorService, Future, TimeUnit}
 
 /**
  * Thin wrapper around an ExecutorService that adds throttling.
+ *
+ * The given executor is owned by this class and will be shutdown when this class is shutdown.
  */
 class ThrottlingExecutor(
     val executor: ExecutorService, throttler: TrafficController) {
