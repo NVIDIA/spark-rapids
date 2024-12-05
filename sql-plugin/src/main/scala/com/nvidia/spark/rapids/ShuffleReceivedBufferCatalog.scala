@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableColumn
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 
@@ -28,7 +29,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class RapidsShuffleHandle(
     spillable: SpillableDeviceBufferHandle, tableMeta: TableMeta) extends AutoCloseable {
   override def close(): Unit = {
-    spillable.close()
+    spillable.safeClose()
   }
 }
 
