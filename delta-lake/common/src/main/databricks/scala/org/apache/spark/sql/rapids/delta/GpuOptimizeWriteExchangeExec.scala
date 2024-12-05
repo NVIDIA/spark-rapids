@@ -73,7 +73,7 @@ case class GpuOptimizeWriteExchangeExec(
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
 
   override lazy val additionalMetrics : Map[String, GpuMetric] = {
-    createAdditionalExchangeMetris(this) ++
+    createAdditionalExchangeMetrics(this) ++
       GpuMetric.wrap(readMetrics) ++
       GpuMetric.wrap(writeMetrics)
   }
