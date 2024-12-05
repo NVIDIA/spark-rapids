@@ -15,61 +15,47 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "400"}
+ {"spark": "320"}
+ {"spark": "321"}
+ {"spark": "321cdh"}
+ {"spark": "323"}
+ {"spark": "324"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.FileSourceMetadataAttribute
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 
 object ScanExecShims {
-  def tagGpuFileSourceScanExecSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (meta.wrapped.expressions.exists {
-      case FileSourceMetadataAttribute(_) => true
-      case _ => false
-    }) {
-      meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
-    }
+  def tagGpuFileSourceScanExecSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     GpuFileSourceScanExec.tagSupport(meta)
-  }
 
   def execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-    GpuOverrides.exec[BatchScanExec](
-      "The backend for most file input",
-      ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-          TypeSig.DECIMAL_128 + TypeSig.BINARY +
-          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-        TypeSig.all),
-      (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
     GpuOverrides.exec[FileSourceScanExec](
       "Reading data from files, often from Hive tables",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(),
         TypeSig.all),
-      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
+      (fsse, conf, p, r) => {
+        // TODO: HybridScan supports DataSourceV2
+        // TODO: HybridScan only supports Spark 32X for now.
+        if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+          new HybridFileSourceScanExecMeta(fsse, conf, p, r)
+        } else {
+          new FileSourceScanExecMeta(fsse, conf, p, r)
+        }
+      }),
+    GpuOverrides.exec[BatchScanExec](
+      "The backend for most file input",
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+          TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
+        TypeSig.all),
+      (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
 }
