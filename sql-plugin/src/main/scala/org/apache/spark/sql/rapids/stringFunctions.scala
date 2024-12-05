@@ -1249,13 +1249,11 @@ case class GpuContainsAny(input: Expression, targets: Seq[UTF8String])
     val boolCvs = withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
       input.getBase.stringContains(targetsCv)
     }
-    // boolCvs is a sequence of ColumnVectors, we need to OR them together
-    boolCvs.reduce {
-      (cv1, cv2) => withResource(cv1) { cv1 =>
-        withResource(cv2) { cv2 =>
-          cv1.or(cv2)
-        }
+    withResource(boolCvs) { _ =>
+      val falseCv = withResource(Scalar.fromBool(false)) { falseScalar =>
+        ColumnVector.fromScalar(falseScalar, input.getRowCount.toInt)
       }
+      boolCvs.foldLeft(falseCv)((l, r) => withResource(l) { _ => l.or(r)})
     }
   }
 }
