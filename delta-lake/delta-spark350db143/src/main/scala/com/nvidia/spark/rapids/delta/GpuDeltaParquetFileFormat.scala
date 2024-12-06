@@ -34,6 +34,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
@@ -109,13 +110,13 @@ case class GpuDeltaParquetFileFormat(
       results.headOption.map(e => ColumnMetadata(e._2, e._1))
     }
 
-    val isRowDeletedColumn = findColumn(IS_ROW_DELETED_COLUMN_NAME)
-    val rowIndexColumn = findColumn(ROW_INDEX_COLUMN_NAME)
+    val isRowDeletedColumn = findColumn("_databricks_internal_edge_computed_column_skip_row")
+    val rowIndexColumn = findColumn(ParquetFileFormat.ROW_INDEX_TEMPORARY_COLUMN_NAME)
 
     // We don't have any additional columns to generate, just return the original reader as is.
     if (isRowDeletedColumn.isEmpty && rowIndexColumn.isEmpty) return dataReader
-    require(!isSplittable, "Cannot generate row index related metadata with file splitting")
-    require(disablePushDowns, "Cannot generate row index related metadata with filter pushdown")
+//    require(!isSplittable, "Cannot generate row index related metadata with file splitting")
+//    require(disablePushDowns, "Cannot generate row index related metadata with filter pushdown")
     if (hasDeletionVectorMap && isRowDeletedColumn.isEmpty) {
       throw new IllegalArgumentException("Expected a column " +
         s"${IS_ROW_DELETED_COLUMN_NAME} in the schema")
@@ -142,7 +143,6 @@ case class GpuDeltaParquetFileFormat(
             null
           }
         }
-      val useOffHeapBuffers = sparkSession.sessionState.conf.offHeapColumnVectorEnabled
       try {
         val iter = if (inlinedDv.isDefined) {
            addMetadataColumnToIterator(prepareSchema(requiredSchema),
@@ -155,7 +155,7 @@ case class GpuDeltaParquetFileFormat(
           input
         }
         iteratorWithAdditionalMetadataColumns(file, iter, isRowDeletedColumn,
-          rowIndexColumn, useOffHeapBuffers).asInstanceOf[Iterator[InternalRow]]
+          rowIndexColumn).asInstanceOf[Iterator[InternalRow]]
       } catch {
         case NonFatal(e) =>
           dataReader match {
@@ -178,8 +178,7 @@ case class GpuDeltaParquetFileFormat(
   private def iteratorWithAdditionalMetadataColumns(partitionedFile: PartitionedFile,
     iterator: Iterator[Any],
     isRowDeletedColumn: Option[ColumnMetadata],
-    rowIndexColumn: Option[ColumnMetadata],
-    useOffHeapBuffers: Boolean): Iterator[Any] = {
+    rowIndexColumn: Option[ColumnMetadata]): Iterator[Any] = {
     val pathUri = partitionedFile.pathUri
     val rowIndexFilter = isRowDeletedColumn.map { col =>
       broadcastDvMap.get.value.get(pathUri).map { descriptorWithFilterType =>
