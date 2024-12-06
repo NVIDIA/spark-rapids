@@ -28,6 +28,8 @@ from spark_init_internal import spark_version
 from spark_session import *
 from conftest import is_databricks_runtime, is_dataproc_runtime
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
