@@ -18,7 +18,7 @@ from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_spark_cdh, with_cpu_session
+from spark_session import is_before_spark_330, is_spark_cdh, with_cpu_session
 
 hive_text_enabled_conf = {"spark.rapids.sql.format.hive.text.enabled": True,
                           "spark.rapids.sql.format.hive.text.read.enabled": True}
@@ -522,7 +522,12 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
 @ignore_order(local=True)
-@pytest.mark.parametrize('mode', [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite])
+@pytest.mark.parametrize('mode', [pytest.param(TableWriteMode.CTAS,
+                                               marks=pytest.mark.xfail(condition=is_before_spark_330(),
+                                                                       reason="Spark 3.2.x seems not to set a table's "
+                                                                              "serialization.format to 1, by default. "
+                                                                              "Other Spark versions seem fine.")),
+                                  TableWriteMode.CreateThenWrite])
 @pytest.mark.parametrize('input_dir,schema,options', [
     ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
     ('hive-delim-text/simple-int-values',     make_schema(ByteType()),           {}),
