@@ -1537,23 +1537,27 @@ abstract class GpuTruncDateTime(datetime: Expression, format: Expression)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(fromScalar(lhs)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+    withResource(fromScalar(rhs)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(fromScalar(lhs, numRows)) { left =>
+      withResource(fromScalar(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
+  }
+
+  private def fromScalar(input: GpuScalar, numRows: Int = 1) : GpuColumnVector = {
+    GpuColumnVector.from(input, numRows, input.dataType)
   }
 }
 
