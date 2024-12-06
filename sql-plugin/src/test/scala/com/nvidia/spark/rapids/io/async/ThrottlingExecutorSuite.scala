@@ -73,17 +73,17 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     assertResult(0)(throttle.getTotalHostMemoryBytes)
   }
 
-  test("tasks submission fails if total weight exceeds maxWeight") {
+  test("tasks submission fails if totalHostMemoryBytes exceeds maxHostMemoryBytes") {
     val task1 = new TestTask
     val future1 = executor.submit(task1, 10)
     assertResult(1)(trafficController.numScheduledTasks)
     assertResult(10)(throttle.getTotalHostMemoryBytes)
 
     val task2 = new TestTask
-    val task2Weight = 100
+    val task2HostMemory = 100
     val exec = Executors.newSingleThreadExecutor()
     val future2 = exec.submit(new Runnable {
-      override def run(): Unit = executor.submit(task2, task2Weight)
+      override def run(): Unit = executor.submit(task2, task2HostMemory)
     })
     Thread.sleep(100)
     assert(!future2.isDone)
@@ -94,10 +94,10 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     future1.get(longTimeoutSec, TimeUnit.SECONDS)
     future2.get(longTimeoutSec, TimeUnit.SECONDS)
     assertResult(1)(trafficController.numScheduledTasks)
-    assertResult(task2Weight)(throttle.getTotalHostMemoryBytes)
+    assertResult(task2HostMemory)(throttle.getTotalHostMemoryBytes)
   }
 
-  test("submit one task heavier than maxWeight") {
+  test("submit one task heavier than maxHostMemoryBytes") {
     val future = executor.submit(() => Thread.sleep(10), throttle.maxInFlightHostMemoryBytes + 1)
     future.get(longTimeoutSec, TimeUnit.SECONDS)
     assert(future.isDone)
@@ -105,7 +105,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     assertResult(0)(throttle.getTotalHostMemoryBytes)
   }
 
-  test("submit multiple tasks such that total weight does not exceed maxWeight") {
+  test("submit multiple tasks such that totalHostMemoryBytes does not exceed maxHostMemoryBytes") {
     val numTasks = 10
     val taskRunTime = 10
     var future: Future[Unit] = null
@@ -125,10 +125,10 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     assertResult(10)(throttle.getTotalHostMemoryBytes)
 
     val task2 = new TestTask
-    val task2Weight = 100
+    val task2HostMemory = 100
     val exec = Executors.newSingleThreadExecutor()
     val future2 = exec.submit(new Runnable {
-      override def run(): Unit = executor.submit(task2, task2Weight)
+      override def run(): Unit = executor.submit(task2, task2HostMemory)
     })
     executor.shutdownNow(longTimeoutSec, TimeUnit.SECONDS)
 
