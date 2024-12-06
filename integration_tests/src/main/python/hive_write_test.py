@@ -29,7 +29,7 @@ def _restricted_timestamp(nullable=True):
                         end=datetime(2262, 4, 11, tzinfo=timezone.utc),
                         nullable=nullable)
 
-# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
 # https://github.com/rapidsai/cudf/issues/6763 .
 # Once the first issue is fixed, add back boolean_gen
 _basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -48,7 +48,7 @@ _array_gens = [ArrayGen(sub_gen) for sub_gen in _basic_gens] + [
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
-# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
 # https://github.com/rapidsai/cudf/issues/6763 .
 # Once the first issue is fixed, add back boolean_gen
 _map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [

@@ -33,7 +33,7 @@ _hive_write_conf = {
 @allow_non_gpu(*non_utc_allow)
 def test_write_hive_bucketed_table(spark_tmp_table_factory, file_format):
     num_rows = 2048
-    # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
     # https://github.com/rapidsai/cudf/issues/6763 .
     # Once the first issue is fixed, add back boolean_gen
     def gen_table(spark):

@@ -24,7 +24,7 @@ from pyspark.sql.functions import col, lit
 from pyspark.sql.types import *
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
-# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
 # https://github.com/rapidsai/cudf/issues/6763 .
 # Once the first issue is fixed, add back boolean_gen.
 orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -65,7 +65,7 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
-# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
 # https://github.com/rapidsai/cudf/issues/6763 .
 # Once the first issue is fixed, add back boolean_gen.
 orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
@@ -377,6 +377,9 @@ def test_orc_write_column_name_with_dots(spark_tmp_path):
                 ("f.g", int_gen),
                 ("h", string_gen)])),
             ("i.j", long_gen)])),
+        # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+        # https://github.com/rapidsai/cudf/issues/6763 .
+        # Once the first issue is fixed, add back boolean_gen for column k
         ("k", int_gen)]
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path:  gen_df(spark, gens).coalesce(1).write.orc(path),
