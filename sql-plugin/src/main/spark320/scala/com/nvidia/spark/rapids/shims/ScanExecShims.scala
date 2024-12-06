@@ -15,11 +15,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
- {"spark": "320"}
- {"spark": "321"}
- {"spark": "321cdh"}
- {"spark": "323"}
- {"spark": "324"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -42,8 +43,9 @@ object ScanExecShims {
         TypeSig.all),
       (fsse, conf, p, r) => {
         // TODO: HybridScan supports DataSourceV2
-        // TODO: HybridScan only supports Spark 32X for now.
         if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+          // do not support CDH and Databricks
+          HybridFileSourceScanExecMeta.throwExceptionIfCdhOrDatabricks()
           new HybridFileSourceScanExecMeta(fsse, conf, p, r)
         } else {
           new FileSourceScanExecMeta(fsse, conf, p, r)

@@ -15,10 +15,29 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
 {"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
 {"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
+{"spark": "350"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -110,4 +129,14 @@ object HybridFileSourceScanExecMeta {
     isEnabled && isParquet && allSupportedTypes && noBucketedScan && noAlluxio
   }
 
+  /**
+   * If Spark distribution is CDH or Databricks, report error
+   */
+  def throwExceptionIfCdhOrDatabricks(): Unit = {
+    if (VersionUtils.isCloudera || VersionUtils.isDataBricks) {
+      throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
+        "Spark releases, Please disable Hybrid feature by setting " +
+        "spark.rapids.sql.parquet.useHybridReader=false")
+    }
+  }
 }

@@ -18,6 +18,7 @@
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
+{"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
 {"spark": "332db"}
@@ -27,9 +28,11 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
 {"spark": "344"}
 {"spark": "350"}
 {"spark": "350db143"}
+{"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "400"}
@@ -70,6 +73,16 @@ object ScanExecShims {
           TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
-      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
+      (fsse, conf, p, r) => {
+        // TODO: HybridScan supports DataSourceV2
+        if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+          // if Spark distribution is CDH and Databricks, report error
+          HybridFileSourceScanExecMeta.throwExceptionIfCdhOrDatabricks()
+          new HybridFileSourceScanExecMeta(fsse, conf, p, r)
+        } else {
+          new FileSourceScanExecMeta(fsse, conf, p, r)
+        }
+      })
+
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
