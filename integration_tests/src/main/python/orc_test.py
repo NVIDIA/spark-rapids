@@ -984,6 +984,9 @@ def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
     def gen_null_df(spark):
         return spark.createDataFrame(
             data,
+            # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+            # https://github.com/rapidsai/cudf/issues/6763 .
+            # Once the first issue is fixed, add back boolean_gen
             "c1 int, c2 long, c3 float, c4 double, c5 int")
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_null_df(spark).write.orc(path),
