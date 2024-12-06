@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,6 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
           val df = spark.createDataFrame(data).toDF("a")
           df.repartition(10).write.orc(file.getCanonicalPath)
           checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
-
         }, testConf)
       } finally {
           gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()

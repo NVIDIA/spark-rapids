@@ -1244,8 +1244,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(true)
 
   val ENABLE_ORC_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
-    .doc("When set to false disables boolean columns for ORC writes." +
-      "Set to true if you want to experiment" +
+    .doc("When set to false disables boolean columns for ORC writes. " +
+      "Set to true if you want to experiment. " +
       "See https://github.com/NVIDIA/spark-rapids/issues/11736.")
     .internal()
     .booleanConf

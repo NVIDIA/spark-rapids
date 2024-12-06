@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -960,6 +960,9 @@ def test_orc_with_null_column(spark_tmp_path, reader_confs):
     def gen_null_df(spark):
         return spark.createDataFrame(
             [(None, None, None, None, None)],
+            # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+            # https://github.com/rapidsai/cudf/issues/6763 .
+            # Once the first issue is fixed, add back boolean_gen
             "c1 int, c2 long, c3 float, c4 double, c5 int")
 
     assert_gpu_and_cpu_writes_are_equal_collect(

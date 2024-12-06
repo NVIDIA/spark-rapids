@@ -26,8 +26,7 @@ from pyspark.sql.types import *
 pytestmark = pytest.mark.nightly_resource_consuming_test
 # Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
 # https://github.com/rapidsai/cudf/issues/6763 .
-# Once the first issue is fixed, add back boolean_gen
-
+# Once the first issue is fixed, add back boolean_gen.
 orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, DateGen(start=date(1590, 1, 1)),
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
@@ -66,7 +65,9 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
-
+# Use every type except boolean , see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# https://github.com/rapidsai/cudf/issues/6763 .
+# Once the first issue is fixed, add back boolean_gen.
 orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
     # Using timestamps from 1970 to work around a cudf ORC bug
@@ -84,10 +85,7 @@ orc_write_gens_list = [orc_write_basic_gens,
         pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/139')),
         pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
 
-bool_gen = [pytest.param([BooleanGen(nullable=True)],
-                                 marks=pytest.mark.allow_non_gpu('ExecutedCommandExec','DataWritingCommandExec')),
-            pytest.param([BooleanGen(nullable=False)],
-                         marks=pytest.mark.allow_non_gpu('ExecutedCommandExec','DataWritingCommandExec'))]
+bool_gen = [BooleanGen(nullable=True), BooleanGen(nullable=False)]
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @allow_non_gpu(*non_utc_allow)
@@ -100,7 +98,7 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
-@pytest.mark.parametrize('orc_gens', bool_gen, ids=idfn)
+@pytest.mark.parametrize('orc_gens', [bool_gen], ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @allow_non_gpu('ExecutedCommandExec', 'DataWritingCommandExec', 'WriteFilesExec')
 def test_write_round_trip_bools_only_fallback(spark_tmp_path, orc_gens, orc_impl):
@@ -111,6 +109,18 @@ def test_write_round_trip_bools_only_fallback(spark_tmp_path, orc_gens, orc_impl
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
+
+@pytest.mark.parametrize('orc_gens', [bool_gen], ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_write_round_trip_bools_only_no_fallback(spark_tmp_path, orc_gens, orc_impl):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True,
+              'spark.rapids.sql.format.orc.write.boolType.enabled': True})
 
 @pytest.mark.parametrize('orc_gen', orc_write_odd_empty_strings_gens_sample, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
