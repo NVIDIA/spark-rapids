@@ -796,7 +796,7 @@ def test_trunc_date_single_format(data_gen):
             'trunc(a, "invalid")'))
 
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-def test_trunc_date_single_format(data_gen):
+def test_trunc_timestamp_single_format(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'date_trunc("YEAR", a)',
