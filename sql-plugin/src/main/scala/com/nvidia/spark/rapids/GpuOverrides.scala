@@ -1825,9 +1825,7 @@ object GpuOverrides extends Logging {
       "Truncate the date to the unit specified by the given string format",
       ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
         ("date", TypeSig.DATE, TypeSig.DATE),
-        ("format", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
-          TypeSig.STRING)),
+        ("format", TypeSig.STRING, TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[TruncDate](a, conf, p, r) {
         override def convertToGpu(date: Expression, format: Expression): GpuExpression =
           GpuTruncDate(date, format)
@@ -1835,10 +1833,8 @@ object GpuOverrides extends Logging {
     expr[TruncTimestamp](
       "Truncate the timestamp to the unit specified by the given string format",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("date", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-        ("format", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, "\"QUARTER\" and \"WEEK\" are not supported"),
-          TypeSig.STRING)),
+        ("format", TypeSig.STRING, TypeSig.STRING),
+        ("date", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP)),
       (a, conf, p, r) => new BinaryExprMeta[TruncTimestamp](a, conf, p, r) {
         override def convertToGpu(format: Expression, timestamp: Expression): GpuExpression =
           GpuTruncTimestamp(format, timestamp)
