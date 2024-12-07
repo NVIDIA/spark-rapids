@@ -1837,7 +1837,7 @@ object GpuOverrides extends Logging {
         ("date", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP)),
       (a, conf, p, r) => new BinaryExprMeta[TruncTimestamp](a, conf, p, r) {
         override def convertToGpu(format: Expression, timestamp: Expression): GpuExpression =
-          GpuTruncTimestamp(format, timestamp)
+          GpuTruncTimestamp(format, timestamp, a.timeZoneId)
     }),
     expr[Pmod](
       "Pmod",

@@ -1526,38 +1526,32 @@ case class GpuLastDay(startDate: Expression)
 }
 
 trait GpuTruncDateTime extends GpuBinaryExpression with ImplicitCastInputTypes {
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    DateTimeUtils.truncate(lhs.getBase, rhs.getBase)
-  }
-
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(fromScalar(lhs)) { left =>
+    withResource(scalarToColumn(lhs)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(fromScalar(rhs)) { right =>
+    withResource(scalarToColumn(rhs)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(fromScalar(lhs, numRows)) { left =>
-      withResource(fromScalar(rhs, numRows)) { right =>
+    withResource(scalarToColumn(lhs, numRows)) { left =>
+      withResource(scalarToColumn(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
   }
 
-  private def fromScalar(input: GpuScalar, numRows: Int = 1) : GpuColumnVector = {
+  private def scalarToColumn(input: GpuScalar, numRows: Int = 1) : GpuColumnVector = {
     GpuColumnVector.from(input, numRows, input.dataType)
   }
 }
 
 case class GpuTruncDate(date: Expression, format: Expression) extends GpuTruncDateTime {
-  // We always store date/time to the left and format to the right expressions.
-  // This is to make sure `doColumnar` will call `DateTimeUtils.truncate` with the correct order.
   override def left: Expression = date
   override def right: Expression = format
 
@@ -1566,17 +1560,29 @@ case class GpuTruncDate(date: Expression, format: Expression) extends GpuTruncDa
   override def dataType: DataType = DateType
 
   override def prettyName: String = "trunc"
+
+  override def doColumnar(dateCol: GpuColumnVector, formatCol: GpuColumnVector): ColumnVector = {
+    DateTimeUtils.truncate(dateCol.getBase, formatCol.getBase)
+  }
 }
 
-case class GpuTruncTimestamp(format: Expression, timestamp: Expression) extends GpuTruncDateTime {
-  // We always store date/time to the left and format to the right expressions.
-  // This is to make sure `doColumnar` will call `DateTimeUtils.truncate` with the correct order.
-  override def left: Expression = timestamp
-  override def right: Expression = format
+case class GpuTruncTimestamp(format: Expression, timestamp: Expression,
+                             timeZoneId: Option[String] = None)
+  extends GpuTruncDateTime with TimeZoneAwareExpression {
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  override def left: Expression = format
+  override def right: Expression = timestamp
 
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, TimestampType)
 
   override def dataType: DataType = TimestampType
 
   override def prettyName: String = "date_trunc"
+
+  override def doColumnar(formatCol: GpuColumnVector, tsCol: GpuColumnVector): ColumnVector = {
+    DateTimeUtils.truncate(tsCol.getBase, formatCol.getBase)
+  }
 }
