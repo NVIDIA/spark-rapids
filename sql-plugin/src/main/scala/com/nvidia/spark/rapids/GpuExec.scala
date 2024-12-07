@@ -327,19 +327,19 @@ trait GpuExec extends SparkPlan {
     }
   }
 
-  protected def createMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createMetric(sparkContext, name))
 
-  protected def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createNanoTimingMetric(sparkContext, name))
 
-  protected def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createSizeMetric(sparkContext, name))
 
-  protected def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createAverageMetric(sparkContext, name))
 
-  protected def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createTimingMetric(sparkContext, name))
 
   protected def createFileCacheMetrics(): Map[String, GpuMetric] = {

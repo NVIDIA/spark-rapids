@@ -31,6 +31,10 @@ import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHea
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE,
+  METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_CALC_HEADER_TIME,
+  METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_COPY_HEADER_TIME,
+  METRIC_SHUFFLE_SER_STREAM_TIME}
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -45,7 +49,7 @@ trait BaseSerializedTableIterator extends Iterator[(Int, ColumnarBatch)] {
   def peekNextBatchSize(): Option[Long]
 }
 
-class SerializedBatchIterator(dIn: DataInputStream)
+class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   extends BaseSerializedTableIterator {
   private[this] var nextHeader: Option[SerializedTableHeader] = None
   private[this] var streamClosed: Boolean = false
@@ -58,7 +62,7 @@ class SerializedBatchIterator(dIn: DataInputStream)
     }
   }
 
-  override def peekNextBatchSize(): Option[Long] = {
+  override def peekNextBatchSize(): Option[Long] = deserTime.ns {
     if (streamClosed) {
       None
     } else {
@@ -78,7 +82,7 @@ class SerializedBatchIterator(dIn: DataInputStream)
     }
   }
 
-  private def readNextBatch(): ColumnarBatch = {
+  private def readNextBatch(): ColumnarBatch = deserTime.ns {
     withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
       val header = nextHeader.get
       nextHeader = None
@@ -125,30 +129,45 @@ class SerializedBatchIterator(dIn: DataInputStream)
  *
  * @note The RAPIDS shuffle does not use this code.
  */
-class GpuColumnarBatchSerializer(dataSize: GpuMetric, dataTypes: Array[DataType], useKudo: Boolean)
+class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Array[DataType],
+    useKudo: Boolean)
   extends Serializer with Serializable {
+
+  private lazy val kudo = {
+    if (useKudo && dataTypes.nonEmpty) {
+      Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
+    } else {
+      None
+    }
+  }
+
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
-      new KudoSerializerInstance(dataSize, dataTypes)
+      new KudoSerializerInstance(metrics, dataTypes, kudo)
     } else {
-      new GpuColumnarBatchSerializerInstance(dataSize)
+      new GpuColumnarBatchSerializerInstance(metrics)
     }
   }
 
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]) extends
+  SerializerInstance {
+  private val dataSize = metrics(METRIC_DATA_SIZE)
+  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
+  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
+
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
       new DataOutputStream(new BufferedOutputStream(out))
 
-    override def writeValue[T: ClassTag](value: T): SerializationStream = {
+    override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
       val numColumns = batch.numCols()
       val columns: Array[HostColumnVector] = new Array(numColumns)
-      val toClose = new ArrayBuffer[AutoCloseable]()
+      val toClose = new ArrayBuffer[AutoCloseable](numColumns)
       try {
         var startRow = 0
         val numRows = batch.numRows()
@@ -227,7 +246,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends Se
       private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
-        new SerializedBatchIterator(dIn)
+        new SerializedBatchIterator(dIn, deserTime)
       }
 
       override def asIterator: Iterator[Any] = {
@@ -327,20 +346,26 @@ object SerializedTableColumn {
  * @param dataTypes data types of the columns in the batch
  */
 private class KudoSerializerInstance(
-    val dataSize: GpuMetric,
-    val dataTypes: Array[DataType]) extends SerializerInstance {
-
-  private lazy val kudo = new KudoSerializer(GpuColumnVector.from(dataTypes))
+    val metrics: Map[String, GpuMetric],
+    val dataTypes: Array[DataType],
+    val kudo: Option[KudoSerializer]
+) extends SerializerInstance {
+  private val dataSize = metrics(METRIC_DATA_SIZE)
+  private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
+  private val serCalcHeaderTime = metrics(METRIC_SHUFFLE_SER_CALC_HEADER_TIME)
+  private val serCopyHeaderTime = metrics(METRIC_SHUFFLE_SER_COPY_HEADER_TIME)
+  private val serCopyBufferTime = metrics(METRIC_SHUFFLE_SER_COPY_BUFFER_TIME)
+  private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
       new DataOutputStream(new BufferedOutputStream(out))
 
-    override def writeValue[T: ClassTag](value: T): SerializationStream = {
+    override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
       val numColumns = batch.numCols()
       val columns: Array[HostColumnVector] = new Array(numColumns)
-      withResource(new ArrayBuffer[AutoCloseable]()) { toClose =>
+      withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
         var startRow = 0
         val numRows = batch.numRows()
         if (batch.numCols() > 0) {
@@ -368,7 +393,14 @@ private class KudoSerializerInstance(
           }
 
           withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
-            dataSize += kudo.writeToStream(columns, dOut, startRow, numRows)
+            val writeMetric = kudo
+              .getOrElse(throw new IllegalStateException("Kudo serializer not initialized."))
+              .writeToStreamWithMetrics(columns, dOut, startRow, numRows)
+
+            dataSize += writeMetric.getWrittenBytes
+            serCalcHeaderTime += writeMetric.getCalcHeaderTime
+            serCopyHeaderTime += writeMetric.getCopyHeaderTime
+            serCopyBufferTime += writeMetric.getCopyBufferTime
           }
         } else {
           withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>
@@ -410,7 +442,7 @@ private class KudoSerializerInstance(
       private[this] val dIn: DataInputStream = new DataInputStream(new BufferedInputStream(in))
 
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
-        new KudoSerializedBatchIterator(dIn)
+        new KudoSerializedBatchIterator(dIn, deserTime)
       }
 
       override def asIterator: Iterator[Any] = {
@@ -483,7 +515,7 @@ object KudoSerializedTableColumn {
   }
 }
 
-class KudoSerializedBatchIterator(dIn: DataInputStream)
+class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   extends BaseSerializedTableIterator {
   private[this] var nextHeader: Option[KudoTableHeader] = None
   private[this] var streamClosed: Boolean = false
@@ -496,7 +528,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream)
     }
   }
 
-  override def peekNextBatchSize(): Option[Long] = {
+  override def peekNextBatchSize(): Option[Long] = deserTime.ns {
     if (streamClosed) {
       None
     } else {
@@ -516,7 +548,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream)
     }
   }
 
-  private def readNextBatch(): ColumnarBatch = {
+  private def readNextBatch(): ColumnarBatch = deserTime.ns {
     withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
       val header = nextHeader.get
       nextHeader = None
