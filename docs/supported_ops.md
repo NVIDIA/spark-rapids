@@ -17740,7 +17740,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>"QUARTER" and "WEEK" are not supported;<br/>Literal value only</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17781,7 +17781,7 @@ are limited.
 <td rowSpan="3">Truncate the timestamp to the unit specified by the given string format</td>
 <td rowSpan="3">None</td>
 <td rowSpan="3">project</td>
-<td>date</td>
+<td>format</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17790,8 +17790,8 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17804,7 +17804,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td>format</td>
+<td>date</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17813,8 +17813,8 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td> </td>
-<td><em>PS<br/>"QUARTER" and "WEEK" are not supported;<br/>Literal value only</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
