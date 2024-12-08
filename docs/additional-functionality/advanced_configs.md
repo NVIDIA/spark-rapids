@@ -386,6 +386,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.ToUnixTimestamp"></a>spark.rapids.sql.expression.ToUnixTimestamp|`to_unix_timestamp`|Returns the UNIX timestamp of the given time|true|None|
 <a name="sql.expression.TransformKeys"></a>spark.rapids.sql.expression.TransformKeys|`transform_keys`|Transform keys in a map using a transform function|true|None|
 <a name="sql.expression.TransformValues"></a>spark.rapids.sql.expression.TransformValues|`transform_values`|Transform values in a map using a transform function|true|None|
+<a name="sql.expression.TruncDate"></a>spark.rapids.sql.expression.TruncDate|`trunc`|Truncate the date to the unit specified by the given string format|true|None|
+<a name="sql.expression.TruncTimestamp"></a>spark.rapids.sql.expression.TruncTimestamp|`date_trunc`|Truncate the timestamp to the unit specified by the given string format|true|None|
 <a name="sql.expression.UnaryMinus"></a>spark.rapids.sql.expression.UnaryMinus|`negative`|Negate a numeric value|true|None|
 <a name="sql.expression.UnaryPositive"></a>spark.rapids.sql.expression.UnaryPositive|`positive`|A numeric value with a + in front of it|true|None|
 <a name="sql.expression.UnboundedFollowing$"></a>spark.rapids.sql.expression.UnboundedFollowing$| |Special boundary for a window frame, indicating all rows preceding the current row|true|None|
