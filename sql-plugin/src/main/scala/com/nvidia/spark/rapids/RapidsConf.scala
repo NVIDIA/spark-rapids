@@ -1721,6 +1721,22 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
+    .doc("Use HybridScan to read Parquet data using CPUs. The underlying implementation " +
+        "leverages both Gluten and Velox.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  // This config name is the same as HybridPluginWrapper in Hybrid jar,
+  // can not refer to Hybrid jar because of the jar is optional.
+  val LOAD_HYBRID_BACKEND = conf("spark.rapids.sql.hybrid.loadBackend")
+    .doc("Load hybrid backend as an extra plugin of spark-rapids during launch time")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
       "\"all\" (try to replace all aggregates, default), " +
@@ -2894,6 +2910,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val avroDebugDumpPrefix: Option[String] = get(AVRO_DEBUG_DUMP_PREFIX)
 
   lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
+
+  lazy val useHybridParquetReader: Boolean = get(HYBRID_PARQUET_READER)
+
+  lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 

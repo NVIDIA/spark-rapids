@@ -73,6 +73,16 @@ object ScanExecShims {
           TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
-      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
+      (fsse, conf, p, r) => {
+        // TODO: HybridScan supports DataSourceV2
+        if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+          // if Spark distribution is CDH and Databricks, report error
+          HybridFileSourceScanExecMeta.throwExceptionIfCdhOrDatabricks()
+          new HybridFileSourceScanExecMeta(fsse, conf, p, r)
+        } else {
+          new FileSourceScanExecMeta(fsse, conf, p, r)
+        }
+      })
+
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 }
