@@ -99,6 +99,7 @@ class HybridFileSourceScanExecMeta(plan: FileSourceScanExec,
 }
 
 object HybridFileSourceScanExecMeta {
+  private val HYBRID_JAR_PLUGIN_CLASS_NAME = "com.nvidia.spark.rapids.hybrid.HybridPluginWrapper"
 
   // Determines whether using HybridScan or GpuScan
   def useHybridScan(conf: RapidsConf, fsse: FileSourceScanExec): Boolean = {
@@ -130,13 +131,72 @@ object HybridFileSourceScanExecMeta {
   }
 
   /**
-   * If Spark distribution is CDH or Databricks, report error
+   * Check if runtimes are satisfied, including:
+   * - Spark distribution is not CDH or Databricks
+   * - Hybrid jar in the plasspath
+   * - Java version is 1.8
+   * - Scala version is 2.12
    */
-  def throwExceptionIfCdhOrDatabricks(): Unit = {
+  def checkRuntimes(): Unit = {
+    checkNotRuningCDHorDatabricks()
+    checkHybridJarInClassPath()
+    checkJavaVersion()
+    checkScalaVersion()
+  }
+
+  /**
+   * Check Spark distribution is not CDH or Databricks,
+   * report error if it is
+   */
+  def checkNotRuningCDHorDatabricks(): Unit = {
     if (VersionUtils.isCloudera || VersionUtils.isDataBricks) {
       throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
-        "Spark releases, Please disable Hybrid feature by setting " +
-        "spark.rapids.sql.parquet.useHybridReader=false")
+          "Spark releases, Please disable Hybrid feature by setting " +
+          "spark.rapids.sql.parquet.useHybridReader=false")
+    }
+  }
+
+  /**
+   * Check if the Hybrid jar is in the classpath,
+   * report error if not
+   */
+  def checkHybridJarInClassPath(): Unit = {
+    try {
+      Class.forName(HYBRID_JAR_PLUGIN_CLASS_NAME)
+    } catch {
+      case e: ClassNotFoundException => throw new RuntimeException(
+        "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
+            "Please disable Hybrid feature by setting " +
+            "spark.rapids.sql.parquet.useHybridReader=false", e)
+    }
+  }
+
+  /**
+   * Hybrid feature only supports 1.8 Java version,
+   * report error if not
+   */
+  def checkJavaVersion(): Unit = {
+    val javaVersion = System.getProperty("java.version")
+    if (javaVersion == null) {
+      throw new RuntimeException("Hybrid feature: Can not read java.version, get null")
+    }
+    if (!javaVersion.startsWith("1.8")) {
+      throw new RuntimeException(
+        "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
+            "Please disable Hybrid feature by setting " +
+            "spark.rapids.sql.parquet.useHybridReader=false")
+    }
+  }
+
+  /**
+   * Hybrid feature only supports Scala 2.12 version,
+   * report error if not
+   */
+  def checkScalaVersion(): Unit = {
+    val scalaVersion = scala.util.Properties.versionString
+    if (!scalaVersion.startsWith("version 2.12")) {
+      throw new RuntimeException(s"Hybrid feature only supports Scala 2.12 version, " +
+          s"but got $scalaVersion")
     }
   }
 }

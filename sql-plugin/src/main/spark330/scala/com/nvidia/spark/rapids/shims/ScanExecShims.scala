@@ -76,8 +76,9 @@ object ScanExecShims {
       (fsse, conf, p, r) => {
         // TODO: HybridScan supports DataSourceV2
         if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
-          // if Spark distribution is CDH and Databricks, report error
-          HybridFileSourceScanExecMeta.throwExceptionIfCdhOrDatabricks()
+          // Check if runtimes are satisfied: Spark is not Databricks or CDH; Java version is 1.8;
+          // Scala version is 2.12; Hybrid jar is in the classpath
+          HybridFileSourceScanExecMeta.checkRuntimes()
           new HybridFileSourceScanExecMeta(fsse, conf, p, r)
         } else {
           new FileSourceScanExecMeta(fsse, conf, p, r)
