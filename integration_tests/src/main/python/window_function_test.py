@@ -24,6 +24,9 @@ import pyspark.sql.functions as f
 from spark_session import is_before_spark_320, is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session
 import warnings
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
+
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', IntegerGen()),

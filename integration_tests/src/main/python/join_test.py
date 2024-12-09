@@ -22,7 +22,8 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime
 
-pytestmark = [pytest.mark.nightly_resource_consuming_test]
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.nightly_resource_consuming_test, pytest.mark.premerge_ci_1]
 
 all_non_sized_join_types = ['LeftSemi', 'LeftAnti', 'Cross']
 all_symmetric_sized_join_types = ['Inner', 'FullOuter']
