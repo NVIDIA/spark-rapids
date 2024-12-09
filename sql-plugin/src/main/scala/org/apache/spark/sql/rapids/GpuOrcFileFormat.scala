@@ -210,7 +210,7 @@ class GpuOrcWriter(override val path: String,
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils
-      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
+      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema, nullable = false)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
     Table.writeORCChunked(builder.build(), this)
   }
