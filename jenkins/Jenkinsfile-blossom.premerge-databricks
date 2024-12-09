@@ -146,6 +146,15 @@ void databricksBuild() {
     def testArgs = (params.TEST_MODE == 'CI_PART2') ?  pluginBuiltTar.replace('dbfs:/', '/dbfs/') : ''
 
     try {
+        // wait for all the rapids plugin tars built in CI_PART1 to be ready
+        if (params.TEST_MODE == 'CI_PART2') {
+            if (DbUtils.allFilesExist(this, "$PLUGIN_BUILT_DIR/$DB_RUNTIME/", 60)) {
+                println('Rapids plugin built tars are ready for CI_PART2')
+            } else {
+                error "Timeout, rapids plugin built tars are not ready for CI_PART2"
+            }
+        }
+
         stage("Create $SPARK_MAJOR DB") {
             dbStep = 'CREATE'
             // Add the init_script parameter, e.g. oo.sh,bar.sh --> /path/foo.sh,/path/bar.sh
