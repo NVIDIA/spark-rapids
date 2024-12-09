@@ -1661,6 +1661,7 @@ hybrid_gens = [
     [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
      string_gen, boolean_gen, date_gen,
      TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)),
+     decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit,
      ArrayGen(byte_gen),
      ArrayGen(long_gen), ArrayGen(string_gen), ArrayGen(date_gen),
      ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
@@ -1669,6 +1670,14 @@ hybrid_gens = [
                 ['child3', decimal_gen_64bit]]),
      ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))
      ],
+    [ArrayGen(decimal_gen_32bit)],
+    [ArrayGen(decimal_gen_64bit)],
+    # [ArrayGen(decimal_gen_128bit) ], TODO: has bug
+    [
+        MapGen(DecimalGen(precision=7, scale=3, nullable=False), DecimalGen(precision=7, scale=3)),
+        MapGen(DecimalGen(precision=12, scale=2, nullable=False), DecimalGen(precision=12, scale=2)),
+        # MapGen(DecimalGen(precision=20, scale=2, nullable=False), DecimalGen(precision=20, scale=2)), TODO: has bug
+    ],
     [MapGen(f(nullable=False), f()) for f in [
         BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen]
      ],
