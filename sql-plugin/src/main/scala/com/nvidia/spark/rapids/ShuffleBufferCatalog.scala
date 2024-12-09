@@ -46,9 +46,8 @@ case class ShuffleBufferId(
 class ShuffleBufferCatalog extends Logging {
   /**
    * Information stored for each active shuffle.
-   * NOTE: ArrayBuffer in blockMap must be explicitly locked when using it!
-   *
-   * @param blockMap mapping of block ID to array of buffers for the block
+   * A shuffle block can be comprised of multiple batches. Each batch
+   * is given a `ShuffleBufferId`.
    */
   private type ShuffleInfo =
     ConcurrentHashMap[ShuffleBlockId, ArrayBuffer[ShuffleBufferId]]
@@ -148,7 +147,6 @@ class ShuffleBufferCatalog extends Logging {
     val bufferId = nextShuffleBufferId(blockId)
     trackDegenerate(bufferId, meta)
   }
-
 
   /**
    * Register a new shuffle.
