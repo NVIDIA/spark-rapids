@@ -95,14 +95,14 @@ The output of signature verify:
 
 ### Release Notes
 * Implement Kudo shuffle format to improve shuffle performance
-* Add the ability to decompress snappy and ztsd compressed Parquet files via CPU.
+* Add the ability to decompress snappy and ztsd compressed Parquet files via CPU
 * Add repartition-based algorithm fallback in hash aggregate  
 * Support spark function months_between
 * Support asynchronous writing for Parquet files
 * Add retry support to improve sub hash-join stability
 * Improve JSON scan and from_json
 * Support setting a limited number of tasks for build-in profiling tool
-* Bugs fix for memory leak.
+* Bugs fix for memory leak
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
 
 Note: There is a known issue in the 24.12.0 release when decompressing gzip files on H100 GPUs.  
