@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,8 @@ object GpuBroadcastHelper {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
         RmmRapidsRetryIterator.withRetryNoSplit {
           withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
-            broadcastBatch.batch.getColumnarBatch()
+            val spillable = broadcastBatch.batch
+            spillable.getColumnarBatch()
           }
         }
       case v if SparkShimImpl.isEmptyRelation(v) =>

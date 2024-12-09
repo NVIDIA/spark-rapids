@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -255,7 +255,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
         verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
         verify(mockCatalog, times(1))
-            .addBuffer(dmbCaptor.capture(), any(), any(), any())
+            .addBuffer(dmbCaptor.capture(), any(), any())
 
         val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
         assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
@@ -310,8 +310,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
       verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
       verify(mockCatalog, times(1))
-          .addBuffer(dmbCaptor.capture(), any(), any(), any())
-      verify(mockCatalog, times(1)).removeBuffer(any())
+          .addBuffer(dmbCaptor.capture(), any(), any())
 
       val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
       assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
@@ -367,7 +366,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       }
 
       verify(mockCatalog, times(5))
-          .addBuffer(dmbCaptor.capture(), any(), any(), any())
+          .addBuffer(dmbCaptor.capture(), any(), any())
 
       assertResult(totalExpectedSize)(
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)
@@ -424,7 +423,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       }
 
       verify(mockCatalog, times(20))
-          .addBuffer(dmbCaptor.capture(), any(), any(), any())
+          .addBuffer(dmbCaptor.capture(), any(), any())
 
       assertResult(totalExpectedSize)(
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)

@@ -36,10 +36,11 @@ package com.nvidia.spark.rapids.shuffle
 import java.nio.ByteBuffer
 import java.util.concurrent.Executor
 
+import scala.collection.immutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsBufferHandle, RapidsConf, RapidsDeviceMemoryStore, RmmSparkRetrySuiteBase, ShuffleMetadata, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsConf, RapidsShuffleHandle, RmmSparkRetrySuiteBase, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
@@ -79,7 +80,6 @@ abstract class RapidsShuffleTestHelper
   var mockCopyExecutor: Executor = _
   var mockBssExecutor: Executor = _
   var mockHandler: RapidsShuffleFetchHandler = _
-  var mockStorage: RapidsDeviceMemoryStore = _
   var mockCatalog: ShuffleReceivedBufferCatalog = _
   var mockConf: RapidsConf = _
   var testMetricsUpdater: TestShuffleMetricsUpdater = _
@@ -160,11 +160,11 @@ abstract class RapidsShuffleTestHelper
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
 
     val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
-    when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any(), any()))
+    when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any()))
       .thenAnswer(_ => {
         val buffer = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
         buffersToClose.append(buffer)
-        mock[RapidsBufferHandle]
+        mock[RapidsShuffleHandle]
       })
 
     client = spy(new RapidsShuffleClient(
@@ -185,25 +185,30 @@ object RapidsShuffleTestHelper extends MockitoSugar {
     MetaUtils.buildDegenerateTableMeta(new ColumnarBatch(Array.empty, 123))
   }
 
-  def withMockContiguousTable[T](numRows: Long)(body: ContiguousTable => T): T = {
+  def buildContiguousTable(numRows: Long): ContiguousTable = {
     val rows: Seq[Integer] = (0 until numRows.toInt).map(Int.box)
     withResource(ColumnVector.fromBoxedInts(rows:_*)) { cvBase =>
       cvBase.incRefCount()
       val gpuCv = GpuColumnVector.from(cvBase, IntegerType)
       withResource(new ColumnarBatch(Array(gpuCv))) { cb =>
         withResource(GpuColumnVector.from(cb)) { table =>
-          withResource(table.contiguousSplit(0, numRows.toInt)) { ct =>
-            body(ct(1)) // we get a degenerate table at 0 and another at 2
-          }
+          val cts = table.contiguousSplit()
+          cts(0)
         }
       }
+    }
+  }
+
+  def withMockContiguousTable[T](numRows: Long)(body: ContiguousTable => T): T = {
+    withResource(buildContiguousTable(numRows)) { ct =>
+      body(ct)
     }
   }
 
   def mockMetaResponse(
       mockTransaction: Transaction,
       numRows: Long,
-      numBatches: Int): (Seq[TableMeta], MetadataTransportBuffer) =
+      numBatches: Int): (immutable.Seq[TableMeta], MetadataTransportBuffer) =
     withMockContiguousTable(numRows) { ct =>
       val tableMetas = (0 until numBatches).map(b => buildMockTableMeta(b, ct))
       val res = ShuffleMetadata.buildMetaResponse(tableMetas)
@@ -214,7 +219,7 @@ object RapidsShuffleTestHelper extends MockitoSugar {
 
   def mockDegenerateMetaResponse(
       mockTransaction: Transaction,
-      numBatches: Int): (Seq[TableMeta], MetadataTransportBuffer) = {
+      numBatches: Int): (immutable.Seq[TableMeta], MetadataTransportBuffer) = {
     val tableMetas = (0 until numBatches).map(b => buildDegenerateMockTableMeta())
     val res = ShuffleMetadata.buildMetaResponse(tableMetas)
     val refCountedRes = new MetadataTransportBuffer(new RefCountedDirectByteBuffer(res))
@@ -246,8 +251,8 @@ object RapidsShuffleTestHelper extends MockitoSugar {
       tableMeta
     }
 
-  def getShuffleBlocks: Seq[(ShuffleBlockBatchId, Long, Int)] = {
-    Seq(
+  def getShuffleBlocks: Array[(ShuffleBlockBatchId, Long, Int)] = {
+    Array(
       (ShuffleBlockBatchId(1,1,1,1), 123L, 1),
       (ShuffleBlockBatchId(2,2,2,2), 456L, 2),
       (ShuffleBlockBatchId(3,3,3,3), 456L, 3)
@@ -261,11 +266,24 @@ object RapidsShuffleTestHelper extends MockitoSugar {
     bmId
   }
 
-  def getBlocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    val blocksByAddress = new ArrayBuffer[(BlockManagerId, Seq[(BlockId, Long, Int)])]()
+  def makeIterator(conf: RapidsConf,
+                   transport: RapidsShuffleTransport,
+                   testMetricsUpdater: TestShuffleMetricsUpdater,
+                   taskId: Long,
+                   catalog: ShuffleReceivedBufferCatalog): RapidsShuffleIterator = {
+    val blocksByAddress = new ArrayBuffer[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])]()
     val blocks = getShuffleBlocks
     blocksByAddress.append((makeMockBlockManager("2", "2"), blocks))
-    blocksByAddress.toArray
+    spy(new RapidsShuffleIterator(
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
+      conf,
+      transport,
+      blocksByAddress.toArray,
+      testMetricsUpdater,
+      Array.empty,
+      taskId,
+      catalog,
+      123))
   }
 }
 
@@ -289,4 +307,3 @@ class MockClientConnection(mockTransaction: Transaction) extends ClientConnectio
 
   override def registerReceiveHandler(messageType: MessageType.Value): Unit = {}
 }
-

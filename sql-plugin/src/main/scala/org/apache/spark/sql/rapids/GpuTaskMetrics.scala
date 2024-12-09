@@ -145,7 +145,6 @@ class GpuTaskMetrics extends Serializable {
     GpuTaskMetrics.decHostBytesAllocated(bytes)
   }
 
-
   def incDiskBytesAllocated(bytes: Long): Unit = {
     GpuTaskMetrics.incDiskBytesAllocated(bytes)
     maxDiskBytesAllocated = maxDiskBytesAllocated.max(GpuTaskMetrics.diskBytesAllocated)

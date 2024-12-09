@@ -80,7 +80,7 @@ class WindowRetrySuite
           assertResult(4)(hostCol.getLong(row))
         }
       }
-      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(2)).getColumnarBatch
       verify(inputBatch, times(1)).close()
     }
   }
@@ -102,7 +102,7 @@ class WindowRetrySuite
           assertResult(row + 1)(hostCol.getLong(row))
         }
       }
-      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(2)).getColumnarBatch
       verify(inputBatch, times(1)).close()
     }
   }
@@ -126,7 +126,7 @@ class WindowRetrySuite
           assertResult(4)(hostCol.getLong(row))
         }
       }
-      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(2)).getColumnarBatch
       verify(inputBatch, times(1)).close()
     }
   }
@@ -143,7 +143,7 @@ class WindowRetrySuite
     assertThrows[GpuSplitAndRetryOOM] {
       it.next()
     }
-    verify(inputBatch, times(1)).getColumnarBatch()
+    verify(inputBatch, times(1)).getColumnarBatch
     verify(inputBatch, times(1)).close()
   }
 
@@ -173,7 +173,7 @@ class WindowRetrySuite
           }
         }
       }
-      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(2)).getColumnarBatch
       verify(inputBatch, times(1)).close()
     }
   }
