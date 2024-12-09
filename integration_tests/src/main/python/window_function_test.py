@@ -971,14 +971,12 @@ lead_lag_struct_with_arrays_gen = [struct_with_arrays,
 def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
     data_gen = [
         ('a', RepeatSeqGen(a_b_gen, length=20)),
-        ('b', IntegerGen(nullable=False, special_cases=[])),
+        ('b', UniqueLongGen(nullable=False)),
         ('c', struct_gen)]
-    # By default for many operations a range of unbounded to unbounded is used
-    # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216
-    # is fixed.
+    # For many operations, a range of unbounded to unbounded is used by default.
 
-    # Ordering needs to include c because with nulls and especially on booleans
-    # it is possible to get a different ordering when it is ambiguous.
+    # Ordering needs to include `b` because with nulls and especially on booleans,
+    # it is possible to get a different result when the ordering is ambiguous.
     base_window_spec = Window.partitionBy('a').orderBy('b')
 
     def do_it(spark):
