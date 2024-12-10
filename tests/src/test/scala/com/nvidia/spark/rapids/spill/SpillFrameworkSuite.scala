@@ -247,7 +247,7 @@ class SpillFrameworkSuite
     }
   }
 
-  test("an aliased contiguous table is not spillable (until closing the original) ") {
+  test("an aliased contiguous table is not spillable (until closing the alias) ") {
     val (table, dataTypes) = buildContiguousTable()
     withResource(SpillableColumnarBatchFromBufferHandle(table, dataTypes)) { handle =>
       assertResult(1)(SpillFramework.stores.deviceStore.numHandles)
@@ -255,10 +255,11 @@ class SpillFrameworkSuite
       val materialized = handle.materialize(dataTypes)
       // note that materialized is a batch "from buffer", it is not a regular batch
       withResource(SpillableColumnarBatchFromBufferHandle(materialized)) { aliasHandle =>
+        // we now have two copies in the store
         assertResult(2)(SpillFramework.stores.deviceStore.numHandles)
         assert(!handle.spillable)
         assert(!aliasHandle.spillable)
-      } // we now have two copies in the store
+      }
       assert(handle.spillable)
       assertResult(1)(SpillFramework.stores.deviceStore.numHandles)
     }
@@ -319,7 +320,7 @@ class SpillFrameworkSuite
     }
   }
 
-  private def decompressBach(cb: ColumnarBatch): ColumnarBatch = {
+  private def decompressBatch(cb: ColumnarBatch): ColumnarBatch = {
     val schema = new StructType().add("i", LongType)
       .add("j", DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 3))
     val sparkTypes = GpuColumnVector.extractTypes(schema)
@@ -356,7 +357,7 @@ class SpillFrameworkSuite
 
   test("a compressed batch can be added and recovered after being spilled to host") {
     val ct = buildCompressedBatch(0, 1000)
-    withResource(decompressBach(ct)) { decompressedExpected =>
+    withResource(decompressBatch(ct)) { decompressedExpected =>
       withResource(SpillableCompressedColumnarBatchHandle(ct)) { handle =>
         assert(handle.spillable)
         SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
@@ -364,7 +365,7 @@ class SpillFrameworkSuite
         assert(handle.dev.isEmpty)
         assert(handle.host.isDefined)
         withResource(handle.materialize()) { materialized =>
-          withResource(decompressBach(materialized)) { decompressed =>
+          withResource(decompressBatch(materialized)) { decompressed =>
             TestUtils.compareBatches(decompressedExpected, decompressed)
           }
         }
@@ -374,7 +375,7 @@ class SpillFrameworkSuite
 
   test("a compressed batch can be added and recovered after being spilled to disk") {
     val ct = buildCompressedBatch(0, 1000)
-    withResource(decompressBach(ct)) { decompressedExpected =>
+    withResource(decompressBatch(ct)) { decompressedExpected =>
       withResource(SpillableCompressedColumnarBatchHandle(ct)) { handle =>
         assert(handle.spillable)
         SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
@@ -385,7 +386,7 @@ class SpillFrameworkSuite
         assert(handle.host.get.host.isEmpty)
         assert(handle.host.get.disk.isDefined)
         withResource(handle.materialize()) { materialized =>
-          withResource(decompressBach(materialized)) { decompressed =>
+          withResource(decompressBatch(materialized)) { decompressed =>
             TestUtils.compareBatches(decompressedExpected, decompressed)
           }
         }
@@ -621,7 +622,7 @@ class SpillFrameworkSuite
   test("host originated: a host batch supports aliasing and duplicated columns") {
     SpillFramework.shutdown()
     val sc = new SparkConf
-    // disables the host store limit
+    // disables the host store limit by enabling off heap limits
     sc.set(RapidsConf.OFF_HEAP_LIMIT_ENABLED.key, "true")
     SpillFramework.initialize(new RapidsConf(sc))
 
@@ -750,6 +751,7 @@ class SpillFrameworkSuite
     }
   }
 
+  // -1 disables the host store limit
   val hostSpillStorageSizes = Seq("-1", "1MB", "16MB")
   val spillToDiskBounceBuffers = Seq("128KB", "2MB", "128MB")
   val chunkedPackBounceBuffers = Seq("1MB", "8MB", "128MB")

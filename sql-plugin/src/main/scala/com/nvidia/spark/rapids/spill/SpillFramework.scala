@@ -81,7 +81,8 @@ import org.apache.spark.storage.BlockId
  * We handle aliasing of objects, either in the spill framework or outside, by looking at the
  * reference count. All objects added to the store should support a ref count.
  * If the ref count is greater than the expected value, we assume it is being aliased,
- * and therefore we don't waste time spilling the aliased object.
+ * and therefore we don't waste time spilling the aliased object. Please take a look at the
+ * `spillable` method in each of the handles on how this is implemented.
  *
  * Materialization:
  *
@@ -177,16 +178,6 @@ trait SpillableHandle extends StoreHandle {
   def spill(): Long
 
   /**
-   * Part two of the two-stage process for spilling. We call `releaseSpilled` after
-   * a handle has spilled, and after a device synchronize. This prevents a race
-   * between threads working on cuDF kernels, that did not synchronize while holding the
-   * materialized handle's refCount, and the spiller thread (the spiller thread cannot
-   * free a device buffer that the worker thread isn't done with).
-   * See https://github.com/NVIDIA/spark-rapids/issues/8610 for more info.
-   */
-  def releaseSpilled(): Unit
-
-  /**
    * Method used to determine whether a handle tracks an object that could be spilled
    * @note At the level of `SpillableHandle`, the only requirement of spillability
    *       is that the size of the handle is > 0. `approxSizeInBytes` is known at
@@ -209,14 +200,22 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   }
 
   protected def releaseDeviceResource(): Unit = {
-    SpillFramework.removeFromDeviceStore(this)
+    SpillFramework.remove(this)
     synchronized {
       dev.foreach(_.close())
       dev = None
     }
   }
 
-  override def releaseSpilled(): Unit = {
+  /**
+   * Part two of the two-stage process for spilling device buffers. We call `releaseSpilled` after
+   * a handle has spilled, and after a device synchronize. This prevents a race
+   * between threads working on cuDF kernels, that did not synchronize while holding the
+   * materialized handle's refCount, and the spiller thread (the spiller thread cannot
+   * free a device buffer that the worker thread isn't done with).
+   * See https://github.com/NVIDIA/spark-rapids/issues/8610 for more info.
+   */
+  def releaseSpilled(): Unit = {
     releaseDeviceResource()
   }
 }
@@ -234,15 +233,11 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   }
 
   protected def releaseHostResource(): Unit = {
-    SpillFramework.removeFromHostStore(this)
+    SpillFramework.remove(this)
     synchronized {
       host.foreach(_.close())
       host = None
     }
-  }
-
-  override def releaseSpilled(): Unit = {
-    releaseHostResource()
   }
 }
 
@@ -327,7 +322,7 @@ class SpillableHostBufferHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (disk.isEmpty && host.isDefined) {
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
@@ -350,6 +345,8 @@ class SpillableHostBufferHandle private (
           0L
         }
       }
+      releaseHostResource()
+      spilled
     }
   }
 
@@ -825,7 +822,7 @@ class SpillableHostColumnarBatchHandle private (
     if (!spillable) {
       0L
     } else {
-      synchronized {
+      val spilled = synchronized {
         if (disk.isEmpty && host.isDefined) {
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
@@ -840,6 +837,8 @@ class SpillableHostColumnarBatchHandle private (
           0L
         }
       }
+      releaseHostResource()
+      spilled
     }
   }
 
@@ -905,7 +904,7 @@ class DiskHandle private(
   }
 
   override def close(): Unit = {
-    SpillFramework.removeFromDiskStore(this)
+    SpillFramework.remove(this)
     SpillFramework.stores.diskStore.deleteFile(blockId)
   }
 
@@ -973,49 +972,81 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
   }
 }
 
-trait SpillableStore extends HandleStore[SpillableHandle] with Logging {
+trait SpillableStore[T <: SpillableHandle]
+    extends HandleStore[T] with Logging {
   protected def spillNvtxRange: NvtxRange
+
+  /**
+   * Internal class to provide an interface to our plan for this spill.
+   *
+   * We will build up this SpillPlan by adding spillables: handles
+   * that are marked spillable given the `spillable` method returning true.
+   * The spill store will call `trySpill`, which moves handles from the
+   * `spillableHandles` array to the `spilledHandles` array.
+   *
+   * At any point in time, a spill framework can call `getSpilled`
+   * to obtain the list of spilled handles. The device store does this
+   * to inject CUDA synchronization before actually releasing device handles.
+   */
+  class SpillPlan {
+    private val spillableHandles = new util.ArrayList[T]()
+    private val spilledHandles = new util.ArrayList[T]()
+
+    def add(spillable: T): Unit = {
+      spillableHandles.add(spillable)
+    }
+
+    def trySpill(): Long = {
+      var amountSpilled = 0L
+      val it = spillableHandles.iterator()
+      while (it.hasNext) {
+        val handle = it.next()
+        val spilled = handle.spill()
+        if (spilled > 0) {
+          // this thread was successful at spilling handle.
+          amountSpilled += spilled
+          spilledHandles.add(handle)
+        } else {
+          // else, either:
+          // - this thread lost the race and the handle was closed
+          // - another thread spilled it
+          // - the handle isn't spillable anymore, due to ref count.
+          it.remove()
+        }
+      }
+      amountSpilled
+    }
+
+    def getSpilled: util.ArrayList[T] = {
+      spilledHandles
+    }
+  }
+
+  private def makeSpillPlan(spillNeeded: Long): SpillPlan = {
+    val plan = new SpillPlan()
+    var amountToSpill = 0L
+    val allHandles = handles.keySet().iterator()
+    // two threads could be here trying to spill and creating a list of spillables
+    while (allHandles.hasNext && amountToSpill < spillNeeded) {
+      val handle = allHandles.next()
+      if (handle.spillable) {
+        amountToSpill += handle.approxSizeInBytes
+        plan.add(handle)
+      }
+    }
+    plan
+  }
+
+  protected def postSpill(plan: SpillPlan): Unit = {}
 
   def spill(spillNeeded: Long): Long = {
     if (spillNeeded == 0) {
       0L
     } else {
       withResource(spillNvtxRange) { _ =>
-        var amountSpilled = 0L
-        val spillables = new util.ArrayList[SpillableHandle]()
-        var amountToSpill = 0L
-        val allHandles = handles.keySet().iterator()
-        // two threads could be here trying to spill and creating a list of spillables
-        while (allHandles.hasNext && amountToSpill < spillNeeded) {
-          val handle = allHandles.next()
-          if (handle.spillable) {
-            amountToSpill += handle.approxSizeInBytes
-            spillables.add(handle)
-          }
-        }
-        val it = spillables.iterator()
-        var numSpilled = 0
-        while (it.hasNext) {
-          val handle = it.next()
-          val spilled = handle.spill()
-          if (spilled > 0) {
-            // this thread was successful at spilling handle.
-            amountSpilled += spilled
-            numSpilled += 1
-          } else {
-            // else, either:
-            // - this thread lost the race and the handle was closed
-            // - another thread spilled it
-            // - the handle isn't spillable anymore, due to ref count.
-            it.remove()
-          }
-        }
-        // spillables is the list of handles that have to be closed
-        // we synchronize every thread before we release what was spilled
-        Cuda.deviceSynchronize()
-        // this is safe to be called unconditionally if another thread spilled
-        spillables.forEach(_.releaseSpilled())
-
+        val plan = makeSpillPlan(spillNeeded)
+        val amountSpilled = plan.trySpill()
+        postSpill(plan)
         amountSpilled
       }
     }
@@ -1023,12 +1054,12 @@ trait SpillableStore extends HandleStore[SpillableHandle] with Logging {
 }
 
 class SpillableHostStore(val maxSize: Option[Long] = None)
-  extends SpillableStore
+  extends SpillableStore[HostSpillableHandle[_]]
     with Logging {
 
   private[spill] var totalSize: Long = 0L
 
-  private def tryTrack(handle: SpillableHandle): Boolean = {
+  private def tryTrack(handle: HostSpillableHandle[_]): Boolean = {
     if (maxSize.isEmpty || handle.approxSizeInBytes == 0) {
       super.doTrack(handle)
       // for now, keep this totalSize part, we technically
@@ -1054,11 +1085,11 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     }
   }
 
-  override def track(handle: SpillableHandle): Unit = {
+  override def track(handle: HostSpillableHandle[_]): Unit = {
     trackInternal(handle)
   }
 
-  private def trackInternal(handle: SpillableHandle): Boolean = {
+  private def trackInternal(handle: HostSpillableHandle[_]): Boolean = {
     // try to track the handle: in the case of no limits
     // this should just be add to the store
     var tracked = false
@@ -1114,7 +1145,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
    * how the stores used to work in the past, and is only called from factory
    * methods that are used by client code.
    */
-  def trackNoSpill(handle: SpillableHandle): Unit = {
+  def trackNoSpill(handle: HostSpillableHandle[_]): Unit = {
     synchronized {
       if (doTrack(handle)) {
         totalSize += handle.approxSizeInBytes
@@ -1122,7 +1153,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     }
   }
 
-  override def remove(handle: SpillableHandle): Unit = {
+  override def remove(handle: HostSpillableHandle[_]): Unit = {
     synchronized {
       if (doRemove(handle)) {
         totalSize -= handle.approxSizeInBytes
@@ -1287,9 +1318,17 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
     new NvtxRange("disk spill", NvtxColor.RED)
 }
 
-class SpillableDeviceStore extends SpillableStore {
+class SpillableDeviceStore extends SpillableStore[DeviceSpillableHandle[_]] {
   override protected def spillNvtxRange: NvtxRange =
     new NvtxRange("device spill", NvtxColor.ORANGE)
+
+  override def postSpill(plan: SpillPlan): Unit = {
+    // spillables is the list of handles that have to be closed
+    // we synchronize every thread before we release what was spilled
+    Cuda.deviceSynchronize()
+    // this is safe to be called unconditionally if another thread spilled
+    plan.getSpilled.forEach(_.releaseSpilled())
+  }
 }
 
 class DiskHandleStore(conf: SparkConf)
@@ -1448,8 +1487,8 @@ object SpillableColumnarBatchHandle {
 }
 
 object SpillFramework extends Logging {
-  // public for tests
-  var storesInternal: SpillableStores = _
+  // pivate[spill] for tests
+  private[spill] var storesInternal: SpillableStores = _
   
   def stores: SpillableStores = {
     if (storesInternal == null) {
@@ -1473,6 +1512,8 @@ object SpillFramework extends Logging {
   }
   
   def initialize(rapidsConf: RapidsConf): Unit = synchronized {
+    require(storesInternal != null,
+      "cannot initialize SpillFramework multiple times")
     val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
       // Disable the limit because it is handled by the RapidsHostMemoryStore
       None
@@ -1529,30 +1570,27 @@ object SpillFramework extends Logging {
 
   var chunkedPackBounceBufferPool: DeviceBounceBufferPool = _
 
-  def removeFromDeviceStore(value: SpillableHandle): Unit = {
+  def remove(handle: StoreHandle): Unit = {
     // if the stores have already shut down, we don't want to create them here
-    val deviceStore = synchronized {
-      Option(storesInternal).map(_.deviceStore)
+    // so we use `storesInternal` directly.
+    handle match {
+      case ds: DeviceSpillableHandle[_] =>
+        synchronized {
+          Option(storesInternal).map(_.deviceStore)
+        }.foreach(_.remove(ds))
+      case hs: HostSpillableHandle[_] =>
+        synchronized {
+          Option(storesInternal).map(_.hostStore)
+        }.foreach(_.remove(hs))
+      case dh: DiskHandle =>
+        synchronized {
+          Option(storesInternal).map(_.diskStore)
+        }.foreach(_.remove(dh))
+      case _ =>
+        throw new IllegalStateException(
+          s"unknown handle ${handle} cannot be removed")
     }
-    deviceStore.foreach(_.remove(value))
   }
-
-  def removeFromHostStore(value: SpillableHandle): Unit = {
-    // if the stores have already shut down, we don't want to create them here
-    val hostStore = synchronized {
-      Option(storesInternal).map(_.hostStore)
-    }
-    hostStore.foreach(_.remove(value))
-  }
-
-  def removeFromDiskStore(value: DiskHandle): Unit = {
-    // if the stores have already shut down, we don't want to create them here
-    val maybeStores = synchronized {
-      Option(storesInternal).map(_.diskStore)
-    }
-    maybeStores.foreach(_.remove(value))
-  }
-
 }
 
 /**
