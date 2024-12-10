@@ -148,7 +148,8 @@ void databricksBuild() {
     try {
         // wait for all the rapids plugin tars built in CI_PART1 to be ready
         if (params.TEST_MODE == 'CI_PART2') {
-            if (DbUtils.allFilesExist(this, "$PLUGIN_BUILT_DIR/$DB_RUNTIME/", 60)) {
+            // Check if the comma-separated files exist in the Databricks DBFS path within timeout minutes
+            if (DbUtils.filesExist(this, "$pluginBuiltTar", 60)) {
                 println('Rapids plugin built tars are ready for CI_PART2')
             } else {
                 error "Timeout, rapids plugin built tars are not ready for CI_PART2"
