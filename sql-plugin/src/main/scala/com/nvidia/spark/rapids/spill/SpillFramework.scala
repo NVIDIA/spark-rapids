@@ -1487,8 +1487,9 @@ object SpillableColumnarBatchHandle {
 }
 
 object SpillFramework extends Logging {
-  // pivate[spill] for tests
-  private[spill] var storesInternal: SpillableStores = _
+  // public for tests. Some tests not in the `spill` package require setting this
+  // because they need fine control over allocations.
+  var storesInternal: SpillableStores = _
   
   def stores: SpillableStores = {
     if (storesInternal == null) {
