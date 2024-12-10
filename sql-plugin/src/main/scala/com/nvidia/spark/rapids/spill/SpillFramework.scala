@@ -1511,10 +1511,11 @@ object SpillFramework extends Logging {
       new SparkConf()
     }
   }
-  
+
   def initialize(rapidsConf: RapidsConf): Unit = synchronized {
-    require(storesInternal != null,
-      "cannot initialize SpillFramework multiple times")
+    require(storesInternal == null,
+      s"cannot initialize SpillFramework multiple times.")
+
     val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
       // Disable the limit because it is handled by the RapidsHostMemoryStore
       None
