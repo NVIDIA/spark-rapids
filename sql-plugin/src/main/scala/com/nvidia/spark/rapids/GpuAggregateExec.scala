@@ -287,7 +287,7 @@ object AggregateUtils extends Logging {
             // However for some test cases with really small batch size, this can happen. So
             // we're just logging some warnings here.
             log.warn("The bucket is still too large after " + recursiveDepth +
-              " times of repartition, may hit a bug? Size for each batch in " +
+              " times of repartition. Size for each batch in " +
               "current bucket: " + bucket.map(_.sizeInBytes).mkString(", ") + " rows: " +
               bucket.map(_.numRows()).mkString(", ") + " targetMergeBatchSize: "
               + targetMergeBatchSize)
