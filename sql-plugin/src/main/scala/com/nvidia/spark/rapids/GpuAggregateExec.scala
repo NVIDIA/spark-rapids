@@ -716,7 +716,7 @@ object GpuAggregateIterator extends Logging {
             val dataTypes = (0 until numCols).map {
               c => batchesToConcat.head.column(c).dataType
             }.toArray
-            withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
+            withResource(batchesToConcat.safeMap(GpuColumnVector.from)) { tbl =>
               withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
                 val cb = GpuColumnVector.from(concatenated, dataTypes)
                 SpillableColumnarBatch(cb,
