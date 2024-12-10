@@ -183,7 +183,7 @@ class AvgLongAccumulator extends AccumulatorV2[jl.Long, jl.Double] {
 }
 
 class GpuTaskMetrics extends Serializable {
-  private val gpuTime = new NanoSecondAccumulator
+  private val semaphoreHoldingTime = new NanoSecondAccumulator
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
   private val splitAndRetryCount = new LongAccumulator
@@ -239,7 +239,7 @@ class GpuTaskMetrics extends Serializable {
   }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
-    "gpuTime" -> gpuTime,
+    "gpuTime" -> semaphoreHoldingTime,
     "gpuSemaphoreWait" -> semWaitTimeNs,
     "gpuRetryCount" -> retryCount,
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
@@ -290,7 +290,7 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
-  def addGpuTime(duration: Long): Unit = gpuTime.add(duration)
+  def addSemaphoreHoldingTime(duration: Long): Unit = semaphoreHoldingTime.add(duration)
 
   def getSemWaitTime(): Long = semWaitTimeNs.value.value
 

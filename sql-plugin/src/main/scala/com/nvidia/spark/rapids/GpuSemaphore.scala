@@ -321,7 +321,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
       semaphore.release(numPermits)
       hasSemaphore = false
       lastReleased = System.nanoTime()
-      GpuTaskMetrics.get.addGpuTime(lastReleased - lastAcquired)
+      GpuTaskMetrics.get.addSemaphoreHoldingTime(lastReleased - lastAcquired)
       nvtxRange.foreach(_.close())
       nvtxRange = None
     }
