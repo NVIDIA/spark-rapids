@@ -41,7 +41,17 @@ object ScanExecShims {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
           TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(),
         TypeSig.all),
-      (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
+      (fsse, conf, p, r) => {
+        // TODO: HybridScan supports DataSourceV2
+        if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+          // Check if runtimes are satisfied: Spark is not Databricks or CDH; Java version is 1.8;
+          // Scala version is 2.12; Hybrid jar is in the classpath
+          HybridFileSourceScanExecMeta.checkRuntimes()
+          new HybridFileSourceScanExecMeta(fsse, conf, p, r)
+        } else {
+          new FileSourceScanExecMeta(fsse, conf, p, r)
+        }
+      }),
     GpuOverrides.exec[BatchScanExec](
       "The backend for most file input",
       ExecChecks(
