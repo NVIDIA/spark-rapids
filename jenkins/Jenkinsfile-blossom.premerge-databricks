@@ -68,7 +68,6 @@ pipeline {
         DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
         DATABRICKS_DRIVER = DbUtils.getDriver("$DB_TYPE")
         DATABRICKS_WORKER = DbUtils.getWorker("$DB_TYPE")
-        INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}"
         TEST_TYPE = 'pre-commit'
     }
 
@@ -111,12 +110,16 @@ pipeline {
                             BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
                             BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
                             INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
+                            INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}-${DB_RUNTIME}"
+                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE"
                         }
                         steps {
                             script {
-                                unstash('source_tree')
-                                databricksBuild()
-                                deleteDir() // cleanup content if no error
+                                container('cpu') {
+                                    unstash('source_tree')
+                                    databricksBuild()
+                                    deleteDir() // cleanup content if no error
+                                }
                             }
                         }
                     }
@@ -134,79 +137,46 @@ String getDbType() {
 void databricksBuild() {
     def CLUSTER_ID = ''
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
-    def ws_path = "$INIT_SCRIPTS_DIR-$DB_TYPE"
+    def dbStep = ''
     try {
         stage("Create $SPARK_MAJOR DB") {
-            script {
-                container('cpu') {
-                    sh "rm -rf spark-rapids-ci.tgz"
-                    sh "tar -zcf spark-rapids-ci.tgz *"
-                    def CREATE_PARAMS = " -r $DATABRICKS_RUNTIME -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN" +
-                            " -s $DB_TYPE -n CI-${BUILD_TAG}-${BASE_SPARK_VERSION} -k \"$DATABRICKS_PUBKEY\" -i $IDLE_TIMEOUT" +
-                            " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS"
-
-                    // handle init scripts if exist
-                    if (env.INIT_SCRIPTS) {
-                        // foo.sh,bar.sh --> /path/foo.sh,/path/bar.sh
-                        CREATE_PARAMS += " -f " + DbUtils.uploadFiles(this, env.INIT_SCRIPTS, ws_path)
-                    }
-
-                    CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS",
-                            returnStdout: true).trim()
-                    echo CLUSTER_ID
-                }
-            }
+            dbStep = 'CREATE'
+            // Add the init_script parameter, e.g. oo.sh,bar.sh --> /path/foo.sh,/path/bar.sh
+            def input_params = env.INIT_SCRIPTS ? " -f " + DbUtils.uploadFiles(this, env.INIT_SCRIPTS, env.INIT_SCRIPTS_DIR) : ''
+            def CREATE_PARAMS = DbUtils.getParameters(this, dbStep, input_params)
+            CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS", returnStdout: true).trim()
+            echo CLUSTER_ID
         }
 
         stage("Build against $SPARK_MAJOR DB") {
-            script {
-                container('cpu') {
-                    withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                        def BUILD_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -z ./spark-rapids-ci.tgz" +
-                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/build.sh -d /home/ubuntu/build.sh" +
-                                " -v $BASE_SPARK_VERSION -i $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
-
-                        //  add retry for build step to try
-                        //  mitigate the issue of downloading dependencies while maven/sonatype is quite unstable
-                        retry(3) {
-                            sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
-                        }
-                    }
+            sh "rm -rf spark-rapids-ci.tgz"
+            sh "tar -zcf spark-rapids-ci.tgz * .git"
+            dbStep = 'BUILD'
+            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                def BUILD_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
+                retry(3) {
+                    sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
                 }
             }
+            sh "rm spark-rapids-ci.tgz"
         }
 
         // TODO: Temporarily skip tests on Databricks 14.3 until the test failures are fixed
         if (env.DB_RUNTIME != '14.3') {
             stage("Test agaist $SPARK_MAJOR DB") {
-                script {
-                    container('cpu') {
-                        try {
-                            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                                def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID  -e TEST_MODE=$TEST_MODE" +
-                                    " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
-                                if (params.SPARK_CONF) {
-                                    TEST_PARAMS += " -f ${params.SPARK_CONF}"
-                                }
-                                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
-                            }
-                        } finally {
-                            common.publishPytestResult(this, "${STAGE_NAME}")
-                        }
-                    }
+                dbStep = 'TEST'
+                withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                    def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
+                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
                 }
             }
         }
-
     } finally {
         if (CLUSTER_ID) {
-            container('cpu') {
-                retry(3) {
-                    if (env.INIT_SCRIPTS) {
-                        DbUtils.cleanUp(this, ws_path)
-                    }
-                    sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
-                }
+            (dbStep == 'TEST') ? common.publishPytestResult(this, "Test against $SPARK_MAJOR DB") : ''
+            retry(3) {
+                env.INIT_SCRIPTS ? DbUtils.cleanUp(this, env.INIT_SCRIPTS_DIR) : ''
+                sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
             }
         }
     }

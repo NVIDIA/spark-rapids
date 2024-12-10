@@ -706,7 +706,9 @@ object GpuToTimestamp {
       case _ =>
         // this is the incompatibleDateFormats case where we do not guarantee compatibility with
         // Spark and assume that all non-null inputs are valid
-        ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
+        withResource(Scalar.fromBool(true)) { s =>
+          ColumnVector.fromScalar(s, col.getRowCount.toInt)
+        }
     }
   }
 

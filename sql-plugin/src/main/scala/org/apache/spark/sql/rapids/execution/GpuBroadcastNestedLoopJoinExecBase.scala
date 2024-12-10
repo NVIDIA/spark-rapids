@@ -658,11 +658,15 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
             localJoinType match {
               case LeftOuter if spillableBuiltBatch.numRows == 0 =>
-                new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
-                  true)
+                withResource(spillableBuiltBatch) { _ =>
+                  new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
+                    true)
+                }
               case RightOuter if spillableBuiltBatch.numRows == 0 =>
-                new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
-                  false)
+                withResource(spillableBuiltBatch) { _ =>
+                  new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
+                    false)
+                }
               case _ =>
                 new CrossJoinIterator(
                   spillableBuiltBatch,
