@@ -18,20 +18,23 @@ package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
 import java.text.DecimalFormatSymbols
-import java.util.{Locale, Optional}
+import java.util.{EnumSet, Locale, Optional}
 
+import scala.annotation.tailrec
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, RoundMode, Scalar}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, RoundMode, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
-import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.rapids.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -158,7 +161,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with Predicate
       with ImplicitCastInputTypes
-      with NullIntolerant {
+      with NullIntolerantShim {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
@@ -184,7 +187,7 @@ case class GpuEndsWith(left: Expression, right: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with Predicate
       with ImplicitCastInputTypes
-      with NullIntolerant {
+      with NullIntolerantShim {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
@@ -391,7 +394,8 @@ case class GpuContains(left: Expression, right: Expression)
     extends GpuBinaryExpressionArgsAnyScalar
         with Predicate
         with ImplicitCastInputTypes
-        with NullIntolerant {
+        with NullIntolerantShim
+        with GpuCombinable {
 
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
@@ -411,10 +415,110 @@ case class GpuContains(left: Expression, right: Expression)
       doColumnar(expandedLhs, rhs)
     }
   }
+
+  /**
+   * Get a combiner that can be used to find candidates to combine
+   */
+  override def getCombiner(): GpuExpressionCombiner = new ContainsCombiner(this)
+}
+
+case class GpuMultiContains(left: Expression, targets: Seq[UTF8String], output: StructType)
+    extends GpuExpression with ShimExpression {
+
+  override def otherCopyArgs: Seq[AnyRef] = Nil
+
+  override def dataType: DataType = output
+
+  override def nullable: Boolean = false
+
+  override def prettyName: String = "multi_contains"
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val targetsBytes = targets.map(t => t.getBytes).toArray
+    val boolCvs = withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
+      withResource(left.columnarEval(batch)) { lhs =>
+        lhs.getBase.stringContains(targetsCv)
+      }
+    }
+    withResource(boolCvs) { _ =>
+      val retView = ColumnView.makeStructView(batch.numRows(), boolCvs: _*)
+      GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+    }
+  }
+
+  override def children: Seq[Expression] = Seq(left)
+}
+
+class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombiner {
+  private var outputLocation = 0
+  /**
+   * A mapping between an expression and where in the output struct of
+   * the MultiGetJsonObject will the output be.
+   */
+  private val toCombine = mutable.HashMap.empty[GpuExpressionEquals, Int]
+  addExpression(exp)
+
+  override def toString: String = s"ContainsCombiner $toCombine"
+
+  override def hashCode: Int = {
+    // We already know that we are Contains, and what we can combine is based
+    // on the string column being the same.
+    "Contains".hashCode + (exp.left.semanticHash() * 17)
+  }
+
+  /**
+   * only combine when targets are literals
+   */
+  override def equals(o: Any): Boolean = o match {
+    case other: ContainsCombiner => exp.left.semanticEquals(other.exp.left) &&
+        exp.right.isInstanceOf[GpuLiteral] && other.exp.right.isInstanceOf[GpuLiteral]
+    case _ => false
+  }
+
+  override def addExpression(e: Expression): Unit = {
+    val localOutputLocation = outputLocation
+    outputLocation += 1
+    val key = GpuExpressionEquals(e)
+    if (!toCombine.contains(key)) {
+      toCombine.put(key, localOutputLocation)
+    }
+  }
+
+  override def useCount: Int = toCombine.size
+
+  private def fieldName(id: Int): String =
+    s"_mc_$id"
+
+  @tailrec
+  private def extractLiteral(exp: Expression): GpuLiteral = exp match {
+    case l: GpuLiteral => l
+    case a: Alias => extractLiteral(a.child)
+    case other => throw new RuntimeException("Unsupported expression in contains combiner, " +
+        "should be a literal type, actual type is " + other.getClass.getName)
+  }
+
+  private lazy val multiContains: GpuMultiContains = {
+    val input = toCombine.head._1.e.asInstanceOf[GpuContains].left
+    val fieldsNPaths = toCombine.toSeq.map {
+      case (k, id) =>
+        (id, k.e)
+    }.sortBy(_._1).map {
+      case (id, e: GpuContains) =>
+        val target = extractLiteral(e.right).value.asInstanceOf[UTF8String]
+        (StructField(fieldName(id), e.dataType, e.nullable), target)
+    }
+    val dt = StructType(fieldsNPaths.map(_._1))
+    GpuMultiContains(input, fieldsNPaths.map(_._2), dt)
+  }
+
+  override def getReplacementExpression(e: Expression): Expression = {
+    val localId = toCombine(GpuExpressionEquals(e))
+    GpuGetStructField(multiContains, localId, Some(fieldName(localId)))
+  }
 }
 
 case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
-  extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = str.dataType
 
@@ -647,7 +751,7 @@ case class GpuInitCap(child: Expression) extends GpuUnaryExpression with Implici
 }
 
 case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
-    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
   override def left: Expression = input
   override def right: Expression = repeatTimes
   override def dataType: DataType = input.dataType
@@ -865,7 +969,7 @@ object CudfRegexp {
 case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant  {
+      with NullIntolerantShim {
 
   def this(left: Expression, right: Expression) = this(left, right, '\\')
 
@@ -1097,7 +1201,7 @@ class GpuRLikeMeta(
           GpuRLike(lhs, rhs, patternStr)
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
-        case Contains(s) => GpuContains(lhs, GpuLiteral(s, StringType))
+        case Contains(s) => GpuContains(lhs, GpuLiteral(UTF8String.fromString(s), StringType))
         case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
@@ -1109,12 +1213,13 @@ class GpuRLikeMeta(
 case class GpuRLike(left: Expression, right: Expression, pattern: String)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant  {
+      with NullIntolerantShim {
 
   override def toString: String = s"$left gpurlike $right"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    lhs.getBase.containsRe(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE))
+    lhs.getBase.containsRe(new RegexProgram(pattern,
+      EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE))
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -1129,7 +1234,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
 }
 
 case class GpuMultipleContains(input: Expression, searchList: Seq[String])
-  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
 
@@ -1157,7 +1262,7 @@ case class GpuMultipleContains(input: Expression, searchList: Seq[String])
 
 case class GpuLiteralRangePattern(left: Expression, right: Expression, 
     length: Int, start: Int, end: Int)
-  extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
 
@@ -1231,7 +1336,8 @@ case class GpuRegExpReplace(
             throw new IllegalStateException("Need a replace")
         }
       case _ =>
-        val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
+        val prog = new RegexProgram(cudfRegexPattern,
+          EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE)
         if (SparkShimImpl.reproduceEmptyStringBug &&
             GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
           val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
@@ -1275,7 +1381,7 @@ case class GpuRegExpReplaceWithBackref(
   override def dataType: DataType = StringType
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val prog = new RegexProgram(cudfRegexPattern)
+    val prog = new RegexProgram(cudfRegexPattern, EnumSet.of(RegexFlag.EXT_NEWLINE))
     if (SparkShimImpl.reproduceEmptyStringBug &&
         GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
       val isEmpty = withResource(input.getBase.getCharLengths) { len =>
@@ -1369,7 +1475,7 @@ case class GpuRegExpExtract(
     subject: Expression,
     regexp: Expression,
     idx: Expression)(cudfRegexPattern: String)
-  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
@@ -1416,7 +1522,8 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    withResource(str.getBase.extractRe(new RegexProgram(extractPattern))) { extract =>
+    withResource(str.getBase.extractRe(new RegexProgram(extractPattern,
+      EnumSet.of(RegexFlag.EXT_NEWLINE)))) { extract =>
       withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
         val outputNullAndInputNotNull =
           withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
@@ -1497,7 +1604,7 @@ case class GpuRegExpExtractAll(
     str: Expression,
     regexp: Expression,
     idx: Expression)(cudfRegexPattern: String)
-  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def dataType: DataType = ArrayType(StringType, containsNull = true)
@@ -1514,7 +1621,8 @@ case class GpuRegExpExtractAll(
       idx: GpuScalar): ColumnVector = {
     idx.getValue.asInstanceOf[Int] match {
       case 0 =>
-        val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
+        val prog = new RegexProgram(cudfRegexPattern,
+          EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE)
         str.getBase.extractAllRecord(prog, 0)
       case _ =>
         // Extract matches corresponding to idx. cuDF's extract_all_record does not support
@@ -1529,7 +1637,7 @@ case class GpuRegExpExtractAll(
         // 2nd element afterwards from the cuDF list
 
         val rowCount = str.getRowCount
-        val prog = new RegexProgram(cudfRegexPattern)
+        val prog = new RegexProgram(cudfRegexPattern, EnumSet.of(RegexFlag.EXT_NEWLINE))
 
         val extractedWithNulls = withResource(
           // Now the index is always 1 because we have transpiled all the capture groups to the
@@ -1629,7 +1737,7 @@ case class GpuSubstringIndex(strExpr: Expression,
 trait BasePad
     extends GpuTernaryExpressionArgsAnyScalarScalar
         with ImplicitCastInputTypes
-        with NullIntolerant {
+        with NullIntolerantShim {
   val str: Expression
   val len: Expression
   val pad: Expression
@@ -1795,7 +1903,8 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
       case 0 =>
         // Same as splitting as many times as possible
         if (isRegExp) {
-          str.getBase.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), -1)
+          str.getBase.stringSplitRecord(new RegexProgram(pattern,
+            EnumSet.of(RegexFlag.EXT_NEWLINE) ,CaptureGroups.NON_CAPTURE), -1)
         } else {
           str.getBase.stringSplitRecord(pattern, -1)
         }
@@ -1810,7 +1919,8 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
         }
       case n =>
         if (isRegExp) {
-          str.getBase.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), n)
+          str.getBase.stringSplitRecord(new RegexProgram(pattern,
+            EnumSet.of(RegexFlag.EXT_NEWLINE) ,CaptureGroups.NON_CAPTURE), n)
         } else {
           str.getBase.stringSplitRecord(pattern, n)
         }
@@ -1923,7 +2033,8 @@ case class GpuStringToMap(strExpr: Expression,
   private def toMap(str: GpuColumnVector): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
     val listsOfStrings = if (isPairDelimRegExp) {
-      str.getBase.stringSplitRecord(new RegexProgram(pairDelim, CaptureGroups.NON_CAPTURE))
+      str.getBase.stringSplitRecord(new RegexProgram(pairDelim,
+        EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE))
     } else {
       str.getBase.stringSplitRecord(pairDelim)
     }
@@ -1932,7 +2043,8 @@ case class GpuStringToMap(strExpr: Expression,
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
         val keysValuesTable = if (isKeyValueDelimRegExp) {
-          stringsCol.stringSplit(new RegexProgram(keyValueDelim, CaptureGroups.NON_CAPTURE), 2)
+          stringsCol.stringSplit(new RegexProgram(keyValueDelim,
+            EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE), 2)
         } else {
           stringsCol.stringSplit(keyValueDelim, 2)
         }
@@ -1994,7 +2106,7 @@ object GpuStringInstr {
 case class GpuStringInstr(str: Expression, substr: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerant  {
+      with NullIntolerantShim {
   // Locate the position of the first occurrence of substr column in the given string.
   // returns null if one of the arguments is null
   // returns zero if not found
@@ -2124,7 +2236,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
 }
 
 case class GpuFormatNumber(x: Expression, d: Expression)
-    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerantShim {
   
   override def left: Expression = x
   override def right: Expression = d

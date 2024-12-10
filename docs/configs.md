@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.10.1-cuda11.jar \
+${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.12.0-SNAPSHOT-cuda11.jar \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.concurrentGpuTasks=2
 ```
@@ -37,7 +37,7 @@ Name | Description | Default Value | Applicable at
 <a name="memory.gpu.minAllocFraction"></a>spark.rapids.memory.gpu.minAllocFraction|The fraction of total GPU memory that limits the minimum size of the RMM pool. The value must be less than or equal to the setting for spark.rapids.memory.gpu.allocFraction.|0.25|Startup
 <a name="memory.host.spillStorageSize"></a>spark.rapids.memory.host.spillStorageSize|Amount of off-heap host memory to use for buffering spilled GPU data before spilling to local disk. Use -1 to set the amount to the combined size of pinned and pageable memory pools.|-1|Startup
 <a name="memory.pinnedPool.size"></a>spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0|Startup
-<a name="sql.batchSizeBytes"></a>spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the cudf row count limit of a column.|1073741824|Runtime
+<a name="sql.batchSizeBytes"></a>spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs.|1073741824|Runtime
 <a name="sql.concurrentGpuTasks"></a>spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|2|Runtime
 <a name="sql.enabled"></a>spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true|Runtime
 <a name="sql.explain"></a>spark.rapids.sql.explain|Explain why some parts of a query were not placed on a GPU or not. Possible values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of a query that did not go on the GPU|NOT_ON_GPU|Runtime
@@ -45,7 +45,6 @@ Name | Description | Default Value | Applicable at
 <a name="sql.multiThreadedRead.numThreads"></a>spark.rapids.sql.multiThreadedRead.numThreads|The maximum number of threads on each executor to use for reading small files in parallel. This can not be changed at runtime after the executor has started. Used with COALESCING and MULTITHREADED readers, see spark.rapids.sql.format.parquet.reader.type, spark.rapids.sql.format.orc.reader.type, or spark.rapids.sql.format.avro.reader.type for a discussion of reader types. If it is not set explicitly and spark.executor.cores is set, it will be tried to assign value of `max(MULTITHREAD_READ_NUM_THREADS_DEFAULT, spark.executor.cores)`, where MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20.|20|Startup
 <a name="sql.reader.batchSizeBytes"></a>spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the reader may estimate the number of bytes that will be used on the GPU in some cases based on the schema and number of rows in each batch.|2147483647|Runtime
 <a name="sql.reader.batchSizeRows"></a>spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647|Runtime
-<a name="sql.shuffle.spillThreads"></a>spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6|Runtime
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false|Runtime
 
 For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.

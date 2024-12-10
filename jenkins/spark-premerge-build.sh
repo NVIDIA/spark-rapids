@@ -191,9 +191,6 @@ ci_scala213() {
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    cd scala2.13
-    ln -sf ../jenkins jenkins
-
     # Download a Scala 2.13 version of Spark
     prepare_spark 3.3.0 2.13
 
@@ -202,15 +199,15 @@ ci_scala213() {
     do
         echo "Spark version (Scala 2.13): $version"
         env -u SPARK_HOME \
-            $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
+            $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
         # Run filecache tests
         env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
-            $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+            $MVN_CMD -f scala2.13/ -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
             -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
     done
 
-    $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
-    cd .. # Run integration tests in the project root dir to leverage test cases and resource files
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
+
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13

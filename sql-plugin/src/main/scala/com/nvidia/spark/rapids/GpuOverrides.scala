@@ -848,6 +848,8 @@ object GpuOverrides extends Logging {
   val jsonStructReadTypes: TypeSig = (TypeSig.STRUCT + TypeSig.ARRAY +
       TypeSig.STRING + TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN +
       TypeSig.DATE + TypeSig.TIMESTAMP).nested()
+    .withPsNote(TypeEnum.DATE, "DATE is not supported by default due to compatibility")
+    .withPsNote(TypeEnum.TIMESTAMP, "TIMESTAMP is not supported by default due to compatibility")
 
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
@@ -1152,7 +1154,6 @@ object GpuOverrides extends Logging {
         override val isFoldableNonLitAllowed: Boolean = true
         override def convertToGpu(): GpuExpression =
           GpuUnaryPositive(childExprs.head.convertToGpu())
-        
       }),
     expr[Year](
       "Returns the year from a date or timestamp",
@@ -1794,7 +1795,7 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, 
+          .withPsNote(TypeEnum.STRING,
             "Only non-DST(Daylight Savings Time) timezones are supported"),
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
@@ -1804,10 +1805,21 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, 
+          .withPsNote(TypeEnum.STRING,
             "Only non-DST(Daylight Savings Time) timezones are supported"),
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new ToUTCTimestampExprMeta(a, conf, p, r)
+    ),
+    expr[MonthsBetween](
+      "If `timestamp1` is later than `timestamp2`, then the result " +
+        "is positive. If `timestamp1` and `timestamp2` are on the same day of month, or both " +
+        "are the last day of month, time of day will be ignored. Otherwise, the difference is " +
+        "calculated based on 31 days per month, and rounded to 8 digits unless roundOff=false.",
+      ExprChecks.projectOnly(TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("timestamp1", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ParamCheck("timestamp2", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ParamCheck("round", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.BOOLEAN))),
+      (a, conf, p, r) => new MonthsBetweenExprMeta(a, conf, p, r)
     ),
     expr[Pmod](
       "Pmod",
@@ -2281,9 +2293,9 @@ object GpuOverrides extends Logging {
           ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
             + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
             TypeSig.all),
-          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + 
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
             TypeSig.orderable))
       ),
@@ -2310,9 +2322,9 @@ object GpuOverrides extends Logging {
           ParamCheck("value", (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY
             + TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
             TypeSig.all),
-          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 + 
+          ParamCheck("ordering", (TypeSig.commonCudfTypes - TypeSig.fp + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + 
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
             TypeSig.orderable))
       ),
@@ -3368,7 +3380,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
-            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST | QUERY | PATH"), 
+            TypeEnum.STRING, "only support partToExtract = PROTOCOL | HOST | QUERY | PATH"),
             TypeSig.STRING)),
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.STRING, TypeSig.STRING))),
@@ -3377,9 +3389,9 @@ object GpuOverrides extends Logging {
           if (a.failOnError) {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
-          
-          extractStringLit(a.children(1)).map(_.toUpperCase) match {
-            // In Spark, the key in parse_url could act like a regex, but GPU will match the key 
+
+          extractStringLit(a.children(1)) match {
+            // In Spark, the key in parse_url could act like a regex, but GPU will match the key
             // exactly. When key is literal, GPU will check if the key contains regex special and
             // fallbcak to CPU if it does, but we are not able to fallback when key is column.
             // see Spark issue: https://issues.apache.org/jira/browse/SPARK-44500
@@ -3388,7 +3400,7 @@ object GpuOverrides extends Logging {
                 if (key.value != null) {
                   val keyStr = key.value.asInstanceOf[UTF8String].toString
                   if (regexMetaChars.exists(keyStr.contains(_))) {
-                    willNotWorkOnGpu(s"Key $keyStr could act like a regex which is not " + 
+                    willNotWorkOnGpu(s"Key $keyStr could act like a regex which is not " +
                         "supported on GPU")
                   }
                 }
@@ -3768,7 +3780,8 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRUCT.nested(jsonStructReadTypes) +
           TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
-          "MAP only supports keys and values that are of STRING type"),
+          "MAP only supports keys and values that are of STRING type " +
+            "and is only supported at the top level"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
@@ -3780,6 +3793,11 @@ object GpuOverrides extends Logging {
             case _ => false
           })
 
+        def hasDateTimeType(dt: DataType): Boolean =
+          TrampolineUtil.dataTypeExistsRecursively(dt, t =>
+            t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType]
+          )
+
         override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
@@ -3788,7 +3806,11 @@ object GpuOverrides extends Logging {
                 willNotWorkOnGpu("from_json on GPU does not support duplicate field " +
                     "names in a struct")
               }
-              ()
+              if (hasDateTimeType(st) && !this.conf.isJsonDateTimeReadEnabled) {
+                willNotWorkOnGpu("from_json on GPU does not support DateType or TimestampType" +
+                  " by default due to compatibility. " +
+                  "Set `spark.rapids.sql.json.read.datetime.enabled` to `true` to enable them.")
+              }
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
@@ -3800,10 +3822,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
-      }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
-      " Please consult the "+
-      "[compatibility documentation](../compatibility.md#json-supporting-types)"+
-      " to determine whether you can enable this configuration for your use case"),
+      }),
     expr[StructsToJson](
       "Converts structs to JSON text format",
       ExprChecks.projectOnly(

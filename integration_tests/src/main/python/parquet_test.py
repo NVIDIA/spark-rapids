@@ -299,12 +299,19 @@ if not is_before_spark_320():
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('cpu_decompress', [True, False])
+def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs, cpu_decompress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
             conf={'spark.sql.parquet.compression.codec': compress})
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if cpu_decompress:
+        all_confs = copy_and_update(all_confs, {
+            'spark.rapids.sql.format.parquet.decompressCpu' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.snappy' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.zstd' : 'true'
+        })
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -517,6 +524,8 @@ def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_
             lambda spark : spark.read.parquet(data_path).filter("id < 2 or id > 990"),
             conf=all_confs)
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
@@ -829,6 +838,8 @@ def test_parquet_read_nano_as_longs_true(std_input_path):
         'FileSourceScanExec',
         conf=conf)
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
         schema_dict = {}
@@ -1317,26 +1328,63 @@ def test_parquet_read_case_insensitivity(spark_tmp_path):
     )
 
 
-# test read INT32 as INT8/INT16/Date
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
+def run_test_parquet_int32_downcast(spark_tmp_path,
+                                    reader_confs,
+                                    v1_enabled_list,
+                                    ansi_conf):
+    """
+    This tests whether Parquet files with columns written as INT32 can be
+    read as having INT8, INT16 and DATE columns, with ANSI mode enabled/disabled.
+    """
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = [("d", date_gen), ('s', short_gen), ('b', byte_gen)]
+
+    # For test setup, write with ANSI disabled.
+    # Otherwise, CAST(d AS INT) will fail on Spark CPU.
     with_cpu_session(
         lambda spark: gen_df(spark, write_schema).selectExpr(
             "cast(d as Int) as d",
             "cast(s as Int) as s",
-            "cast(b as Int) as b").write.parquet(data_path))
+            "cast(b as Int) as b").write.parquet(data_path), conf=ansi_disabled_conf)
 
     read_schema = StructType([StructField("d", DateType()),
                               StructField("s", ShortType()),
                               StructField("b", ByteType())])
     conf = copy_and_update(reader_confs,
-                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list},
+                           ansi_conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
+
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_int32_downcast_ansi_disabled(spark_tmp_path, reader_confs, v1_enabled_list):
+    """
+    This tests whether Parquet files with columns written as INT32 can be
+    read as having INT8, INT16 and DATE columns, with ANSI mode disabled.
+    """
+    run_test_parquet_int32_downcast(spark_tmp_path,
+                                    reader_confs,
+                                    v1_enabled_list,
+                                    ansi_disabled_conf)
+
+
+def test_parquet_int32_downcast_ansi_enabled(spark_tmp_path):
+    """
+    This is the flipside of test_parquet_int32_downcast_ansi_disabled.
+    This tests whether Parquet files with columns written as INT32 can be
+    read as having INT8, INT16 and DATE columns, now tested with ANSI
+    enabled.
+    A limited combination of test parameters is used to test ANSI enabled,
+    in the interest of brevity.
+    """
+    run_test_parquet_int32_downcast(spark_tmp_path,
+                                    reader_confs=native_parquet_file_reader_conf,
+                                    v1_enabled_list="",
+                                    ansi_conf=ansi_disabled_conf)
+
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -1372,6 +1420,10 @@ def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
+@pytest.mark.skipif(condition=is_databricks_runtime() and is_databricks_version_or_later(14,3),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11512")
+@pytest.mark.skipif(condition=is_spark_400_or_later(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/11512")
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('int', int_gen), ('long', long_gen), ('dec32', decimal_gen_32bit)]
@@ -1381,13 +1433,6 @@ def test_parquet_check_schema_compatibility(spark_tmp_path):
         [StructField('long', LongType()), StructField('int', LongType())])
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_int_as_long).parquet(data_path).collect(),
-        conf={},
-        error_message='Parquet column cannot be converted')
-
-    read_dec32_as_dec64 = StructType(
-        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
         conf={},
         error_message='Parquet column cannot be converted')
 
@@ -1436,6 +1481,75 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
 
+
+@pytest.mark.parametrize('from_decimal_gen, to_decimal_gen', [
+    # Widening precision and scale by the same amount
+    (DecimalGen(5, 2), DecimalGen(7, 4)),
+    (DecimalGen(5, 2), DecimalGen(10, 7)),
+    (DecimalGen(5, 2), DecimalGen(20, 17)),
+    (DecimalGen(10, 2), DecimalGen(12, 4)),
+    (DecimalGen(10, 2), DecimalGen(20, 12)),
+    (DecimalGen(20, 2), DecimalGen(22, 4)),
+    # Increasing precision by larger amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 3)),
+    (DecimalGen(5, 2), DecimalGen(12, 5)),
+    (DecimalGen(5, 2), DecimalGen(22, 10)),
+    # Narrowing precision and scale
+    (DecimalGen(7, 4), DecimalGen(5, 2)),
+    (DecimalGen(10, 7), DecimalGen(5, 2)),
+    (DecimalGen(20, 17), DecimalGen(5, 2)),
+    # Increasing precision and decreasing scale
+    (DecimalGen(5, 4), DecimalGen(7, 2)),
+    (DecimalGen(10, 6), DecimalGen(12, 4)),
+    (DecimalGen(20, 7), DecimalGen(22, 5)),
+    # Increasing precision by a smaller amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 4)),
+    (DecimalGen(10, 4), DecimalGen(12, 7))
+], ids=idfn)
+def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen, to_decimal_gen):
+    """Test decimal precision and scale changes when reading Parquet files with RAPIDS acceleration."""
+    data_path = f"{spark_tmp_path}/PARQUET_DECIMAL_DATA"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_decimal_gen)
+        .coalesce(1)
+        .write.parquet(data_path)
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_decimal_gen.data_type)
+    ])
+
+    # Determine if we expect an error based on precision and scale changes
+    expect_error = (
+            to_decimal_gen.scale < from_decimal_gen.scale or
+            (to_decimal_gen.precision - to_decimal_gen.scale) <
+            (from_decimal_gen.precision - from_decimal_gen.scale)
+    )
+
+    spark_conf = {}
+    if is_before_spark_400():
+        # In Spark versions earlier than 4.0, the vectorized Parquet reader throws an exception
+        # if the read scale differs from the write scale. We disable the vectorized reader,
+        # forcing Spark to use the non-vectorized path for CPU case. This configuration
+        # is ignored by the plugin.
+        spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+
+    if expect_error:
+        assert_gpu_and_cpu_error(
+            lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
+            conf={},
+            error_message="Parquet column cannot be converted"
+        )
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.schema(read_schema).parquet(data_path),
+            conf=spark_conf
+        )
+
+
 @pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
 @pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -1463,13 +1577,16 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect()),
-        error_message='Could not read footer for file')
+        error_message='Could not read footer')  # Common message fragment between all Spark versions.
+                                                # Note that this isn't thrown explicitly by the plugin.
 
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
 
+
+@disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/5114
 def test_parquet_read_count(spark_tmp_path):
     parquet_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]

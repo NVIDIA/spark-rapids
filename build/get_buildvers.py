@@ -34,7 +34,7 @@ def _get_buildvers(buildvers, pom_file, logger=None):
         else:
             no_snapshots.append(release)
     excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
-    if excluded_shims:
+    if excluded_shims is not None:
         for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
             if removed_shim in snapshots:
                 snapshots.remove(removed_shim)
@@ -48,8 +48,8 @@ def _get_buildvers(buildvers, pom_file, logger=None):
     if "scala2.13" in pom_file:
         no_snapshots = list(filter(lambda x: not x.endswith("cdh"), no_snapshots))
 
-    db_release = list(filter(lambda x: x.endswith("db"), no_snapshots))
-    no_snapshots = list(filter(lambda x: not x.endswith("db"), no_snapshots))
+    db_release = list(filter(lambda x: "db" in x, no_snapshots))
+    no_snapshots = list(filter(lambda x: "db" not in x, no_snapshots))
     snap_and_no_snap = no_snapshots + snapshots
     snap_and_no_snap_with_db = snap_and_no_snap + db_release
     no_snap_with_db = no_snapshots + db_release

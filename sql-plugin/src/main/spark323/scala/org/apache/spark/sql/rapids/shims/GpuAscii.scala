@@ -29,9 +29,12 @@
 {"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
+{"spark": "353"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
@@ -39,12 +42,13 @@ package org.apache.spark.sql.rapids.shims
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
+import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 
 case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes 
-    with NullIntolerant {
+    with NullIntolerantShim {
 
   override def dataType: DataType = IntegerType
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)

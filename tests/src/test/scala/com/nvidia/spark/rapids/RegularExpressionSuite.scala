@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -148,6 +148,31 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   private def isUnicodeEnabled(): Boolean = {
     Charset.defaultCharset().name() == "UTF-8"
+  }
+
+  private def extractStringsLineEnd(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String)](
+      ("123\n"),
+      ("123\n\u0085"),
+      ("123\r\n"),
+      ("123\n\n"),
+      ("123\u2029\n"),
+      ("456\n"),
+      ("456\r"),
+      ("456\r123"),
+      ("456\n\r"),
+      ("456\n\n"),
+      ("456\u2028\n"),
+      ("456\u2028")
+    ).toDF("strings")
+  }
+
+  testSparkResultsAreEqual("String regexp_extract end-of-line 1", extractStringsLineEnd,
+    conf = conf) {
+    frame =>
+      assume(isUnicodeEnabled())
+      frame.selectExpr("regexp_extract(strings, '(456(\r|\u2028)$|123\n$)', 0)")
   }
 
 }
