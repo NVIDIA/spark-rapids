@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector, NvtxColor, NvtxRange}
 import com.nvidia.spark.Retryable
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral, RetryStateTracker}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
@@ -30,13 +30,51 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 import org.apache.spark.util.random.rapids.RapidsXORShiftRandom
 
+/**
+ * An expression expected to be evaluated inside a retry with checkpoint-restore context.
+ * It will throw an exception if it is retried without being checkpointed.
+ * All the nondeterministic GPU expressions that support Retryable should extend from
+ * this trait.
+ */
+trait GpuExpressionRetryable extends GpuExpression with Retryable {
+  private var checked = false
+
+  def doColumnarEval(batch: ColumnarBatch): GpuColumnVector
+  def doCheckpoint(): Unit
+  def doRestore(): Unit
+
+  def doContextCheck(): Boolean // For tests
+
+  override final def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    if (doContextCheck && !checked) { // This is for tests
+      throw new IllegalStateException(
+        "The Retryable was called outside of a checkpoint-restore context")
+    }
+    if (!checked && RetryStateTracker.isCurThreadRetrying) {
+      // It is retrying the evaluation without checkpointing, which is not allowed.
+      throw new IllegalStateException(
+        "The Retryable should be retried only inside a checkpoint-restore context")
+    }
+    doColumnarEval(batch)
+  }
+
+  override final def checkpoint(): Unit = {
+    checked = true
+    doCheckpoint()
+  }
+
+  override final def restore(): Unit = doRestore()
+}
+
 /** Generate a random column with i.i.d. uniformly distributed values in [0, 1). */
-case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpression
-  with ExpectsInputTypes with ExpressionWithRandomSeed with Retryable {
+case class GpuRand(child: Expression, doContextCheck: Boolean) extends ShimUnaryExpression
+  with ExpectsInputTypes with ExpressionWithRandomSeed with GpuExpressionRetryable {
 
-  def this() = this(GpuLiteral(Utils.random.nextLong(), LongType))
+  def this(doContextCheck: Boolean) = this(GpuLiteral(Utils.random.nextLong(), LongType),
+    doContextCheck)
 
-  override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType))
+  override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType),
+    doContextCheck)
 
   def seedExpression: Expression = child
 
@@ -76,7 +114,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+  override def doColumnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (curXORShiftRandomSeed.isEmpty) {
       // checkpoint not called, need to init the random generator here
       initRandom()
@@ -93,14 +131,14 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
     }
   }
 
-  override def checkpoint(): Unit = {
+  override def doCheckpoint(): Unit = {
     // In a task, checkpoint is called before columnarEval, so need to try to
     // init the random generator here.
     initRandom()
     curXORShiftRandomSeed = Some(rng.currentSeed)
   }
 
-  override def restore(): Unit = {
+  override def doRestore(): Unit = {
     assert(wasInitialized && curXORShiftRandomSeed.isDefined)
     rng.setHashedSeed(curXORShiftRandomSeed.get)
   }
