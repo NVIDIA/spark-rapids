@@ -53,6 +53,8 @@ pipeline {
             description: 'Json-formatted github data from upstream blossom-ci')
         choice(name: 'TEST_MODE', choices: ['CI_PART1', 'CI_PART2'],
             description: 'Separate integration tests into 2 parts, and run each part in parallell')
+        string(name: 'PLUGIN_BUILT_DIR', defaultValue: 'dbfs:/cicd',
+            description: 'CI_PART1 uploads spark-rapids built tgz for CI_PART2')
     }
 
     environment {
@@ -77,7 +79,7 @@ pipeline {
                 script {
                     githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", params.GITHUB_DATA)
                     // desc contains the PR ID and can be accessed from different builds
-                    currentBuild.description = githubHelper.getBuildDescription()
+                    currentBuild.description = githubHelper.getBuildDescription() + " | $TEST_MODE"
                     checkoutCode(githubHelper.getCloneUrl(), githubHelper.getMergedSHA())
                 }
             }
@@ -138,7 +140,24 @@ void databricksBuild() {
     def CLUSTER_ID = ''
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
     def dbStep = ''
+    def pluginBuiltTar = "$PLUGIN_BUILT_DIR/$DB_RUNTIME/spark-rapids-built.tgz"
+    // Map DBFS path to the local path into the cluster
+    def buildArgs = (params.TEST_MODE == 'CI_PART1') ? pluginBuiltTar.replace('dbfs:/', '/dbfs/') : ''
+    def testArgs = (params.TEST_MODE == 'CI_PART2') ?  pluginBuiltTar.replace('dbfs:/', '/dbfs/') : ''
+
     try {
+        // wait for all the rapids plugin tars built in CI_PART1 to be ready
+        if (params.TEST_MODE == 'CI_PART2') {
+            // Check if the comma-separated files exist in the Databricks DBFS path within timeout minutes
+            if (DbUtils.filesExist(this, "$pluginBuiltTar", 60)) {
+                println('Rapids plugin built tars are ready for CI_PART2')
+            } else {
+                println('Rapids plugin built tars are not ready, CI_PART2 starts building them')
+                testArgs = '' // To let CI_PART2 build rapids plugin after the timeout
+                buildArgs = '' // To let CI_PART2 NOT upload plugin tars
+            }
+        }
+
         stage("Create $SPARK_MAJOR DB") {
             dbStep = 'CREATE'
             // Add the init_script parameter, e.g. oo.sh,bar.sh --> /path/foo.sh,/path/bar.sh
@@ -148,17 +167,21 @@ void databricksBuild() {
             echo CLUSTER_ID
         }
 
-        stage("Build against $SPARK_MAJOR DB") {
-            sh "rm -rf spark-rapids-ci.tgz"
-            sh "tar -zcf spark-rapids-ci.tgz * .git"
-            dbStep = 'BUILD'
-            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                def BUILD_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
-                retry(3) {
-                    sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
+        if (params.TEST_MODE == 'CI_PART1' || (params.TEST_MODE == 'CI_PART2' && testArgs == '')) {
+            stage("Build against $SPARK_MAJOR DB") {
+                sh "rm -rf spark-rapids-ci.tgz"
+                sh "tar -zcf spark-rapids-ci.tgz * .git"
+                dbStep = 'BUILD'
+                withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                    def BUILD_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
+                    retry(3) {
+                        // Back-up built tar to the path "$buildArgs" on Databricks cluster
+                        // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-dd60414e554e6bed881c3a7e14de334f3e52f36f81643412cd2497c275f8aee9R190-R194
+                        sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS $buildArgs"
+                    }
                 }
+                sh "rm spark-rapids-ci.tgz"
             }
-            sh "rm spark-rapids-ci.tgz"
         }
 
         // TODO: Temporarily skip tests on Databricks 14.3 until the test failures are fixed
@@ -167,7 +190,9 @@ void databricksBuild() {
                 dbStep = 'TEST'
                 withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
                     def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
-                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
+                    // Get built tar from the path "$testArgs" on Databricks cluster
+                    // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-db28879431d57d0e454a2c7ee89fdda9abdec463c61771333d6a6565bf96c062R52-R55
+                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS $testArgs"
                 }
             }
         }
@@ -175,6 +200,7 @@ void databricksBuild() {
         if (CLUSTER_ID) {
             (dbStep == 'TEST') ? common.publishPytestResult(this, "Test against $SPARK_MAJOR DB") : ''
             retry(3) {
+                params.TEST_MODE == 'CI_PART2' ? DbUtils.cleanUp(this, "$PLUGIN_BUILT_DIR/$DB_RUNTIME") : ''
                 env.INIT_SCRIPTS ? DbUtils.cleanUp(this, env.INIT_SCRIPTS_DIR) : ''
                 sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
             }
