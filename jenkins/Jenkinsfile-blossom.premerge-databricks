@@ -140,7 +140,7 @@ void databricksBuild() {
     def CLUSTER_ID = ''
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
     def dbStep = ''
-    def pluginBuiltTar ="$PLUGIN_BUILT_DIR/$DB_RUNTIME/spark-rapids-built.tgz"
+    def pluginBuiltTar = "$PLUGIN_BUILT_DIR/$DB_RUNTIME/spark-rapids-built.tgz"
     // Map DBFS path to the local path into the cluster
     def buildArgs = (params.TEST_MODE == 'CI_PART1') ? pluginBuiltTar.replace('dbfs:/', '/dbfs/') : ''
     def testArgs = (params.TEST_MODE == 'CI_PART2') ?  pluginBuiltTar.replace('dbfs:/', '/dbfs/') : ''
@@ -152,7 +152,9 @@ void databricksBuild() {
             if (DbUtils.filesExist(this, "$pluginBuiltTar", 60)) {
                 println('Rapids plugin built tars are ready for CI_PART2')
             } else {
-                error "Timeout, rapids plugin built tars are not ready for CI_PART2"
+                println('Rapids plugin built tars are not ready, CI_PART2 starts building them')
+                testArgs = '' // To let CI_PART2 build rapids plugin after the timeout
+                buildArgs = '' // To let CI_PART2 NOT upload plugin tars
             }
         }
 
@@ -165,7 +167,7 @@ void databricksBuild() {
             echo CLUSTER_ID
         }
 
-        if (params.TEST_MODE == 'CI_PART1') {
+        if (params.TEST_MODE == 'CI_PART1' || (params.TEST_MODE == 'CI_PART2' && testArgs == '')) {
             stage("Build against $SPARK_MAJOR DB") {
                 sh "rm -rf spark-rapids-ci.tgz"
                 sh "tar -zcf spark-rapids-ci.tgz * .git"
@@ -174,7 +176,7 @@ void databricksBuild() {
                     def BUILD_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
                     retry(3) {
                         // Back-up built tar to the path "$buildArgs" on Databricks cluster
-                        // Refer to https://github.com/NvTimLiu/spark-rapids/blob/d030630c1/jenkins/databricks/build.sh#L190-L194
+                        // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-dd60414e554e6bed881c3a7e14de334f3e52f36f81643412cd2497c275f8aee9R190-R194
                         sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS $buildArgs"
                     }
                 }
@@ -189,7 +191,7 @@ void databricksBuild() {
                 withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
                     def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
                     // Get built tar from the path "$testArgs" on Databricks cluster
-                    // Refer to https://github.com/NvTimLiu/spark-rapids/blob/d030630c1/jenkins/databricks/test.sh#L52-L55
+                    // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-db28879431d57d0e454a2c7ee89fdda9abdec463c61771333d6a6565bf96c062R52-R55
                     sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS $testArgs"
                 }
             }
