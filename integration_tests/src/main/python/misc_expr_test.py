@@ -19,7 +19,7 @@ from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_400
+from spark_session import is_databricks_version_or_later, is_spark_400_or_later
 
 def test_mono_id():
     assert_gpu_and_cpu_are_equal_collect(
@@ -34,8 +34,8 @@ def test_part_id():
                 f.spark_partition_id()))
 
 
-@pytest.mark.skipif(condition=not is_before_spark_400(),
-                    reason="raise_error() not currently implemented for Spark 4.0. "
+@pytest.mark.skipif(condition=is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
+                    reason="raise_error() not currently implemented for Spark 4.0, or Databricks 14.3. "
                            "See https://github.com/NVIDIA/spark-rapids/issues/10107.")
 def test_raise_error():
     data_gen = ShortGen(nullable=False, min_val=0, max_val=20, special_cases=[])

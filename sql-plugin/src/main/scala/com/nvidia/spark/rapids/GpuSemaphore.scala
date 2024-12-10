@@ -22,7 +22,7 @@ import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.{NvtxColor, NvtxRange, NvtxUniqueRange}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
@@ -162,7 +162,7 @@ object GpuSemaphore {
  * this is considered to be okay as there are other mechanisms in place, and it should be rather
  * rare.
  */
-private final class SemaphoreTaskInfo(val taskAttemptId: Long) extends Logging {
+private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long) extends Logging {
   /**
    * This holds threads that are not on the GPU yet. Most of the time they are
    * blocked waiting for the semaphore to let them on, but it may hold one
@@ -179,6 +179,7 @@ private final class SemaphoreTaskInfo(val taskAttemptId: Long) extends Logging {
    */
   private val activeThreads = new util.LinkedHashSet[Thread]()
   private lazy val numPermits = GpuSemaphore.computeNumPermits(SQLConf.get)
+  private lazy val trackSemaphore = RapidsConf.TRACE_TASK_GPU_OWNERSHIP.get(SQLConf.get)
   /**
    * If this task holds the GPU semaphore or not.
    */
@@ -186,6 +187,8 @@ private final class SemaphoreTaskInfo(val taskAttemptId: Long) extends Logging {
   private var lastHeld: Long = 0
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
+
+  var nvtxRange: Option[NvtxUniqueRange] = None
 
   /**
    * Does this task have the GPU semaphore or not. Be careful because it can change at
@@ -258,6 +261,11 @@ private final class SemaphoreTaskInfo(val taskAttemptId: Long) extends Logging {
             // We now own the semaphore so we need to wake up all of the other tasks that are
             // waiting.
             hasSemaphore = true
+            if (trackSemaphore) {
+              nvtxRange =
+                Some(new NvtxUniqueRange(s"Stage ${stageId} Task ${taskAttemptId} owning GPU",
+                  NvtxColor.ORANGE))
+            }
             moveToActive(t)
             notifyAll()
             done = true
@@ -309,6 +317,8 @@ private final class SemaphoreTaskInfo(val taskAttemptId: Long) extends Logging {
       semaphore.release(numPermits)
       hasSemaphore = false
       lastHeld = System.currentTimeMillis()
+      nvtxRange.foreach(_.close())
+      nvtxRange = None
     }
     // It should be impossible for the current thread to be blocked when releasing the semaphore
     // because no blocked thread should ever leave `blockUntilReady`, which is where we put it in
@@ -324,7 +334,9 @@ private final class GpuSemaphore() extends Logging {
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
   private val semaphore = new GpuBackingSemaphore(MAX_PERMITS)
-  // Keep track of all tasks that are both active on the GPU and blocked waiting on the GPU
+  // A map of taskAttemptId => semaphoreTaskInfo.
+  // This map keeps track of all tasks that are both active on the GPU and blocked waiting
+  // on the GPU.
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
   def tryAcquire(context: TaskContext): TryAcquireResult = {
@@ -333,7 +345,7 @@ private final class GpuSemaphore() extends Logging {
     val taskAttemptId = context.taskAttemptId()
     val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
       onTaskCompletion(context, completeTask)
-      new SemaphoreTaskInfo(taskAttemptId)
+      new SemaphoreTaskInfo(context.stageId(), taskAttemptId)
     })
     if (taskInfo.tryAcquire(semaphore, taskAttemptId)) {
       GpuDeviceManager.initializeFromTask()
@@ -357,7 +369,7 @@ private final class GpuSemaphore() extends Logging {
       val taskAttemptId = context.taskAttemptId()
       val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
         onTaskCompletion(context, completeTask)
-        new SemaphoreTaskInfo(taskAttemptId)
+        new SemaphoreTaskInfo(context.stageId(), taskAttemptId)
       })
       taskInfo.blockUntilReady(semaphore)
       GpuDeviceManager.initializeFromTask()
@@ -381,7 +393,7 @@ private final class GpuSemaphore() extends Logging {
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
-    GpuTaskMetrics.get.updateMaxGpuMemory(taskAttemptId)
+    GpuTaskMetrics.get.updateMaxMemory(taskAttemptId)
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")

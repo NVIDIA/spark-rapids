@@ -49,7 +49,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
   private long estimatedRows;
   private long rowCapacity = 0L;
   private long validCapacity = 0L;
-  private boolean built = false;
   private List<RapidsHostColumnBuilder> childBuilders = new ArrayList<>();
   private Runnable nullHandler;
 
@@ -117,30 +116,76 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
 
   public HostColumnVector build() {
     List<HostColumnVectorCore> hostColumnVectorCoreList = new ArrayList<>();
-    for (RapidsHostColumnBuilder childBuilder : childBuilders) {
-      hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
+    HostColumnVector hostColumnVector = null;
+    try {
+      for (RapidsHostColumnBuilder childBuilder : childBuilders) {
+        hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
+      }
+      // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
+      if (valid != null) {
+        growValidBuffer();
+      }
+      // Increment the reference counts before creating the HostColumnVector, so we can
+      // keep track of them properly
+      if (data != null) {
+        data.incRefCount();
+      }
+      if (valid != null) {
+        valid.incRefCount();
+      }
+      if (offsets != null) {
+        offsets.incRefCount();
+      }
+      hostColumnVector = new HostColumnVector(type, rows,
+          Optional.of(nullCount), data, valid, offsets, hostColumnVectorCoreList);
+    } finally {
+      if (hostColumnVector == null) {
+        // Something bad happened, and we need to clean up after ourselves
+        for (HostColumnVectorCore hcv : hostColumnVectorCoreList) {
+          if (hcv != null) {
+            hcv.close();
+          }
+        }
+      }
     }
-    // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
-    if (valid != null) {
-      growValidBuffer();
-    }
-    HostColumnVector hostColumnVector = new HostColumnVector(type, rows,
-        Optional.of(nullCount), data, valid, offsets, hostColumnVectorCoreList);
-    built = true;
     return hostColumnVector;
   }
 
   private HostColumnVectorCore buildNestedInternal() {
     List<HostColumnVectorCore> hostColumnVectorCoreList = new ArrayList<>();
-    for (RapidsHostColumnBuilder childBuilder : childBuilders) {
-      hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
+    HostColumnVectorCore ret = null;
+    try {
+      for (RapidsHostColumnBuilder childBuilder : childBuilders) {
+        hostColumnVectorCoreList.add(childBuilder.buildNestedInternal());
+      }
+      // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
+      if (valid != null) {
+        growValidBuffer();
+      }
+      // Increment the reference counts before creating the HostColumnVector, so we can
+      // keep track of them properly
+      if (data != null) {
+        data.incRefCount();
+      }
+      if (valid != null) {
+        valid.incRefCount();
+      }
+      if (offsets != null) {
+        offsets.incRefCount();
+      }
+      ret = new HostColumnVectorCore(type, rows, Optional.of(nullCount), data, valid,
+          offsets, hostColumnVectorCoreList);
+    } finally {
+      if (ret == null) {
+        // Something bad happened, and we need to clean up after ourselves
+        for (HostColumnVectorCore hcv : hostColumnVectorCoreList) {
+          if (hcv != null) {
+            hcv.close();
+          }
+        }
+      }
     }
-    // Aligns the valid buffer size with other buffers in terms of row size, because it grows lazily.
-    if (valid != null) {
-      growValidBuffer();
-    }
-    return new HostColumnVectorCore(type, rows, Optional.of(nullCount), data, valid,
-        offsets, hostColumnVectorCoreList);
+    return ret;
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -650,23 +695,20 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
 
   @Override
   public void close() {
-    if (!built) {
-      if (data != null) {
-        data.close();
-        data = null;
-      }
-      if (valid != null) {
-        valid.close();
-        valid = null;
-      }
-      if (offsets != null) {
-        offsets.close();
-        offsets = null;
-      }
-      for (RapidsHostColumnBuilder childBuilder : childBuilders) {
-        childBuilder.close();
-      }
-      built = true;
+    if (data != null) {
+      data.close();
+      data = null;
+    }
+    if (valid != null) {
+      valid.close();
+      valid = null;
+    }
+    if (offsets != null) {
+      offsets.close();
+      offsets = null;
+    }
+    for (RapidsHostColumnBuilder childBuilder : childBuilders) {
+      childBuilder.close();
     }
   }
 
@@ -685,7 +727,6 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
         ", nullCount=" + nullCount +
         ", estimatedRows=" + estimatedRows +
         ", populatedRows=" + rows +
-        ", built=" + built +
         '}';
   }
 }

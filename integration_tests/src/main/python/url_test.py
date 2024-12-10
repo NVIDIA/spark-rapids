@@ -148,7 +148,7 @@ edge_cases_gen = SetValuesGen(StringType(), edge_cases)
 
 url_gen = StringGen(url_pattern)
 
-supported_parts = ['PROTOCOL', 'HOST', 'QUERY', 'PATH']
+supported_parts = ['PROTOCOL', 'HOST', 'QUERY', 'PATH', 'invalid', 'path']
 unsupported_parts = ['REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)

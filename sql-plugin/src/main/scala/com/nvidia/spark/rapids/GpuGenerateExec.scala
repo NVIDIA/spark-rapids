@@ -953,6 +953,9 @@ class BatchToGenerate(val fixUpOffset: Long, val spillable: SpillableColumnarBat
   override def close(): Unit = {
     spillable.close()
   }
+
+  override def toString: String =
+    s"BatchToGenerate fixUpOffset:$fixUpOffset, spillable:$spillable"
 }
 
 class GpuGenerateIterator(

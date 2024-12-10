@@ -32,13 +32,13 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
-abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
+abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerantShim {
 
   protected val failOnError: Boolean
 

@@ -25,6 +25,7 @@ import java.util.Set;
 
 import scala.collection.Seq;
 
+import com.nvidia.spark.rapids.CpuCompressionConfig$;
 import com.nvidia.spark.rapids.DateTimeRebaseCorrected$;
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.GpuParquetUtils;
@@ -144,6 +145,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader,
           maxChunkedReaderMemoryUsageSizeBytes,
+          CpuCompressionConfig$.MODULE$.disabled(),
           metrics,
           DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
           DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode

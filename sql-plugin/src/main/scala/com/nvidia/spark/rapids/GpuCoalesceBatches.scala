@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,8 +223,6 @@ case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
 case class TargetSize(override val targetSizeBytes: Long)
     extends CoalesceSizeGoal
         with SplittableGoal {
-  require(targetSizeBytes <= Integer.MAX_VALUE,
-    "Target cannot exceed 2GB without checks for cudf row count limit")
 }
 
 /**
@@ -691,6 +689,11 @@ case class BatchesToCoalesce(batches: Array[SpillableColumnarBatch])
     extends AutoCloseable {
   override def close(): Unit = {
     batches.safeClose()
+  }
+
+  override def toString: String = {
+    val totalSize = batches.map(_.sizeInBytes).sum
+    s"BatchesToCoalesce totalSize:$totalSize, batches:[${batches.mkString(";")}]"
   }
 }
 

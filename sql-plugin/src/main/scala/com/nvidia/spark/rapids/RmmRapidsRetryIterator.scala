@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -311,6 +311,14 @@ object RmmRapidsRetryIterator extends Logging {
     override def iterator: Iterator[T] = ts.iterator
 
     override def apply(idx: Int): T = ts.apply(idx)
+
+    override def toString(): String = {
+      val totalSize = ts.map {
+        case scb: SpillableColumnarBatch => scb.sizeInBytes
+        case _ => 0L
+      }.sum
+      s"AutoCloseableSeqInternal totalSize:$totalSize, inner:[${ts.mkString(";")}]"
+    }
   }
 
   /**
@@ -454,14 +462,42 @@ object RmmRapidsRetryIterator extends Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
+        val message = s"could not split inputs and retry. The current attempt: " +
+          s"{${attemptStack.head}}"
         if (isFromGpuOom) {
-          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+          throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
         } else {
-          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+          throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
         }
       }
-      // splitPolicy must take ownership of the argument
-      val splitted = splitPolicy(attemptStack.pop())
+      val curAttempt = attemptStack.pop()
+      // Get the info before running the split, since the attempt may be closed after splitting.
+      val attemptAsString = closeOnExcept(curAttempt)(_.toString)
+      val splitted = try {
+        // splitPolicy must take ownership of the argument
+        splitPolicy(curAttempt)
+      } catch {
+          // We only care about OOM exceptions and wrap it by a new exception with the
+          // same type to provide more context for the OOM.
+          // This looks a little odd, because we can not change the type of root exception.
+          // Otherwise, some unit tests will fail due to the wrong exception type returned.
+        case go: GpuRetryOOM =>
+          throw new GpuRetryOOM(
+            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case go: GpuSplitAndRetryOOM =>
+          throw new GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case co: CpuRetryOOM =>
+          throw new CpuRetryOOM(
+            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+        case co: CpuSplitAndRetryOOM =>
+          throw new CpuSplitAndRetryOOM(
+            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+      }
       // the splitted sequence needs to be inserted in reverse order
       // so we try the first item first.
       splitted.reverse.foreach(attemptStack.push)

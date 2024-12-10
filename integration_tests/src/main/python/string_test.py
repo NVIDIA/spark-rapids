@@ -23,7 +23,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_before_spark_320, is_before_spark_400
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -104,10 +104,6 @@ def test_substring_index(data_gen,delim):
 
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.skipif(condition=not is_before_spark_400(),
-                    reason="Bug in Apache Spark 4.0 causes NumberFormatExceptions from substring_index(), "
-                           "if called with index==null. For further information, see: "
-                           "https://issues.apache.org/jira/browse/SPARK-48989.")
 @pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
 def test_unsupported_fallback_substring_index(data_gen):
     delim_gen = StringGen(pattern="_")
@@ -327,6 +323,10 @@ def test_rtrim(data_gen):
                 'TRIM(TRAILING NULL FROM a)',
                 'TRIM(TRAILING "" FROM a)'))
 
+@pytest.mark.skipif(condition=is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
+                    reason="startsWith(None)/endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0, "
+                           "and Databricks 14.3."
+                           "See https://issues.apache.org/jira/browse/SPARK-48995.")
 def test_startswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -351,8 +351,9 @@ def test_unsupported_fallback_startswith():
     assert_gpu_did_fallback(f.col("a").startswith(f.col("a")))
 
 
-@pytest.mark.skipif(condition=not is_before_spark_400(),
-                    reason="endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0. "
+@pytest.mark.skipif(condition=is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
+                    reason="startsWith(None)/endswith(None) seems to cause an NPE in Column.fn() on Apache Spark 4.0, "
+                           "and Databricks 14.3."
                            "See https://issues.apache.org/jira/browse/SPARK-48995.")
 def test_endswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')

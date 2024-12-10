@@ -123,7 +123,7 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
       val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
       val retRow = new GenericInternalRow(size = 1)
-      closeOnExcept(new RapidsHostColumnBuilder(retType, batch.numRows)) { builder =>
+      withResource(new RapidsHostColumnBuilder(retType, batch.numRows)) { builder =>
         /**
          * This `nullSafe` is for https://github.com/NVIDIA/spark-rapids/issues/3942.
          * And more details can be found from

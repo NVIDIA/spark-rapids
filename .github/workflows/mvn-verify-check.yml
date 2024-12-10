@@ -246,12 +246,10 @@ jobs:
               echo "Generated Scala 2.13 build files don't match what's in repository"
               exit 1
           fi
-          # change to Scala 2.13 Directory
-          cd scala2.13
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn package \
+            mvn package -f scala2.13/ \
               -pl integration_tests,tests,tools -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
@@ -303,12 +301,10 @@ jobs:
               echo "Generated Scala 2.13 build files don't match what's in repository"
               exit 1
           fi
-          # change to Scala 2.13 Directory
-          cd scala2.13
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn verify \
+            mvn verify -f scala2.13/ \
               -P "individual,pre-merge,source-javadoc" -Dbuildver=${{ matrix.spark-version }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then

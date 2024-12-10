@@ -35,7 +35,7 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
     extends ShimUnaryExpression
     with GpuExpression
     with ShimGetStructField
-    with NullIntolerant {
+    with NullIntolerantShim {
 
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
 
@@ -200,7 +200,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boolean)
-  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   private def keyType = child.dataType.asInstanceOf[MapType].keyType
 
@@ -269,7 +269,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
 /** Checks if the array (left) has the element (right)
 */
 case class GpuArrayContains(left: Expression, right: Expression)
-  extends GpuBinaryExpression with NullIntolerant {
+  extends GpuBinaryExpression with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
 
@@ -367,7 +367,7 @@ case class GpuGetArrayStructFields(
     numFields: Int,
     containsNull: Boolean) extends GpuUnaryExpression
     with ShimGetArrayStructFields
-    with NullIntolerant {
+    with NullIntolerantShim {
 
   override def dataType: DataType = ArrayType(field.dataType, containsNull)
   override def toString: String = s"$child.${field.name}"

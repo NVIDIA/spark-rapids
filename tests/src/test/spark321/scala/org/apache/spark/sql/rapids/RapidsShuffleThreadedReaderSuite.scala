@@ -28,6 +28,7 @@
 {"spark": "341"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -112,7 +113,7 @@ class RapidsShuffleThreadedReaderSuite
       val shuffleId = 22
       val numMaps = 6
       val keyValuePairsPerMap = 10
-      val serializer = new GpuColumnarBatchSerializer(NoopMetric)
+      val serializer = new GpuColumnarBatchSerializer(NoopMetric, Array.empty, false)
 
       // Make a mock BlockManager that will return RecordingManagedByteBuffers of data, so that we
       // can ensure retain() and release() are properly called.

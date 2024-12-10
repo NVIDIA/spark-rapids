@@ -50,10 +50,13 @@ object ProfilerOnExecutor extends Logging {
   private var isProfileActive = false
   private var currentContextMethod: Method = null
   private var getContextMethod: Method = null
+  private val stageTaskCount = mutable.HashMap[Int, Int]()
+  private var stageTaskLimit = 0
 
   def init(pluginCtx: PluginContext, conf: RapidsConf): Unit = {
     require(writer.isEmpty, "Already initialized")
     timeRanges = conf.profileTimeRangesSeconds.map(parseTimeRanges)
+    stageTaskLimit = conf.profileTaskLimitPerStage
     jobRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_JOBS)
     stageRanges = new RangeConfMatcher(conf, RapidsConf.PROFILE_STAGES)
     driverPollMillis = conf.profileDriverPollMillis
@@ -118,10 +121,36 @@ object ProfilerOnExecutor extends Logging {
       val taskCtx = TaskContext.get
       val stageId = taskCtx.stageId
       if (stageRanges.contains(stageId)) {
-        synchronized {
-          activeStages.add(taskCtx.stageId)
-          enable()
-          startPollingDriver()
+        if (stageTaskLimit <= 0) {
+          // Unlimited tasks per stage
+          synchronized {
+            activeStages.add(taskCtx.stageId)
+            enable()
+            startPollingDriver()
+          }
+        } else {
+          // Limited tasks per stage
+          val currentCount = synchronized(stageTaskCount.getOrElseUpdate(stageId, 0))
+          if (currentCount < stageTaskLimit) {
+            synchronized {
+              activeStages.add(taskCtx.stageId)
+              enable()
+              startPollingDriver()
+            }
+            taskCtx.addTaskCompletionListener[Unit] { _ =>
+              synchronized {
+                stageTaskCount.get(stageId) match {
+                  case Some(count) if (count < stageTaskLimit) => {
+                    stageTaskCount(stageId) = count + 1
+                  }
+                  case Some(_) => {
+                    activeStages.remove(stageId)
+                  }
+                  case None =>
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -241,17 +270,18 @@ object ProfilerOnExecutor extends Logging {
   private def updateActiveFromDriver(): Unit = {
     writer.foreach { w =>
       val (jobs, stages) = synchronized {
-        (activeJobs.toArray, activeStages.toArray)
+        (activeJobs.toArray, (activeStages ++ stageTaskCount.keys).toArray)
       }
       val (completedJobs, completedStages, allDone) =
         w.pluginCtx.ask(ProfileJobStageQueryMsg(jobs, stages))
           .asInstanceOf[(Array[Int], Array[Int], Boolean)]
-      if (completedJobs.nonEmpty || completedStages.nonEmpty) {
-        synchronized {
-          completedJobs.foreach(activeJobs.remove)
-          completedStages.foreach(activeStages.remove)
-          if (activeJobs.isEmpty && activeStages.isEmpty) {
-            disable()
+      synchronized {
+        completedJobs.foreach(activeJobs.remove)
+        completedStages.foreach(activeStages.remove)
+        completedStages.foreach(stageTaskCount.remove)
+        if (activeJobs.isEmpty && activeStages.isEmpty) {
+          disable()
+          if (stageTaskCount.isEmpty) {
             stopPollingDriver()
           }
         }

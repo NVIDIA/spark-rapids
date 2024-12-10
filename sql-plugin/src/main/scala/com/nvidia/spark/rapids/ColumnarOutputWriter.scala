@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +25,13 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.io.async.{AsyncOutputStream, TrafficController}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataOutputStream, Path}
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -70,21 +72,31 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
 abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
-    includeRetry: Boolean) extends HostBufferConsumer {
+    includeRetry: Boolean,
+    holdGpuBetweenBatches: Boolean = false) extends HostBufferConsumer with Logging {
 
   protected val tableWriter: TableWriter
 
   protected val conf: Configuration = context.getConfiguration
 
-  // This is implemented as a method to make it easier to subclass
-  // ColumnarOutputWriter in the tests, and override this behavior.
-  protected def getOutputStream: FSDataOutputStream = {
+  private val trafficController: Option[TrafficController] = TrafficController.getInstance
+
+  private def openOutputStream(): OutputStream = {
     val hadoopPath = new Path(path)
     val fs = hadoopPath.getFileSystem(conf)
     fs.create(hadoopPath, false)
   }
 
-  protected val outputStream: FSDataOutputStream = getOutputStream
+  // This is implemented as a method to make it easier to subclass
+  // ColumnarOutputWriter in the tests, and override this behavior.
+  protected def getOutputStream: OutputStream = {
+    trafficController.map(controller => {
+      logWarning("Async output write enabled")
+      new AsyncOutputStream(() => openOutputStream(), controller)
+    }).getOrElse(openOutputStream())
+  }
+
+  protected val outputStream: OutputStream = getOutputStream
 
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] var anythingWritten = false
@@ -166,7 +178,11 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
     // we successfully buffered to host memory, release the semaphore and write
     // the buffered data to the FS
-    GpuSemaphore.releaseIfNecessary(TaskContext.get)
+    if (!holdGpuBetweenBatches) {
+      logDebug("Releasing semaphore between batches")
+      GpuSemaphore.releaseIfNecessary(TaskContext.get)
+    }
+
     writeBufferedData()
     updateStatistics(writeStartTime, gpuTime, statsTrackers)
     spillableBatch.numRows()
@@ -202,6 +218,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       // buffer an empty batch on close() to work around issues in cuDF
       // where corrupt files can be written if nothing is encoded via the writer.
       anythingWritten = true
+
+      // tableWriter.write() serializes the table into the HostMemoryBuffer, and buffers it
+      // by calling handleBuffer() on the ColumnarOutputWriter. It may not write to the
+      // output stream just yet.
       tableWriter.write(table)
     }
   }

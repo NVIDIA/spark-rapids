@@ -18,6 +18,20 @@
 
 set -e
 
+trap_func() {
+  rv=$?
+  if [[ $rv == 0 ]]; then
+    echo DONE scala2.13 poms generated: exit code = $rv
+  else
+    echo ERROR generating scala2.13 poms, re-execute with:
+    echo "  bash -x $*"
+    echo to inspect the error output
+    exit $rv
+  fi
+}
+
+trap "trap_func" EXIT
+
 VALID_VERSIONS=( 2.13 )
 declare -A DEFAULT_SPARK
 DEFAULT_SPARK[2.12]="spark320"

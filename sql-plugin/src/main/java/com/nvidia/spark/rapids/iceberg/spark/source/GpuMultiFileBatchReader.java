@@ -352,7 +352,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       return new MultiFileCloudParquetPartitionReader(conf, pFiles,
           this::filterParquetBlocks, caseSensitive, parquetDebugDumpPrefix, parquetDebugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
-          useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, metrics, partitionSchema,
+          useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+          CpuCompressionConfig$.MODULE$.disabled(), metrics, partitionSchema,
           numThreads, maxNumFileProcessed,
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles
@@ -411,7 +412,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           JavaConverters.asJavaCollection(filteredInfo.parquetBlockMeta.blocks()).stream()
             .map(b -> ParquetSingleDataBlockMeta.apply(
                 filteredInfo.parquetBlockMeta.filePath(),
-                ParquetDataBlock.apply(b),
+                ParquetDataBlock.apply(b, CpuCompressionConfig$.MODULE$.disabled()),
                 InternalRow.empty(),
                 ParquetSchemaWrapper.apply(filteredInfo.parquetBlockMeta.schema()),
                 filteredInfo.parquetBlockMeta.readSchema(),
@@ -431,6 +432,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           caseSensitive, parquetDebugDumpPrefix, parquetDebugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
           useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+          CpuCompressionConfig$.MODULE$.disabled(),
           metrics, partitionSchema, numThreads,
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles

@@ -54,6 +54,12 @@ class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream 
     pos += numBytes
   }
 
+  def writeAsByteBuffer(length: Int): ByteBuffer = {
+    val bb = buffer.asByteBuffer(pos, length)
+    pos += length
+    bb
+  }
+
   def getPos: Long = pos
 
   def seek(newPos: Long): Unit = {
@@ -130,6 +136,12 @@ trait HostMemoryInputStreamMixIn extends InputStream {
       pos += numBytes
       numBytes
     }
+  }
+
+  def readByteBuffer(length: Int): ByteBuffer = {
+    val bb = hmb.asByteBuffer(pos, length)
+    pos += length
+    bb
   }
 
   override def skip(count: Long): Long = {

@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import allow_non_gpu, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
+from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -138,6 +138,39 @@ def test_datediff(data_gen):
             'datediff(a, \'2016-03-02\')'))
 
 hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
+
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, false)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between_first_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", false)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between_last_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", false)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, true)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_first_day_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", true)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_last_day_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", true)'))
 
 @allow_non_gpu(*hms_fallback)
 def test_hour():
@@ -459,19 +492,39 @@ def test_to_timestamp(parser_policy):
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
+# mm: minute; MM: month
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
-def test_yyyyMMdd_format_for_legacy_mode():
+def test_formats_for_legacy_mode(format):
     gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
-        '''select unix_timestamp(a, 'yyyyMMdd'),
-                  from_unixtime(unix_timestamp(a, 'yyyyMMdd'), 'yyyyMMdd'),
-                  date_format(to_timestamp(a, 'yyyyMMdd'), 'yyyyMMdd')
+        '''select unix_timestamp(a, '{}'),
+                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
+                  date_format(to_timestamp(a, '{}'), '{}')
            from tab
-        ''',
+        '''.format(format, format, format, format, format),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+# mm: minute; MM: month
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+@pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
+def test_formats_for_legacy_mode_other_formats():
+    format = "yyyyMMdd HH:mm:ss"
+    # Test years after 1900,
+    gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4}) [0-9]{2}:[0-9]{2}:[0-9]{2}')
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, gen),
+        "tab",
+        '''select unix_timestamp(a, '{}'),
+                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
+                  date_format(to_timestamp(a, '{}'), '{}')
+           from tab
+        '''.format(format, format, format, format, format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 

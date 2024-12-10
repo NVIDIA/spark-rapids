@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -121,6 +121,39 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
+  private val maxHostMemoryBytes = new HighWatermarkAccumulator
+  private val maxDiskMemoryBytes = new HighWatermarkAccumulator
+
+  private var maxHostBytesAllocated: Long = 0
+
+  private var maxDiskBytesAllocated: Long = 0
+
+  def getDiskBytesAllocated: Long = GpuTaskMetrics.diskBytesAllocated
+
+  def getMaxDiskBytesAllocated: Long = maxDiskBytesAllocated
+
+  def getHostBytesAllocated: Long = GpuTaskMetrics.hostBytesAllocated
+
+  def getMaxHostBytesAllocated: Long = maxHostBytesAllocated
+
+  def incHostBytesAllocated(bytes: Long): Unit = {
+    GpuTaskMetrics.incHostBytesAllocated(bytes)
+    maxHostBytesAllocated = maxHostBytesAllocated.max(GpuTaskMetrics.hostBytesAllocated)
+  }
+
+  def decHostBytesAllocated(bytes: Long): Unit = {
+    GpuTaskMetrics.decHostBytesAllocated(bytes)
+  }
+
+
+  def incDiskBytesAllocated(bytes: Long): Unit = {
+    GpuTaskMetrics.incDiskBytesAllocated(bytes)
+    maxDiskBytesAllocated = maxDiskBytesAllocated.max(GpuTaskMetrics.diskBytesAllocated)
+  }
+
+  def decDiskBytesAllocated(bytes: Long): Unit = {
+    GpuTaskMetrics.decHostBytesAllocated(bytes)
+  }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
@@ -132,7 +165,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillToDiskTime" -> spillToDiskTimeNs,
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
     "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
-    "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes
+    "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
+    "gpuMaxHostMemoryBytes" -> maxHostMemoryBytes,
+    "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes
   )
 
   def register(sc: SparkContext): Unit = {
@@ -211,15 +246,21 @@ class GpuTaskMetrics extends Serializable {
     }
   }
 
-  def updateMaxGpuMemory(taskAttemptId: Long): Unit = {
+  def updateMaxMemory(taskAttemptId: Long): Unit = {
     val maxMem = RmmSpark.getAndResetGpuMaxMemoryAllocated(taskAttemptId)
     if (maxMem > 0) {
-      // This metric tracks the max amount of memory that is allocated on the gpu during
-      // the lifespan of a task. However, this update function only gets called once on task
-      // completion, whereas the actual logic tracking of the max value during memory allocations
-      // lives in the JNI. Therefore, we can stick the convention here of calling the add method
-      // instead of adding a dedicated max method to the accumulator.
+      // These metrics track the max amount of memory that is allocated on the gpu and disk,
+      // respectively, during the lifespan of a task. However, this update function only gets called
+      // once on task completion, whereas the actual logic tracking of the max value during memory
+      // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
+      // add method instead of adding a dedicated max method to the accumulator.
       maxDeviceMemoryBytes.add(maxMem)
+    }
+    if (maxHostBytesAllocated > 0) {
+      maxHostMemoryBytes.add(maxHostBytesAllocated)
+    }
+    if (maxDiskBytesAllocated > 0) {
+      maxDiskMemoryBytes.add(maxDiskBytesAllocated)
     }
   }
 }
@@ -229,6 +270,25 @@ class GpuTaskMetrics extends Serializable {
  */
 object GpuTaskMetrics extends Logging {
   private val taskLevelMetrics = mutable.Map[Long, GpuTaskMetrics]()
+
+  private var hostBytesAllocated: Long = 0
+  private var diskBytesAllocated: Long = 0
+
+  private def incHostBytesAllocated(bytes: Long): Unit = synchronized {
+    hostBytesAllocated += bytes
+  }
+
+  private def decHostBytesAllocated(bytes: Long): Unit = synchronized {
+    hostBytesAllocated -= bytes
+  }
+
+  def incDiskBytesAllocated(bytes: Long): Unit = synchronized {
+    diskBytesAllocated += bytes
+  }
+
+  def decDiskBytesAllocated(bytes: Long): Unit = synchronized {
+    diskBytesAllocated -= bytes
+  }
 
   def registerOnTask(metrics: GpuTaskMetrics): Unit = synchronized {
     val tc = TaskContext.get()

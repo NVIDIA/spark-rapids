@@ -16,12 +16,13 @@
 package com.nvidia.spark.rapids
 
 import java.nio.charset.Charset
+import java.util.EnumSet
 import java.util.regex.Pattern
 
 import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, CudfException, RegexProgram}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, CudfException, RegexFlag, RegexProgram}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 import org.scalatest.funsuite.AnyFunSuite
@@ -334,10 +335,11 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   test("line anchor $ - find") {
-    val patterns = Seq("a$", "a$b", "\f$", "$\f")
+    val patterns = Seq("a$", "a$b", "\f$", "$\f","TEST$")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\f", "\f", "\r", "\u0085", "\u2028",
-        "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\n\r",
-        "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
+      "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\n\r",
+      "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb",
+      "TEST\u0085\n", "TEST\u0085\r", "TEST\u2028\r","TEST\u2028\u2029", "TEST\u2028\r\n")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
     val unsupportedPatterns = Seq("[\r\n]?$", "$\r", "\r$",
       // "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$", "[D$3]$")
@@ -459,7 +461,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\Z", "(?:\r|\u0085|\u2028|\u2029|\r\n)?\\$"))
+        .replaceAll("\\\\Z", "(?:\r\n)?\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -473,11 +475,11 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   test("transpile $") {
-    doTranspileTest("a$", "a(?:\r|\u0085|\u2028|\u2029|\r\n)?$")
+    doTranspileTest("a$", "a(?:\r\n)?$")
   }
 
   test("transpile \\Z") {
-    val expected = "a(?:\r|\u0085|\u2028|\u2029|\r\n)?$"
+    val expected = "a(?:\r\n)?$"
     doTranspileTest("a\\Z", expected)
     doTranspileTest("a\\Z+", expected)
     doTranspileTest("a\\Z{1}", expected)
@@ -537,7 +539,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   private val REGEXP_LIMITED_CHARS_COMMON = "|()[]{},-./;:!^$#%&*+?<=>@\"'~`_" +
-    "abc0123x\\ \t\r\n\f\u000b\u0000BsdwSDWzZ"
+    "abc0123x\\ \t\r\n\f\u000b\u0000BsdwSDWZ"
 
   private val REGEXP_LIMITED_CHARS_FIND = REGEXP_LIMITED_CHARS_COMMON
 
@@ -996,7 +998,8 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   private def gpuContains(cudfPattern: String, input: Seq[String]): Array[Boolean] = {
     val result = new Array[Boolean](input.length)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      val prog = new RegexProgram(cudfPattern, CaptureGroups.NON_CAPTURE)
+      val prog = new RegexProgram(cudfPattern,
+        EnumSet.of(RegexFlag.EXT_NEWLINE) ,CaptureGroups.NON_CAPTURE)
       withResource(cv.containsRe(prog)) { c =>
         withResource(c.copyToHost()) { hv =>
           result.indices.foreach(i => result(i) = hv.getBoolean(i))
@@ -1016,10 +1019,12 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       val c = if (hasBackrefs) {
-        cv.stringReplaceWithBackrefs(new RegexProgram(cudfPattern), converted)
+        cv.stringReplaceWithBackrefs(new RegexProgram(cudfPattern,
+          EnumSet.of(RegexFlag.EXT_NEWLINE)), converted)
       } else {
         withResource(GpuScalar.from(converted, DataTypes.StringType)) { replace =>
-          val prog = new RegexProgram(cudfPattern, CaptureGroups.NON_CAPTURE)
+          val prog = new RegexProgram(cudfPattern,
+            EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE)
           cv.replaceRegex(prog, replace)
         }
       }
@@ -1053,7 +1058,8 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
       isRegex: Boolean): Seq[Array[String]] = {
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       val x = if (isRegex) {
-        cv.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), limit)
+        cv.stringSplitRecord(new RegexProgram(pattern,
+          EnumSet.of(RegexFlag.EXT_NEWLINE), CaptureGroups.NON_CAPTURE), limit)
       } else {
         cv.stringSplitRecord(pattern, limit)
       }

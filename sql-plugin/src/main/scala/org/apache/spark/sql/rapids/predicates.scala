@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
@@ -29,7 +30,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 case class GpuNot(child: Expression) extends CudfUnaryExpression
-    with Predicate with ImplicitCastInputTypes with NullIntolerant {
+    with Predicate with ImplicitCastInputTypes with NullIntolerantShim {
   override def toString: String = s"NOT $child"
 
   override def inputTypes: Seq[DataType] = Seq(BooleanType)
@@ -204,7 +205,7 @@ abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
  *  +-------------+------------+------------------+---------------+----+
  */
 case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryComparison
-    with NullIntolerant {
+    with NullIntolerantShim {
   override def symbol: String = "="
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
@@ -235,7 +236,7 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
 }
 
 case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBinaryComparison
-  with NullIntolerant {
+  with NullIntolerantShim {
   override def symbol: String = "<=>"
   override def nullable: Boolean = false
   override def outputTypeOverride: DType = DType.BOOL8
@@ -263,7 +264,7 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
  * where NaN != NaN (unlike most other cases) when pivoting on a float or double column.
  */
 case class GpuEqualToNoNans(left: Expression, right: Expression) extends CudfBinaryComparison
-    with NullIntolerant {
+    with NullIntolerantShim {
   override def symbol: String = "="
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
@@ -287,7 +288,7 @@ case class GpuEqualToNoNans(left: Expression, right: Expression) extends CudfBin
  *  +-------------+------------+-----------------+---------------+----+
  */
 case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinaryComparison
-    with NullIntolerant {
+    with NullIntolerantShim {
   override def symbol: String = ">"
 
   override def outputTypeOverride: DType = DType.BOOL8
@@ -328,7 +329,7 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
  *  +-------------+------------+-----------------+---------------+-----+
  */
 case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends CudfBinaryComparison
-    with NullIntolerant {
+    with NullIntolerantShim {
   override def symbol: String = ">="
 
   override def outputTypeOverride: DType = DType.BOOL8
@@ -397,7 +398,7 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
  *  +-------------+------------+-----------------+---------------+-----+
  */
 case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryComparison
-    with NullIntolerant {
+    with NullIntolerantShim {
   override def symbol: String = "<"
 
   override def outputTypeOverride: DType = DType.BOOL8
@@ -438,7 +439,7 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
  *  +-------------+------------+------------------+---------------+-----+
  */
 case class GpuLessThanOrEqual(left: Expression, right: Expression) extends CudfBinaryComparison
-    with NullIntolerant {
+    with NullIntolerantShim {
   override def symbol: String = "<="
 
   override def outputTypeOverride: DType = DType.BOOL8

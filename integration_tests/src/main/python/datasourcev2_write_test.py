@@ -18,7 +18,7 @@ from asserts import assert_gpu_fallback_collect, assert_equal_with_local_sort
 from data_gen import gen_df, decimal_gens, non_utc_allow
 from marks import *
 from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session, with_gpu_session
-from hive_parquet_write_test import _hive_bucket_gens, _hive_array_gens, _hive_struct_gens
+from hive_parquet_write_test import _hive_bucket_gens_sans_bools, _hive_array_gens, _hive_struct_gens
 from hive_parquet_write_test import read_single_bucket
 
 _hive_write_conf = {
@@ -33,9 +33,11 @@ _hive_write_conf = {
 @allow_non_gpu(*non_utc_allow)
 def test_write_hive_bucketed_table(spark_tmp_table_factory, file_format):
     num_rows = 2048
-
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     def gen_table(spark):
-        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(_hive_bucket_gens)]
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(_hive_bucket_gens_sans_bools)]
         types_sql_str = ','.join('{} {}'.format(
             name, gen.data_type.simpleString()) for name, gen in gen_list)
         col_names_str = ','.join(name for name, gen in gen_list)

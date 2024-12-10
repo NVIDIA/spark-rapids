@@ -216,7 +216,7 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def toMB(x: Long): Double = x / 1024 / 1024.0
+  private def toMiB(x: Long): Double = x / 1024 / 1024.0
 
   private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
     def truncateToAlignment(x: Long): Long = x & ~511L
@@ -238,33 +238,39 @@ object GpuDeviceManager extends Logging {
         }
       var poolAllocation = truncateToAlignment(
         (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
+      val errorPhrase = "The pool allocation of " +
+        s"${toMiB(poolAllocation)} MiB (gpu.free: ${toMiB(info.free)}," +
+        s"${RapidsConf.RMM_ALLOC_FRACTION}: (=${conf.rmmAllocFraction}," +
+        s"${RapidsConf.RMM_ALLOC_RESERVE}: ${reserveAmount} => " +
+        s"(gpu.free - reserve) * allocFraction = ${toMiB(poolAllocation)}) was "
       if (poolAllocation < minAllocation) {
-        throw new IllegalArgumentException(s"The pool allocation of " +
-            s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
-            s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was less than " +
-            s"the minimum allocation of ${toMB(minAllocation)} (calculated from " +
-            s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
-            s"and ${toMB(info.total)} MB total memory)")
+        throw new IllegalArgumentException(errorPhrase +
+            s"less than allocation of ${toMiB(minAllocation)} MiB (gpu.total: " +
+            s"${toMiB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MIN_FRACTION}: " +
+            s"${conf.rmmAllocMinFraction} => gpu.total *" +
+            s"minAllocFraction = ${toMiB(minAllocation)} MiB). Please ensure that the GPU has " +
+            s"enough free memory, or adjust configuration accordingly.")
       }
       if (maxAllocation < poolAllocation) {
-        throw new IllegalArgumentException(s"The pool allocation of " +
-            s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
-            s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was more than " +
-            s"the maximum allocation of ${toMB(maxAllocation)} (calculated from " +
-            s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
-            s"and ${toMB(info.total)} MB total memory)")
+        throw new IllegalArgumentException(errorPhrase +
+            s"more than allocation of ${toMiB(maxAllocation)} MiB (gpu.total: " +
+            s"${toMiB(info.total)} MiB, ${RapidsConf.RMM_ALLOC_MAX_FRACTION}: " +
+            s"${conf.rmmAllocMaxFraction} => gpu.total *" +
+            s"maxAllocFraction = ${toMiB(maxAllocation)} MiB). Please ensure that pool " +
+            s"allocation does not exceed maximum allocation and adjust configuration accordingly.")
       }
       if (reserveAmount >= maxAllocation) {
-        throw new IllegalArgumentException(s"RMM reserve memory (${toMB(reserveAmount)} MB) " +
-            s"larger than maximum pool size (${toMB(maxAllocation)} MB). Check the settings for " +
+        throw new IllegalArgumentException(s"RMM reserve memory (${toMiB(reserveAmount)} MB) " +
+            s"larger than maximum pool size (${toMiB(maxAllocation)} MB). Check the settings for " +
             s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocFraction}) and " +
             s"${RapidsConf.RMM_ALLOC_RESERVE} (=$reserveAmount)")
       }
       val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
       if (poolAllocation > adjustedMaxAllocation) {
-        logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) does not leave enough free " +
-            s"memory for reserve memory (${toMB(reserveAmount)} MB), lowering the pool size to " +
-            s"${toMB(adjustedMaxAllocation)} MB to accommodate the requested reserve amount.")
+        logWarning(s"RMM pool allocation (${toMiB(poolAllocation)} MB) does not leave enough " +
+          s"free memory for reserve memory (${toMiB(reserveAmount)} MB), lowering the pool " +
+          s"size to ${toMiB(adjustedMaxAllocation)} MB to " +
+          s"accommodate the requested reserve amount.")
         poolAllocation = adjustedMaxAllocation
       }
 
@@ -348,7 +354,7 @@ object GpuDeviceManager extends Logging {
       deviceId = Some(gpuId)
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
-          s"pool size = ${toMB(poolAllocation)} MB on gpuId $gpuId")
+          s"pool size = ${toMiB(poolAllocation)} MB on gpuId $gpuId")
 
       if (Cuda.isPtdsEnabled()) {
         logInfo("Using per-thread default stream")

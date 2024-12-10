@@ -17,10 +17,9 @@
 package com.nvidia.spark.rapids.window
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
-import scala.reflect.ClassTag
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{AutoClosableArrayBuffer, ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
@@ -35,32 +34,6 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression, GpuAggregateFunction, GpuCount}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-
-
-/**
- * Just a simple wrapper to make working with buffers of AutoClosable things play
- * nicely with withResource.
- */
-class AutoClosableArrayBuffer[T <: AutoCloseable]() extends AutoCloseable {
-  private val data = new ArrayBuffer[T]()
-
-  def append(scb: T): Unit = data.append(scb)
-
-  def last: T = data.last
-
-  def removeLast(): T = data.remove(data.length - 1)
-
-  def foreach[U](f: T => U): Unit = data.foreach(f)
-
-  def toArray[B >: T : ClassTag]: Array[B] = data.toArray
-
-  override def toString: String = s"AutoCloseable(${super.toString})"
-
-  override def close(): Unit = {
-    data.foreach(_.close())
-    data.clear()
-  }
-}
 
 /**
  * Utilities for conversion between SpillableColumnarBatch, ColumnarBatch, and cudf.Table.

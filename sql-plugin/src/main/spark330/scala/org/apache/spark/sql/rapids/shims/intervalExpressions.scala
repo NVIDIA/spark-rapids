@@ -29,9 +29,12 @@
 {"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
+{"spark": "353"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
@@ -41,8 +44,9 @@ import java.math.BigInteger
 import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, DType, RoundMode, Scalar}
 import com.nvidia.spark.rapids.{BoolUtils, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.GpuDivModLike.makeZeroScalar
 import org.apache.spark.sql.types._
 
@@ -333,7 +337,8 @@ object IntervalUtils {
  */
 case class GpuMultiplyYMInterval(
     interval: Expression,
-    num: Expression) extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+    num: Expression)
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def left: Expression = interval
 
@@ -407,7 +412,7 @@ case class GpuMultiplyYMInterval(
 case class GpuMultiplyDTInterval(
     interval: Expression,
     num: Expression)
-    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def left: Expression = interval
 
@@ -470,7 +475,8 @@ case class GpuMultiplyDTInterval(
  */
 case class GpuDivideYMInterval(
     interval: Expression,
-    num: Expression) extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+    num: Expression)
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def left: Expression = interval
 
@@ -537,7 +543,7 @@ case class GpuDivideYMInterval(
 case class GpuDivideDTInterval(
     interval: Expression,
     num: Expression)
-    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def left: Expression = interval
 

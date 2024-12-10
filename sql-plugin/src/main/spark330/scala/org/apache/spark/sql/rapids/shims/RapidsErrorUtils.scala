@@ -21,64 +21,9 @@
 {"spark": "332"}
 {"spark": "332cdh"}
 {"spark": "333"}
-{"spark": "334"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.SparkDateTimeException
-import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+object RapidsErrorUtils extends RapidsErrorUtils330To334Base
+  with SequenceSizeTooLongErrorBuilder
 
-object RapidsErrorUtils extends RapidsErrorUtilsFor330plus with RapidsQueryErrorUtils {
-
-  def mapKeyNotExistError(
-      key: String,
-      keyType: DataType,
-      origin: Origin): NoSuchElementException = {
-    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
-  }
-
-  def invalidArrayIndexError(index: Int, numElements: Int,
-      isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
-    if (isElementAtF) {
-      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
-    } else {
-      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
-    }
-  }
-
-  def arithmeticOverflowError(
-      message: String,
-      hint: String = "",
-      errorContext: String = ""): ArithmeticException = {
-    QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
-  }
-
-  def cannotChangeDecimalPrecisionError(
-      value: Decimal,
-      toType: DecimalType,
-      context: String = ""): ArithmeticException = {
-    QueryExecutionErrors.cannotChangeDecimalPrecisionError(
-      value, toType.precision, toType.scale, context
-    )
-  }
-
-  def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
-    QueryExecutionErrors.arithmeticOverflowError(
-      "Overflow in integral divide", "try_divide", context
-    )
-  }
-
-  def sparkDateTimeException(infOrNan: String): SparkDateTimeException = {
-    // These are the arguments required by SparkDateTimeException class to create error message.
-    val errorClass = "CAST_INVALID_INPUT"
-    val messageParameters = Array("DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
-    new SparkDateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
-  }
-
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
-  }
-}

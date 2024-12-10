@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,7 +34,9 @@ _custom_date_gen = DateGen(start=date(1590, 1, 1))
 
 # List of additional column data generators to use when adding columns
 _additional_gens = [
-    boolean_gen,
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     byte_gen,
     short_gen,
     int_gen,
@@ -49,7 +51,10 @@ _additional_gens = [
     # simple_string_to_string_map_gen),
     ArrayGen(_custom_date_gen),
     struct_gen_decimal128,
-    StructGen([("c0", ArrayGen(long_gen)), ("c1", boolean_gen)]),
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen from int_gen for c1
+    StructGen([("c0", ArrayGen(long_gen)), ("c1", int_gen)]),
 ]
 
 def get_additional_columns():

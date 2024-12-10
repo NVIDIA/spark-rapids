@@ -35,9 +35,12 @@
 {"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
+{"spark": "353"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
@@ -96,9 +99,9 @@ trait GpuV1FallbackWriters extends LeafV2CommandExec with SupportsV1Write with G
   def write: V1Write
 
   override def run(): Seq[InternalRow] = {
-    val writtenRows = writeWithV1(write.toInsertableRelation)
+    writeWithV1(write.toInsertableRelation)
     refreshCache()
-    writtenRows
+    Nil
   }
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

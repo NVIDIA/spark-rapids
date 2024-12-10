@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ object GpuDeltaLog {
       dataPath: String,
       options: Map[String, String],
       rapidsConf: RapidsConf): GpuDeltaLog = {
-    val deltaLog = DeltaLog.forTable(spark, dataPath, options)
+    val deltaLog = DeltaLog.forTable(spark, new Path(dataPath), options)
     new GpuDeltaLog(deltaLog, rapidsConf)
   }
 

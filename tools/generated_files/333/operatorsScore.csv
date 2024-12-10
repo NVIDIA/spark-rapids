@@ -191,6 +191,7 @@ MinBy,4
 Minute,4
 MonotonicallyIncreasingID,4
 Month,4
+MonthsBetween,4
 Multiply,4
 MultiplyDTInterval,4
 MultiplyYMInterval,4
