@@ -94,15 +94,13 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* Implement Kudo shuffle format to improve shuffle performance
-* Add the ability to decompress snappy and ztsd compressed Parquet files via CPU
 * Add repartition-based algorithm fallback in hash aggregate  
-* Support spark function months_between
+* Support Spark function months_between
 * Support asynchronous writing for Parquet files
 * Add retry support to improve sub hash-join stability
 * Improve JSON scan and from_json
-* Support setting a limited number of tasks for build-in profiling tool
-* Bugs fix for memory leak
+* Improved performance for CASE WHEN statements comparing a string column against multiple values
+* Falling back to the CPU for ORC boolean writes by the GPU due to a bug in cudf's ORC writer
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
 
 Note: There is a known issue in the 24.12.0 release when decompressing gzip files on H100 GPUs.  
