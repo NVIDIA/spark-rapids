@@ -1570,7 +1570,7 @@ object SpillFramework extends Logging {
 
   var chunkedPackBounceBufferPool: DeviceBounceBufferPool = _
 
-  def remove(handle: StoreHandle): Unit = {
+  private[spill] def remove(handle: StoreHandle): Unit = {
     // if the stores have already shut down, we don't want to create them here
     // so we use `storesInternal` directly.
     handle match {
