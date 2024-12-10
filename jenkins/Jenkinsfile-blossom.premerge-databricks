@@ -200,7 +200,7 @@ void databricksBuild() {
         if (CLUSTER_ID) {
             (dbStep == 'TEST') ? common.publishPytestResult(this, "Test against $SPARK_MAJOR DB") : ''
             retry(3) {
-                params.TEST_MODE == 'CI_PART1' ? DbUtils.cleanUp(this, "$PLUGIN_BUILT_DIR/$DB_RUNTIME") : ''
+                params.TEST_MODE == 'CI_PART2' ? DbUtils.cleanUp(this, "$PLUGIN_BUILT_DIR/$DB_RUNTIME") : ''
                 env.INIT_SCRIPTS ? DbUtils.cleanUp(this, env.INIT_SCRIPTS_DIR) : ''
                 sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
             }
