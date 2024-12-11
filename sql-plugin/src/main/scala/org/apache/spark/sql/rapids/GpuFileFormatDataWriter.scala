@@ -249,8 +249,8 @@ class GpuSingleDirectoryDataWriter(
       f"-c$fileCounter%03d" + ext)
 
     val debugOutputPath = debugOutputBasePath.map { base =>
-      base + "/DEBUG_" + taskAttemptContext.getTaskAttemptID.toString +
-        f"-c$fileCounter%03d" + ".debug"
+      base + s"/DEBUG_${taskAttemptContext.getTaskAttemptID}" +
+        f"_c$fileCounter%03d_${System.nanoTime()}.debug"
     }
 
     currentWriterStatus.writer = description.outputWriterFactory.newInstance(
@@ -587,11 +587,11 @@ class GpuDynamicPartitionDataSingleWriter(
     val debugOutputPath = debugOutputBasePath.map { base =>
       if (customPath.isDefined) {
         val hash = customPath.get.hashCode
-        base + s"/DEBUG_CUSTOM_${hash}_" + taskAttemptContext.getTaskAttemptID.toString +
-          f"-c$fileCounter%03d" + ".debug"
+        base + s"/DEBUG_CUSTOM_${hash}_${taskAttemptContext.getTaskAttemptID}" +
+          f"_c$fileCounter%03d_${System.nanoTime()}.debug"
       }  else {
-        base + "/" + partDir.mkString("/") + s"/DEBUG_" +
-          taskAttemptContext.getTaskAttemptID.toString + f"-c$fileCounter%03d" + ".debug"
+        base + s"/${partDir.mkString("/")}/DEBUG_${taskAttemptContext.getTaskAttemptID}" +
+          f"_c$fileCounter%03d_${System.nanoTime()}.debug"
       }
     }
 
