@@ -434,7 +434,9 @@ case class GpuArrowEvalPythonExec(
         new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize, numInputRows,
           numInputBatches))
       val pyInputIterator = batchProducer.asIterator.map { batch =>
-        withResource(batch)(GpuProjectExec.project(_, boundReferences))
+        GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+          SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+          boundReferences)
       }
 
       if (isPythonOnGpuEnabled) {
