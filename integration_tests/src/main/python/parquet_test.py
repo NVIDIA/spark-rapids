@@ -1690,6 +1690,7 @@ hybrid_gens = [
      ],
 ]
 
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @pytest.mark.parametrize('parquet_gens', hybrid_gens, ids=idfn)
 @pytest.mark.parametrize('gen_rows', [20, 100, 512, 1024, 4096], ids=idfn)
@@ -1711,6 +1712,7 @@ def test_parquet_read_round_trip_hybrid(spark_tmp_path, parquet_gens, gen_rows):
 # Creating scenarios in which CoalesceConverter will coalesce several input batches by adjusting
 # reader_batch_size and coalesced_batch_size, tests if the CoalesceConverter functions correctly
 # when coalescing is needed.
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @pytest.mark.parametrize('reader_batch_size', [512, 1024, 2048], ids=idfn)
 @pytest.mark.parametrize('coalesced_batch_size', [1 << 25, 1 << 27], ids=idfn)
