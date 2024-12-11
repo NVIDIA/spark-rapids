@@ -75,7 +75,8 @@ class GpuWriteFilesMeta(
       writeFilesExec.partitionColumns,
       writeFilesExec.bucketSpec,
       writeFilesExec.options,
-      writeFilesExec.staticPartitions
+      writeFilesExec.staticPartitions,
+      conf.outputDebugDumpPrefix
     )
   }
 }
@@ -89,7 +90,8 @@ case class GpuWriteFilesExec(
     partitionColumns: Seq[Attribute],
     bucketSpec: Option[BucketSpec],
     options: Map[String, String],
-    staticPartitions: TablePartitionSpec) extends ShimUnaryExecNode with GpuExec {
+    staticPartitions: TablePartitionSpec,
+    baseOutputDebugPath: Option[String]) extends ShimUnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = Seq.empty
 
@@ -145,7 +147,8 @@ case class GpuWriteFilesExec(
         sparkAttemptNumber,
         committer,
         iterator,
-        concurrentOutputWriterSpec
+        concurrentOutputWriterSpec,
+        baseOutputDebugPath
       )
 
       Iterator(ret)

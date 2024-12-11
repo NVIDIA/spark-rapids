@@ -280,10 +280,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
         override def newInstance(
           path: String,
           dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
+          context: TaskAttemptContext,
+          debugOutputPath: Option[String]): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
-          holdGpuBetweenBatches)
+          holdGpuBetweenBatches, debugOutputPath)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -306,8 +307,10 @@ class GpuParquetWriter(
     timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean,
-    holdGpuBetweenBatches: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true, holdGpuBetweenBatches) {
+    holdGpuBetweenBatches: Boolean,
+    debugDumpPath: Option[String])
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true,
+    debugDumpPath, holdGpuBetweenBatches) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>

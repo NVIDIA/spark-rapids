@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
+import java.io.{BufferedOutputStream, DataOutputStream, OutputStream}
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange, TableWriter}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -61,7 +61,8 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
   def newInstance(
       path: String,
       dataSchema: StructType,
-      context: TaskAttemptContext): ColumnarOutputWriter
+      context: TaskAttemptContext,
+      debugOutputPath: Option[String]): ColumnarOutputWriter
 }
 
 /**
@@ -73,9 +74,43 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
     includeRetry: Boolean,
+    debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean = false) extends HostBufferConsumer with Logging {
 
   protected val tableWriter: TableWriter
+  private lazy val debugDumpOutputStream: Option[OutputStream] = try {
+    debugDumpPath.map { path =>
+      val tc = TaskContext.get()
+      logWarning(s"DEBUG FILE OUTPUT $rangeName FOR " +
+        s"STAGE ${tc.stageId()} TASK ${tc.taskAttemptId()} is $path")
+      val hadoopPath = new Path(path)
+      val fs = hadoopPath.getFileSystem(conf)
+      new DataOutputStream(new BufferedOutputStream(fs.create(hadoopPath, false)))
+    }
+  } catch {
+    case e: Exception =>
+      logError(s"Could Not Write Debug Table $debugDumpPath", e)
+      None
+  }
+
+  /**
+   * Write out a debug batch to the debug output stream if it is configured.
+   * If it is not configured, this is a noop. If an exception happens the exception
+   * is ignored, but it is logged.
+   */
+  private def debugWriteBatch(batch: ColumnarBatch): Unit = {
+    debugDumpOutputStream.foreach { output =>
+      try {
+        withResource(GpuColumnVector.from(batch)) { table =>
+          JCudfSerialization.writeToStream(table, output, 0, table.getRowCount)
+        }
+        output.flush()
+      } catch {
+        case t: Throwable =>
+          logError(s"Could Not Write Debug Table $debugDumpPath", t)
+      }
+    }
+  }
 
   protected val conf: Configuration = context.getConfiguration
 
@@ -219,6 +254,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       // where corrupt files can be written if nothing is encoded via the writer.
       anythingWritten = true
 
+      debugWriteBatch(batch)
       // tableWriter.write() serializes the table into the HostMemoryBuffer, and buffers it
       // by calling handleBuffer() on the ColumnarOutputWriter. It may not write to the
       // output stream just yet.
@@ -239,6 +275,9 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     GpuSemaphore.releaseIfNecessary(TaskContext.get())
     writeBufferedData()
     outputStream.close()
+    debugDumpOutputStream.foreach { os =>
+      os.close()
+    }
   }
 
   /**

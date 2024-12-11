@@ -58,7 +58,8 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           context,
           dataSchema,
           rangeName,
-          includeRetry) {
+          includeRetry,
+          None) {
 
     // this writer (for tests) doesn't do anything and passes through the
     // batch passed to it when asked to transform, which is done to
@@ -92,7 +93,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       types,
       "",
       includeRetry))
-    when(mockOutputWriterFactory.newInstance(any(), any(), any()))
+    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any()))
         .thenAnswer(_ => mockOutputWriter)
   }
 
@@ -231,7 +232,8 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     spy(new GpuDynamicPartitionDataSingleWriter(
       mockJobDescription,
       mockTaskAttemptContext,
-      mockCommitter))
+      mockCommitter,
+      None))
   }
 
   def prepareDynamicPartitionConcurrentWriter(maxWriters: Int, batchSize: Long):
@@ -249,7 +251,8 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       mockJobDescription,
       mockTaskAttemptContext,
       mockCommitter,
-      concurrentSpec))
+      concurrentSpec,
+      None))
   }
 
   test("empty directory data writer") {
@@ -291,7 +294,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       withColumnarBatchesVerifyClosed(cbs) {
         withResource(cbs) { _ =>
           val singleWriter = spy(new GpuSingleDirectoryDataWriter(
-            mockJobDescription, mockTaskAttemptContext, mockCommitter))
+            mockJobDescription, mockTaskAttemptContext, mockCommitter, None))
           singleWriter.writeWithIterator(Iterator.empty)
           singleWriter.commit()
         }
@@ -306,7 +309,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       val cbs = Seq(spy(cb), spy(cb2))
       withColumnarBatchesVerifyClosed(cbs) {
         val singleWriter = spy(new GpuSingleDirectoryDataWriter(
-          mockJobDescription, mockTaskAttemptContext, mockCommitter))
+          mockJobDescription, mockTaskAttemptContext, mockCommitter, None))
         singleWriter.writeWithIterator(cbs.iterator)
         singleWriter.commit()
         // we write 2 batches
@@ -326,7 +329,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         // setting this to 5 makes the single writer have to split at the 5 row boundary
         when(mockJobDescription.maxRecordsPerFile).thenReturn(5)
         val singleWriter = spy(new GpuSingleDirectoryDataWriter(
-          mockJobDescription, mockTaskAttemptContext, mockCommitter))
+          mockJobDescription, mockTaskAttemptContext, mockCommitter, None))
 
         singleWriter.writeWithIterator(cbs.iterator)
         singleWriter.commit()
