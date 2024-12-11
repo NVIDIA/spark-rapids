@@ -1102,4 +1102,25 @@ class SpillFrameworkSuite
     testBufferFileDeletion(canShareDiskPaths = true)
   }
 
+  test("zptest") {
+    val (ct, _) = buildContiguousTable()
+    val buff = ct.getBuffer
+    buff.incRefCount()
+    withResource(SpillableDeviceBufferHandle(buff)) { handle =>
+      withResource(ct) { _ =>
+        assert(!handle.spillable)
+      }
+      assert(handle.spillable)
+      val t = new Thread(() => {
+        println("second thread start")
+        Thread.sleep(100)
+        println("second thread tries to check if spillable")
+        val s = handle.spillable
+        println(s"second thread spillable: $s")
+      })
+      t.start()
+      SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes)
+    }
+  }
+
 }

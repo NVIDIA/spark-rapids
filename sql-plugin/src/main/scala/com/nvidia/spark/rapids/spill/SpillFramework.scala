@@ -177,6 +177,36 @@ trait SpillableHandle extends StoreHandle {
    */
   def spill(): Long
 
+  private var spilling = false
+  private val spillLock = new Object()
+
+  /**
+   * Method used to atomically check and set the spilling state, so that anyone who wants to
+   * actually perform a spill can ensure they are the only one spilling, without having to block
+   * on the actual spill operation (IO). Only someone who has set spilling to true to perform their
+   * spill may set it back to false when they are done.
+   *
+   * This is a separate check from spillable, which actually checks the state of the buffer handle
+   *
+   * @param s whether the caller is trying to spill or not (ie finished)
+   * @return whether the caller is allowed to spill (or true if s is false)
+   */
+  protected def setSpilling(s: Boolean): Boolean = spillLock.synchronized {
+    if (!s) {
+      // done spilling, nothing to check
+      true
+    } else {
+      if (!spilling) {
+        // we may spill
+        spilling = true
+        true
+      } else {
+        // someone else is already spilling
+        false
+      }
+    }
+  }
+
   /**
    * Method used to determine whether a handle tracks an object that could be spilled
    * @note At the level of `SpillableHandle`, the only requirement of spillability
@@ -184,7 +214,9 @@ trait SpillableHandle extends StoreHandle {
    *       construction, and is immutable.
    * @return true if currently spillable, false otherwise
    */
-  private[spill] def spillable: Boolean = approxSizeInBytes > 0
+  private[spill] def spillable: Boolean = spillLock.synchronized {
+    approxSizeInBytes > 0 && !spilling
+  }
 }
 
 /**
@@ -195,7 +227,7 @@ trait SpillableHandle extends StoreHandle {
 trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   private[spill] var dev: Option[T]
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     super.spillable && dev.isDefined
   }
 
@@ -228,7 +260,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
 trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   private[spill] var host: Option[T]
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     super.spillable && host.isDefined
   }
 
@@ -284,7 +316,7 @@ class SpillableHostBufferHandle private (
 
   override val approxSizeInBytes: Long = sizeInBytes
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     if (super.spillable) {
       host.getOrElse {
         throw new IllegalStateException(
@@ -319,7 +351,7 @@ class SpillableHostBufferHandle private (
   }
 
   override def spill(): Long = {
-    if (!spillable) {
+    if (!spillable || !setSpilling(true)) {
       0L
     } else {
       val spilled = synchronized {
@@ -339,9 +371,11 @@ class SpillableHostBufferHandle private (
               }
             }
             disk = Some(diskHandleBuilder.build)
+            setSpilling(false)
             sizeInBytes
           }
         } else {
+          setSpilling(false)
           0L
         }
       }
@@ -414,7 +448,7 @@ class SpillableDeviceBufferHandle private (
 
   override val approxSizeInBytes: Long = sizeInBytes
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     if (super.spillable) {
       dev.getOrElse {
         throw new IllegalStateException(
@@ -453,14 +487,20 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def spill(): Long = {
-    if (!spillable) {
+    if (!spillable || !setSpilling(true)) {
       0L
     } else {
       synchronized {
+        println("start spilling handle")
         if (host.isEmpty && dev.isDefined) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
+          Thread.sleep(1000)
+          println("finished spilling handle")
+          setSpilling(false)
           sizeInBytes
         } else {
+          println("finished spilling handle")
+          setSpilling(false)
           0L
         }
       }
