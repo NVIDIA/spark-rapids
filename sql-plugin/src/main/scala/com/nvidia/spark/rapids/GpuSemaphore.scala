@@ -133,6 +133,7 @@ object GpuSemaphore {
   }
 
   private val MAX_PERMITS = 1000
+  val DEFAULT_PRIORITY = 0L
 
   def computeNumPermits(conf: SQLConf): Int = {
     val concurrentStr = conf.getConfString(RapidsConf.CONCURRENT_GPU_TASKS.key, null)
@@ -184,7 +185,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
    * If this task holds the GPU semaphore or not.
    */
   private var hasSemaphore = false
-  private var lastHeld: Long = 0
+  private var lastAcquired: Long = GpuSemaphore.DEFAULT_PRIORITY
+  private var lastReleased: Long = GpuSemaphore.DEFAULT_PRIORITY
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
 
@@ -256,11 +258,12 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
         if (!done && shouldBlockOnSemaphore) {
           // We cannot be in a synchronized block and wait on the semaphore
           // so we have to release it and grab it again afterwards.
-          semaphore.acquire(numPermits, lastHeld, taskAttemptId)
+          semaphore.acquire(numPermits, lastReleased, taskAttemptId)
           synchronized {
             // We now own the semaphore so we need to wake up all of the other tasks that are
             // waiting.
             hasSemaphore = true
+            lastAcquired = System.nanoTime()
             if (trackSemaphore) {
               nvtxRange =
                 Some(new NvtxUniqueRange(s"Stage ${stageId} Task ${taskAttemptId} owning GPU",
@@ -296,9 +299,10 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
     } else {
       if (blockedThreads.size() == 0) {
         // No other threads for this task are waiting, so we might be able to grab this directly
-        val ret = semaphore.tryAcquire(numPermits, lastHeld, taskAttemptId)
+        val ret = semaphore.tryAcquire(numPermits, lastReleased, taskAttemptId)
         if (ret) {
           hasSemaphore = true
+          lastAcquired = System.nanoTime()
           activeThreads.add(t)
           // no need to notify because there are no other threads and we are holding the lock
           // to ensure that.
@@ -316,7 +320,8 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long)
     if (hasSemaphore) {
       semaphore.release(numPermits)
       hasSemaphore = false
-      lastHeld = System.currentTimeMillis()
+      lastReleased = System.nanoTime()
+      GpuTaskMetrics.get.addSemaphoreHoldingTime(lastReleased - lastAcquired)
       nvtxRange.foreach(_.close())
       nvtxRange = None
     }
@@ -333,7 +338,7 @@ private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
 
   type GpuBackingSemaphore = PrioritySemaphore[Long]
-  private val semaphore = new GpuBackingSemaphore(MAX_PERMITS)
+  private val semaphore = new GpuBackingSemaphore(MAX_PERMITS, GpuSemaphore.DEFAULT_PRIORITY)
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
