@@ -23,6 +23,9 @@ from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order, datagen_overrides
 from spark_session import *
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
+
 TEXT_INPUT_EXEC='FileSourceScanExec'
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
