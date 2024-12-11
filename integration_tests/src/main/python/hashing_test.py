@@ -40,7 +40,8 @@ _struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_xxhash_g
 _xxhash_fallback_gens = single_level_array_gens + nested_array_gens_sample + [
     all_basic_struct_gen,
     struct_array_gen,
-    _struct_of_xxhash_gens]
+    _struct_of_xxhash_gens] + map_gens_sample
+
 if is_before_spark_320():
     _xxhash_fallback_gens += [float_gen, double_gen]
 
@@ -57,10 +58,9 @@ def test_xxhash64_multi_column():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, gen).selectExpr("c0", f"xxhash64({col_list})"))
 
-@allow_non_gpu("ProjectExec")
 @ignore_order(local=True)
 @pytest.mark.parametrize("gen", _xxhash_fallback_gens, ids=idfn)
-def test_xxhash64_fallback(gen):
-    assert_gpu_fallback_collect(
+def test_xxhash64_nested(gen):
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, gen).selectExpr("a", "xxhash64(a)"),
-        "ProjectExec")
+        {"spark.sql.legacy.allowHashOnMapType" : True})
