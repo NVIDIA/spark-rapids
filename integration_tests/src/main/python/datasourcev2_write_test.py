@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_fallback_collect, assert_equal_with_local_sort
-from data_gen import gen_df, decimal_gens, non_utc_allow
+from data_gen import gen_df, decimal_gens, non_utc_allow, StructGen, ArrayGen, string_gen
 from marks import *
 from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session, with_gpu_session
 from hive_parquet_write_test import _hive_bucket_gens
@@ -84,6 +84,34 @@ def test_write_hive_bucketed_unsupported_types_fallback(spark_tmp_table_factory,
             out_table, gen.data_type.simpleString(), file_format))
         data_table = spark_tmp_table_factory.get()
         gen_df(spark, [('a', gen)], length=10).createOrReplaceTempView(data_table)
+        return data_table
+
+    input_table = with_cpu_session(create_hive_table, _hive_write_conf)
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql(
+            "insert into {0} select * from {1}".format(out_table, input_table)),
+        'DataWritingCommandExec',
+        _hive_write_conf)
+
+# The calculation of nesting depth here does not take basic types into account.
+nested_gen_depth_9 = [StructGen([('depth_8', StructGen([('depth_7', StructGen([('depth_6',
+    StructGen([('depth_5', ArrayGen(StructGen([('depth_3', StructGen([('depth_2',
+    ArrayGen(StructGen([('depth_0', string_gen)]), max_length=5))]))]), max_length=5))]))]))]))])]
+
+@ignore_order
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,SortExec,WriteFilesExec')
+@pytest.mark.skipif(not (is_hive_available() and is_spark_330_or_later()),
+                    reason="Must have Hive on Spark 3.3+")
+@pytest.mark.parametrize('file_format', ['parquet', 'orc'])
+@pytest.mark.parametrize('gen', nested_gen_depth_9)
+def test_write_hive_bucketed_nesting_depth_exceed_limit_fallback(spark_tmp_table_factory, file_format, gen):
+    out_table = spark_tmp_table_factory.get()
+
+    def create_hive_table(spark):
+        spark.sql("create table {0} (a {1}) stored as {2} clustered by (a) into 3 buckets".format(
+            out_table, gen.data_type.simpleString(), file_format))
+        data_table = spark_tmp_table_factory.get()
+        gen_df(spark, [('a', gen)], length=1).createOrReplaceTempView(data_table)
         return data_table
 
     input_table = with_cpu_session(create_hive_table, _hive_write_conf)
