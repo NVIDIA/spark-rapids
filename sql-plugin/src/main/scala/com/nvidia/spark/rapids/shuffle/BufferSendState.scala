@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.io.IOException
-
-import ai.rapids.cudf.{Cuda, MemoryBuffer}
-import com.nvidia.spark.rapids.{RapidsBuffer, ShuffleMetadata, StorageTier}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.{RapidsShuffleHandle, ShuffleMetadata}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
@@ -60,8 +58,17 @@ class BufferSendState(
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
     extends AutoCloseable with Logging {
 
-  class SendBlock(val bufferId: Int, tableSize: Long) extends BlockWithSize {
-    override def size: Long = tableSize
+  class SendBlock(val bufferHandle: RapidsShuffleHandle) extends BlockWithSize {
+    // we assume that the size of the buffer won't change as it goes to host/disk
+    // we also are likely to assume this is just a device buffer, and so we should
+    // copy to device and then send.
+    override def size: Long = {
+      if (bufferHandle.spillable != null) {
+        bufferHandle.spillable.sizeInBytes
+      } else {
+        0L // degenerate
+      }
+    }
   }
 
   val peerExecutorId: Long = transaction.peerExecutorId()
@@ -80,13 +87,10 @@ class BufferSendState(
       val btr = new BufferTransferRequest() // for reuse
       val blocksToSend = (0 until transferRequest.requestsLength()).map { ix =>
         val bufferTransferRequest = transferRequest.requests(btr, ix)
-        withResource(requestHandler.acquireShuffleBuffer(
-          bufferTransferRequest.bufferId())) { table =>
-          bufferMetas(ix) = table.meta.bufferMeta()
-          new SendBlock(bufferTransferRequest.bufferId(), table.getPackedSizeBytes)
-        }
+        val handle = requestHandler.getShuffleHandle(bufferTransferRequest.bufferId())
+        bufferMetas(ix) = handle.tableMeta.bufferMeta()
+        new SendBlock(handle)
       }
-
       (peerBufferReceiveHeader, bufferMetas, blocksToSend)
     }
   }
@@ -145,7 +149,7 @@ class BufferSendState(
   }
 
   case class RangeBuffer(
-      range: BlockRange[SendBlock], rapidsBuffer: RapidsBuffer)
+      range: BlockRange[SendBlock], rapidsBuffer: MemoryBuffer)
       extends AutoCloseable {
     override def close(): Unit = {
       rapidsBuffer.close()
@@ -170,50 +174,50 @@ class BufferSendState(
       if (hasMoreBlocks) {
         var deviceBuffs = 0L
         var hostBuffs = 0L
-        acquiredBuffs = blockRanges.safeMap { blockRange =>
-          val bufferId = blockRange.block.bufferId
 
-          // we acquire these buffers now, and keep them until the caller releases them
-          // using `releaseAcquiredToCatalog`
-          closeOnExcept(
-            requestHandler.acquireShuffleBuffer(bufferId)) { rapidsBuffer =>
-            //these are closed later, after we synchronize streams
-            rapidsBuffer.storageTier match {
-              case StorageTier.DEVICE =>
-                deviceBuffs += blockRange.rangeSize()
-              case _ => // host/disk
-                hostBuffs += blockRange.rangeSize()
-            }
-            RangeBuffer(blockRange, rapidsBuffer)
-          }
-        }
-
-        logDebug(s"Occupancy for bounce buffer is [device=${deviceBuffs}, host=${hostBuffs}] Bytes")
-
-        bounceBuffToUse = if (deviceBuffs >= hostBuffs || hostBounceBuffer == null) {
-          deviceBounceBuffer.buffer
-        } else {
-          hostBounceBuffer.buffer
-        }
-
-        // `copyToMemoryBuffer` can throw if the `RapidsBuffer` is in the DISK tier and
-        // the file fails to mmap. We catch the `IOException` and attempt a retry
-        // in the server.
         var needsCleanup = false
         try {
-          acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
+          acquiredBuffs = blockRanges.safeMap { blockRange =>
+            // we acquire these buffers now, and keep them until the caller releases them
+            // using `releaseAcquiredToCatalog`
+            //these are closed later, after we synchronize streams
+            val spillable = blockRange.block.bufferHandle.spillable
+            val buff = spillable.materialize()
+            buff match {
+              case _: DeviceMemoryBuffer =>
+                deviceBuffs += blockRange.rangeSize()
+              case _ =>
+                hostBuffs += blockRange.rangeSize()
+            }
+            RangeBuffer(blockRange, buff)
+          }
+
+          logDebug(s"Occupancy for bounce buffer is " +
+            s"[device=${deviceBuffs}, host=${hostBuffs}] Bytes")
+
+          bounceBuffToUse = if (deviceBuffs >= hostBuffs || hostBounceBuffer == null) {
+            deviceBounceBuffer.buffer
+          } else {
+            hostBounceBuffer.buffer
+          }
+
+          acquiredBuffs.foreach { case RangeBuffer(blockRange, memoryBuffer) =>
             needsCleanup = true
             require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-            rapidsBuffer.copyToMemoryBuffer(blockRange.rangeStart, bounceBuffToUse, buffOffset,
-              blockRange.rangeSize(), serverStream)
+            bounceBuffToUse.copyFromMemoryBufferAsync(
+              buffOffset,
+              memoryBuffer,
+              blockRange.rangeStart,
+              blockRange.rangeSize(),
+              serverStream)
             buffOffset += blockRange.rangeSize()
           }
           needsCleanup = false
         } catch {
-          case ioe: IOException =>
+          case ex: Exception =>
             throw new RapidsShuffleSendPrepareException(
               s"Error while copying to bounce buffer for executor ${peerExecutorId} and " +
-                  s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}", ioe)
+                  s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}", ex)
         } finally {
           if (needsCleanup) {
             // we likely failed in `copyToMemoryBuffer`

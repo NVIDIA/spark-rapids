@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import java.io.{InputStream, OutputStream}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.io.CompressionCodec
-import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.storage.BlockId
 
 
 /**
@@ -44,22 +44,20 @@ class RapidsSerializerManager (conf: SparkConf) {
 
   private lazy val compressionCodec: CompressionCodec = TrampolineUtil.createCodec(conf)
 
-  // Whether it really goes through crypto streams replies on Spark configuration
-  // (e.g., `` `spark.io.encryption.enabled` ``) and the existence of crypto keys.
-  def wrapStream(bufferId: RapidsBufferId, s: OutputStream): OutputStream = {
-    if(isRapidsSpill(bufferId)) wrapForCompression(bufferId, wrapForEncryption(s)) else s
+  def wrapStream(blockId: BlockId, s: OutputStream): OutputStream = {
+    if(isRapidsSpill(blockId)) wrapForCompression(blockId, wrapForEncryption(s)) else s
   }
 
-  def wrapStream(bufferId: RapidsBufferId, s: InputStream): InputStream = {
-    if(isRapidsSpill(bufferId)) wrapForCompression(bufferId, wrapForEncryption(s)) else s
+  def wrapStream(blockId: BlockId, s: InputStream): InputStream = {
+    if(isRapidsSpill(blockId)) wrapForCompression(blockId, wrapForEncryption(s)) else s
   }
 
-  private[this] def wrapForCompression(bufferId: RapidsBufferId, s: InputStream): InputStream = {
-    if (shouldCompress(bufferId)) compressionCodec.compressedInputStream(s) else s
+  private[this] def wrapForCompression(blockId: BlockId, s: InputStream): InputStream = {
+    if (shouldCompress(blockId)) compressionCodec.compressedInputStream(s) else s
   }
 
-  private[this] def wrapForCompression(bufferId: RapidsBufferId, s: OutputStream): OutputStream = {
-    if (shouldCompress(bufferId)) compressionCodec.compressedOutputStream(s) else s
+  private[this] def wrapForCompression(blockId: BlockId, s: OutputStream): OutputStream = {
+    if (shouldCompress(blockId)) compressionCodec.compressedOutputStream(s) else s
   }
 
   private[this] def wrapForEncryption(s: InputStream): InputStream = {
@@ -70,18 +68,15 @@ class RapidsSerializerManager (conf: SparkConf) {
     if (serializerManager != null) serializerManager.wrapForEncryption(s) else s
   }
 
-  def isRapidsSpill(bufferId: RapidsBufferId): Boolean = {
-    bufferId match {
-      case _: TempSpillBufferId => true
-      case _ => false
-    }
+  def isRapidsSpill(blockId: BlockId): Boolean = {
+    !blockId.isShuffle
   }
 
-  private[this] def shouldCompress(bufferId: RapidsBufferId): Boolean = {
-    bufferId match {
-      case _: TempSpillBufferId => compressSpill
-      case _: ShuffleBufferId | _: ShuffleReceivedBufferId => false
-      case _ => false
+  private[this] def shouldCompress(blockId: BlockId): Boolean = {
+    if (!blockId.isShuffle) {
+      compressSpill
+    } else {
+      false
     }
   }
 }

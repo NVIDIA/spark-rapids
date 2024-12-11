@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{RapidsBuffer, RapidsConf, ShuffleMetadata}
+import com.nvidia.spark.rapids.{RapidsConf, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -49,7 +49,7 @@ trait RapidsShuffleRequestHandler {
    * @param tableId the unique id for a table in the catalog
    * @return a [[RapidsBuffer]] which is reference counted, and should be closed by the acquirer
    */
-  def acquireShuffleBuffer(tableId: Int): RapidsBuffer
+  def getShuffleHandle(tableId: Int): RapidsShuffleHandle
 }
 
 /**

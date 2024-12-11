@@ -199,7 +199,7 @@ class GpuCoalesceBatchesRetrySuite
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
       assertResult(10)(batches.length)
       batches.foreach(b =>
-        verify(b, times(1)).close()
+        GpuColumnVector.extractBases(b).forall(_.getRefCount == 0)
       )
     }
   }
@@ -209,7 +209,7 @@ class GpuCoalesceBatchesRetrySuite
     var refCount = 1
     override def numRows(): Int = 0
     override def setSpillPriority(priority: Long): Unit = {}
-    override def getColumnarBatch(): ColumnarBatch = {
+    override def getColumnarBatch: ColumnarBatch = {
       throw new GpuSplitAndRetryOOM()
     }
     override def sizeInBytes: Long = 0
