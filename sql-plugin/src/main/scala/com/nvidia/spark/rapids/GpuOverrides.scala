@@ -593,8 +593,9 @@ object GpuOverrides extends Logging {
   }
 
   def isSupportedStringReplacePattern(strLit: String): Boolean = {
-    // check for regex special characters, except for \u0000 which we can support
-    !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+    // check for regex special characters, except for \u0000, \n, \r, and \t which we can support
+    val supported = Seq("\u0000", "\n", "\r", "\t")
+    !regexList.filterNot(supported.contains(_)).exists(pattern => strLit.contains(pattern))
   }
 
   def isSupportedStringReplacePattern(exp: Expression): Boolean = {
@@ -605,7 +606,6 @@ object GpuOverrides extends Logging {
         if (strLit.isEmpty) {
           false
         } else {
-          // check for regex special characters, except for \u0000 which we can support
           isSupportedStringReplacePattern(strLit)
         }
       case _ => false
@@ -3780,7 +3780,8 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRUCT.nested(jsonStructReadTypes) +
           TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
-          "MAP only supports keys and values that are of STRING type"),
+          "MAP only supports keys and values that are of STRING type " +
+            "and is only supported at the top level"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
@@ -3821,10 +3822,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
-      }).disabledByDefault("it is currently in beta and undergoes continuous enhancements."+
-      " Please consult the "+
-      "[compatibility documentation](../compatibility.md#json-supporting-types)"+
-      " to determine whether you can enable this configuration for your use case"),
+      }),
     expr[StructsToJson](
       "Converts structs to JSON text format",
       ExprChecks.projectOnly(

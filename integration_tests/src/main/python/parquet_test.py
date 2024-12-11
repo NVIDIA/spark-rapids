@@ -28,6 +28,8 @@ from spark_init_internal import spark_version
 from spark_session import *
 from conftest import is_databricks_runtime, is_dataproc_runtime
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -299,12 +301,19 @@ if not is_before_spark_320():
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('cpu_decompress', [True, False])
+def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs, cpu_decompress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
             conf={'spark.sql.parquet.compression.codec': compress})
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if cpu_decompress:
+        all_confs = copy_and_update(all_confs, {
+            'spark.rapids.sql.format.parquet.decompressCpu' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.snappy' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.zstd' : 'true'
+        })
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)

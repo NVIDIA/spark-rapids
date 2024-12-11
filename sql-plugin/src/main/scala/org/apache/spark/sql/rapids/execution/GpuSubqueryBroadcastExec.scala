@@ -126,8 +126,10 @@ abstract class GpuSubqueryBroadcastMetaBase(
           } else {
             willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
           }
-        case _ =>
-          throw new AssertionError("should not reach here")
+
+        case unexpected =>
+          throw new AssertionError("Unexpected child exec in AdaptiveSparkPlan: " +
+            s"${unexpected.getClass.getName}")
       }
 
     case _ =>
