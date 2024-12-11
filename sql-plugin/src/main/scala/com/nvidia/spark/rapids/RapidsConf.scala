@@ -1690,7 +1690,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
     .doc("Use HybridScan to read Parquet data using CPUs. The underlying implementation " +
-        "leverages both Gluten and Velox.")
+        "leverages both Gluten and Velox. Supports Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 " +
+        "as Gluten does, also supports other versions but not fully tested.")
     .internal()
     .booleanConf
     .createWithDefault(false)
