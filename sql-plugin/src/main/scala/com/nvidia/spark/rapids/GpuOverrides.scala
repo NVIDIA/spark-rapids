@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
@@ -3321,23 +3322,24 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested() +
-              TypeSig.psNote(TypeEnum.ARRAY, "Nested levels exceeding 8 layers are not supported") +
-              TypeSig.psNote(TypeEnum.STRUCT, "Nested levels exceeding 8 layers are not supported"),
+              TypeSig.psNote(TypeEnum.ARRAY, "The nesting depth has a certain limit") +
+              TypeSig.psNote(TypeEnum.STRUCT, "The nesting depth has a certain limit"),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          def getMaxNestedDepth(inputType: DataType): Int = {
+          def getMaxStackDepth(inputType: DataType): Int = {
             inputType match {
-              case at: ArrayType => 1 + getMaxNestedDepth(at.elementType)
+              case at: ArrayType => 1 + getMaxStackDepth(at.elementType)
               case st: StructType =>
-                1 + st.map(f => getMaxNestedDepth(f.dataType)).max
+                1 + st.map(f => getMaxStackDepth(f.dataType)).max
               case _ => 0 // primitive types
             }
           }
-          val maxDepth = a.children.map(c => getMaxNestedDepth(c.dataType)).max
-          if (maxDepth > 8) {
-            willNotWorkOnGpu(s"GPU HiveHash supports 8 levels at most for " +
-              s"nested types, but got $maxDepth")
+          val maxDepth = a.children.map(c => getMaxStackDepth(c.dataType)).max
+          val supportedDepth = Hash.MAX_STACK_DEPTH
+          if (maxDepth > supportedDepth) {
+            willNotWorkOnGpu(s"the data type requires a stack size of $maxDepth, " +
+              s"which exceeds the GPU limit of $supportedDepth")
           }
         }
 
