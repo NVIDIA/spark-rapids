@@ -135,6 +135,8 @@ case class GpuWriteFilesExec(
     val description = writeFilesSpec.description
     val committer = writeFilesSpec.committer
     val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
+    val localBaseOutputDebugPath = baseOutputDebugPath
+
     rddWithNonEmptyPartitions.mapPartitionsInternal { iterator =>
       val sparkStageId = TaskContext.get().stageId()
       val sparkPartitionId = TaskContext.get().partitionId()
@@ -148,7 +150,7 @@ case class GpuWriteFilesExec(
         committer,
         iterator,
         concurrentOutputWriterSpec,
-        baseOutputDebugPath
+        localBaseOutputDebugPath
       )
 
       Iterator(ret)
