@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-12-10
+Generated on 2024-12-12
 
 ## Release 24.12
 
@@ -25,6 +25,8 @@ Generated on 2024-12-10
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#10907](https://github.com/NVIDIA/spark-rapids/issues/10907)|from_json function parses a column containing an empty array, throws an exception.|
+|[#11793](https://github.com/NVIDIA/spark-rapids/issues/11793)|[BUG] "Time in Heuristic" should not include previous operator's compute time|
 |[#11798](https://github.com/NVIDIA/spark-rapids/issues/11798)|[BUG] mismatch CPU and GPU result in test_months_between_first_day[DATAGEN_SEED=1733006411, TZ=Africa/Casablanca]|
 |[#11790](https://github.com/NVIDIA/spark-rapids/issues/11790)|[BUG] test_hash_* failed "java.util.NoSuchElementException: head of empty list" or "Too many times of repartition, may hit a bug?"|
 |[#11643](https://github.com/NVIDIA/spark-rapids/issues/11643)|[BUG] Support AQE with Broadcast Hash Join and DPP on Databricks 14.3|
@@ -71,11 +73,21 @@ Generated on 2024-12-10
 ### PRs
 |||
 |:---|:---|
+|[#11857](https://github.com/NVIDIA/spark-rapids/pull/11857)|Increase the pre-merge CI timeout to 6 hours|
+|[#11845](https://github.com/NVIDIA/spark-rapids/pull/11845)|Fix leak in isTimeStamp|
 |[#11823](https://github.com/NVIDIA/spark-rapids/pull/11823)|Fix for `LEAD/LAG` window function test failures.|
+|[#11832](https://github.com/NVIDIA/spark-rapids/pull/11832)|Fix leak in GpuBroadcastNestedLoopJoinExecBase|
 |[#11763](https://github.com/NVIDIA/spark-rapids/pull/11763)|Orc writes don't fully support Booleans with nulls |
+|[#11794](https://github.com/NVIDIA/spark-rapids/pull/11794)|exclude previous operator's time out of firstBatchHeuristic|
 |[#11802](https://github.com/NVIDIA/spark-rapids/pull/11802)|Fall back to CPU for non-UTC months_between|
 |[#11792](https://github.com/NVIDIA/spark-rapids/pull/11792)|[BUG] Fix issue 11790|
+|[#11768](https://github.com/NVIDIA/spark-rapids/pull/11768)|Fix `dpp_test.py` failures on  14.3|
+|[#11752](https://github.com/NVIDIA/spark-rapids/pull/11752)|Ability to decompress snappy and zstd Parquet files via CPU|
+|[#11777](https://github.com/NVIDIA/spark-rapids/pull/11777)|Append knoguchi22 to blossom-ci whitelist [skip ci]|
 |[#11712](https://github.com/NVIDIA/spark-rapids/pull/11712)|repartition-based fallback for hash aggregate v3|
+|[#11771](https://github.com/NVIDIA/spark-rapids/pull/11771)|Fix query hang when using rapids multithread shuffle manager with kudo|
+|[#11759](https://github.com/NVIDIA/spark-rapids/pull/11759)|Avoid using StringBuffer in single-threaded methods.|
+|[#11766](https://github.com/NVIDIA/spark-rapids/pull/11766)|Fix Kudo batch serializer to only read header in hasNext|
 |[#11730](https://github.com/NVIDIA/spark-rapids/pull/11730)|Add support for asynchronous writing for parquet|
 |[#11750](https://github.com/NVIDIA/spark-rapids/pull/11750)|Fix aqe_test failures on  14.3.|
 |[#11753](https://github.com/NVIDIA/spark-rapids/pull/11753)|Enable JSON Scan and from_json by default|
