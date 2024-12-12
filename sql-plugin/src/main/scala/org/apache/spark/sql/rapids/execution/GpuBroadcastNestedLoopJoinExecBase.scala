@@ -658,11 +658,15 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
             localJoinType match {
               case LeftOuter if spillableBuiltBatch.numRows == 0 =>
-                new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
-                  true)
+                withResource(spillableBuiltBatch) { _ =>
+                  new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
+                    true)
+                }
               case RightOuter if spillableBuiltBatch.numRows == 0 =>
-                new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
-                  false)
+                withResource(spillableBuiltBatch) { _ =>
+                  new EmptyOuterNestedLoopJoinIterator(streamedIter, spillableBuiltBatch.dataTypes,
+                    false)
+                }
               case _ =>
                 new CrossJoinIterator(
                   spillableBuiltBatch,
@@ -696,17 +700,18 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         withRetry(spillable, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { spillBatch =>
           withResource(spillBatch.getColumnarBatch()) { batch =>
-            GpuColumnVector.incRefCounts(batch)
-            val newCols = new Array[ColumnVector](batch.numCols + 1)
-            (0 until newCols.length - 1).foreach { i =>
-              newCols(i) = batch.column(i)
+            closeOnExcept(GpuColumnVector.incRefCounts(batch)) { _ =>
+              val newCols = new Array[ColumnVector](batch.numCols + 1)
+              (0 until newCols.length - 1).foreach { i =>
+                newCols(i) = batch.column(i)
+              }
+              val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
+                GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
+                  BooleanType)
+              }
+              newCols(batch.numCols) = existsCol
+              new ColumnarBatch(newCols, batch.numRows)
             }
-            val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
-              GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
-                BooleanType)
-            }
-            newCols(batch.numCols) = existsCol
-            new ColumnarBatch(newCols, batch.numRows)
           }
         }
       }

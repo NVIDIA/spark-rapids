@@ -1268,6 +1268,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
+    .doc("When set to false disables boolean columns for ORC writes. " +
+      "Set to true if you want to experiment. " +
+      "See https://github.com/NVIDIA/spark-rapids/issues/11736.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
       "Pre-projection leverages the tiered projection to evaluate expressions that " +
@@ -2496,7 +2504,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3027,6 +3035,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 

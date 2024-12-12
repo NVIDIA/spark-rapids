@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>24.12.0-SNAPSHOT</version>
+    <version>25.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -813,8 +813,7 @@
 
     <properties>
         <!-- start dyn.shim properties -->
-        <!-- TODO: will package 350db143 shim into the dist jar in branch-25.02, followed by https://github.com/NVIDIA/spark-rapids/issues/11749 -->
-	<dyn.shim.excluded.releases>350db143</dyn.shim.excluded.releases>
+	<dyn.shim.excluded.releases></dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>
@@ -829,8 +828,8 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>24.12.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>24.12.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>25.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>25.02.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.13</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -937,13 +936,14 @@
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
           Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
           so base shim version is removed from the premergeUT list.
-          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+          Separate the versions to two parts: premergeUT1(2 shims' UT + 1/3 of the integration tests)
+          and premergeUT2(1 shim's UT + 2/3 of the integration tests), for balancing the duration
         -->
         <premergeUT1.buildvers>
-            320
+            320,
+            330
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
-            330,
             340
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
