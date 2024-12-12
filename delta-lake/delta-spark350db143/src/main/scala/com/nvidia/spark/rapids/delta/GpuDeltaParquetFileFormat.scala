@@ -115,9 +115,9 @@ case class GpuDeltaParquetFileFormat(
 
     // We don't have any additional columns to generate, just return the original reader as is.
     if (isRowDeletedColumn.isEmpty && rowIndexColumn.isEmpty) return dataReader
-//    require(!isSplittable, "Cannot generate row index related metadata with file splitting")
-//    require(disablePushDowns, "Cannot generate row index related metadata with filter pushdown")
-    if (hasDeletionVectorMap && isRowDeletedColumn.isEmpty) {
+    require(!isSplittable, "Cannot generate row index related metadata with file splitting")
+    require(disablePushDowns, "Cannot generate row index related metadata with filter pushdown")
+    if (isRowDeletedColumn.isEmpty) {
       throw new IllegalArgumentException("Expected a column " +
         s"${IS_ROW_DELETED_COLUMN_NAME} in the schema")
     }
@@ -154,8 +154,13 @@ case class GpuDeltaParquetFileFormat(
         } else {
           input
         }
+        val filterType =
+          filterTypes.getOrElse(file.path, RowIndexFilterType.IF_CONTAINED)
+        val value = if (file.deletionVector != null)
+          Some(DeletionVectorDescriptorWithFilterType(file.deletionVector, filterType))
+        else None
         iteratorWithAdditionalMetadataColumns(file, iter, isRowDeletedColumn,
-          rowIndexColumn).asInstanceOf[Iterator[InternalRow]]
+          rowIndexColumn, value).asInstanceOf[Iterator[InternalRow]]
       } catch {
         case NonFatal(e) =>
           dataReader match {
@@ -178,10 +183,12 @@ case class GpuDeltaParquetFileFormat(
   private def iteratorWithAdditionalMetadataColumns(partitionedFile: PartitionedFile,
     iterator: Iterator[Any],
     isRowDeletedColumn: Option[ColumnMetadata],
-    rowIndexColumn: Option[ColumnMetadata]): Iterator[Any] = {
+    rowIndexColumn: Option[ColumnMetadata],
+    decriptorWithFilterType: Option[DeletionVectorDescriptorWithFilterType]): Iterator[Any] = {
     val pathUri = partitionedFile.pathUri
     val rowIndexFilter = isRowDeletedColumn.map { col =>
-      broadcastDvMap.get.value.get(pathUri).map { descriptorWithFilterType =>
+      descriptorWithFilterType.getOrElse(KeepAllRowsFilter) {
+        descriptorWithFilterType =>
         val dvDescriptor = descriptorWithFilterType.descriptor
         val filterType = descriptorWithFilterType.filterType
         filterType match {
@@ -198,7 +205,7 @@ case class GpuDeltaParquetFileFormat(
           case _ =>
             throw new IllegalArgumentException(s"Unexpected filter type ${filterType}")
         }
-      }.getOrElse(KeepAllRowsFilter)
+      }
     }
 
     val metadataColumns = List(isRowDeletedColumn, rowIndexColumn).flatten
@@ -304,7 +311,9 @@ object GpuDeltaParquetFileFormat {
   }
 
   def convertToGpu(fmt: DeltaParquetFileFormat): GpuDeltaParquetFileFormat = {
-    GpuDeltaParquetFileFormat(fmt.columnMappingMode, fmt.referenceSchema, fmt.isSplittable,
+    // Passing isSplittable as false because we don't support file splitting until
+    // <spark-rapids-issue-link> is resolved
+    GpuDeltaParquetFileFormat(fmt.columnMappingMode, fmt.referenceSchema, false,
       fmt.disablePushDowns, fmt.broadcastDvMap, fmt.tablePath, fmt.broadcastHadoopConf)
   }
 }
