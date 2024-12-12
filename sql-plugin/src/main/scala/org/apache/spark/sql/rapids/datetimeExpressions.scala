@@ -1535,9 +1535,9 @@ abstract class GpuTruncDateTime(fmtStr: Option[String]) extends GpuBinaryExpress
     DateTimeUtils.truncate(datetimeCol.getBase, fmtCol.getBase)
   }
 
-  protected def truncate(datetimeVal: GpuScalar, formatCol: GpuColumnVector): ColumnVector = {
+  protected def truncate(datetimeVal: GpuScalar, fmtCol: GpuColumnVector): ColumnVector = {
     withResource(ColumnVector.fromScalar(datetimeVal.getBase, 1)) { datetimeCol =>
-      DateTimeUtils.truncate(datetimeCol, formatCol.getBase)
+      DateTimeUtils.truncate(datetimeCol, fmtCol.getBase)
     }
   }
 
