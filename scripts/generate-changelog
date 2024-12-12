@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -183,9 +183,13 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
                 if resource_type == PULL_REQUESTS:
                     if '[bot]' in item['title']:
                         continue  # skip auto-gen PR
-                    no_project_prs.append(item)
-                continue
-            project = item['projectCards']['nodes'][0]['project']['name']
+                    # Obtain the version from the PR's target branch, e.g. branch-x.y --> x.y
+                    ver = item['baseRefName'].replace('branch-', '')
+                    project = f"{RELEASE} {ver}"
+                else:
+                    continue
+            else:
+                project = item['projectCards']['nodes'][0]['project']['name']
         else:
             ver = item["projectItems"]["nodes"][0]['roadmap']['name']
             project = f"{RELEASE} {ver}"
