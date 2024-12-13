@@ -1247,15 +1247,22 @@ case class GpuContainsAny(input: Expression, targets: Seq[UTF8String])
     val boolCvs = withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
       input.getBase.stringContains(targetsCv)
     }
-    closeOnExcept(boolCvs.tail) { _ =>
-      boolCvs.tail.foldLeft(boolCvs.head) {
-        (l, r) => withResource(l) { _ =>
-          withResource(r) { _ =>
-            l.or(r)
-          }
+    var ret: ColumnVector = null
+    withResource(boolCvs) { _ =>
+      boolCvs.indices.foreach { i =>
+        if (ret == null) {
+          ret = boolCvs(i)
+          boolCvs(i) = null
+        } else {
+          val tmp = ret.or(boolCvs(i))
+          ret.close()
+          ret = tmp
+          boolCvs(i).close()
+          boolCvs(i) = null
         }
       }
     }
+    ret
   }
 }
 
