@@ -44,12 +44,12 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
     }
   }
 
-  def init(diskBlockManager: RapidsDiskBlockManager): Unit = {
+  def init(): Unit = {
     if (isRapidsShuffleConfigured) {
       shuffleCatalog =
-          new ShuffleBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
+          new ShuffleBufferCatalog()
       shuffleReceivedBufferCatalog =
-          new ShuffleReceivedBufferCatalog(RapidsBufferCatalog.singleton)
+          new ShuffleReceivedBufferCatalog()
     }
   }
 
@@ -172,9 +172,9 @@ object GpuShuffleEnv extends Logging {
   // Functions below only get called from the executor
   //
 
-  def init(conf: RapidsConf, diskBlockManager: RapidsDiskBlockManager): Unit = {
+  def init(conf: RapidsConf): Unit = {
     val shuffleEnv = new GpuShuffleEnv(conf)
-    shuffleEnv.init(diskBlockManager)
+    shuffleEnv.init()
     env = shuffleEnv
   }
 
