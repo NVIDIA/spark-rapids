@@ -164,8 +164,7 @@ query ($after: String, $since: DateTime) {
 """
 
 
-def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, no_project_prs: list,
-                      token: str):
+def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, token: str):
     if resource_type == PULL_REQUESTS:
         items = process_pr(releases=releases, token=token)
         time_field = 'mergedAt'
@@ -313,12 +312,6 @@ def form_subsection(issues: dict, subtitle: str):
     return subsection
 
 
-def print_no_project_pr(no_project_prs: list):
-    if len(no_project_prs) != 0:
-        print("\nNOTE: Merged Pull Requests w/o Project:")
-    for pr in no_project_prs:
-        print(f"{pr['baseRefName']} #{pr['number']} {pr['title']} {pr['url']}")
-
 
 def main(rels: str, path: str, token: str):
     print('Generating changelog ...')
@@ -327,16 +320,13 @@ def main(rels: str, path: str, token: str):
         changelog = {}  # changelog dict
         releases = {x.strip() for x in rels.split(',')}
         projects = {f"{RELEASE} {rel}" for rel in releases}
-        no_project_prs = []  # list of merge pr w/o project
 
         print('Processing pull requests ...')
         process_changelog(resource_type=PULL_REQUESTS, changelog=changelog,
-                          releases=releases, projects=projects,
-                          no_project_prs=no_project_prs, token=token)
+                          releases=releases, projects=projects, token=token)
         print('Processing issues ...')
         process_changelog(resource_type=ISSUES, changelog=changelog,
-                          releases=releases, projects=projects,
-                          no_project_prs=no_project_prs, token=token)
+                          releases=releases, projects=projects, token=token)
         # form doc
         form_changelog(path=path, changelog=changelog)
     except Exception as e:  # pylint: disable=broad-except
@@ -344,8 +334,6 @@ def main(rels: str, path: str, token: str):
         sys.exit(1)
 
     print('Done.')
-    # post action
-    print_no_project_pr(no_project_prs=no_project_prs)
 
 
 if __name__ == '__main__':
