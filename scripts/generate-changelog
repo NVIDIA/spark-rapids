@@ -177,18 +177,14 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
 
     for item in items:
         if len(item["projectItems"]["nodes"]) == 0 or not item["projectItems"]["nodes"][0]['roadmap']:
-            # compatibility support for project API V1
-            if len(item['projectCards']['nodes']) == 0:
-                if resource_type == PULL_REQUESTS:
-                    if '[bot]' in item['title']:
-                        continue  # skip auto-gen PR
-                    # Obtain the version from the PR's target branch, e.g. branch-x.y --> x.y
-                    ver = item['baseRefName'].replace('branch-', '')
-                    project = f"{RELEASE} {ver}"
-                else:
-                    continue
+            if resource_type == PULL_REQUESTS:
+                if '[bot]' in item['title']:
+                    continue  # skip auto-gen PR
+                # Obtain the version from the PR's target branch, e.g. branch-x.y --> x.y
+                ver = item['baseRefName'].replace('branch-', '')
+                project = f"{RELEASE} {ver}"
             else:
-                project = item['projectCards']['nodes'][0]['project']['name']
+                continue
         else:
             ver = item["projectItems"]["nodes"][0]['roadmap']['name']
             project = f"{RELEASE} {ver}"
