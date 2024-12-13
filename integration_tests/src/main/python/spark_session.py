@@ -329,4 +329,4 @@ def is_hive_available():
     return _spark.conf.get("spark.sql.catalogImplementation") == "hive"
 
 def is_hybrid_backend_loaded():
-    return _spark.conf.get("spark.rapids.sql.hybrid.load") == "true"
+    return _spark.conf.get("spark.rapids.sql.hybrid.loadBackend") == "true"

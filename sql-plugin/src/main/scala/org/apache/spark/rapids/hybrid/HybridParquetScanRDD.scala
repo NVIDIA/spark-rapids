@@ -22,7 +22,6 @@ import org.apache.spark.{InterruptibleIterator, Partition, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -33,50 +32,24 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
                            metrics: Map[String, GpuMetric],
                          ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) {
 
-  private val hybridScanTime = GpuMetric.unwrap(metrics("HybridScanTime"))
-
   override protected def getPartitions: Array[Partition] = scanRDD.partitions
 
   override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] = {
-    // the wrapping Iterator for the underlying VeloxScan task
-    val metricsIter = new HybridScanMetricsIter(scanRDD.compute(split, context), hybridScanTime)
+    // the wrapping Iterator for the underlying HybridNativeScan task
+    val hybridScanIter = scanRDD.compute(split, context)
 
     val schema = StructType(outputAttr.map { ar =>
       StructField(ar.name, ar.dataType, ar.nullable)
     })
-    require(coalesceGoal.targetSizeBytes <= Int.MaxValue,
-      s"targetSizeBytes should be smaller than 2GB, but got ${coalesceGoal.targetSizeBytes}"
-    )
     val hostResultIter = new CoalesceConvertIterator(
-      metricsIter, coalesceGoal.targetSizeBytes.toInt, schema, metrics
+      hybridScanIter,
+      coalesceGoal.targetSizeBytes,
+      schema,
+      metrics
     )
     val deviceIter = CoalesceConvertIterator.hostToDevice(hostResultIter, outputAttr, metrics)
 
     // TODO: SPARK-25083 remove the type erasure hack in data source scan
     new InterruptibleIterator(context, deviceIter.asInstanceOf[Iterator[InternalRow]])
-  }
-}
-
-// In terms of CPU parquet reader, both hasNext and next might be time-consuming. So, it is
-// necessary to take account of the hasNext time as well.
-private class HybridScanMetricsIter(iter: Iterator[ColumnarBatch],
-                                    scanTime: SQLMetric
-                                   ) extends Iterator[ColumnarBatch] {
-  override def hasNext: Boolean = {
-    val start = System.nanoTime()
-    try {
-      iter.hasNext
-    } finally {
-      scanTime += System.nanoTime() - start
-    }
-  }
-
-  override def next(): ColumnarBatch = {
-    val start = System.nanoTime()
-    try {
-      iter.next()
-    } finally {
-      scanTime += System.nanoTime() - start
-    }
   }
 }

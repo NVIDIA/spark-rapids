@@ -111,7 +111,6 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     "CpuReaderBatches" -> (() => createMetric(MODERATE_LEVEL, "CpuReaderBatches")),
     "C2COutputSize" -> (() => createSizeMetric(MODERATE_LEVEL, "C2COutputSize")),
     "C2CTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "C2CTime")),
-    "C2CStreamTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "C2CStreamTime")),
     "PageableH2DTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "PageableH2DTime")),
     "PinnedH2DTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "PinnedH2DTime")),
     "PageableH2DSize" -> (() => createSizeMetric(MODERATE_LEVEL, "PageableH2DSize")),
@@ -129,7 +128,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     nativeMetrics.foreach { case (key, generator) =>
       mapBuilder += key -> generator()
     }
-    // Expose all metrics of the underlying GlutenScanExec
+    // Expose all metrics of the underlying CpuNativeScanExec
     nativePlan.metrics.foreach { case (key, metric) =>
       mapBuilder += s"Hybrid_$key" -> GpuMetric.wrap(metric)
     }
