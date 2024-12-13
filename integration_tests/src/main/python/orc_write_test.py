@@ -151,7 +151,11 @@ def test_write_round_trip_nullable_struct(spark_tmp_path, gen, orc_impl):
             lambda spark, path: unary_op_df(spark, gen_for_struct, num_slices=1).write.orc(path),
             lambda spark, path: spark.read.orc(path),
             data_path,
-            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
+            conf={'spark.sql.orc.impl': orc_impl,
+                'spark.rapids.sql.format.orc.write.enabled': True,
+                # https://github.com/NVIDIA/spark-rapids/issues/11736, so verify that we still do it correctly
+                # once this is fixed
+                'spark.rapids.sql.format.orc.write.boolType.enabled' : True})
 
 orc_part_write_gens = [
         # Add back boolean_gen when  https://github.com/rapidsai/cudf/issues/6763 is fixed
