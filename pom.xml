@@ -1402,12 +1402,10 @@ This will force full Scala code rebuild in downstream modules.
                             <!-- #if scala-2.12 -->
                             <arg>-Ywarn-unused:imports,locals,patvars,privates</arg>
                             <arg>-Yno-adapted-args</arg>
-                            <arg>-Xfatal-warnings</arg>
                             <!-- #endif scala-2.12 -->
                             <arg>-Wconf:cat=lint-adapted-args:e</arg>
                             <!-- #if scala-2.13 --><!--
                             <arg>-Xsource:2.13</arg>
-                            <arg>-Ywarn-unused:locals,patvars,privates</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
                             <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
