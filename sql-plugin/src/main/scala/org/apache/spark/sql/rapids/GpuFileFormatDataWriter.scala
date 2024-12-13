@@ -78,34 +78,35 @@ object GpuFileFormatDataWriter {
    * The input batch is closed in case of error or in case we have to split it.
    * It is not closed if it wasn't split.
    *
-   * @param batch ColumnarBatch to split (and close)
+   * @param scb Spillable ColumnarBatch to split (and close)
    * @param maxRecordsPerFile max rowcount per file
    * @param recordsInFile row count in the file so far
    * @return array of SpillableColumnarBatch splits
    */
-  def splitToFitMaxRecordsAndClose(
-      batch: ColumnarBatch,
+  def splitToFitMaxRecordsAndCloseWithRetry(
+      scb: SpillableColumnarBatch,
       maxRecordsPerFile: Long,
       recordsInFile: Long): Array[SpillableColumnarBatch] = {
-    val (types, splitIndexes) = closeOnExcept(batch) { _ =>
-      val splitIndexes = getSplitIndexes(maxRecordsPerFile, recordsInFile, batch.numRows())
-      (GpuColumnVector.extractTypes(batch), splitIndexes)
+    val splitIndexes = closeOnExcept(scb) { _ =>
+      getSplitIndexes(maxRecordsPerFile, recordsInFile, scb.numRows())
     }
     if (splitIndexes.isEmpty) {
-      // this should never happen, as `splitToFitMaxRecordsAndClose` is called when
+      // this should never happen, as `splitToFitMaxRecordsAndCloseWithRetry` is called when
       // splits should already happen, but making it more efficient in that case
-      Array(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      Array(scb)
     } else {
       // actually split it
-      val tbl = withResource(batch) { _ =>
-        GpuColumnVector.from(batch)
-      }
-      val cts = withResource(tbl) { _ =>
-        tbl.contiguousSplit(splitIndexes: _*)
-      }
-      withResource(cts) { _ =>
-        cts.safeMap(ct =>
-          SpillableColumnarBatch(ct, types, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      withRetryNoSplit(scb) { _ =>
+        val tbl = withResource(scb.getColumnarBatch()) { batch =>
+          GpuColumnVector.from(batch)
+        }
+        val cts = withResource(tbl) { _ =>
+          tbl.contiguousSplit(splitIndexes: _*)
+        }
+        withResource(cts) { _ =>
+          cts.safeMap(ct =>
+            SpillableColumnarBatch(ct, scb.dataTypes, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        }
       }
     }
   }
@@ -257,14 +258,13 @@ class GpuSingleDirectoryDataWriter(
   override def write(batch: ColumnarBatch): Unit = {
     val maxRecordsPerFile = description.maxRecordsPerFile
     val recordsInFile = currentWriterStatus.recordsInFile
+    val scb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     if (!shouldSplitToFitMaxRecordsPerFile(
-        maxRecordsPerFile, recordsInFile, batch.numRows())) {
-      writeUpdateMetricsAndClose(
-        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
-        currentWriterStatus)
+        maxRecordsPerFile, recordsInFile, scb.numRows())) {
+      writeUpdateMetricsAndClose(scb, currentWriterStatus)
     } else {
-      val partBatches = splitToFitMaxRecordsAndClose(
-        batch, maxRecordsPerFile, recordsInFile)
+      val partBatches = splitToFitMaxRecordsAndCloseWithRetry(scb, maxRecordsPerFile,
+        recordsInFile)
       val needNewWriterForFirstPart = recordsInFile >= maxRecordsPerFile
       closeOnExcept(partBatches) { _ =>
         partBatches.zipWithIndex.foreach { case (partBatch, partIx) =>
@@ -593,10 +593,7 @@ class GpuDynamicPartitionDataSingleWriter(
     if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile, recordsInFile, scb.numRows())) {
       writeUpdateMetricsAndClose(scb, writerStatus)
     } else {
-      val batch = withRetryNoSplit(scb) { scb =>
-        scb.getColumnarBatch()
-      }
-      val splits = splitToFitMaxRecordsAndClose(batch, maxRecordsPerFile, recordsInFile)
+      val splits = splitToFitMaxRecordsAndCloseWithRetry(scb, maxRecordsPerFile, recordsInFile)
       withResource(splits) { _ =>
         val needNewWriterForFirstPart = recordsInFile >= maxRecordsPerFile
         splits.zipWithIndex.foreach { case (part, partIx) =>

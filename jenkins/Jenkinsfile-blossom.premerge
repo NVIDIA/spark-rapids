@@ -39,6 +39,8 @@ def skipped = false
 def db_build = false
 def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
     'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
+// The path where the CI_PART1 job shares rapids plugin built tars with the CI_PART job
+def plugin_built_dir = "dbfs:/cicd/$BUILD_TAG"
 
 pipeline {
     agent {
@@ -190,7 +192,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     steps {
                         script {
                             container('gpu') {
-                                timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
+                                timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
                                     try {
                                         sh "$PREMERGE_SCRIPT mvn_verify"
                                         step([$class                : 'JacocoPublisher',
@@ -228,7 +230,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         script {
                             unstash "source_tree"
                             container('gpu') {
-                                timeout(time: 4, unit: 'HOURS') {
+                                timeout(time: 6, unit: 'HOURS') {
                                     try {
                                         sh "$PREMERGE_SCRIPT ci_2"
                                     } finally {
@@ -260,7 +262,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         script {
                             unstash "source_tree"
                             container('gpu') {
-                                timeout(time: 4, unit: 'HOURS') {
+                                timeout(time: 6, unit: 'HOURS') {
                                     try {
                                         sh "$PREMERGE_SCRIPT ci_scala213"
                                     } finally {
@@ -281,12 +283,14 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     steps {
                         script {
                             githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
+                            //CI_PART1 upload plugin buit tars to PLUGIN_BUILT_DIR for CI_PART2
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'TEST_MODE', value: 'CI_PART1')
+                                        string(name: 'TEST_MODE', value: 'CI_PART1'),
+                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
@@ -310,7 +314,8 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'TEST_MODE', value: 'CI_PART2')
+                                        string(name: 'TEST_MODE', value: 'CI_PART2'),
+                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR

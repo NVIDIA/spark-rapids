@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.Callable
+import java.util.concurrent.locks.ReentrantLock
 import javax.annotation.concurrent.GuardedBy
 
 import com.nvidia.spark.rapids.RapidsConf
@@ -85,38 +86,55 @@ class HostMemoryThrottle(val maxInFlightHostMemoryBytes: Long) extends Throttle 
  *
  * This class is thread-safe as it is used by multiple tasks.
  */
-class TrafficController protected[rapids] (throttle: Throttle) {
+class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle) {
 
-  @GuardedBy("this")
+  @GuardedBy("lock")
   private var numTasks: Int = 0
+
+  private val lock = new ReentrantLock()
+  private val canBeScheduled = lock.newCondition()
 
   /**
    * Blocks the task from being scheduled until the throttle allows it. If there is no task
    * currently scheduled, the task is scheduled immediately even if the throttle is exceeded.
    */
-  def blockUntilRunnable[T](task: Task[T]): Unit = synchronized {
-    if (numTasks > 0) {
-      while (!throttle.canAccept(task)) {
-        wait(100)
+  def blockUntilRunnable[T](task: Task[T]): Unit = {
+    lock.lockInterruptibly()
+    try {
+      while (numTasks > 0 && !throttle.canAccept(task)) {
+        canBeScheduled.await()
       }
+      numTasks += 1
+      throttle.taskScheduled(task)
+    } finally {
+      lock.unlock()
     }
-    numTasks += 1
-    throttle.taskScheduled(task)
   }
 
-  def taskCompleted[T](task: Task[T]): Unit = synchronized {
-    numTasks -= 1
-    throttle.taskCompleted(task)
-    notify()
+  def taskCompleted[T](task: Task[T]): Unit = {
+    lock.lockInterruptibly()
+    try {
+      numTasks -= 1
+      throttle.taskCompleted(task)
+      canBeScheduled.signal()
+    } finally {
+      lock.unlock()
+    }
   }
 
-  def numScheduledTasks: Int = synchronized {
-    numTasks
+  def numScheduledTasks: Int = {
+    lock.lockInterruptibly()
+    try {
+      numTasks
+    } finally {
+      lock.unlock()
+    }
   }
 }
 
 object TrafficController {
 
+  @GuardedBy("this")
   private var instance: TrafficController = _
 
   /**
