@@ -1645,6 +1645,7 @@ This will force full Scala code rebuild in downstream modules.
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
+                        <exclude>**/cudf_log.txt</exclude>
                         <exclude>thirdparty/parquet-testing/**</exclude>
                     </excludes>
                 </configuration>
