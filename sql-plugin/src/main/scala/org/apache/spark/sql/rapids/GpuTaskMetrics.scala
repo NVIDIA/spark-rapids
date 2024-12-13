@@ -107,12 +107,95 @@ class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
   override def value: Long = _value
 }
 
+class MaxLongAccumulator extends AccumulatorV2[jl.Long, jl.Long] {
+  private var _v = 0L
+
+  override def isZero: Boolean = _v == 0
+
+  override def copy(): MaxLongAccumulator = {
+    val newAcc = new MaxLongAccumulator
+    newAcc._v = this._v
+    newAcc
+  }
+
+  override def reset(): Unit = {
+    _v = 0L
+  }
+
+  override def add(v: jl.Long): Unit = {
+    if(v > _v) {
+      _v = v
+    }
+  }
+
+  def add(v: Long): Unit = {
+    if(v > _v) {
+      _v = v
+    }
+  }
+
+  override def merge(other: AccumulatorV2[jl.Long, jl.Long]): Unit = other match {
+    case o: MaxLongAccumulator =>
+      add(o.value)
+    case _ =>
+      throw new UnsupportedOperationException(
+        s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
+  }
+
+  override def value: jl.Long = _v
+}
+
+class AvgLongAccumulator extends AccumulatorV2[jl.Long, jl.Double] {
+  private var _sum = 0L
+  private var _count = 0L
+
+  override def isZero: Boolean = _count == 0L
+
+  override def copy(): AvgLongAccumulator = {
+    val newAcc = new AvgLongAccumulator
+    newAcc._sum = this._sum
+    newAcc._count = this._count
+    newAcc
+  }
+
+  override def reset(): Unit = {
+    _sum = 0L
+    _count = 0L
+  }
+
+  override def add(v: jl.Long): Unit = {
+    _sum += v
+    _count += 1
+  }
+
+  override def merge(other: AccumulatorV2[jl.Long, jl.Double]): Unit = other match {
+    case o: AvgLongAccumulator =>
+      _sum += o._sum
+      _count += o._count
+    case _ =>
+      throw new UnsupportedOperationException(
+        s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
+  }
+
+  override def value: jl.Double = if (_count != 0) {
+    1.0 * _sum / _count
+  } else 0;
+}
+
 class GpuTaskMetrics extends Serializable {
+  private val semaphoreHoldingTime = new NanoSecondAccumulator
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
   private val splitAndRetryCount = new LongAccumulator
   private val retryBlockTime = new NanoSecondAccumulator
   private val retryComputationTime = new NanoSecondAccumulator
+  // onGpuTask means a task that has data in GPU memory.
+  // Since it's not easy to decided if a task has data in GPU memory,
+  // We only count the tasks that had held semaphore before,
+  // so it's very likely to have data in GPU memory
+  private val onGpuTasksInWaitingQueueAvgCount = new AvgLongAccumulator
+  private val onGpuTasksInWaitingQueueMaxCount = new MaxLongAccumulator
+
 
   // Spill
   private val spillToHostTimeNs = new NanoSecondAccumulator
@@ -156,6 +239,7 @@ class GpuTaskMetrics extends Serializable {
   }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
+    "gpuTime" -> semaphoreHoldingTime,
     "gpuSemaphoreWait" -> semWaitTimeNs,
     "gpuRetryCount" -> retryCount,
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
@@ -167,7 +251,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
     "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
     "gpuMaxHostMemoryBytes" -> maxHostMemoryBytes,
-    "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes
+    "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes,
+    "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
+    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount
   )
 
   def register(sc: SparkContext): Unit = {
@@ -203,6 +289,8 @@ class GpuTaskMetrics extends Serializable {
       }
     }
   }
+
+  def addSemaphoreHoldingTime(duration: Long): Unit = semaphoreHoldingTime.add(duration)
 
   def getSemWaitTime(): Long = semWaitTimeNs.value.value
 
@@ -262,6 +350,11 @@ class GpuTaskMetrics extends Serializable {
     if (maxDiskBytesAllocated > 0) {
       maxDiskMemoryBytes.add(maxDiskBytesAllocated)
     }
+  }
+
+  def recordOnGpuTasksWaitingNumber(num: Int): Unit = {
+    onGpuTasksInWaitingQueueAvgCount.add(num)
+    onGpuTasksInWaitingQueueMaxCount.add(num)
   }
 }
 
