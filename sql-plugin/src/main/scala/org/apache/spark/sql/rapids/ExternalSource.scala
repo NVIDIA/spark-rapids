@@ -28,7 +28,7 @@ import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
@@ -103,11 +103,12 @@ object ExternalSource extends Logging {
    * Get a read file format for the input format.
    * Better to check if the format is supported first by calling 'isSupportedFormat'
    */
-  def getReadFileFormat(format: FileFormat): FileFormat = {
+  def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+    val format = relation.fileFormat
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.getReadFileFormat(format)
     } else if (deltaProvider.isSupportedFormat(format.getClass)) {
-      deltaProvider.getReadFileFormat(format)
+      deltaProvider.getReadFileFormat(relation)
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }
