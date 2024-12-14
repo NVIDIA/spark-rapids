@@ -676,6 +676,27 @@ def test_write_daytime_interval(spark_tmp_path):
             data_path,
             conf=writer_confs)
 
+
+hold_gpu_configs = [True, False]
+@pytest.mark.parametrize('hold_gpu', hold_gpu_configs, ids=idfn)
+def test_async_writer(spark_tmp_path, hold_gpu):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    num_rows = 2048
+    num_cols = 10
+    parquet_gen = [int_gen for _ in range(num_cols)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gen)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list, length=num_rows).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        copy_and_update(
+            writer_confs,
+            {"spark.rapids.sql.asyncWrite.queryOutput.enabled": "true",
+             "spark.rapids.sql.batchSizeBytes": 4 * num_cols * 100,  # 100 rows per batch
+             "spark.rapids.sql.queryOutput.holdGpuInTask": hold_gpu}
+        ))
+
+
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 def test_concurrent_writer(spark_tmp_path):
