@@ -1822,6 +1822,20 @@ object GpuOverrides extends Logging {
           ParamCheck("round", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.BOOLEAN))),
       (a, conf, p, r) => new MonthsBetweenExprMeta(a, conf, p, r)
     ),
+    expr[TruncDate](
+      "Truncate the date to the unit specified by the given string format",
+      ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
+        ("date", TypeSig.DATE, TypeSig.DATE),
+        ("format", TypeSig.STRING, TypeSig.STRING)),
+      (a, conf, p, r) => new TruncDateExprMeta(a, conf, p, r)
+    ),
+    expr[TruncTimestamp](
+      "Truncate the timestamp to the unit specified by the given string format",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("format", TypeSig.STRING, TypeSig.STRING),
+        ("date", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP)),
+      (a, conf, p, r) => new TruncTimestampExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553
