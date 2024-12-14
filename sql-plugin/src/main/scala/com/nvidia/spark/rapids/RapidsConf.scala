@@ -2453,7 +2453,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .doc("Option to turn on the async query output write. During the final output write, the " +
         "task first copies the output to the host memory, and then writes it into the storage. " +
         "When this option is enabled, the task will asynchronously write the output in the host " +
-        "memory to the storage. Only the Parquet format is supported currently.")
+        "memory to the storage. Only the Parquet and ORC formats are supported currently.")
       .internal()
       .booleanConf
       .createWithDefault(false)

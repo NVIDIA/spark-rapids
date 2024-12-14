@@ -191,7 +191,8 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
                                dataSchema: StructType,
                                context: TaskAttemptContext,
                                debugOutputPath: Option[String]): ColumnarOutputWriter = {
-        new GpuOrcWriter(path, dataSchema, context, holdGpuBetweenBatches, asyncOutputWriteEnabled)
+        new GpuOrcWriter(path, dataSchema, context, debugOutputPath, holdGpuBetweenBatches,
+          asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
