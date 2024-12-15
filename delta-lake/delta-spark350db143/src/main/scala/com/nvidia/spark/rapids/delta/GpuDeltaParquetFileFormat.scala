@@ -24,6 +24,7 @@ import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
 import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.util.DeltaFileOperations.absolutePath
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsConf, RapidsHostColumnBuilder, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
@@ -46,7 +47,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnarBatchRow, ColumnV
 import org.apache.spark.util.SerializableConfiguration
 
 case class GpuDeltaParquetFileFormat(
-    relation: HadoopFsRelation,
+    @transient relation: HadoopFsRelation,
     override val columnMappingMode: DeltaColumnMappingMode,
     override val referenceSchema: StructType,
     isSplittable: Boolean,
@@ -136,19 +137,24 @@ case class GpuDeltaParquetFileFormat(
 //    val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
 
     val tahoeFileIndex = relation.location.asInstanceOf[TahoeFileIndex]
+    val tahoeTablePath = tahoeFileIndex.path.toString
     val filterTypes = tahoeFileIndex.rowIndexFilters.getOrElse(Map.empty)
       .map(kv => kv._1 -> kv._2.getRowIndexFilterType)
     val filesWithDVs = tahoeFileIndex
       .matchingFiles(partitionFilters = Seq(TrueLiteral), dataFilters = Seq(TrueLiteral))
       .filter(_.deletionVector != null)
-    val filePathToDVMap = Option(filesWithDVs.map { addFile =>
+    val filePathToDVMap = filesWithDVs.map { addFile =>
       val key = absolutePath(tahoeFileIndex.path.toString, addFile.path).toUri
       val filterType =
         filterTypes.getOrElse(addFile.path, RowIndexFilterType.IF_CONTAINED)
       val value =
         DeletionVectorDescriptorWithFilterType(addFile.deletionVector, filterType)
       key -> value
-    }.toMap)
+    }.toMap
+    val spark = SparkSession.getActiveSession.get
+    val broadcastFilePathToDVMap = Option(spark.sparkContext.broadcast(filePathToDVMap))
+    val broadcastConfiguration =
+      Option(spark.sparkContext.broadcast(new SerializableConfiguration(hadoopConf)))
 
     val delVecs = broadcastDvMap
     val maxDelVecScatterBatchSize = RapidsConf
@@ -180,8 +186,9 @@ case class GpuDeltaParquetFileFormat(
         } else {
           input
         }
-        iteratorWithAdditionalMetadataColumns(file, iter, isRowDeletedColumn,
-          rowIndexColumn, filePathToDVMap).asInstanceOf[Iterator[InternalRow]]
+        iteratorWithAdditionalMetadataColumns(tahoeTablePath, file, iter, isRowDeletedColumn,
+          rowIndexColumn, broadcastFilePathToDVMap, broadcastConfiguration)
+          .asInstanceOf[Iterator[InternalRow]]
       } catch {
         case NonFatal(e) =>
           dataReader match {
@@ -201,27 +208,28 @@ case class GpuDeltaParquetFileFormat(
    *   - [[ROW_INDEX_COLUMN_NAME]] - index of the row within the file. Note, this column is only
    *     populated when we are not using _metadata.row_index column.
    */
-  private def iteratorWithAdditionalMetadataColumns(partitionedFile: PartitionedFile,
+  private def iteratorWithAdditionalMetadataColumns(path: String, partitionedFile: PartitionedFile,
     iterator: Iterator[Any],
     isRowDeletedColumn: Option[ColumnMetadata],
     rowIndexColumn: Option[ColumnMetadata],
-    dvMap: Option[Map[URI, DeletionVectorDescriptorWithFilterType]]): Iterator[Any] = {
+    dvMap: Option[Broadcast[Map[URI, DeletionVectorDescriptorWithFilterType]]],
+    broadcastedHadoopConfiguration: Option[Broadcast[SerializableConfiguration]]): Iterator[Any] = {
     val pathUri = partitionedFile.pathUri
     val rowIndexFilter = isRowDeletedColumn.map { col =>
-      dvMap.get.get(pathUri).map { descriptorWithFilterType =>
+      dvMap.get.value.get(pathUri).map { descriptorWithFilterType =>
         val dvDescriptor = descriptorWithFilterType.descriptor
         val filterType = descriptorWithFilterType.filterType
         filterType match {
           case RowIndexFilterType.IF_CONTAINED =>
             DropMarkedRowsFilter.createInstance(
               dvDescriptor,
-              broadcastHadoopConf.get.value.value,
-              tablePath.map(new Path(_)))
+              broadcastedHadoopConfiguration.get.value.value,
+              Option(new Path(path)))
           case RowIndexFilterType.IF_NOT_CONTAINED =>
             KeepMarkedRowsFilter.createInstance(
               dvDescriptor,
-              broadcastHadoopConf.get.value.value,
-              tablePath.map(new Path(_)))
+              broadcastedHadoopConfiguration.get.value.value,
+              Option(new Path(path)))
           case _ =>
             throw new IllegalArgumentException(s"Unexpected filter type ${filterType}")
         }
@@ -318,10 +326,15 @@ object GpuDeltaParquetFileFormat {
     for (i <- 0 until batch.numCols()) {
       indexVectorTuples.find(_._1 == i) match {
         case Some((_, newVector)) => vectors += {
-          val builder = new RapidsHostColumnBuilder(
-            GpuColumnVector.convertFrom(newVector.dataType(), newVector.hasNull), batch.numRows())
-          HostColumnarToGpu.columnarCopy(newVector, builder, newVector.dataType(), batch.numRows())
-          GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+          withResource(newVector) { newVector =>
+            withResource(new RapidsHostColumnBuilder(GpuColumnVector.convertFrom(
+            newVector.dataType(), newVector.hasNull), batch.numRows())) {
+              builder =>
+                HostColumnarToGpu.columnarCopy(newVector,
+                  builder, newVector.dataType(), batch.numRows())
+                GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+            }
+          }
         }
         case None => vectors += batch.column(i)
       }
