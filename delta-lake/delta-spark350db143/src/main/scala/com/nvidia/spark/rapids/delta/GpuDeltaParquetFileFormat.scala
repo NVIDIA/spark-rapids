@@ -81,12 +81,6 @@ case class GpuDeltaParquetFileFormat(
       path: Path): Boolean = isSplittable
 
 
-  def copyWithDVInfo(
-     broadcastHadoopConf: Option[Broadcast[SerializableConfiguration]] = None):
-     GpuDeltaParquetFileFormat = {
-    this.copy(broadcastDvMap = broadcastDvMap)
-  }
-
   override def buildReaderWithPartitionValuesAndMetrics(
       sparkSession: SparkSession,
       dataSchema: StructType,
@@ -326,14 +320,12 @@ object GpuDeltaParquetFileFormat {
     for (i <- 0 until batch.numCols()) {
       indexVectorTuples.find(_._1 == i) match {
         case Some((_, newVector)) => vectors += {
-          withResource(newVector) { newVector =>
-            withResource(new RapidsHostColumnBuilder(GpuColumnVector.convertFrom(
+          withResource(new RapidsHostColumnBuilder(GpuColumnVector.convertFrom(
             newVector.dataType(), newVector.hasNull), batch.numRows())) {
-              builder =>
-                HostColumnarToGpu.columnarCopy(newVector,
-                  builder, newVector.dataType(), batch.numRows())
-                GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
-            }
+            builder =>
+              HostColumnarToGpu.columnarCopy(newVector,
+                builder, newVector.dataType(), batch.numRows())
+              GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
           }
         }
         case None => vectors += batch.column(i)
