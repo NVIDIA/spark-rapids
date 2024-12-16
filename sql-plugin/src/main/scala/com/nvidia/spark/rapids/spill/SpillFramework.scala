@@ -372,14 +372,13 @@ class SpillableHostBufferHandle private (
               }
             }
             disk = Some(diskHandleBuilder.build)
-            setSpilling(false)
             sizeInBytes
           }
         } else {
-          setSpilling(false)
           0L
         }
       }
+      setSpilling(false)
       releaseHostResource()
       spilled
     }
@@ -488,20 +487,20 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def spill(): Long = {
-    if (!spillable || !setSpilling(true)) {
+    val spilled = if (!spillable || !setSpilling(true)) {
       0L
     } else {
       synchronized {
         if (host.isEmpty && dev.isDefined) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
-          setSpilling(false)
           sizeInBytes
         } else {
-          setSpilling(false)
           0L
         }
       }
     }
+    setSpilling(false)
+    spilled
   }
 
   override def close(): Unit = {
