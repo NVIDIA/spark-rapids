@@ -72,6 +72,8 @@ Generated on 2024-12-16
 ### PRs
 |||
 |:---|:---|
+|[#11874](https://github.com/NVIDIA/spark-rapids/pull/11874)|Remove 350db143 shim's build [skip ci]|
+|[#11851](https://github.com/NVIDIA/spark-rapids/pull/11851)|Update latest changelog [skip ci]|
 |[#11849](https://github.com/NVIDIA/spark-rapids/pull/11849)|Update rapids JNI and private dependency to 24.12.0|
 |[#11857](https://github.com/NVIDIA/spark-rapids/pull/11857)|Increase the pre-merge CI timeout to 6 hours|
 |[#11845](https://github.com/NVIDIA/spark-rapids/pull/11845)|Fix leak in isTimeStamp|
