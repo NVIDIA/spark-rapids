@@ -203,7 +203,7 @@ object GetJsonObjectMask {
       oneToOneMap: Map[Char, Char],
       digitMap: Map[Char, Char]): String = {
     if (originStr != null) {
-      val buf = new StringBuffer(originStr.length)
+      val buf = new StringBuilder(originStr.length)
       var idx = 0
       while (idx < originStr.length) {
         val originChar = originStr(idx)

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -112,8 +112,11 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 #E                   	at org.apache.orc.TypeDescription.parseInt(TypeDescription.java:244)
 #E                   	at org.apache.orc.TypeDescription.parseType(TypeDescription.java:362)
 # ...
+# Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# https://github.com/rapidsai/cudf/issues/6763 .
+# Once the first issue is fixed, add back boolean_gen
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    string_gen, DateGen(start=date(1590, 1, 1)),
     orc_timestamp_gen] + decimal_gens
 
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
@@ -201,8 +204,11 @@ def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_e
             read_func(data_path),
             conf=all_confs)
 
+# Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+# https://github.com/rapidsai/cudf/issues/6763 .
+# Once the first issue is fixed, add back boolean_gen
 orc_pred_push_gens = [
-        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
+        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen,
         # Once https://github.com/NVIDIA/spark-rapids/issues/139 is fixed replace this with
         # date_gen
@@ -277,8 +283,11 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
     # we should go with a more standard set of generators
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    string_gen, DateGen(start=date(1590, 1, 1)),
     orc_timestamp_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
@@ -344,8 +353,11 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
 def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
     # we should go with a more standard set of generators
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    string_gen, DateGen(start=date(1590, 1, 1)),
     orc_timestamp_gen]
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
@@ -825,8 +837,11 @@ def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
 @allow_non_gpu(*non_utc_allow_orc_scan)
 def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, keep_order):
+    # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+    # https://github.com/rapidsai/cudf/issues/6763 .
+    # Once the first issue is fixed, add back boolean_gen
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+                string_gen, DateGen(start=date(1590, 1, 1)),
                 orc_timestamp_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
@@ -845,12 +860,16 @@ def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, kee
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.orc(data_path), conf=all_confs)
 
-@pytest.mark.skipif(is_spark_340_or_later() and (not (is_databricks_runtime() and spark_version() == "3.4.1")), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+
+@pytest.mark.skipif(is_spark_340_or_later() and not is_databricks_runtime(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
     """
     Test that a file containing CHAR data is readable as STRING.
+    The plugin behaviour matches all Spark versions prior to 3.4.0,
+    and Databricks version 13.3 (i.e. 3.4.1) and after.
     """
     assert_gpu_and_cpu_are_equal_collect(
         reader(std_input_path + '/' + data_file),
@@ -858,19 +877,29 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
 
 
 @allow_non_gpu("ProjectExec")
-@pytest.mark.skipif(is_before_spark_340() or (is_databricks_runtime() and spark_version() == "3.4.1"), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_before_spark_340(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_databricks_version_or_later(13, 3),
+                    reason="The SELECT * query does not involve ProjectExec "
+                           "on Databricks versions >= 13.3. "
+                           "Can't test Project fallback without ProjectExec.")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):
     """
-    Test that a file containing CHAR data is readable as STRING.
+    Test that reading a file containing fixed-width CHAR data (e.g. CHAR(3)) as a STRING column
+    causes the ProjectExec to fall back to CPU.
     Note: This test can be removed when
     https://github.com/NVIDIA/spark-rapids/issues/8324 is resolved.
+
+    This test does not apply to Databricks >= 13.3, because there would be
+    no ProjectExec to fall back to CPU.
     """
     assert_gpu_fallback_collect(
         reader(std_input_path + '/' + data_file),
         cpu_fallback_class_name="ProjectExec",
         conf={})
+
 
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
@@ -913,7 +942,10 @@ def test_orc_column_name_with_dots(spark_tmp_path, reader_confs):
                 ("f.g", int_gen),
                 ("h", string_gen)])),
             ("i.j", long_gen)])),
-        ("k", boolean_gen)]
+        # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+        # https://github.com/rapidsai/cudf/issues/6763 .
+        # Once the first issue is fixed, add back boolean_gen for column k
+        ("k", int_gen)]
     with_cpu_session(lambda spark: gen_df(spark, gens).write.orc(data_path))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark), conf=all_confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
@@ -931,7 +963,10 @@ def test_orc_with_null_column(spark_tmp_path, reader_confs):
     def gen_null_df(spark):
         return spark.createDataFrame(
             [(None, None, None, None, None)],
-            "c1 int, c2 long, c3 float, c4 double, c5 boolean")
+            # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+            # https://github.com/rapidsai/cudf/issues/6763 .
+            # Once the first issue is fixed, add back boolean_gen
+            "c1 int, c2 long, c3 float, c4 double, c5 int")
 
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_null_df(spark).write.orc(path),
@@ -952,7 +987,10 @@ def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
     def gen_null_df(spark):
         return spark.createDataFrame(
             data,
-            "c1 int, c2 long, c3 float, c4 double, c5 boolean")
+            # Use every type except boolean, see https://github.com/NVIDIA/spark-rapids/issues/11762 and
+            # https://github.com/rapidsai/cudf/issues/6763 .
+            # Once the first issue is fixed, add back boolean_gen
+            "c1 int, c2 long, c3 float, c4 double, c5 int")
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_null_df(spark).write.orc(path),
         lambda spark, path: spark.read.orc(path),

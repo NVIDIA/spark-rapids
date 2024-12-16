@@ -19,7 +19,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are
 from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import with_cpu_session, is_databricks113_or_later, is_before_spark_330
+from spark_session import with_cpu_session, is_databricks113_or_later, is_before_spark_330, is_databricks_version_or_later
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
 not_utc_aqe_allow=['ShuffleExchangeExec', 'HashAggregateExec'] if is_not_utc() else []
@@ -338,6 +338,8 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
 
 # this should be fixed by https://github.com/NVIDIA/spark-rapids/issues/11120
 aqe_join_with_dpp_fallback=["FilterExec"] if (is_databricks_runtime() or is_before_spark_330()) else []
+if is_databricks_version_or_later(14, 3):
+    aqe_join_with_dpp_fallback.append("CollectLimitExec")
 
 # Verify that DPP and AQE can coexist in even some odd cases involving multiple tables
 @ignore_order(local=True)

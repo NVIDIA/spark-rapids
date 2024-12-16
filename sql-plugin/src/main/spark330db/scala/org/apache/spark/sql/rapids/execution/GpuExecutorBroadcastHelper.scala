@@ -18,15 +18,19 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
+{"spark": "350db143"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuCoalesceIterator, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator, NoopMetric, RequireSingleBatch}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuCoalesceIterator, GpuColumnVector, GpuMetric, NoopMetric, RequireSingleBatch}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.CoalesceReadOption
+import com.nvidia.spark.rapids.GpuShuffleCoalesceUtils
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -70,14 +74,17 @@ object GpuExecutorBroadcastHelper {
     // to ensure this always a single batch for the following step.
     val shuffleMetrics = Map(
       CONCAT_TIME -> metricsMap(CONCAT_TIME),
-      OP_TIME -> metricsMap(OP_TIME)
+      CONCAT_HEADER_TIME -> metricsMap(CONCAT_HEADER_TIME),
+      CONCAT_BUFFER_TIME -> metricsMap(CONCAT_BUFFER_TIME),
+      OP_TIME -> metricsMap(OP_TIME),
     ).withDefaultValue(NoopMetric)
 
     val iter = shuffleDataIterator(shuffleData)
     new GpuCoalesceIterator(
-      new GpuShuffleCoalesceIterator(
-        new HostShuffleCoalesceIterator(iter, targetSize, shuffleMetrics),
-        dataTypes, shuffleMetrics).asInstanceOf[Iterator[ColumnarBatch]],
+      GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(iter, targetSize,
+        dataTypes,
+        CoalesceReadOption(SQLConf.get),
+        shuffleMetrics),
       dataTypes,
       RequireSingleBatch,
       NoopMetric, // numInputRows

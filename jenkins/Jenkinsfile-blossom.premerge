@@ -190,7 +190,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     steps {
                         script {
                             container('gpu') {
-                                timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
+                                timeout(time: 6, unit: 'HOURS') { // step only timeout for test run
                                     try {
                                         sh "$PREMERGE_SCRIPT mvn_verify"
                                         step([$class                : 'JacocoPublisher',
@@ -228,7 +228,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         script {
                             unstash "source_tree"
                             container('gpu') {
-                                timeout(time: 4, unit: 'HOURS') {
+                                timeout(time: 6, unit: 'HOURS') {
                                     try {
                                         sh "$PREMERGE_SCRIPT ci_2"
                                     } finally {
@@ -260,7 +260,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                         script {
                             unstash "source_tree"
                             container('gpu') {
-                                timeout(time: 4, unit: 'HOURS') {
+                                timeout(time: 6, unit: 'HOURS') {
                                     try {
                                         sh "$PREMERGE_SCRIPT ci_scala213"
                                     } finally {
