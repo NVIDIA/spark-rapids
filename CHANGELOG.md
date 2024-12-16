@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-12-12
+Generated on 2024-12-16
 
 ## Release 24.12
 
@@ -12,7 +12,6 @@ Generated on 2024-12-12
 |[#11662](https://github.com/NVIDIA/spark-rapids/issues/11662)|[FEA] Support Apache Spark 3.4.4|
 |[#11657](https://github.com/NVIDIA/spark-rapids/issues/11657)|[FEA] Support format 'yyyyMMdd HH:mm:ss' for legacy mode|
 |[#11419](https://github.com/NVIDIA/spark-rapids/issues/11419)|[FEA] Support Spark 3.5.3 release|
-|[#11492](https://github.com/NVIDIA/spark-rapids/issues/11492)|[FEA] Update rapids JNI and private dependency version to 24.12.0-SNAPSHOT|
 |[#11505](https://github.com/NVIDIA/spark-rapids/issues/11505)|[FEA] Support yyyymmdd format for GetTimestamp for LEGACY mode.|
 
 ### Performance
@@ -73,6 +72,7 @@ Generated on 2024-12-12
 ### PRs
 |||
 |:---|:---|
+|[#11849](https://github.com/NVIDIA/spark-rapids/pull/11849)|Update rapids JNI and private dependency to 24.12.0|
 |[#11857](https://github.com/NVIDIA/spark-rapids/pull/11857)|Increase the pre-merge CI timeout to 6 hours|
 |[#11845](https://github.com/NVIDIA/spark-rapids/pull/11845)|Fix leak in isTimeStamp|
 |[#11823](https://github.com/NVIDIA/spark-rapids/pull/11823)|Fix for `LEAD/LAG` window function test failures.|
