@@ -378,6 +378,7 @@ class SpillableHostBufferHandle private (
           0L
         }
       }
+      // Make sure to only set spilling to false if it was previously set to true
       setSpilling(false)
       releaseHostResource()
       spilled
@@ -499,6 +500,7 @@ class SpillableDeviceBufferHandle private (
         }
       }
     }
+    // Make sure to only set spilling to false if it was previously set to true
     setSpilling(false)
     spilled
   }
