@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import scala.language.implicitConversions
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableArray, AutoCloseableProducingSeq}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -53,13 +53,13 @@ import org.apache.spark.util.SerializableConfiguration
  * This contains a single HostMemoryBuffer along with other metadata needed
  * for combining the buffers before sending to GPU.
  */
-case class SingleHMBAndMeta(hmb: HostMemoryBuffer, bytes: Long, numRows: Long,
+case class SingleHMBAndMeta(hmbs: Array[HostMemoryBuffer], bytes: Long, numRows: Long,
     blockMeta: Seq[DataBlockBase])
 
 object SingleHMBAndMeta {
   // Contains no data but could have number of rows for things like count().
   def empty(numRows: Long = 0): SingleHMBAndMeta = {
-    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], 0, numRows, Seq.empty)
+    SingleHMBAndMeta(Array.empty, 0, numRows, Seq.empty)
   }
 }
 
@@ -715,9 +715,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def closeCurrentFileHostBuffers(): Unit = {
     currentFileHostBuffers.foreach { current =>
       current.memBuffersAndSizes.foreach { hbInfo =>
-        if (hbInfo.hmb != null) {
-          hbInfo.hmb.close()
-        }
+        hbInfo.hmbs.safeClose()
       }
     }
     currentFileHostBuffers = None
@@ -732,9 +730,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
         task.get.memBuffersAndSizes.foreach { hmbInfo =>
-          if (hmbInfo.hmb != null) {
-            hmbInfo.hmb.close()
-          }
+          hmbInfo.hmbs.safeClose()
         }
       } else {
         // Note we are not interrupting thread here so it
@@ -1049,9 +1045,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         if (currentChunkMeta.currentChunk.isEmpty) {
           CachedGpuBatchIterator(EmptyTableReader, colTypes)
         } else {
-          val (dataBuffer, dataSize) = readPartFiles(currentChunkMeta.currentChunk,
+          val dataBuffer = readPartFiles(currentChunkMeta.currentChunk,
             currentChunkMeta.clippedSchema)
-          if (dataSize == 0) {
+          if (dataBuffer.getLength == 0) {
             dataBuffer.close()
             CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
@@ -1060,8 +1056,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
               // We don't want to actually close the host buffer until we know that we don't
               // want to retry more, so offset the close for now.
               dataBuffer.incRefCount()
-              val tableReader = readBufferToTablesAndClose(dataBuffer,
-                dataSize, currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
+              val tableReader = readBufferToTablesAndClose(dataBuffer, dataBuffer.getLength,
+                currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
                 currentChunkMeta.extraInfo)
               CachedGpuBatchIterator(tableReader, colTypes)
             }
@@ -1082,12 +1078,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * Read all data blocks into HostMemoryBuffer
    * @param blocks a sequence of data blocks to be read
    * @param clippedSchema the clipped schema is used to calculate the estimated output size
-   * @return (HostMemoryBuffer, Long)
-   *         the HostMemoryBuffer and its data size
+   * @return the HostMemoryBuffer
    */
   private def readPartFiles(
       blocks: Seq[(Path, DataBlockBase)],
-      clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
+      clippedSchema: SchemaBase): HostMemoryBuffer = {
 
     withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))) { _ =>
@@ -1178,7 +1173,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       }
       logDebug(s"$getFileFormatShortName Coalescing reading estimates the initTotalSize:" +
         s" $initTotalSize, and the true size: $finalBufferSize")
-      (finalBuffer, finalBufferSize)
+      withResource(finalBuffer) { _ =>
+        finalBuffer.slice(0, finalBufferSize)
+      }
     }
   }
 

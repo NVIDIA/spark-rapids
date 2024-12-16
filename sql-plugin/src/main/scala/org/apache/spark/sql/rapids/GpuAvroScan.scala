@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -663,7 +663,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufsAndSizes = buffer.memBuffersAndSizes
       val bufAndSizeInfo = bufsAndSizes.head
       val partitionValues = buffer.partitionedFile.partitionValues
-      val batchIter = if (bufAndSizeInfo.hmb == null) {
+      val batchIter = if (bufAndSizeInfo.hmbs.nonEmpty) {
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -671,7 +671,8 @@ class GpuMultiFileCloudAvroPartitionReader(
         BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(emptyBatch,
           partitionValues, partitionSchema, maxGpuColumnSizeBytes)
       } else {
-        val maybeBatch = sendToGpu(bufAndSizeInfo.hmb, bufAndSizeInfo.bytes, files)
+        require(bufAndSizeInfo.hmbs.length == 1)
+        val maybeBatch = sendToGpu(bufAndSizeInfo.hmbs.head, bufAndSizeInfo.bytes, files)
         // we have to add partition values here for this batch, we already verified that
         // it's not different for all the blocks in this batch
         maybeBatch match {
@@ -845,18 +846,18 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty)))
+                    (SingleHMBAndMeta(Array(optHmb.get), out.getPos, batchRowsNum, Seq.empty)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
               } // end of while
 
               val bufAndSize: Array[SingleHMBAndMeta] = if (readDataSchema.isEmpty) {
-                hostBuffers.foreach(_.hmb.safeClose(new Exception))
+                hostBuffers.foreach(_.hmbs.safeClose())
                 Array(SingleHMBAndMeta.empty(totalRowsNum))
               } else if (isDone) {
                 // got close before finishing, return null buffer and zero size
-                hostBuffers.foreach(_.hmb.safeClose(new Exception))
+                hostBuffers.foreach(_.hmbs.safeClose())
                 Array(SingleHMBAndMeta.empty())
               } else {
                 hostBuffers.toArray
@@ -864,7 +865,7 @@ class GpuMultiFileCloudAvroPartitionReader(
               createBufferAndMeta(bufAndSize, startingBytesRead)
             } catch {
               case e: Throwable =>
-                hostBuffers.foreach(_.hmb.safeClose(e))
+                hostBuffers.foreach(_.hmbs.safeClose(e))
                 throw e
             }
           }
