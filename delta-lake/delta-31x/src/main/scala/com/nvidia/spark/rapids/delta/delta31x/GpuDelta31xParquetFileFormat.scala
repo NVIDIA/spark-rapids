@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.delta.delta31x
 import java.net.URI
 
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsHostColumnBuilder, SparkPlanMeta}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -264,10 +265,15 @@ object GpuDelta31xParquetFileFormat {
     for (i <- 0 until batch.numCols()) {
       indexVectorTuples.find(_._1 == i) match {
         case Some((_, newVector)) => vectors += {
-          val builder = new RapidsHostColumnBuilder(
-            GpuColumnVector.convertFrom(newVector.dataType(), newVector.hasNull), batch.numRows())
-          HostColumnarToGpu.columnarCopy(newVector, builder, newVector.dataType(), batch.numRows())
-          GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+          withResource(new RapidsHostColumnBuilder(GpuColumnVector.convertFrom(
+            newVector.dataType(), newVector.hasNull), batch.numRows())) {
+            builder =>
+              HostColumnarToGpu.columnarCopy(newVector,
+                builder, newVector.dataType(), batch.numRows())
+              withResource(batch.column(i)) { _ =>
+                GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+              }
+          }          
         }
         case None => vectors += batch.column(i)
       }

@@ -26,7 +26,7 @@ import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, Upd
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
@@ -72,8 +72,8 @@ object Delta24xProvider extends DeltaIOProvider {
     }
   }
 
-  override def getReadFileFormat(format: FileFormat): FileFormat = {
-    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+    val cpuFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     GpuDelta24xParquetFileFormat(cpuFormat.metadata, cpuFormat.isSplittable,
       cpuFormat.disablePushDowns, cpuFormat.broadcastDvMap)
   }

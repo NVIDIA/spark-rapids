@@ -24,8 +24,8 @@ import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
 import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.util.DeltaFileOperations.absolutePath
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsConf, RapidsHostColumnBuilder, SparkPlanMeta}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -326,6 +326,9 @@ object GpuDeltaParquetFileFormat {
               HostColumnarToGpu.columnarCopy(newVector,
                 builder, newVector.dataType(), batch.numRows())
               GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+              withResource(batch.column(i)) { _ =>
+                GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
+              }
           }
         }
         case None => vectors += batch.column(i)
