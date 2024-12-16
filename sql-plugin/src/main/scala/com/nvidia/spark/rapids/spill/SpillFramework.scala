@@ -184,16 +184,17 @@ trait SpillableHandle extends StoreHandle {
    * Method used to atomically check and set the spilling state, so that anyone who wants to
    * actually perform a spill can ensure they are the only one spilling, without having to block
    * on the actual spill operation (IO). Only someone who has set spilling to true to perform their
-   * spill may set it back to false when they are done.
+   * spill may set it back to false when they are done. (Visible for tests)
    *
    * This is a separate check from spillable, which actually checks the state of the buffer handle
    *
    * @param s whether the caller is trying to spill or not (ie finished)
    * @return whether the caller is allowed to spill (or true if s is false)
    */
-  protected def setSpilling(s: Boolean): Boolean = spillLock.synchronized {
+  def setSpilling(s: Boolean): Boolean = spillLock.synchronized {
     if (!s) {
       // done spilling, nothing to check
+      spilling = false
       true
     } else {
       if (!spilling) {
@@ -491,15 +492,11 @@ class SpillableDeviceBufferHandle private (
       0L
     } else {
       synchronized {
-        println("start spilling handle")
         if (host.isEmpty && dev.isDefined) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
-          Thread.sleep(1000)
-          println("finished spilling handle")
           setSpilling(false)
           sizeInBytes
         } else {
-          println("finished spilling handle")
           setSpilling(false)
           0L
         }
