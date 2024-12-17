@@ -227,6 +227,7 @@ class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         writeInt96 = true,      // Hive 1.2 write timestamp as INT96
         parquetFieldIdEnabled = false)
       .withCompressionType(compType)
