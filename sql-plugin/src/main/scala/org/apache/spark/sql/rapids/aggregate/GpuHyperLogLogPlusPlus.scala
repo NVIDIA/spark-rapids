@@ -23,7 +23,7 @@ import ai.rapids.cudf.{DType, GroupByAggregation, ReductionAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResourceIfAllowed
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
-import com.nvidia.spark.rapids.jni.HLLPP
+import com.nvidia.spark.rapids.jni.HLLPPHostUDF
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
@@ -35,9 +35,13 @@ case class CudfHLLPP(override val dataType: DataType,
     precision: Int) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (input: cudf.ColumnVector) => input.reduce(
-      ReductionAggregation.HLLPP(precision), DType.STRUCT)
+      ReductionAggregation.hostUDF(
+        HLLPPHostUDF.createHLLPPHostUDF(HLLPPHostUDF.AggregationType.Reduction, precision)),
+      DType.STRUCT)
   override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.HLLPP(precision)
+    GroupByAggregation.hostUDF(
+      HLLPPHostUDF.createHLLPPHostUDF(HLLPPHostUDF.AggregationType.GroupBy, precision)
+    )
   override val name: String = "CudfHyperLogLogPlusPlus"
 }
 
@@ -45,10 +49,14 @@ case class CudfMergeHLLPP(override val dataType: DataType,
     precision: Int)
     extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (input: cudf.ColumnVector) =>
-      input.reduce(ReductionAggregation.mergeHLL(precision), DType.STRUCT)
+    (input: cudf.ColumnVector) => input.reduce(
+      ReductionAggregation.hostUDF(
+        HLLPPHostUDF.createHLLPPHostUDF(HLLPPHostUDF.AggregationType.Reduction_MERGE, precision)),
+      DType.STRUCT)
   override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.mergeHLL(precision)
+    GroupByAggregation.hostUDF(
+      HLLPPHostUDF.createHLLPPHostUDF(HLLPPHostUDF.AggregationType.GroupByMerge, precision)
+    )
   override val name: String = "CudfMergeHyperLogLogPlusPlus"
 }
 
@@ -69,7 +77,7 @@ case class GpuHyperLogLogPlusPlusEvaluation(childExpr: Expression,
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(childExpr.columnarEval(batch)) { sketches =>
-      val distinctValues = HLLPP.estimateDistinctValueFromSketches(
+      val distinctValues = HLLPPHostUDF.estimateDistinctValueFromSketches(
         sketches.getBase, precision)
       GpuColumnVector.from(distinctValues, LongType)
     }
