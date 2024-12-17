@@ -215,8 +215,14 @@ trait SpillableHandle extends StoreHandle {
    *       construction, and is immutable.
    * @return true if currently spillable, false otherwise
    */
-  private[spill] def spillable: Boolean = spillLock.synchronized {
-    approxSizeInBytes > 0 && !spilling
+  private[spill] def spillable: Boolean = {
+    if (approxSizeInBytes > 0) {
+      spillLock.synchronized {
+        !spilling
+      }
+    } else {
+      false
+    }
   }
 }
 
@@ -488,21 +494,21 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def spill(): Long = {
-    val spilled = if (!spillable || !setSpilling(true)) {
+    if (!spillable || !setSpilling(true)) {
       0L
     } else {
       synchronized {
-        if (host.isEmpty && dev.isDefined) {
+        val spilled = if (host.isEmpty && dev.isDefined) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
           sizeInBytes
         } else {
           0L
         }
+        setSpilling(false)
+        spilled
       }
     }
     // Make sure to only set spilling to false if it was previously set to true
-    setSpilling(false)
-    spilled
   }
 
   override def close(): Unit = {
