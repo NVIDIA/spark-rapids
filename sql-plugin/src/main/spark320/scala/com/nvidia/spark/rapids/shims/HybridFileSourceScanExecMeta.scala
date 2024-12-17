@@ -41,6 +41,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.hybrid.HybridFileSourceScanExec
@@ -48,7 +49,7 @@ import org.apache.spark.sql.catalyst.expressions.DynamicPruningExpression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{BinaryType, MapType}
+import org.apache.spark.sql.types._
 
 class HybridFileSourceScanExecMeta(plan: FileSourceScanExec,
                                    conf: RapidsConf,
@@ -110,24 +111,31 @@ object HybridFileSourceScanExecMeta {
     } else {
       false
     }
-    // For the time being, only support reading Parquet
+    // Currently, only support reading Parquet
     lazy val isParquet = fsse.relation.fileFormat.getClass == classOf[ParquetFileFormat]
     // Check if data types of all fields are supported by HybridParquetReader
-    lazy val allSupportedTypes = fsse.requiredSchema.exists { field =>
+    lazy val allSupportedTypes = !fsse.requiredSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, {
-        // For the time being, the native backend may return incorrect results over nestedMap
-        case MapType(kt, vt, _) if kt.isInstanceOf[MapType] || vt.isInstanceOf[MapType] => false
-        // For the time being, BinaryType is not supported yet
-        case _: BinaryType => false
-        case _ => true
+        // Currently, under some circumstance, the native backend may return incorrect results
+        // over MapType nested by nested types. To guarantee the correctness, disable this pattern
+        // entirely.
+        // TODO: figure out the root cause and support it
+        case ArrayType(_: MapType, _) => true
+        case MapType(_: MapType, _, _) | MapType(_, _: MapType, _) => true
+        case st: StructType if st.exists(_.dataType.isInstanceOf[MapType]) => true
+        // TODO: support DECIMAL with negative scale
+        case dt: DecimalType if dt.scale < 0 => true
+        // TODO: support DECIMAL128
+        case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION => true
+        // TODO: support BinaryType
+        case _: BinaryType => true
+        case _ => false
       })
     }
     // TODO: supports BucketedScan
     lazy val noBucketedScan = !fsse.bucketedScan
-    // TODO: supports working along with Alluxio
-    lazy val noAlluxio = !AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)
 
-    isEnabled && isParquet && allSupportedTypes && noBucketedScan && noAlluxio
+    isEnabled && isParquet && allSupportedTypes && noBucketedScan
   }
 
   /**

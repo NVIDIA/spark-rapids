@@ -17,7 +17,7 @@
 package org.apache.spark.rapids.hybrid
 
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{AcquireFailed, GpuColumnVector, GpuMetric, GpuSemaphore, NvtxWithMetrics}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, GpuSemaphore, NvtxWithMetrics}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter}
@@ -136,13 +136,9 @@ object CoalesceConvertIterator extends Logging {
 
     hostIter.map { hostVectors =>
       Option(TaskContext.get()).foreach { ctx =>
-        GpuSemaphore.tryAcquire(ctx) match {
-          case AcquireFailed(_) =>
-            withResource(new NvtxWithMetrics("gpuAcquireC2C", NvtxColor.GREEN,
-              metrics("GpuAcquireTime"))) { _ =>
-              GpuSemaphore.acquireIfNecessary(ctx)
-            }
-          case _ =>
+        withResource(new NvtxWithMetrics("gpuAcquireC2C", NvtxColor.GREEN,
+          metrics("GpuAcquireTime"))) { _ =>
+          GpuSemaphore.acquireIfNecessary(ctx)
         }
       }
 
