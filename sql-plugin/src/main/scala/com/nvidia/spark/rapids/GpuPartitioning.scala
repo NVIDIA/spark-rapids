@@ -32,6 +32,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 object GpuPartitioning {
   // The maximum size of an Array minus a bit for overhead for metadata
   val MaxCpuBatchSize = 2147483639L - 2048L
+
+  // The SQLMetric key for MemoryCopyFromDeviceToHost
+  val CopyToHostTime: String = "d2hMemCpyTime"
 }
 
 trait GpuPartitioning extends Partitioning {
@@ -132,7 +135,15 @@ trait GpuPartitioning extends Partitioning {
       }
     }
     withResource(hostPartColumns) { _ =>
-      Cuda.DEFAULT_STREAM.sync()
+      lazy val memCpyNvtxRange = memCopyTime.map(
+          new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, _))
+        .getOrElse(
+          new NvtxRange("PartitionD2H", NvtxColor.CYAN))
+      // Wait for copyToHostAsync
+      withResource(memCpyNvtxRange) { _ =>
+        Cuda.DEFAULT_STREAM.sync()
+      }
+
       // Leaving the GPU for a while
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
@@ -239,6 +250,21 @@ trait GpuPartitioning extends Partitioning {
           outputBatches.append(GpuCompressedColumnVector.from(ct))
         }
       }
+    }
+  }
+
+  private var memCopyTime: Option[GpuMetric] = None
+
+  /**
+   * Setup Spark SQL Metrics for the details of GpuPartition. This method is expected to be called
+   * at the query planning stage for only once.
+   */
+  def setupMetrics(metrics: Map[String, GpuMetric]): Unit = {
+    metrics.get(GpuPartitioning.CopyToHostTime).foreach { metric =>
+      // Check and set GpuPartitioning.CopyToHostTime
+      require(memCopyTime.isEmpty,
+        s"The GpuMetric[${GpuPartitioning.CopyToHostTime}] has already been set")
+      memCopyTime = Some(metric)
     }
   }
 }

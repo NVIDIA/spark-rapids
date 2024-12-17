@@ -294,6 +294,8 @@ object GpuShuffleExchangeExecBase {
   val METRIC_DESC_SHUFFLE_SER_COPY_HEADER_TIME = "RAPIDS shuffle serialization copy header time"
   val METRIC_SHUFFLE_SER_COPY_BUFFER_TIME = "rapidsShuffleSerializationCopyBufferTime"
   val METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME = "RAPIDS shuffle serialization copy buffer time"
+  val METRIC_COPY_TO_HOST_TIME = GpuPartitioning.CopyToHostTime
+  val METRIC_DESC_COPY_TO_HOST_TIME = "RAPIDS shuffle DeviceToHost copy time"
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
@@ -322,7 +324,9 @@ object GpuShuffleExchangeExecBase {
     METRIC_SHUFFLE_SER_COPY_HEADER_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_HEADER_TIME),
     METRIC_SHUFFLE_SER_COPY_BUFFER_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME)
+        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME),
+    METRIC_COPY_TO_HOST_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_COPY_TO_HOST_TIME)
   )
 
   def prepareBatchShuffleDependency(
@@ -364,6 +368,12 @@ object GpuShuffleExchangeExecBase {
       rdd
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
+    // Inject detailed Metrics, such as D2HTime before SliceOnCpu
+    // The injected metrics will be serialized as the members of GpuPartitioning
+    partitioner match {
+      case pt: GpuPartitioning => pt.setupMetrics(additionalMetrics)
+      case _ =>
+    }
     val partitionTime: GpuMetric = metrics(METRIC_SHUFFLE_PARTITION_TIME)
     def getPartitioned: ColumnarBatch => Any = {
       batch => partitionTime.ns {
