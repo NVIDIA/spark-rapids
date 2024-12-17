@@ -496,11 +496,11 @@ class SpillableDeviceBufferHandle private (
         } else {
           0L
         }
+        // Make sure to only set spilling to false if it was previously set to true
         setSpilling(false)
         spilled
       }
     }
-    // Make sure to only set spilling to false if it was previously set to true
   }
 
   override def close(): Unit = {
