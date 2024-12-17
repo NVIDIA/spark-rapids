@@ -256,15 +256,15 @@ trait GpuPartitioning extends Partitioning {
   private var memCopyTime: Option[GpuMetric] = None
 
   /**
-   * Setup Spark SQL Metrics for the details of GpuPartition. This method is expected to be called
-   * at the query planning stage for only once.
+   * Setup sub-metrics for the performance debugging of GpuPartition. This method is expected to
+   * be called at the query planning stage. Therefore, this method is NOT thread safe.
    */
-  def setupMetrics(metrics: Map[String, GpuMetric]): Unit = {
-    metrics.get(GpuPartitioning.CopyToHostTime).foreach { metric =>
-      // Check and set GpuPartitioning.CopyToHostTime
-      require(memCopyTime.isEmpty,
-        s"The GpuMetric[${GpuPartitioning.CopyToHostTime}] has already been set")
-      memCopyTime = Some(metric)
+  def setupDebugMetrics(metrics: Map[String, GpuMetric]): Unit = {
+    // Check and set GpuPartitioning.CopyToHostTime
+    if (memCopyTime.isEmpty) {
+      metrics.get(GpuPartitioning.CopyToHostTime).foreach { metric =>
+        memCopyTime = Some(metric)
+      }
     }
   }
 }

@@ -368,10 +368,10 @@ object GpuShuffleExchangeExecBase {
       rdd
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
-    // Inject detailed Metrics, such as D2HTime before SliceOnCpu
+    // Inject debugging subMetrics, such as D2HTime before SliceOnCpu
     // The injected metrics will be serialized as the members of GpuPartitioning
     partitioner match {
-      case pt: GpuPartitioning => pt.setupMetrics(additionalMetrics)
+      case pt: GpuPartitioning => pt.setupDebugMetrics(additionalMetrics)
       case _ =>
     }
     val partitionTime: GpuMetric = metrics(METRIC_SHUFFLE_PARTITION_TIME)
