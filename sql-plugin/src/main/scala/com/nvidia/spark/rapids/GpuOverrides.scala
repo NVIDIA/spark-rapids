@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
@@ -1822,6 +1823,20 @@ object GpuOverrides extends Logging {
           ParamCheck("round", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.BOOLEAN))),
       (a, conf, p, r) => new MonthsBetweenExprMeta(a, conf, p, r)
     ),
+    expr[TruncDate](
+      "Truncate the date to the unit specified by the given string format",
+      ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
+        ("date", TypeSig.DATE, TypeSig.DATE),
+        ("format", TypeSig.STRING, TypeSig.STRING)),
+      (a, conf, p, r) => new TruncDateExprMeta(a, conf, p, r)
+    ),
+    expr[TruncTimestamp](
+      "Truncate the timestamp to the unit specified by the given string format",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("format", TypeSig.STRING, TypeSig.STRING),
+        ("date", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP)),
+      (a, conf, p, r) => new TruncTimestampExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553
@@ -3321,8 +3336,28 @@ object GpuOverrides extends Logging {
       "hive hash operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.psNote(TypeEnum.ARRAY, "The nesting depth has a certain limit") +
+              TypeSig.psNote(TypeEnum.STRUCT, "The nesting depth has a certain limit"),
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[HiveHash](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          def getMaxStackDepth(inputType: DataType): Int = {
+            inputType match {
+              case at: ArrayType => 1 + getMaxStackDepth(at.elementType)
+              case st: StructType =>
+                1 + st.map(f => getMaxStackDepth(f.dataType)).max
+              case _ => 0 // primitive types
+            }
+          }
+          val maxDepth = a.children.map(c => getMaxStackDepth(c.dataType)).max
+          val supportedDepth = Hash.MAX_STACK_DEPTH
+          if (maxDepth > supportedDepth) {
+            willNotWorkOnGpu(s"the data type requires a stack size of $maxDepth, " +
+              s"which exceeds the GPU limit of $supportedDepth")
+          }
+        }
+
         def convertToGpu(): GpuExpression =
           GpuHiveHash(childExprs.map(_.convertToGpu()))
       }),

@@ -15,10 +15,11 @@
  */
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.TableWriter
-import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, RapidsBufferCatalog, RapidsDeviceMemoryStore, ScalableTaskCompletion}
+import ai.rapids.cudf.{Rmm, RmmAllocationMode, TableWriter}
+import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, RapidsConf, ScalableTaskCompletion}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM}
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataOutputStream
 import org.apache.hadoop.mapred.TaskAttemptContext
@@ -28,6 +29,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar.mock
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
@@ -42,7 +44,6 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   private var mockCommitter: FileCommitProtocol = _
   private var mockOutputWriterFactory: ColumnarOutputWriterFactory = _
   private var mockOutputWriter: NoTransformColumnarOutputWriter = _
-  private var devStore: RapidsDeviceMemoryStore = _
   private var allCols: Seq[AttributeReference] = _
   private var partSpec: Seq[AttributeReference] = _
   private var dataSpec: Seq[AttributeReference] = _
@@ -176,16 +177,13 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   override def beforeEach(): Unit = {
-    devStore = new RapidsDeviceMemoryStore()
-    val catalog = new RapidsBufferCatalog(devStore)
-    RapidsBufferCatalog.setCatalog(catalog)
+    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    SpillFramework.initialize(new RapidsConf(new SparkConf))
   }
 
   override def afterEach(): Unit = {
-    // test that no buffers we left in the spill framework
-    assertResult(0)(RapidsBufferCatalog.numBuffers)
-    RapidsBufferCatalog.close()
-    devStore.close()
+    SpillFramework.shutdown()
+    Rmm.shutdown()
   }
 
   def buildEmptyBatch: ColumnarBatch =

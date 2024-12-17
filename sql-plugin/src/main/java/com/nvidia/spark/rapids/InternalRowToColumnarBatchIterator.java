@@ -21,19 +21,11 @@ import java.util.Collections;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
-import com.nvidia.spark.Retryable;
 import scala.Option;
 import scala.Tuple2;
 import scala.collection.Iterator;
 
-import ai.rapids.cudf.ColumnVector;
-import ai.rapids.cudf.DType;
-import ai.rapids.cudf.HostColumnVector;
-import ai.rapids.cudf.HostColumnVectorCore;
-import ai.rapids.cudf.HostMemoryBuffer;
-import ai.rapids.cudf.NvtxColor;
-import ai.rapids.cudf.NvtxRange;
-import ai.rapids.cudf.Table;
+import ai.rapids.cudf.*;
 import com.nvidia.spark.rapids.jni.RowConversion;
 import com.nvidia.spark.rapids.shims.CudfUnsafeRow;
 
@@ -236,8 +228,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     try {
       hBuf = HostAlloc$.MODULE$.alloc((dataBytes + offsetBytes),true);
       SpillableHostBuffer sBuf = SpillableHostBuffer$.MODULE$.apply(hBuf, hBuf.getLength(),
-          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
-          RapidsBufferCatalog$.MODULE$.singleton());
+          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY());
       hBuf = null;  // taken over by spillable host buffer
       return Tuple2.apply(sBuf, numRowsWrapper);
     } finally {
