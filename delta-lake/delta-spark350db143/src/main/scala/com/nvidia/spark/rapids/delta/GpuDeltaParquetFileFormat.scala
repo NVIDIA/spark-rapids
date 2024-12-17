@@ -325,7 +325,6 @@ object GpuDeltaParquetFileFormat {
             builder =>
               HostColumnarToGpu.columnarCopy(newVector,
                 builder, newVector.dataType(), batch.numRows())
-              GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
               withResource(batch.column(i)) { _ =>
                 GpuColumnVector.from(builder.buildAndPutOnDevice(), newVector.dataType())
               }

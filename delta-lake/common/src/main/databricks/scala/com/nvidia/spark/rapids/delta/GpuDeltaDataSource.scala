@@ -22,7 +22,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaErrors, DeltaOptions}
-import com.databricks.sql.transaction.tahoe.commands.WriteIntoDelta
+import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuWriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids.{GpuCreatableRelationProvider, RapidsConf}
@@ -47,7 +47,7 @@ class GpuDeltaDataSource(rapidsConf: RapidsConf) extends GpuCreatableRelationPro
     val gpuDeltaLog = GpuDeltaLog.forTable(sqlContext.sparkSession, path, parameters, rapidsConf)
     GpuWriteIntoDelta(
       gpuDeltaLog,
-      WriteIntoDelta(
+      WriteIntoDeltaEdge(
         deltaLog = gpuDeltaLog.deltaLog,
         mode = mode,
         new DeltaOptions(parameters, sqlContext.sparkSession.sessionState.conf),

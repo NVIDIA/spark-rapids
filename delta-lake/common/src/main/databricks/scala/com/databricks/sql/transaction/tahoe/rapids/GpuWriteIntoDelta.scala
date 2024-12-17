@@ -22,7 +22,7 @@
 package com.databricks.sql.transaction.tahoe.rapids
 
 import com.databricks.sql.transaction.tahoe.{DeltaOperations, OptimisticTransaction}
-import com.databricks.sql.transaction.tahoe.commands.WriteIntoDelta
+import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.command.LeafRunnableCommand
 /** GPU version of Delta Lake's WriteIntoDelta. */
 case class GpuWriteIntoDelta(
     gpuDeltaLog: GpuDeltaLog,
-    cpuWrite: WriteIntoDelta)
+    cpuWrite: WriteIntoDeltaEdge)
     extends LeafRunnableCommand {
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
