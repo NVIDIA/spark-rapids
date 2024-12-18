@@ -1102,46 +1102,4 @@ class SpillFrameworkSuite
     testBufferFileDeletion(canShareDiskPaths = true)
   }
 
-  test("device handle cannot spill once marked as spilling by another thread") {
-    val (ct, _) = buildContiguousTable()
-    val buff = ct.getBuffer
-    buff.incRefCount()
-    withResource(SpillableDeviceBufferHandle(buff)) { handle =>
-      withResource(ct) { _ =>
-        assert(!handle.spillable)
-      }
-      assert(handle.spillable)
-
-      // we're just simulating the another thread coming in and spilling here
-      // so we don't have to worry about a race
-      assert(handle.setSpilling(true))
-      // the "other thread is spilling" so we cannot claim the spill lock
-      assert(!handle.setSpilling(true))
-      assertResult(0)(SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes))
-      assert(handle.setSpilling(false))
-
-      // now that nobody else is spilling (but the buffer is still not actually spilled),
-      // we will succeed
-      assertResult(512)(SpillFramework.stores.deviceStore.spill(handle.approxSizeInBytes))
-    }
-  }
-
-  test("host handle cannot spill once marked as spilling by another thread") {
-    withResource(SpillableHostBufferHandle(HostMemoryBuffer.allocate(512))) { hostHandle =>
-      assert(hostHandle.spillable)
-
-      // we're just simulating the another thread coming in and spilling here
-      // so we don't have to worry about a race
-      assert(hostHandle.setSpilling(true))
-      // the "other thread is spilling" so we cannot claim the spill lock
-      assert(!hostHandle.setSpilling(true))
-      assertResult(0)(SpillFramework.stores.hostStore.spill(hostHandle.approxSizeInBytes))
-      assert(hostHandle.setSpilling(false))
-
-      // now that nobody else is spilling (but the buffer is still not actually spilled),
-      // we will succeed
-      assertResult(512)(SpillFramework.stores.hostStore.spill(hostHandle.approxSizeInBytes))
-    }
-  }
-
 }
