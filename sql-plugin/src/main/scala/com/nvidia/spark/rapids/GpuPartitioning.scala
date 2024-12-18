@@ -260,11 +260,6 @@ trait GpuPartitioning extends Partitioning {
    * be called at the query planning stage. Therefore, this method is NOT thread safe.
    */
   def setupDebugMetrics(metrics: Map[String, GpuMetric]): Unit = {
-    // Check and set GpuPartitioning.CopyToHostTime
-    if (memCopyTime.isEmpty) {
-      metrics.get(GpuPartitioning.CopyToHostTime).foreach { metric =>
-        memCopyTime = Some(metric)
-      }
-    }
+    memCopyTime = metrics.get(GpuPartitioning.CopyToHostTime).getOrElse(NoopMetric)
   }
 }
