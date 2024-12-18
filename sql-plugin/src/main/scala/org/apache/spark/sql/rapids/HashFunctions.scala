@@ -141,7 +141,7 @@ object XxHash64Utils {
       case ArrayType(c: DataType, _) => computeMaxStackSizeForFlatten(c)
       case st: StructType =>
         1 + st.map(f => computeMaxStackSizeForFlatten(f.dataType)).max
-      case _ => 0 // primitive types
+      case _ => 1 // primitive types
     }
   }
 
