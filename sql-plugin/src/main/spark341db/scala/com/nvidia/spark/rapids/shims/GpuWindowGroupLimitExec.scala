@@ -304,8 +304,8 @@ case class GpuWindowGroupLimitExec(
     case GpuDenseRank(_) => DenseRankFunction
     case GpuRowNumber => RowNumberFunction
     case _ =>
-      throw new UnsupportedOperationException("Only rank, dense_rank and " +
-                                              "row_number are currently supported for group limits")
+      throw new UnsupportedOperationException("Only rank, dense_rank and row_number are " +
+                                              "currently supported for group limits")
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
