@@ -226,7 +226,7 @@ trait SpillableHandle extends StoreHandle {
 trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   private[spill] var dev: Option[T]
 
-  private[spill] override def spillable: Boolean = {
+  private[spill] override def spillable: Boolean = synchronized {
     super.spillable && dev.isDefined
   }
 
@@ -259,7 +259,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
 trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   private[spill] var host: Option[T]
 
-  private[spill] override def spillable: Boolean = {
+  private[spill] override def spillable: Boolean = synchronized {
     super.spillable && host.isDefined
   }
 
@@ -315,7 +315,7 @@ class SpillableHostBufferHandle private (
 
   override val approxSizeInBytes: Long = sizeInBytes
 
-  private[spill] override def spillable: Boolean = {
+  private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
       host.getOrElse {
         throw new IllegalStateException(
@@ -349,14 +349,32 @@ class SpillableHostBufferHandle private (
     materialized
   }
 
+  private var toSpill: HostMemoryBuffer = _
+  override def releaseHostResource(): Unit = {
+    super.releaseHostResource()
+    synchronized {
+      if (toSpill != null) {
+        toSpill.close()
+        toSpill = null
+      }
+    }
+  }
   override def spill(): Long = {
     if (!spillable || !setSpilling(true)) {
       0L
     } else {
-      val spilled = synchronized {
+      synchronized {
         if (disk.isEmpty && host.isDefined) {
+          toSpill = host.get
+          toSpill.incRefCount()
+        }
+      }
+      val spilled = if (toSpill != null) {
+        withResource(toSpill) { _ =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
+            // the spill IO is non-blocking as it won't impact dev or host directly
+            // instead we "atomically" swap the buffers below once they are ready
             GpuTaskMetrics.get.spillToDiskTime {
               val iter = new HostByteBufferIterator(host.get)
               iter.foreach { bb =>
@@ -369,12 +387,16 @@ class SpillableHostBufferHandle private (
                 }
               }
             }
-            disk = Some(diskHandleBuilder.build)
-            sizeInBytes
+            val staging = Some(diskHandleBuilder.build)
+            synchronized {
+              disk = staging
+              host = None
+            }
           }
-        } else {
-          0L
         }
+        sizeInBytes
+      } else {
+          0
       }
       // Make sure to only set spilling to false if it was previously set to true
       setSpilling(false)
@@ -447,7 +469,7 @@ class SpillableDeviceBufferHandle private (
 
   override val approxSizeInBytes: Long = sizeInBytes
 
-  private[spill] override def spillable: Boolean = {
+  private[spill] override def spillable: Boolean = synchronized {
     if (super.spillable) {
       dev.getOrElse {
         throw new IllegalStateException(
@@ -485,21 +507,45 @@ class SpillableDeviceBufferHandle private (
     materialized
   }
 
+  private var toSpill: DeviceMemoryBuffer = _
+  override def releaseDeviceResource(): Unit = {
+    super.releaseDeviceResource()
+    synchronized {
+      if (toSpill != null) {
+        toSpill.close()
+        toSpill = null
+      }
+    }
+  }
+
   override def spill(): Long = {
     if (!spillable || !setSpilling(true)) {
       0L
     } else {
       synchronized {
-        val spilled = if (host.isEmpty && dev.isDefined) {
-          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
-          sizeInBytes
-        } else {
-          0L
+        if (host.isEmpty && dev.isDefined) {
+          toSpill = dev.get
+          toSpill.incRefCount()
         }
-        // Make sure to only set spilling to false if it was previously set to true
-        setSpilling(false)
-        spilled
       }
+      val spilled = if (toSpill != null) {
+        withResource(toSpill) { _ =>
+          // the spill IO is non-blocking as it won't impact dev or host directly
+          // instead we "atomically" swap the buffers below once they are ready
+          val stagingHost =
+            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
+          synchronized {
+            host = stagingHost
+            dev = None
+          }
+        }
+        sizeInBytes
+      } else {
+        0
+      }
+      // Make sure to only set spilling to false if it was previously set to true
+      setSpilling(false)
+      spilled
     }
   }
 
