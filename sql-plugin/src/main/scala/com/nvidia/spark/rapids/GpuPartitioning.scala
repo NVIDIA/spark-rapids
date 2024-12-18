@@ -32,9 +32,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 object GpuPartitioning {
   // The maximum size of an Array minus a bit for overhead for metadata
   val MaxCpuBatchSize = 2147483639L - 2048L
-
-  // The SQLMetric key for MemoryCopyFromDeviceToHost
-  val CopyToHostTime: String = "d2hMemCpyTime"
 }
 
 trait GpuPartitioning extends Partitioning {
@@ -129,16 +126,23 @@ trait GpuPartitioning extends Partitioning {
     val totalInputSize = GpuColumnVector.getTotalDeviceMemoryUsed(partitionColumns)
     val mightNeedToSplit = totalInputSize > GpuPartitioning.MaxCpuBatchSize
 
-    val hostPartColumns = withResource(partitionColumns) { _ =>
-      withRetryNoSplit {
-        partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))
+    // We have to wrap the NvtxWithMetrics over both copyToHostAsync and corresponding CudaSync,
+    // because the copyToHostAsync calls above are not guaranteed to be asynchronous (e.g.: when
+    // the copy is from pageable memory, and we're not guaranteed to be using pinned memory).
+    val hostPartColumns = withResource(
+      new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, memCopyTime)) { _ =>
+      val hostColumns = withResource(partitionColumns) { _ =>
+        withRetryNoSplit {
+          partitionColumns.safeMap(_.copyToHostAsync(Cuda.DEFAULT_STREAM))
+        }
       }
-    }
-    withResource(hostPartColumns) { _ =>
-      withResource(new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, memCopyTime)) { _ =>
+      closeOnExcept(hostColumns) { _ =>
         Cuda.DEFAULT_STREAM.sync()
       }
+      hostColumns
+    }
 
+    withResource(hostPartColumns) { _ =>
       // Leaving the GPU for a while
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
@@ -248,13 +252,13 @@ trait GpuPartitioning extends Partitioning {
     }
   }
 
-  private var memCopyTime: Option[GpuMetric] = None
+  private var memCopyTime: GpuMetric = NoopMetric
 
   /**
    * Setup sub-metrics for the performance debugging of GpuPartition. This method is expected to
    * be called at the query planning stage. Therefore, this method is NOT thread safe.
    */
   def setupDebugMetrics(metrics: Map[String, GpuMetric]): Unit = {
-    memCopyTime = metrics.get(GpuPartitioning.CopyToHostTime).getOrElse(NoopMetric)
+    metrics.get(GpuMetric.COPY_TO_HOST_TIME).foreach(memCopyTime = _)
   }
 }
