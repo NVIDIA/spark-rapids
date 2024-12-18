@@ -3328,6 +3328,14 @@ object GpuOverrides extends Logging {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
 
+        override def tagExprForGpu(): Unit = {
+          val maxDepth = a.children.map(
+            c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
+          if (maxDepth > Hash.MAX_STACK_DEPTH) {
+            willNotWorkOnGpu(s"The data type requires a stack size of $maxDepth, " +
+                s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}")
+          }
+        }
         def convertToGpu(): GpuExpression =
           GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
       }),

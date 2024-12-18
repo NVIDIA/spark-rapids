@@ -108,6 +108,59 @@ case class GpuXxHash64(children: Seq[Expression], seed: Long) extends GpuHashExp
   }
 }
 
+object XxHash64Utils {
+  /**
+   * Convert map to list of struct.
+   * Note: Do not support UserDefinedType and other unregular types.
+   * Do not retain the nullable and other info
+   */
+  private def flatMap(inputType: DataType): DataType = {
+    inputType match {
+      case mapType: MapType =>
+        ArrayType(StructType(Array(
+          StructField("key", flatMap(mapType.keyType)),
+          StructField("value", flatMap(mapType.valueType))
+        )))
+      case arrayType: ArrayType => ArrayType(flatMap(arrayType.elementType))
+      case structType: StructType =>
+        StructType(structType.map(f => StructField(f.name, flatMap(f.dataType))).toArray)
+      case nullType: NullType => nt
+      case atomicType: AtomicType => atomicType
+      case other: _ => throw new RuntimeException(s"Unsupported type: $other")
+    }
+  }
+
+  /**
+   *
+   * @param flattenType should be fatten type via function `flatMap`
+   * @return max stack size
+   */
+  private def computeMaxStackSizeForFlatten(flattenType: DataType): Int = {
+    flattenType match {
+      case ArrayType(c: StructType, _) => 1 + computeMaxStackSizeForFlatten(c)
+      case ArrayType(c: DataType, _) => computeMaxStackSizeForFlatten(c)
+      case st: StructType =>
+        1 + st.map(f => computeMaxStackSizeForFlatten(f.dataType)).max
+      case _ => 0 // primitive types
+    }
+  }
+
+  /**
+   * Compute the max stack size that `inputType` will use,
+   * refer to the function `check_nested_depth` in src/main/cpp/src/xxhash64.cu
+   * in spark-rapids-jni repo.
+   * Note:
+   * - This should be sync with `check_nested_depth`
+   * - Map in cuDF is list of struct
+   *
+   * @param inputType the input type
+   * @return the max stack size that xxhash64 will use for this input type.
+   */
+  def computeMaxStackSize(inputType: DataType): Int = {
+    computeMaxStackSizeForFlatten(flatMap(inputType))
+  }
+}
+
 case class GpuHiveHash(children: Seq[Expression]) extends GpuHashExpression {
   override def dataType: DataType = IntegerType
 
