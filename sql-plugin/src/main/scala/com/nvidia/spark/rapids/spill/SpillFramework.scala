@@ -1719,7 +1719,7 @@ class ChunkedPacker(table: Table,
   }
 
   override def next(): (DeviceBounceBuffer, Long) = {
-    withResource(bounceBufferPool.nextBuffer()) { bounceBuffer =>
+    closeOnExcept(bounceBufferPool.nextBuffer()) { bounceBuffer =>
       if (closed) {
         throw new IllegalStateException(s"ChunkedPacker is closed")
       }
