@@ -124,9 +124,9 @@ object XxHash64Utils {
       case arrayType: ArrayType => ArrayType(flatMap(arrayType.elementType))
       case structType: StructType =>
         StructType(structType.map(f => StructField(f.name, flatMap(f.dataType))).toArray)
-      case nullType: NullType => nt
+      case nullType: NullType => nullType
       case atomicType: AtomicType => atomicType
-      case other: _ => throw new RuntimeException(s"Unsupported type: $other")
+      case other => throw new RuntimeException(s"Unsupported type: $other")
     }
   }
 
