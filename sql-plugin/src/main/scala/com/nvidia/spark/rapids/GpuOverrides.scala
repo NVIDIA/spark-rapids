@@ -369,7 +369,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.fileIndex,
       cmd.outputColumnNames,
       conf.stableSort,
-      conf.concurrentWriterPartitionFlushSize)
+      conf.concurrentWriterPartitionFlushSize,
+      conf.outputDebugDumpPrefix)
   }
 }
 

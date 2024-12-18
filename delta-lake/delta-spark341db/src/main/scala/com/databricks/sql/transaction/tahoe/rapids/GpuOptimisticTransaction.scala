@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -259,8 +259,9 @@ class GpuOptimisticTransaction(
           bucketSpec = None,
           statsTrackers = optionalStatsTracker.toSeq ++ identityTracker.toSeq ++ statsTrackers,
           options = options,
-          rapidsConf.stableSort,
-          rapidsConf.concurrentWriterPartitionFlushSize)
+          useStableSort = rapidsConf.stableSort,
+          concurrentWriterPartitionFlushSize = rapidsConf.concurrentWriterPartitionFlushSize,
+          baseDebugOutputPath = rapidsConf.outputDebugDumpPrefix)
       } catch {
         case s: SparkException =>
           // Pull an InvariantViolationException up to the top level if it was the root cause.

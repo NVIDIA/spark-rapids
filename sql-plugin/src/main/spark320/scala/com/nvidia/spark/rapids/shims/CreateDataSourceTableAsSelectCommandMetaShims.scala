@@ -87,6 +87,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       origProvider,
       newProvider,
       conf.stableSort,
-      conf.concurrentWriterPartitionFlushSize)
+      conf.concurrentWriterPartitionFlushSize,
+      conf.outputDebugDumpPrefix)
   }
 }

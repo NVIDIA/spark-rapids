@@ -1682,6 +1682,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val OUTPUT_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.output.debug.dumpPrefix")
+    .doc("A path prefix where data that is intended to be written out as the result " +
+      "of a query should be dumped for debugging. The format of this is based on " +
+      "JCudfSerialization and is trying to capture the underlying table so that if " +
+      "there are errors in the output format we can try to recreate it.")
+    .internal()
+    .stringConf
+    .createOptional
+
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
@@ -2882,6 +2891,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
 
   lazy val maxGpuColumnSizeBytes: Long = get(MAX_GPU_COLUMN_SIZE_BYTES)
+
+  lazy val outputDebugDumpPrefix: Option[String] = get(OUTPUT_DEBUG_DUMP_PREFIX)
 
   lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 
