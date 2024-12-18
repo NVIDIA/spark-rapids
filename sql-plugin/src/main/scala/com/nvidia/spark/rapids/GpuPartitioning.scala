@@ -135,12 +135,7 @@ trait GpuPartitioning extends Partitioning {
       }
     }
     withResource(hostPartColumns) { _ =>
-      lazy val memCpyNvtxRange = memCopyTime.map(
-          new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, _))
-        .getOrElse(
-          new NvtxRange("PartitionD2H", NvtxColor.CYAN))
-      // Wait for copyToHostAsync
-      withResource(memCpyNvtxRange) { _ =>
+      withResource(new NvtxWithMetrics("PartitionD2H", NvtxColor.CYAN, memCopyTime)) { _ =>
         Cuda.DEFAULT_STREAM.sync()
       }
 
