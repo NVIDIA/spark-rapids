@@ -58,6 +58,7 @@ jobs:
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -120,6 +121,7 @@ jobs:
           java-version: 8
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -173,6 +175,7 @@ jobs:
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -227,6 +230,7 @@ jobs:
           java-version: 17
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -282,6 +286,7 @@ jobs:
           java-version: 17
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -336,6 +341,7 @@ jobs:
           java-version: ${{ matrix.java-version }}
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -383,6 +389,7 @@ jobs:
           java-version: 11
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
