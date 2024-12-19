@@ -2432,7 +2432,8 @@ object GpuOverrides extends Logging {
           (TypeSig.INT + TypeSig.LONG).withAllLit(),
           (TypeSig.INT + TypeSig.LONG).withAllLit()))),
       (a, conf, p, r) => new UnaryExprMeta[Rand](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuRand(child)
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuRand(child, this.conf.isRetryContextCheckEnabled)
       }),
     expr[SparkPartitionID] (
       "Returns the current partition id",
