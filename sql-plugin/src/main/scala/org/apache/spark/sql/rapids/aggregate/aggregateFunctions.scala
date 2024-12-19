@@ -21,6 +21,7 @@ import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, Group
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.jni.TestHostUDF
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, TypeUtilsShims}
 import com.nvidia.spark.rapids.window._
 
@@ -59,13 +60,15 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate {
   // sum(shorts): bigint
   // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
   //
-  @transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+  //@transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
   override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
-
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.hostUDF(
+      TestHostUDF.createTestHostUDF(TestHostUDF.AggregationType.Reduction)),
+      DType.FLOAT64)
   override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.sum()
+    GroupByAggregation.hostUDF(
+      TestHostUDF.createTestHostUDF(TestHostUDF.AggregationType.GroupByAggregation))
 
   override val name: String = "CudfSum"
 }
@@ -2025,7 +2028,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
 }
 
 case class GpuReplaceNullmask(
-    input: Expression, 
+    input: Expression,
     mask: Expression) extends GpuExpression with ShimExpression {
 
   override def dataType: DataType = input.dataType
@@ -2092,7 +2095,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   protected val cudfMaxMinByAggregate: CudfAggregate
 
-  private lazy val bufferOrdering: AttributeReference = 
+  private lazy val bufferOrdering: AttributeReference =
     AttributeReference("ordering", orderingExpr.dataType)()
 
   private lazy val bufferValue: AttributeReference =
@@ -2100,7 +2103,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Cudf allows only one column as input, so wrap value and ordering columns by
   // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression = 
+  private def createStructExpression(order: Expression, value: Expression): Expression =
     GpuReplaceNullmask(
       GpuCreateNamedStruct(Seq(
         GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
