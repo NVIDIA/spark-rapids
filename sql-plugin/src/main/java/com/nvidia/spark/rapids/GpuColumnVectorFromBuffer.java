@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -111,6 +111,29 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
     super(type, cudfColumn);
     this.buffer = buffer;
     this.tableMeta = meta;
+  }
+
+  public static boolean isFromBuffer(ColumnarBatch cb) {
+    if (cb.numCols() > 0) {
+      long bufferAddr = 0L;
+      boolean isSet = false;
+      for (int i = 0; i < cb.numCols(); ++i) {
+        GpuColumnVectorFromBuffer gcvfb = null;
+        if (!(cb.column(i) instanceof GpuColumnVectorFromBuffer)) {
+          return false;
+        } else {
+          gcvfb = (GpuColumnVectorFromBuffer) cb.column(i);
+          if (!isSet) {
+            bufferAddr = gcvfb.buffer.getAddress();
+            isSet = true;
+          } else if (bufferAddr != gcvfb.buffer.getAddress()) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+    return false;
   }
 
   /**

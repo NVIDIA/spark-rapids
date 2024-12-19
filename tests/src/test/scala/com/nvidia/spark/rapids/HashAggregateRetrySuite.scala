@@ -70,10 +70,8 @@ class HashAggregateRetrySuite
     when(aggHelper.aggOrdinals).thenReturn(aggOrdinals)
 
     // attempt a cuDF reduction
-    withResource(input) { _ =>
-      GpuAggregateIterator.aggregate(
-        aggHelper, input, mockMetrics)
-    }
+    GpuAggregateIterator.aggregate(
+      aggHelper, input, mockMetrics)
   }
 
   def makeGroupByAggHelper(forceMerge: Boolean): AggHelper = {
@@ -118,172 +116,187 @@ class HashAggregateRetrySuite
 
   test("computeAndAggregate reduction with retry") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val result = doReduction(reductionBatch)
-    withResource(result) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(1)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-        withResource(gcv.getBase.copyToHost()) { hcv =>
-          assertResult(9)(hcv.getLong(0))
+    withResource(reductionBatch.incRefCount()) { _ =>
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      val result = doReduction(reductionBatch)
+      withResource(result) { spillable =>
+        withResource(spillable.getColumnarBatch) { cb =>
+          assertResult(1)(cb.numRows)
+          val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+          withResource(gcv.getBase.copyToHost()) { hcv =>
+            assertResult(9)(hcv.getLong(0))
+          }
         }
       }
+      // we need to request a ColumnarBatch twice here for the retry
+      // why is this invoking the underlying method
+      verify(reductionBatch, times(2)).getColumnarBatch
     }
-    // we need to request a ColumnarBatch twice here for the retry
-    verify(reductionBatch, times(2)).getColumnarBatch()
   }
 
   test("computeAndAggregate reduction with two retries") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val result = doReduction(reductionBatch)
-    withResource(result) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(1)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-        withResource(gcv.getBase.copyToHost()) { hcv =>
-          assertResult(9)(hcv.getLong(0))
+    withResource(reductionBatch.incRefCount()) { _ =>
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      val result = doReduction(reductionBatch)
+      withResource(result) { spillable =>
+        withResource(spillable.getColumnarBatch) { cb =>
+          assertResult(1)(cb.numRows)
+          val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+          withResource(gcv.getBase.copyToHost()) { hcv =>
+            assertResult(9)(hcv.getLong(0))
+          }
         }
       }
+      // we need to request a ColumnarBatch three times, because of 1 regular attempt,
+      // and two retries
+      verify(reductionBatch, times(3)).getColumnarBatch
     }
-    // we need to request a ColumnarBatch three times, because of 1 regular attempt,
-    // and two retries
-    verify(reductionBatch, times(3)).getColumnarBatch()
   }
 
   test("computeAndAggregate reduction with cudf exception") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceCudfException(RmmSpark.getCurrentThreadId)
-    assertThrows[CudfException] {
-      doReduction(reductionBatch)
+    withResource(reductionBatch.incRefCount()) { _ =>
+      RmmSpark.forceCudfException(RmmSpark.getCurrentThreadId)
+      assertThrows[CudfException] {
+        doReduction(reductionBatch)
+      }
+      // columnar batch was obtained once, but since this was not a retriable exception
+      // we don't retry it
+      verify(reductionBatch, times(1)).getColumnarBatch
     }
-    // columnar batch was obtained once, but since this was not a retriable exception
-    // we don't retry it
-    verify(reductionBatch, times(1)).getColumnarBatch()
   }
 
   test("computeAndAggregate group by with retry") {
     val groupByBatch = buildGroupByBatch()
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val result = doGroupBy(groupByBatch)
-    withResource(result) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(3)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-        val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
-        var rowsLeftToMatch = 3
-        withResource(aggv.getBase.copyToHost()) { aggvh =>
-          withResource(gcv.getBase.copyToHost()) { grph =>
-            (0 until 3).foreach { row =>
-              if (grph.isNull(row)) {
-                assertResult(2L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
-              } else if (grph.getInt(row) == 5) {
-                assertResult(1L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
-              } else if (grph.getInt(row) == 1) {
-                assertResult(7L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
+    withResource(groupByBatch.incRefCount()) { _ =>
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      val result = doGroupBy(groupByBatch)
+      withResource(result) { spillable =>
+        withResource(spillable.getColumnarBatch) { cb =>
+          assertResult(3)(cb.numRows)
+          val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+          val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
+          var rowsLeftToMatch = 3
+          withResource(aggv.getBase.copyToHost()) { aggvh =>
+            withResource(gcv.getBase.copyToHost()) { grph =>
+              (0 until 3).foreach { row =>
+                if (grph.isNull(row)) {
+                  assertResult(2L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                } else if (grph.getInt(row) == 5) {
+                  assertResult(1L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                } else if (grph.getInt(row) == 1) {
+                  assertResult(7L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                }
               }
             }
           }
+          assertResult(0)(rowsLeftToMatch)
         }
-        assertResult(0)(rowsLeftToMatch)
       }
+      // we need to request a ColumnarBatch twice here for the retry
+      verify(groupByBatch, times(2)).getColumnarBatch
     }
-    // we need to request a ColumnarBatch twice here for the retry
-    verify(groupByBatch, times(2)).getColumnarBatch()
   }
 
   test("computeAndAggregate reduction with split and retry") {
     val reductionBatch = buildReductionBatch()
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val result = doReduction(reductionBatch)
-    withResource(result) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(1)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+    withResource(reductionBatch.incRefCount()) { _ =>
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      val result = doReduction(reductionBatch)
+      withResource(result) { spillable =>
+        withResource(spillable.getColumnarBatch) { cb =>
+          assertResult(1)(cb.numRows)
+          val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
 
-        withResource(gcv.getBase.copyToHost()) { hcv =>
-          assertResult(9L)(hcv.getLong(0))
+          withResource(gcv.getBase.copyToHost()) { hcv =>
+            assertResult(9L)(hcv.getLong(0))
+          }
         }
       }
+      // the second time we access this batch is to split it
+      verify(reductionBatch, times(2)).getColumnarBatch
     }
-    // the second time we access this batch is to split it
-    verify(reductionBatch, times(2)).getColumnarBatch()
   }
 
   test("computeAndAggregate group by with split retry") {
     val groupByBatch = buildGroupByBatch()
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val result = doGroupBy(groupByBatch)
-    withResource(result) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(3)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-        val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
-        var rowsLeftToMatch = 3
-        withResource(aggv.getBase.copyToHost()) { aggvh =>
-          withResource(gcv.getBase.copyToHost()) { grph =>
-            (0 until 3).foreach { row =>
-              if (grph.isNull(row)) {
-                assertResult(2L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
-              } else if (grph.getInt(row) == 5) {
-                assertResult(1L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
-              } else if (grph.getInt(row) == 1) {
-                assertResult(7L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
+    withResource(groupByBatch.incRefCount()) { _ =>
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      val result = doGroupBy(groupByBatch)
+      withResource(result) { spillable =>
+        withResource(spillable.getColumnarBatch) { cb =>
+          assertResult(3)(cb.numRows)
+          val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+          val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
+          var rowsLeftToMatch = 3
+          withResource(aggv.getBase.copyToHost()) { aggvh =>
+            withResource(gcv.getBase.copyToHost()) { grph =>
+              (0 until 3).foreach { row =>
+                if (grph.isNull(row)) {
+                  assertResult(2L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                } else if (grph.getInt(row) == 5) {
+                  assertResult(1L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                } else if (grph.getInt(row) == 1) {
+                  assertResult(7L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                }
               }
             }
           }
+          assertResult(0)(rowsLeftToMatch)
         }
-        assertResult(0)(rowsLeftToMatch)
       }
+      // the second time we access this batch is to split it
+      verify(groupByBatch, times(2)).getColumnarBatch
     }
-    // the second time we access this batch is to split it
-    verify(groupByBatch, times(2)).getColumnarBatch()
   }
 
   test("computeAndAggregate group by with retry and forceMerge") {
     // with forceMerge we expect 1 batch to be returned at all costs
     val groupByBatch = buildGroupByBatch()
-    // we force a split because that would cause us to compute two aggs
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    val result = doGroupBy(groupByBatch, forceMerge = true)
-    withResource(result) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(3)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-        val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
-        var rowsLeftToMatch = 3
-        withResource(aggv.getBase.copyToHost()) { aggvh =>
-          withResource(gcv.getBase.copyToHost()) { grph =>
-            (0 until 3).foreach { row =>
-              if (grph.isNull(row)) {
-                assertResult(2L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
-              } else if (grph.getInt(row) == 5) {
-                assertResult(1L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
-              } else if (grph.getInt(row) == 1) {
-                assertResult(7L)(aggvh.getLong(row))
-                rowsLeftToMatch -= 1
+    withResource(groupByBatch.incRefCount()) { _ =>
+      // we force a split because that would cause us to compute two aggs
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      val result = doGroupBy(groupByBatch, forceMerge = true)
+      withResource(result) { spillable =>
+        withResource(spillable.getColumnarBatch) { cb =>
+          assertResult(3)(cb.numRows)
+          val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+          val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
+          var rowsLeftToMatch = 3
+          withResource(aggv.getBase.copyToHost()) { aggvh =>
+            withResource(gcv.getBase.copyToHost()) { grph =>
+              (0 until 3).foreach { row =>
+                if (grph.isNull(row)) {
+                  assertResult(2L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                } else if (grph.getInt(row) == 5) {
+                  assertResult(1L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                } else if (grph.getInt(row) == 1) {
+                  assertResult(7L)(aggvh.getLong(row))
+                  rowsLeftToMatch -= 1
+                }
               }
             }
           }
+          assertResult(0)(rowsLeftToMatch)
         }
-        assertResult(0)(rowsLeftToMatch)
       }
+      // we need to request a ColumnarBatch twice here for the retry
+      verify(groupByBatch, times(2)).getColumnarBatch
     }
-    // we need to request a ColumnarBatch twice here for the retry
-    verify(groupByBatch, times(2)).getColumnarBatch()
   }
 }

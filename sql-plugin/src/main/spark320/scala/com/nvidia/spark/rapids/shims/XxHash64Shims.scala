@@ -48,5 +48,6 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids.TypeSig
 
 object XxHash64Shims {
-  val supportedTypes: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
+  val supportedTypes: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+    TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
 }

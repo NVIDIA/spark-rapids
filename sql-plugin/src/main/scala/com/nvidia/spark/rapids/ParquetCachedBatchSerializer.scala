@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -430,7 +430,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       schema: StructType): ParquetWriterOptions = {
     val compressionType = if (useCompression) CompressionType.SNAPPY else CompressionType.NONE
     SchemaUtils
-        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
+        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, nullable = false,
+          writeInt96 = false)
         .withCompressionType(compressionType)
         .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
   }

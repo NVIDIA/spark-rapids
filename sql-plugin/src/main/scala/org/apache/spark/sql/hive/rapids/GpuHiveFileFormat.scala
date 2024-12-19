@@ -127,6 +127,38 @@ object GpuHiveFileFormat extends Logging {
         s"only $lazySimpleSerDe is currently supported for text")
     }
 
+    // The check for serialization key here differs slightly from the read-side check in
+    // HiveProviderImpl::getExecs():
+    //   1. On the read-side, we do a strict check for `serialization.format == 1`, denoting
+    //      '^A'-separated text.  All other formatting is unsupported.
+    //   2. On the write-side too, we support only `serialization.format == 1`.  But if
+    //      `serialization.format` hasn't been set yet, it is still treated as `^A` separated.
+    //
+    // On the write side, there are a couple of scenarios to consider:
+    //   1. If the destination table exists beforehand, `serialization.format` should have been
+    //      set already, to a non-empty value.  This will look like:
+    //      ```sql
+    //      CREATE TABLE destination_table( col INT, ... );  --> serialization.format=1
+    //      INSERT INTO TABLE destination_table SELECT * FROM ...
+    //      ```
+    //   2. If the destination table is being created as part of a CTAS, without an explicit
+    //      format specified, then Spark leaves `serialization.format` unpopulated, until *AFTER*
+    //      the write operation is completed.  Such a query might look like:
+    //      ```sql
+    //      CREATE TABLE destination_table AS SELECT * FROM ...
+    //      --> serialization.format is absent from Storage Properties. "1" is inferred.
+    //      ```
+    //   3. If the destination table is being created as part of a CTAS, with a non-default
+    //      text format specified explicitly, then the non-default `serialization.format` is made
+    //      available as part of the destination table's storage properties.  Such a table creation
+    //      might look like:
+    //      ```sql
+    //      CREATE TABLE destination_table
+    //        ROW FORMAT DELIMITED FIELDS TERMINATED BY `,` STORED AS TEXTFILE
+    //        AS SELECT * FROM ...
+    //      --> serialization.format="", field.delim=",".  Unsupported case.
+    //      ```
+    // All these cases may be covered by explicitly checking for `serialization.format=1`.
     val serializationFormat = storage.properties.getOrElse(serializationKey, "1")
     if (serializationFormat != ctrlASeparatedFormat) {
       meta.willNotWorkOnGpu(s"unsupported serialization format found: " +
@@ -181,20 +213,23 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
 
       override def newInstance(path: String,
           dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuHiveParquetWriter(path, dataSchema, context, compressionType)
+          context: TaskAttemptContext,
+          debugOutputPath: Option[String]): ColumnarOutputWriter = {
+        new GpuHiveParquetWriter(path, dataSchema, context, compressionType, debugOutputPath)
       }
     }
   }
 }
 
 class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
-    context: TaskAttemptContext, compType: CompressionType)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true) {
+    context: TaskAttemptContext, compType: CompressionType,
+    debugOutputPath: Option[String])
+  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, debugOutputPath) {
 
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         writeInt96 = true,      // Hive 1.2 write timestamp as INT96
         parquetFieldIdEnabled = false)
       .withCompressionType(compType)
@@ -217,8 +252,9 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 
       override def newInstance(path: String,
                                dataSchema: StructType,
-                               context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuHiveTextWriter(path, dataSchema, context)
+                               context: TaskAttemptContext,
+                               debugOutputPath: Option[String]): ColumnarOutputWriter = {
+        new GpuHiveTextWriter(path, dataSchema, context, debugOutputPath)
       }
     }
   }
@@ -226,8 +262,9 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 
 class GpuHiveTextWriter(override val path: String,
                         dataSchema: StructType,
-                        context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false) {
+                        context: TaskAttemptContext,
+                        debugOutputPath: Option[String])
+  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false, debugOutputPath) {
 
   /**
    * This reformats columns, to iron out inconsistencies between
