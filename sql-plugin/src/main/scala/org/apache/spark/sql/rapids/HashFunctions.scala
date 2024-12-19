@@ -123,7 +123,7 @@ object XxHash64Utils {
   def computeMaxStackSize(inputType: DataType): Int = {
     inputType match {
       case ArrayType(c: StructType, _) => 1 + computeMaxStackSize(c)
-      case ArrayType(c: DataType, _) => computeMaxStackSize(c)
+      case ArrayType(c, _) => computeMaxStackSize(c)
       case st: StructType =>
         1 + st.map(f => computeMaxStackSize(f.dataType)).max
       case mt: MapType =>
