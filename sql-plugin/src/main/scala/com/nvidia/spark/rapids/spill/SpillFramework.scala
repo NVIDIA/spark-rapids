@@ -23,6 +23,7 @@ import java.nio.file.StandardOpenOption
 import java.util
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.collection.mutable
 
@@ -177,6 +178,30 @@ trait SpillableHandle extends StoreHandle {
    */
   def spill(): Long
 
+  private val spilling = new AtomicBoolean(false)
+
+  /**
+   * Method used to atomically check and set the spilling state, so that anyone who wants to
+   * actually perform a spill can ensure they are the only one spilling, without having to block
+   * on the actual spill operation (IO). Only someone who has set spilling to true to perform their
+   * spill may set it back to false when they are done. (Visible for tests)
+   *
+   * This is a separate check from spillable, which actually checks the state of the buffer handle
+   *
+   * @param s whether the caller is trying to spill or not (ie finished)
+   * @return whether the caller is allowed to spill (or true if s is false)
+   */
+  def setSpilling(s: Boolean): Boolean = {
+    if (!s) {
+      if (!spilling.getAndSet(false)) {
+        throw new IllegalStateException("tried to setSpilling to false while not spilling!")
+      }
+      true
+    } else {
+      !spilling.getAndSet(true)
+    }
+  }
+
   /**
    * Method used to determine whether a handle tracks an object that could be spilled
    * @note At the level of `SpillableHandle`, the only requirement of spillability
@@ -184,7 +209,13 @@ trait SpillableHandle extends StoreHandle {
    *       construction, and is immutable.
    * @return true if currently spillable, false otherwise
    */
-  private[spill] def spillable: Boolean = approxSizeInBytes > 0
+  private[spill] def spillable: Boolean = {
+    if (approxSizeInBytes > 0) {
+      !spilling.get()
+    } else {
+      false
+    }
+  }
 }
 
 /**
@@ -195,7 +226,7 @@ trait SpillableHandle extends StoreHandle {
 trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   private[spill] var dev: Option[T]
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     super.spillable && dev.isDefined
   }
 
@@ -228,7 +259,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
 trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   private[spill] var host: Option[T]
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     super.spillable && host.isDefined
   }
 
@@ -284,7 +315,7 @@ class SpillableHostBufferHandle private (
 
   override val approxSizeInBytes: Long = sizeInBytes
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     if (super.spillable) {
       host.getOrElse {
         throw new IllegalStateException(
@@ -319,7 +350,7 @@ class SpillableHostBufferHandle private (
   }
 
   override def spill(): Long = {
-    if (!spillable) {
+    if (!spillable || !setSpilling(true)) {
       0L
     } else {
       val spilled = synchronized {
@@ -345,6 +376,8 @@ class SpillableHostBufferHandle private (
           0L
         }
       }
+      // Make sure to only set spilling to false if it was previously set to true
+      setSpilling(false)
       releaseHostResource()
       spilled
     }
@@ -414,7 +447,7 @@ class SpillableDeviceBufferHandle private (
 
   override val approxSizeInBytes: Long = sizeInBytes
 
-  private[spill] override def spillable: Boolean = synchronized {
+  private[spill] override def spillable: Boolean = {
     if (super.spillable) {
       dev.getOrElse {
         throw new IllegalStateException(
@@ -453,16 +486,19 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def spill(): Long = {
-    if (!spillable) {
+    if (!spillable || !setSpilling(true)) {
       0L
     } else {
       synchronized {
-        if (host.isEmpty && dev.isDefined) {
+        val spilled = if (host.isEmpty && dev.isDefined) {
           host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
           sizeInBytes
         } else {
           0L
         }
+        // Make sure to only set spilling to false if it was previously set to true
+        setSpilling(false)
+        spilled
       }
     }
   }
