@@ -64,6 +64,8 @@ jobs:
           key: ${{ env.dailyCacheKey }}
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
+        timeout-minutes: 30
+        continue-on-error: true
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           SCALA_VER: '2.12'
@@ -177,6 +179,8 @@ jobs:
           key: ${{ env.scala213dailyCacheKey }}
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
+        timeout-minutes: 30
+        continue-on-error: true
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           SCALA_VER: '2.13'
