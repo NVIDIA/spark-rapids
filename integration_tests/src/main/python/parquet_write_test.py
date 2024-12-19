@@ -705,8 +705,8 @@ def test_async_writer(spark_tmp_path, hold_gpu):
     parquet_gen = [int_gen for _ in range(num_cols)]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gen)]
     assert_gpu_and_cpu_writes_are_equal_collect(
-        lambda spark, path: gen_df(spark, gen_list, length=num_rows).coalesce(1).write.parquet(path),
-        lambda spark, path: spark.read.parquet(path),
+        lambda spark, path: gen_df(spark, gen_list, length=num_rows).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path).orderBy([('_c' + str(i)) for i in range(num_cols)]),
         data_path,
         copy_and_update(
             writer_confs,
