@@ -369,7 +369,7 @@ def test_async_writer(spark_tmp_path, hold_gpu):
     orc_gen = [int_gen for _ in range(num_cols)]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gen)]
     assert_gpu_and_cpu_writes_are_equal_collect(
-        lambda spark, path: gen_df(spark, gen_list, length=num_rows).coalesce(1).write.orc(path),
+        lambda spark, path: gen_df(spark, gen_list, length=num_rows).write.orc(path),
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf={"spark.rapids.sql.asyncWrite.queryOutput.enabled": "true",
