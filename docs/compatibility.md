@@ -316,118 +316,102 @@ case.
 
 ## JSON
 
-The JSON format read is an experimental feature which is expected to have some issues, so we disable
-it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and
-`spark.rapids.sql.format.json.read.enabled`.
+JSON, despite being a standard format, has some ambiguity in it. Spark also offers the ability to allow 
+some invalid JSON to be parsed. We have tried to provide JSON parsing that is compatible with 
+what Apache Spark does support. Note that Spark itself has changed through different releases, and we will
+try to call out which releases we offer different results for. JSON parsing is enabled by default
+except for date and timestamp types where we still have work to complete. If you wish to disable
+JSON Scan you can set `spark.rapids.sql.format.json.enabled` or
+`spark.rapids.sql.format.json.read.enabled` to false. To disable `from_json` you can set 
+`spark.rapids.sql.expression.JsonToStructs` to false.
 
-### Invalid JSON
+### Limits
 
-In Apache Spark on the CPU if a line in the JSON file is invalid the entire row is considered
-invalid and will result in nulls being returned for all columns. It is considered invalid if it
-violates the JSON specification, but with a few extensions.
+In versions of Spark before 3.5.0 there is no maximum to how deeply nested JSON can be. After 
+3.5.0 this was updated to be 1,000 by default. The current GPU implementation of JSON Scan and 
+`from_json` limits this to 254 no matter what version of Spark is used. If the nesting level is
+over this the JSON is considered invalid and all values will be returned as nulls.
+`get_json_object` and `json_tuple` have a maximum nesting depth of 64. An exception is thrown if
+the nesting depth goes over the maximum.
 
-  * Single quotes are allowed to quote strings and keys
-  * Unquoted values like NaN and Infinity can be parsed as floating point values
-  * Control characters do not need to be replaced with the corresponding escape sequences in a 
-    quoted string.
-  * Garbage at the end of a row, if there is valid JSON at the beginning of the row, is ignored.
+Spark 3.5.0 and above have limits on maximum string length 20,000,000 and maximum number length of
+1,000. We do not have any of these limits on the GPU.
 
-The GPU implementation does the same kinds of validations, but many of them are done on a per-column
-basis, which, for example, means if a number is formatted incorrectly, it is likely only that value
-will be considered invalid and return a null instead of nulls for the entire row.  
+We, like Spark, cannot support an JSON string that is larger than 2 GiB is size.
 
-There are options that can be used to enable and disable many of these features which are mostly
-listed below.
+### JSON Validation
 
-### JSON options
+Spark supports the option `allowNonNumericNumbers`. Versions of Spark prior to 3.3.0 where inconsistent between
+quoted and non-quoted values ([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The
+GPU implementation is consistent with 3.3.0 and above.
 
-Spark supports passing options to the JSON parser when reading a dataset.  In most cases if the RAPIDS Accelerator
-sees one of these options that it does not support it will fall back to the CPU. In some cases we do not. The
-following options are documented below.
-
-- `allowNumericLeadingZeros`  - Allows leading zeros in numbers (e.g. 00012). By default this is set to false.
-  When it is false Spark considers the JSON invalid if it encounters this type of number. The RAPIDS
-  Accelerator supports validating columns that are returned to the user with this option on or off. 
-
-- `allowUnquotedControlChars` - Allows JSON Strings to contain unquoted control characters (ASCII characters with
-  value less than 32, including tab and line feed characters) or not. By default this is set to false. If the schema
-  is provided while reading JSON file, then this flag has no impact on the RAPIDS Accelerator as it always allows
-  unquoted control characters but Spark sees these are invalid are returns nulls. However, if the schema is not provided
-  and this option is false, then RAPIDS Accelerator's behavior is same as Spark where an exception is thrown
-  as discussed in `JSON Schema discovery` section.
-
-- `allowNonNumericNumbers` - Allows `NaN` and `Infinity` values to be parsed (note that these are not valid numeric
-  values in the [JSON specification](https://json.org)). Spark versions prior to 3.3.0 have inconsistent behavior and will
-  parse some variants of `NaN` and `Infinity` even when this option is disabled
-  ([SPARK-38060](https://issues.apache.org/jira/browse/SPARK-38060)). The RAPIDS Accelerator behavior is consistent with
-  Spark version 3.3.0 and later.
-
-### Nesting
-In versions of Spark before 3.5.0 there is no maximum to how deeply nested JSON can be.  After 
-3.5.0 this was updated to be 1000 by default. The current GPU implementation limits this to 254 
-no matter what version of Spark is used. If the nesting level is over this the JSON is considered
-invalid and all values will be returned as nulls.
-
-Mixed types can have some problems. If an item being read could have some lines that are arrays 
-and others that are structs/dictionaries it is possible an error will be thrown.
-
-Dates and Timestamps have some issues and may return values for technically invalid inputs.
-
-Floating point numbers have issues generally like with the rest of Spark, and we can parse them into
-a valid floating point number, but it might not match 100% with the way Spark does it.
-
-Strings are supported, but the data returned might not be normalized in the same way as the CPU
-implementation. Generally this comes down to the GPU not modifying the input, whereas Spark will
-do things like remove extra white space and parse numbers before turning them back into a string.
-
-### JSON Floating Point
+### JSON Floating Point Types
 
 Parsing floating-point values has the same limitations as [casting from string to float](#string-to-float).
 
-Prior to Spark 3.3.0, reading JSON strings such as `"+Infinity"` when specifying that the data type is `FloatType`
-or `DoubleType` caused these values to be parsed even when `allowNonNumericNumbers` is set to false. Also, Spark
-versions prior to 3.3.0 only supported the `"Infinity"` and `"-Infinity"` representations of infinity and did not
-support `"+INF"`, `"-INF"`, or `"+Infinity"`, which Spark considers valid when unquoted. The GPU JSON reader is
-consistent with the behavior in Spark 3.3.0 and later.
+### JSON Integral Types
 
-Another limitation of the GPU JSON reader is that it will parse strings containing non-string boolean or numeric values where
-Spark will treat them as invalid inputs and will just return `null`.
+Versions of Spark prior to 3.3.0 would parse quoted integer values, like "1". But 3.3.0 and above consider
+these to be invalid and will return `null` when parsed as an Integral types. The GPU implementation
+follows 3.3.0 and above.
 
-### JSON Timestamps/Dates
+### JSON Decimal Types
 
-The JSON parser does not support the `TimestampNTZ` type and will fall back to CPU if `spark.sql.timestampType` is
-set to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `TimestampNTZ` type.
+Spark supports parsing decimal types either formatted as floating point number or integral numbers, even if it is
+in a quoted string. If it is in a quoted string the local of the JVM is used to determine the number format.
+If the local is not for the `US`, which is the default we will fall back to the CPU because we do not currently
+parse those numbers correctly. The `US` format removes all commas ',' from the quoted string.
+As a part of this, though, non-arabic numbers are also supported. We do not support parsing these numbers
+see (issue 10532)[https://github.com/NVIDIA/spark-rapids/issues/10532].
+
+### JSON Date/Timestamp Types 
+
+Dates and timestamps are not supported by default in JSON parser, since the GPU implementation is not 100%
+compatible with Apache Spark.
+If needed, they can be turned on through the config `spark.rapids.sql.json.read.datetime.enabled`.
+This config works for both JSON scan and `from_json`. Once enabled, the JSON parser still does
+not support the `TimestampNTZ` type and will fall back to CPU if `spark.sql.timestampType` is set
+to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `TimestampNTZ` type.
 
 There is currently no support for reading numeric values as timestamps and null values are returned instead
-([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast
-to timestamp.
+([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast to timestamp.
 
-### JSON Schema discovery
+### JSON Arrays and Structs with Overflowing Numbers
 
-Spark SQL can automatically infer the schema of a JSON dataset if schema is not provided explicitly. The CPU
-handles schema discovery and there is no GPU acceleration of this. By default Spark will read/parse the entire
-dataset to determine the schema. This means that some options/errors which are ignored by the GPU may still
-result in an exception if used with schema discovery.
+Spark is inconsistent between versions in how it handles numbers that overflow that are nested in either an array
+or a non-top-level struct. In some versions only the value that overflowed is marked as null. In other versions the
+wrapping array or struct is marked as null. We currently only mark the individual value as null. This matches 
+versions 3.4.2 and above of Spark for structs. Arrays on most versions of spark invalidate the entire array if there
+is a single value that overflows within it.
 
-### `from_json` function
+### Duplicate Struct Names
 
-`JsonToStructs` of `from_json` is based on the same code as reading a JSON lines file.  There are
+The JSON specification technically allows for duplicate keys in a struct, but does not explain what to 
+do with them. In the case of Spark it is inconsistent between operators which value wins. `get_json_object`
+depends on the query being performed. We do not always match what Spark does. We do match it in many cases,
+but we consider this enough of a corner case that we have not tried to make it work in all cases.
+
+We also do not support schemas where there are duplicate column names. We just fall back to the CPU for those cases.
+
+### JSON Normalization (String Types)
+
+In versions of Spark prior to 4.0.0 input JSON Strings were parsed to JSON tokens and then converted back to
+strings. This effectively normalizes the output string. So things like single quotes are transformed into double
+quotes, floating point numbers are parsed and converted back to strings possibly changing the format, and
+escaped characters are converted back to their simplest form. We try to support this on the GPU as well. Single quotes
+will be converted to double quotes. Only `get_json_object` and `json_tuple` attempt to normalize floating point
+numbers. There is no implementation on the GPU right now that tries to normalize escape characters.
+
+### `from_json` Function
+
+`JsonToStructs` or `from_json` is based on the same code as reading a JSON lines file.  There are
 a few differences with it.
 
-The `from_json` function is disabled by default because it is experimental and has some known
-incompatibilities with Spark, and can be enabled by setting 
-`spark.rapids.sql.expression.JsonToStructs=true`. You don't need to set 
-`spark.rapids.sql.format.json.enabled` and`spark.rapids.sql.format.json.read.enabled` to true.
+The main difference is that `from_json` supports parsing Maps and Arrays directly from a JSON column, whereas
+JSON Scan only supports parsing top level structs. The GPU implementation of `from_json` has support for parsing
+a `MAP<STRING,STRING>` as a top level schema, but does not currently support arrays at the top level.
 
-There is no schema discovery as a schema is required as input to `from_json`
-
-In addition to `structs`, a top level `map` type is supported, but only if the key and value are
-strings.
-
-### `to_json` function
-
-The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
-with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsToJson=true`.
+### `to_json` Function
 
 Known issues are:
 
@@ -435,7 +419,7 @@ Known issues are:
   produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
 - Not all JSON options are respected
 
-### get_json_object
+### `get_json_object` Function
 
 Known issue:
 - [Floating-point number normalization error](https://github.com/NVIDIA/spark-rapids-jni/issues/1922). `get_json_object` floating-point number normalization on the GPU could sometimes return incorrect results if the string contains high-precision values, see the String to Float and Float to String section for more details.
@@ -477,17 +461,16 @@ These are the known edge cases where running on the GPU will produce different r
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
 - Word and non-word boundaries, `\b` and `\B`
-- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
-  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
-  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchors `^` and `$` are not supported in some contexts, such as when combined with a choice (`^|a` or `$|a`).
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported
-- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+- String anchor `\z` is not supported.
+- Patterns containing an end-of-line or string anchor immediately next to a newline or repetition that produces zero
   or more results
+- Patterns containing end-of-line anchors like `$` or `\Z` immediately followed by 
+  escape sequences (e.g., `\w`, `\b`) are not supported.
 - Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers within a choice block such as `(2|\u2029??)+` 
@@ -652,16 +635,19 @@ guaranteed to produce the same results as the CPU:
 - `yyyy/MM/dd`
 - `yyyy-MM-dd`
 - `yyyyMMdd`
+- `yyyymmdd`
 - `yyyy/MM/dd HH:mm:ss`
 - `yyyy-MM-dd HH:mm:ss`
+- `yyyyMMdd HH:mm:ss`
 
 LEGACY timeParserPolicy support has the following limitations when running on the GPU:
 
 - Only 4 digit years are supported
 - The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar
   that Spark uses in legacy mode
-- When format is `yyyyMMdd`, GPU only supports 8 digit strings. Spark supports like 7 digit
-  `2024101` string while GPU does not support. Only tested `UTC` and `Asia/Shanghai` timezones.
+- When format is/contains `yyyyMMdd` or `yyyymmdd`, GPU only supports 8 digit strings for these formats.
+  Spark supports like 7 digit `2024101` string while GPU does not support. Only tested `UTC` and
+  `Asia/Shanghai` timezones.
 
 ## Formatting dates and timestamps as strings
 

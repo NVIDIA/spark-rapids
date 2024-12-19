@@ -65,7 +65,15 @@ validations:
   * The file is stored under the *owner shim* directory.
 
 * All files participating listing the `buildver` of the current Maven build session are symlinked to
-`target/${buildver}/generated/src/(main|test)/(scala|java)`. Thus, instead of hardcoding distinct
+`target/${buildver}/generated/src/(main|test)/(scala|java)`
+except for template classes requiring spark.version.classifier in the package name.
+
+* If the package name of a class such as RapidsShuffleManager contains `$_spark.version.classifier_`
+(because it is source-identical across shims up to the package name) it will be materialized in the
+`target/${buildver}/generated/src/(main|test)/(scala|java)` with `spark.version.classifier`
+interpolated into the package name.
+
+Thus, instead of hardcoding distinct
 lists of directories for `build-helper` Maven plugin to add (one for each shim) after the full
 transition to shimplify, the pom will have only 4 add source statements that is independent of the
 number of supported shims.
