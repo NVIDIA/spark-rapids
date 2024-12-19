@@ -318,16 +318,37 @@ class SpillableHostBufferHandle private (
     materialized
   }
 
+  private var toSpill: Option[HostMemoryBuffer] = None
+  override def releaseHostResource(): Unit = {
+    super.releaseHostResource()
+    synchronized {
+      toSpill.foreach(_.close())
+      toSpill = None
+    }
+  }
+
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
-      val spilled = synchronized {
-        if (disk.isEmpty && host.isDefined) {
+      val thisThreadSpills = synchronized {
+        if (disk.isEmpty && host.isDefined && toSpill.isEmpty) {
+          toSpill = host
+          toSpill.get.incRefCount()
+          true
+        } else {
+          false
+        }
+      }
+      val spilled = if (thisThreadSpills) {
+        val buf = toSpill.get
+        withResource(buf) { _ =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
+            // the spill IO is non-blocking as it won't impact dev or host directly
+            // instead we "atomically" swap the buffers below once they are ready
             GpuTaskMetrics.get.spillToDiskTime {
-              val iter = new HostByteBufferIterator(host.get)
+              val iter = new HostByteBufferIterator(buf)
               iter.foreach { bb =>
                 try {
                   while (bb.hasRemaining) {
@@ -338,12 +359,16 @@ class SpillableHostBufferHandle private (
                 }
               }
             }
-            disk = Some(diskHandleBuilder.build)
-            sizeInBytes
+            val staging = Some(diskHandleBuilder.build)
+            synchronized {
+              disk = staging
+              host = None
+            }
           }
-        } else {
-          0L
         }
+        sizeInBytes
+      } else {
+          0
       }
       releaseHostResource()
       spilled
@@ -452,17 +477,43 @@ class SpillableDeviceBufferHandle private (
     materialized
   }
 
+  private var toSpill: Option[DeviceMemoryBuffer] = None
+  override def releaseDeviceResource(): Unit = {
+    super.releaseDeviceResource()
+    synchronized {
+      toSpill.foreach(_.close())
+      toSpill = None
+    }
+  }
+
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
-      synchronized {
-        if (host.isEmpty && dev.isDefined) {
-          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(dev.get))
-          sizeInBytes
+      val thisThreadSpills = synchronized {
+        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
+          toSpill = dev
+          toSpill.get.incRefCount()
+          true
         } else {
-          0L
+          false
         }
+      }
+      if (thisThreadSpills) {
+        val buf = toSpill.get
+        withResource(buf) { _ =>
+          // the spill IO is non-blocking as it won't impact dev or host directly
+          // instead we "atomically" swap the buffers below once they are ready
+          val stagingHost =
+            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
+          synchronized {
+            host = stagingHost
+            dev = None
+          }
+        }
+        sizeInBytes
+      } else {
+        0
       }
     }
   }
