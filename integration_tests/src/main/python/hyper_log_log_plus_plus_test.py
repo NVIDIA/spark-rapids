@@ -16,17 +16,23 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
+from hashing_test import xxhash_gens
+from marks import ignore_order
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', xxhash_gens, ids=idfn)
 def test_hllpp_groupby(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, [("c1", int_gen), ("c2", data_gen)]),
+        lambda spark: gen_df(spark, [("c1", int_gen), ("c2", data_gen)]),
         "tab",
         "select c1, APPROX_COUNT_DISTINCT(c2) from tab group by c1")
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', xxhash_gens, ids=idfn)
 def test_hllpp_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark: unary_op_df(spark, data_gen),
         "tab",
         "select APPROX_COUNT_DISTINCT(a) from tab")

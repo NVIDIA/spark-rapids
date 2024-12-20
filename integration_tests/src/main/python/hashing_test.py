@@ -36,7 +36,7 @@ _atomic_gens = [
 
 _struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_atomic_gens)])
 
-# will be used by HyperLogLogPlusPLus(approx_count_distinct)
+# This is also used by HyperLogLogPlusPLus(approx_count_distinct)
 xxhash_gens = (_atomic_gens + [_struct_of_xxhash_gens] + single_level_array_gens
                + nested_array_gens_sample + [
                    all_basic_struct_gen,
