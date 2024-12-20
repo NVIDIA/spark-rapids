@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object GpuOrcFileFormat extends Logging {
@@ -83,6 +84,11 @@ object GpuOrcFileFormat extends Logging {
     // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
     // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
     val types = schema.map(_.dataType).toSet
+    val hasBools = schema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
+        t.isInstanceOf[BooleanType])
+    }
+
     if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
       if (!GpuOverrides.isUTCTimezone()) {
         meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
@@ -91,6 +97,10 @@ object GpuOrcFileFormat extends Logging {
       }
     }
 
+    if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
+      meta.willNotWorkOnGpu("Nullable Booleans can not work in certain cases with ORC writer." +
+        "See https://github.com/rapidsai/cudf/issues/6763")
+    }
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)
 
     val sqlConf = spark.sessionState.conf
@@ -173,8 +183,9 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
     new ColumnarOutputWriterFactory {
       override def newInstance(path: String,
                                dataSchema: StructType,
-                               context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuOrcWriter(path, dataSchema, context)
+                               context: TaskAttemptContext,
+                               debugOutputPath: Option[String]): ColumnarOutputWriter = {
+        new GpuOrcWriter(path, dataSchema, context, debugOutputPath)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -195,12 +206,13 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
 
 class GpuOrcWriter(override val path: String,
                    dataSchema: StructType,
-                   context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "ORC", true) {
+                   context: TaskAttemptContext,
+                   debugOutputPath: Option[String])
+  extends ColumnarOutputWriter(context, dataSchema, "ORC", true, debugOutputPath) {
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils
-      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
+      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema, nullable = false)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
     Table.writeORCChunked(builder.build(), this)
   }

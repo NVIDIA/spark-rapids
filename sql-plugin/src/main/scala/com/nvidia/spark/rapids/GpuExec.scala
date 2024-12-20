@@ -66,6 +66,7 @@ object GpuMetric extends Logging {
   val COLLECT_TIME = "collectTime"
   val CONCAT_TIME = "concatTime"
   val SORT_TIME = "sortTime"
+  val REPARTITION_TIME = "repartitionTime"
   val AGG_TIME = "computeAggTime"
   val JOIN_TIME = "joinTime"
   val FILTER_TIME = "filterTime"
@@ -73,6 +74,8 @@ object GpuMetric extends Logging {
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
   val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
+  val NUM_TASKS_REPARTITIONED = "numTasksRepartitioned"
+  val NUM_TASKS_SKIPPED_AGG = "numTasksSkippedAgg"
   val READ_FS_TIME = "readFsTime"
   val WRITE_BUFFER_TIME = "writeBufferTime"
   val FILECACHE_FOOTER_HITS = "filecacheFooterHits"
@@ -87,6 +90,9 @@ object GpuMetric extends Logging {
   val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
   val DELETION_VECTOR_SCATTER_TIME = "deletionVectorScatterTime"
   val DELETION_VECTOR_SIZE = "deletionVectorSize"
+  val CONCAT_HEADER_TIME = "concatHeaderTime"
+  val CONCAT_BUFFER_TIME = "concatBufferTime"
+  val COPY_TO_HOST_TIME = "d2hMemCopyTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -102,6 +108,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
   val DESCRIPTION_SORT_TIME = "sort time"
+  val DESCRIPTION_REPARTITION_TIME = "repartition time"
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
   val DESCRIPTION_FILTER_TIME = "filter time"
@@ -109,6 +116,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
   val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
+  val DESCRIPTION_NUM_TASKS_REPARTITIONED = "number of tasks repartitioned for agg"
+  val DESCRIPTION_NUM_TASKS_SKIPPED_AGG = "number of tasks skipped aggregation"
   val DESCRIPTION_READ_FS_TIME = "time to read fs data"
   val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
   val DESCRIPTION_FILECACHE_FOOTER_HITS = "cached footer hits"
@@ -123,6 +132,9 @@ object GpuMetric extends Logging {
   val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
   val DESCRIPTION_DELETION_VECTOR_SCATTER_TIME = "deletion vector scatter time"
   val DESCRIPTION_DELETION_VECTOR_SIZE = "deletion vector size"
+  val DESCRIPTION_CONCAT_HEADER_TIME = "concat header time"
+  val DESCRIPTION_CONCAT_BUFFER_TIME = "concat buffer time"
+  val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -317,19 +329,19 @@ trait GpuExec extends SparkPlan {
     }
   }
 
-  protected def createMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createMetric(sparkContext, name))
 
-  protected def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createNanoTimingMetric(sparkContext, name))
 
-  protected def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createSizeMetric(sparkContext, name))
 
-  protected def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createAverageMetric(sparkContext, name))
 
-  protected def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createTimingMetric(sparkContext, name))
 
   protected def createFileCacheMetrics(): Map[String, GpuMetric] = {

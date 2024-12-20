@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.spill.{SpillableColumnarBatchFromBufferHandle, SpillableColumnarBatchHandle, SpillableCompressedColumnarBatchHandle, SpillableDeviceBufferHandle, SpillableHostBufferHandle, SpillableHostColumnarBatchHandle}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.DataType
@@ -55,6 +56,9 @@ trait SpillableColumnarBatch extends AutoCloseable {
   def sizeInBytes: Long
 
   def dataTypes: Array[DataType]
+
+  override def toString: String =
+    s"SCB size:$sizeInBytes, types:${dataTypes.toList}, rows:${numRows()}"
 }
 
 /**
@@ -79,6 +83,8 @@ class JustRowsColumnarBatch(numRows: Int)
 
   // There is no off heap data and close is a noop so just return this
   override def incRefCount(): SpillableColumnarBatch = this
+
+  override def toString: String = s"JustRowsSCB size:$sizeInBytes, rows:$numRows"
 }
 
 /**
@@ -88,7 +94,7 @@ class JustRowsColumnarBatch(numRows: Int)
  *       use `SpillableColumnarBatch.apply` instead.
  */
 class SpillableColumnarBatchImpl (
-    handle: RapidsBufferHandle,
+    handle: SpillableColumnarBatchHandle,
     rowCount: Int,
     sparkTypes: Array[DataType])
     extends SpillableColumnarBatch {
@@ -100,27 +106,18 @@ class SpillableColumnarBatchImpl (
    */
   override def numRows(): Int = rowCount
 
-  private def withRapidsBuffer[T](fn: RapidsBuffer => T): T = {
-    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
-      fn(rapidsBuffer)
-    }
-  }
-
-  override lazy val sizeInBytes: Long =
-    withRapidsBuffer(_.memoryUsedBytes)
+  override lazy val sizeInBytes: Long = handle.approxSizeInBytes
 
   /**
    * Set a new spill priority.
    */
   override def setSpillPriority(priority: Long): Unit = {
-    handle.setSpillPriority(priority)
+    // TODO: handle.setSpillPriority(priority)
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
-    withRapidsBuffer { rapidsBuffer =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
-      rapidsBuffer.getColumnarBatch(sparkTypes)
-    }
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    handle.materialize(sparkTypes)
   }
 
   override def incRefCount(): SpillableColumnarBatch = {
@@ -142,13 +139,124 @@ class SpillableColumnarBatchImpl (
     }
     // TODO this is causing problems so we need to look into this
     //  https://github.com/NVIDIA/spark-rapids/issues/10161
-//    else if (refCount < 0) {
-//      throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
-//    }
+    //else if (refCount < 0) {
+    //  throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
+    //}
   }
 
   override def toString: String =
     s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
+}
+
+class SpillableCompressedColumnarBatchImpl(
+    handle: SpillableCompressedColumnarBatchHandle, rowCount: Int)
+  extends SpillableColumnarBatch {
+
+  private var refCount = 1
+
+  /**
+   * The number of rows stored in this batch.
+   */
+  override def numRows(): Int = rowCount
+
+  override lazy val sizeInBytes: Long = handle.compressedSizeInBytes
+
+  /**
+   * Set a new spill priority.
+   */
+  override def setSpillPriority(priority: Long): Unit = {
+    // TODO: handle.setSpillPriority(priority)
+  }
+
+  override def getColumnarBatch(): ColumnarBatch = {
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    handle.materialize()
+  }
+
+  override def incRefCount(): SpillableColumnarBatch = {
+    if (refCount <= 0) {
+      throw new IllegalStateException("Use after free on SpillableColumnarBatchImpl")
+    }
+    refCount += 1
+    this
+  }
+
+  /**
+   * Remove the `ColumnarBatch` from the cache.
+   */
+  override def close(): Unit = {
+    refCount -= 1
+    if (refCount == 0) {
+      // closing my reference
+      handle.close()
+    }
+    // TODO this is causing problems so we need to look into this
+    //  https://github.com/NVIDIA/spark-rapids/issues/10161
+    //else if (refCount < 0) {
+    //  throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
+    //}
+  }
+
+  override def toString: String =
+    s"SCCB $handle $rowCount $refCount"
+
+  override def dataTypes: Array[DataType] = null
+}
+
+class SpillableColumnarBatchFromBufferImpl(
+    handle: SpillableColumnarBatchFromBufferHandle,
+    rowCount: Int,
+    sparkTypes: Array[DataType])
+  extends SpillableColumnarBatch {
+  private var refCount = 1
+
+  override def dataTypes: Array[DataType] = sparkTypes
+  /**
+   * The number of rows stored in this batch.
+   */
+  override def numRows(): Int = rowCount
+
+  override lazy val sizeInBytes: Long = handle.sizeInBytes
+
+  /**
+   * Set a new spill priority.
+   */
+  override def setSpillPriority(priority: Long): Unit = {
+    // TODO: handle.setSpillPriority(priority)
+  }
+
+  override def getColumnarBatch(): ColumnarBatch = {
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    handle.materialize(dataTypes)
+  }
+
+  override def incRefCount(): SpillableColumnarBatch = {
+    if (refCount <= 0) {
+      throw new IllegalStateException("Use after free on SpillableColumnarBatchImpl")
+    }
+    refCount += 1
+    this
+  }
+
+  /**
+   * Remove the `ColumnarBatch` from the cache.
+   */
+  override def close(): Unit = {
+    refCount -= 1
+    if (refCount == 0) {
+      // closing my reference
+      handle.close()
+    }
+    // TODO this is causing problems so we need to look into this
+    //  https://github.com/NVIDIA/spark-rapids/issues/10161
+    //else if (refCount < 0) {
+    //  throw new IllegalStateException("Double free on SpillableColumnarBatchImpl")
+    //}
+  }
+
+  override def toString: String =
+    s"GpuSCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 class JustRowsHostColumnarBatch(numRows: Int)
@@ -167,6 +275,8 @@ class JustRowsHostColumnarBatch(numRows: Int)
 
   // There is no off heap data and close is a noop so just return this
   override def incRefCount(): SpillableColumnarBatch = this
+
+  override def toString: String = s"JustRowsHostSCB size:$sizeInBytes, rows:$numRows"
 }
 
 /**
@@ -176,10 +286,9 @@ class JustRowsHostColumnarBatch(numRows: Int)
  *       use `SpillableHostColumnarBatch.apply` instead.
  */
 class SpillableHostColumnarBatchImpl (
-    handle: RapidsBufferHandle,
+    handle: SpillableHostColumnarBatchHandle,
     rowCount: Int,
-    sparkTypes: Array[DataType],
-    catalog: RapidsBufferCatalog)
+    sparkTypes: Array[DataType])
   extends SpillableColumnarBatch {
   private var refCount = 1
 
@@ -190,27 +299,17 @@ class SpillableHostColumnarBatchImpl (
    */
   override def numRows(): Int = rowCount
 
-  private def withRapidsHostBatchBuffer[T](fn: RapidsHostBatchBuffer => T): T = {
-    withResource(catalog.acquireHostBatchBuffer(handle)) { rapidsBuffer =>
-      fn(rapidsBuffer)
-    }
-  }
-
-  override lazy val sizeInBytes: Long = {
-    withRapidsHostBatchBuffer(_.memoryUsedBytes)
-  }
+  override lazy val sizeInBytes: Long = handle.approxSizeInBytes
 
   /**
    * Set a new spill priority.
    */
   override def setSpillPriority(priority: Long): Unit = {
-    handle.setSpillPriority(priority)
+    // TODO: handle.setSpillPriority(priority)
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
-    withRapidsHostBatchBuffer { hostBatchBuffer =>
-      hostBatchBuffer.getHostColumnarBatch(sparkTypes)
-    }
+    handle.materialize(sparkTypes)
   }
 
   override def incRefCount(): SpillableColumnarBatch = {
@@ -233,6 +332,10 @@ class SpillableHostColumnarBatchImpl (
       throw new IllegalStateException("Double free on SpillableHostColumnarBatchImpl")
     }
   }
+
+  override def toString: String =
+    s"HostSCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 object SpillableColumnarBatch {
@@ -245,18 +348,29 @@ object SpillableColumnarBatch {
    */
   def apply(batch: ColumnarBatch,
       priority: Long): SpillableColumnarBatch = {
+    Cuda.DEFAULT_STREAM.sync()
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
       // We consumed it
       batch.close()
       new JustRowsColumnarBatch(numRows)
     } else {
-      val types = GpuColumnVector.extractTypes(batch)
-      val handle = addBatch(batch, priority)
-      new SpillableColumnarBatchImpl(
-        handle,
-        numRows,
-        types)
+      if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
+        new SpillableCompressedColumnarBatchImpl(
+          SpillableCompressedColumnarBatchHandle(batch),
+          numRows)
+      } else if (GpuColumnVectorFromBuffer.isFromBuffer(batch)) {
+        new SpillableColumnarBatchFromBufferImpl(
+          SpillableColumnarBatchFromBufferHandle(batch),
+          numRows,
+          GpuColumnVector.extractTypes(batch)
+        )
+      } else {
+        new SpillableColumnarBatchImpl(
+          SpillableColumnarBatchHandle(batch),
+          numRows,
+          GpuColumnVector.extractTypes(batch))
+      }
     }
   }
 
@@ -271,54 +385,11 @@ object SpillableColumnarBatch {
       ct: ContiguousTable,
       sparkTypes: Array[DataType],
       priority: Long): SpillableColumnarBatch = {
-    withResource(ct) { _ =>
-      val handle = RapidsBufferCatalog.addContiguousTable(ct, priority)
-      new SpillableColumnarBatchImpl(handle, ct.getRowCount.toInt, sparkTypes)
-    }
-  }
-
-  private[this] def allFromSameBuffer(batch: ColumnarBatch): Boolean = {
-    var bufferAddr = 0L
-    var isSet = false
-    val numColumns = batch.numCols()
-    (0 until numColumns).forall { i =>
-      batch.column(i) match {
-        case fb: GpuColumnVectorFromBuffer =>
-          if (!isSet) {
-            bufferAddr = fb.getBuffer.getAddress
-            isSet = true
-            true
-          } else {
-            bufferAddr == fb.getBuffer.getAddress
-          }
-        case _ => false
-      }
-    }
-  }
-
-  private[this] def addBatch(
-      batch: ColumnarBatch,
-      initialSpillPriority: Long): RapidsBufferHandle = {
-    withResource(batch) { batch =>
-      val numColumns = batch.numCols()
-      if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
-        val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
-        val buff = cv.getTableBuffer
-        RapidsBufferCatalog.addBuffer(buff, cv.getTableMeta, initialSpillPriority)
-      } else if (GpuPackedTableColumn.isBatchPacked(batch)) {
-        val cv = batch.column(0).asInstanceOf[GpuPackedTableColumn]
-        RapidsBufferCatalog.addContiguousTable(
-          cv.getContiguousTable,
-          initialSpillPriority)
-      } else if (numColumns > 0 &&
-          allFromSameBuffer(batch)) {
-        val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-        val buff = cv.getBuffer
-        RapidsBufferCatalog.addBuffer(buff, cv.getTableMeta, initialSpillPriority)
-      } else {
-        RapidsBufferCatalog.addBatch(batch, initialSpillPriority)
-      }
-    }
+    Cuda.DEFAULT_STREAM.sync()
+    new SpillableColumnarBatchFromBufferImpl(
+      SpillableColumnarBatchFromBufferHandle(ct, sparkTypes),
+      ct.getRowCount.toInt,
+      sparkTypes)
   }
 }
 
@@ -330,10 +401,7 @@ object SpillableHostColumnarBatch {
    * @param batch         the batch to make spillable
    * @param priority      the initial spill priority of this batch
    */
-  def apply(
-      batch: ColumnarBatch,
-      priority: Long,
-      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton): SpillableColumnarBatch = {
+  def apply(batch: ColumnarBatch, priority: Long): SpillableColumnarBatch = {
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
       // We consumed it
@@ -341,45 +409,30 @@ object SpillableHostColumnarBatch {
       new JustRowsHostColumnarBatch(numRows)
     } else {
       val types = RapidsHostColumnVector.extractColumns(batch).map(_.dataType())
-      val handle = addHostBatch(batch, priority, catalog)
-      new SpillableHostColumnarBatchImpl(
-        handle,
-        numRows,
-        types,
-        catalog)
+      val handle = SpillableHostColumnarBatchHandle(batch)
+      new SpillableHostColumnarBatchImpl(handle, numRows, types)
     }
   }
-
-  private[this] def addHostBatch(
-      batch: ColumnarBatch,
-      initialSpillPriority: Long,
-      catalog: RapidsBufferCatalog): RapidsBufferHandle = {
-    withResource(batch) { batch =>
-      catalog.addBatch(batch, initialSpillPriority)
-    }
-  }
-
 }
+
 /**
  * Just like a SpillableColumnarBatch but for buffers.
  */
 class SpillableBuffer(
-    handle: RapidsBufferHandle) extends AutoCloseable {
+    handle: SpillableDeviceBufferHandle) extends AutoCloseable {
 
   /**
    * Set a new spill priority.
    */
   def setSpillPriority(priority: Long): Unit = {
-    handle.setSpillPriority(priority)
+    // TODO: handle.setSpillPriority(priority)
   }
 
   /**
    * Use the device buffer.
    */
   def getDeviceBuffer(): DeviceMemoryBuffer = {
-    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.getDeviceMemoryBuffer
-    }
+    handle.materialize()
   }
 
   /**
@@ -387,6 +440,11 @@ class SpillableBuffer(
    */
   override def close(): Unit = {
     handle.close()
+  }
+
+  override def toString: String = {
+    val size = handle.sizeInBytes
+    s"SpillableBuffer size:$size, handle:$handle"
   }
 }
 
@@ -397,17 +455,15 @@ class SpillableBuffer(
  * @param length a metadata-only length that is kept in the `SpillableHostBuffer`
  *               instance. Used in cases where the backing host buffer is larger
  *               than the number of usable bytes.
- * @param catalog this was added for tests, it defaults to
- *                `RapidsBufferCatalog.singleton` in the companion object.
  */
-class SpillableHostBuffer(handle: RapidsBufferHandle,
-                          val length: Long,
-                          catalog: RapidsBufferCatalog) extends AutoCloseable {
+class SpillableHostBuffer(handle: SpillableHostBufferHandle,
+                          val length: Long)
+    extends AutoCloseable {
   /**
    * Set a new spill priority.
    */
   def setSpillPriority(priority: Long): Unit = {
-    handle.setSpillPriority(priority)
+    // TODO: handle.setSpillPriority(priority)
   }
 
   /**
@@ -418,10 +474,11 @@ class SpillableHostBuffer(handle: RapidsBufferHandle,
   }
 
   def getHostBuffer(): HostMemoryBuffer = {
-    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.getHostMemoryBuffer
-    }
+    handle.materialize()
   }
+
+  override def toString: String =
+    s"SpillableHostBuffer length:$length, handle:$handle"
 }
 
 object SpillableBuffer {
@@ -435,10 +492,8 @@ object SpillableBuffer {
   def apply(
       buffer: DeviceMemoryBuffer,
       priority: Long): SpillableBuffer = {
-    val meta = MetaUtils.getTableMetaNoTable(buffer.getLength)
-    val handle = withResource(buffer) { _ => 
-      RapidsBufferCatalog.addBuffer(buffer, meta, priority)
-    }
+    Cuda.DEFAULT_STREAM.sync()
+    val handle = SpillableDeviceBufferHandle(buffer) // TODO: AB: priority
     new SpillableBuffer(handle)
   }
 }
@@ -456,17 +511,12 @@ object SpillableHostBuffer {
    */
   def apply(buffer: HostMemoryBuffer,
             length: Long,
-            priority: Long,
-            catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton): SpillableHostBuffer = {
+            priority: Long): SpillableHostBuffer = {
     closeOnExcept(buffer) { _ =>
       require(length <= buffer.getLength,
         s"Attempted to add a host spillable with a length ${length} B which is " +
           s"greater than the backing host buffer length ${buffer.getLength} B")
     }
-    val meta = MetaUtils.getTableMetaNoTable(buffer.getLength)
-    val handle = withResource(buffer) { _ =>
-      catalog.addBuffer(buffer, meta, priority)
-    }
-    new SpillableHostBuffer(handle, length, catalog)
+    new SpillableHostBuffer(SpillableHostBufferHandle(buffer), length)
   }
 }

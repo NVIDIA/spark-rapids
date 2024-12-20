@@ -677,27 +677,26 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       outer: Boolean): Iterator[ColumnarBatch] = {
     val batchesToGenerate = inputSpillables.map(new BatchToGenerate(0, _))
     withRetry(batchesToGenerate, generateSplitSpillableInHalfByRows(generatorOffset)) { attempt =>
-      withResource(attempt.spillable.getColumnarBatch()) { inputBatch =>
+      val (exploded, schema) = withResource(attempt.spillable.getColumnarBatch()) { inputBatch =>
         require(inputBatch.numCols() - 1 == generatorOffset,
           s"Internal Error ${getClass.getSimpleName} supports one and only one input attribute.")
         val schema = resultSchema(GpuColumnVector.extractTypes(inputBatch), generatorOffset)
-
         withResource(GpuColumnVector.from(inputBatch)) { table =>
-          withResource(
-            explodeFun(table, generatorOffset, outer, attempt.fixUpOffset)) { exploded =>
-            child.dataType match {
-              case _: ArrayType =>
-                GpuColumnVector.from(exploded, schema)
-              case MapType(kt, vt, _) =>
-                // We need to pull the key and value of of the struct column
-                withResource(convertMapOutput(exploded, generatorOffset, kt, vt, outer)) { fixed =>
-                  GpuColumnVector.from(fixed, schema)
-                }
-              case other =>
-                throw new IllegalArgumentException(
-                  s"$other is not supported as explode input right now")
+          (explodeFun(table, generatorOffset, outer, attempt.fixUpOffset), schema)
+        }
+      }
+      withResource(exploded) { _ =>
+        child.dataType match {
+          case _: ArrayType =>
+            GpuColumnVector.from(exploded, schema)
+          case MapType(kt, vt, _) =>
+            // We need to pull the key and value of of the struct column
+            withResource(convertMapOutput(exploded, generatorOffset, kt, vt, outer)) { fixed =>
+              GpuColumnVector.from(fixed, schema)
             }
-          }
+          case other =>
+            throw new IllegalArgumentException(
+              s"$other is not supported as explode input right now")
         }
       }
     }
@@ -953,6 +952,9 @@ class BatchToGenerate(val fixUpOffset: Long, val spillable: SpillableColumnarBat
   override def close(): Unit = {
     spillable.close()
   }
+
+  override def toString: String =
+    s"BatchToGenerate fixUpOffset:$fixUpOffset, spillable:$spillable"
 }
 
 class GpuGenerateIterator(

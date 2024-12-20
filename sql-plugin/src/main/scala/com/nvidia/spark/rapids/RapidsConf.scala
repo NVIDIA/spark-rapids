@@ -553,12 +553,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
-      "cudf row count limit of a column.")
+      "is covered by separate configs.")
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
-    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
-      s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
+    .checkValue(v => v > 0, "Batch size must be positive")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
@@ -1122,6 +1120,31 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
+  val PARQUET_DECOMPRESS_CPU =
+    conf("spark.rapids.sql.format.parquet.decompressCpu")
+      .doc("If true then the CPU is eligible to decompress Parquet data rather than the GPU. " +
+          s"See other spark.rapids.sql.format.parquet.decompressCpu.* configuration settings " +
+          "to control this for specific compression codecs.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val PARQUET_DECOMPRESS_CPU_SNAPPY =
+    conf("spark.rapids.sql.format.parquet.decompressCpu.snappy")
+      .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
+          "Parquet Snappy data rather than the GPU")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
+  val PARQUET_DECOMPRESS_CPU_ZSTD =
+    conf("spark.rapids.sql.format.parquet.decompressCpu.zstd")
+      .doc(s"If true and $PARQUET_DECOMPRESS_CPU is true then the CPU decompresses " +
+          "Parquet Zstandard data rather than the GPU")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val READER_MULTITHREADED_COMBINE_THRESHOLD =
     conf("spark.rapids.sql.reader.multithreaded.combine.sizeBytes")
       .doc("The target size in bytes to combine multiple small files together when using the " +
@@ -1245,6 +1268,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
+    .doc("When set to false disables boolean columns for ORC writes. " +
+      "Set to true if you want to experiment. " +
+      "See https://github.com/NVIDIA/spark-rapids/issues/11736.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
       "Pre-projection leverages the tiered projection to evaluate expressions that " +
@@ -1350,12 +1381,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .doc("When set to true enables all json input and output acceleration. " +
       "(only input is currently supported anyways)")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_JSON_READ = conf("spark.rapids.sql.format.json.read.enabled")
     .doc("When set to true enables json input acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_READ_JSON_FLOATS = conf("spark.rapids.sql.json.read.float.enabled")
     .doc("JSON reading is not 100% compatible when reading floats.")
@@ -1651,6 +1682,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val OUTPUT_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.output.debug.dumpPrefix")
+    .doc("A path prefix where data that is intended to be written out as the result " +
+      "of a query should be dumped for debugging. The format of this is based on " +
+      "JCudfSerialization and is trying to capture the underlying table so that if " +
+      "there are errors in the output format we can try to recreate it.")
+    .internal()
+    .stringConf
+    .createOptional
+
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
@@ -1937,6 +1977,13 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         .startupOnly()
         .integerConf
         .createWithDefault(20)
+
+  val SHUFFLE_KUDO_SERIALIZER_ENABLED = conf("spark.rapids.shuffle.kudo.serializer.enabled")
+    .doc("Enable or disable the Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
 
   // ALLUXIO CONFIGS
   val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
@@ -2401,6 +2448,36 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_ASYNC_OUTPUT_WRITE =
+    conf("spark.rapids.sql.asyncWrite.queryOutput.enabled")
+      .doc("Option to turn on the async query output write. During the final output write, the " +
+        "task first copies the output to the host memory, and then writes it into the storage. " +
+        "When this option is enabled, the task will asynchronously write the output in the host " +
+        "memory to the storage. Only the Parquet format is supported currently.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK =
+    conf("spark.rapids.sql.queryOutput.holdGpuInTask")
+      .doc("Option to hold GPU semaphore between batch processing during the final output write. " +
+        "This option could degrade query performance if it is enabled without the async query " +
+        "output write. It is recommended to consider enabling this option only when " +
+        s"${ENABLE_ASYNC_OUTPUT_WRITE.key} is set. This option is off by default when the async " +
+        "query output write is disabled; otherwise, it is on.")
+      .internal()
+      .booleanConf
+      .createOptional
+
+  val ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES =
+    conf("spark.rapids.sql.asyncWrite.maxInFlightHostMemoryBytes")
+      .doc("Maximum number of host memory bytes per executor that can be in-flight for async " +
+        "query output write. Tasks may be blocked if the total host memory bytes in-flight " +
+        "exceeds this value.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(2L * 1024 * 1024 * 1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2436,7 +2513,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2658,6 +2735,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
+  lazy val asyncWriteMaxInFlightHostMemoryBytes: Long =
+    get(ASYNC_WRITE_MAX_IN_FLIGHT_HOST_MEMORY_BYTES)
+
   /**
    * Convert a string value to the injection configuration OomInjection.
    *
@@ -2812,6 +2892,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxGpuColumnSizeBytes: Long = get(MAX_GPU_COLUMN_SIZE_BYTES)
 
+  lazy val outputDebugDumpPrefix: Option[String] = get(OUTPUT_DEBUG_DUMP_PREFIX)
+
   lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 
   lazy val parquetDebugDumpAlways: Boolean = get(PARQUET_DEBUG_DUMP_ALWAYS)
@@ -2922,6 +3004,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
     RapidsReaderType.withName(get(PARQUET_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
+  lazy val parquetDecompressCpu: Boolean = get(PARQUET_DECOMPRESS_CPU)
+
+  lazy val parquetDecompressCpuSnappy: Boolean = get(PARQUET_DECOMPRESS_CPU_SNAPPY)
+
+  lazy val parquetDecompressCpuZstd: Boolean = get(PARQUET_DECOMPRESS_CPU_ZSTD)
+
   lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
@@ -2958,6 +3046,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
@@ -3074,6 +3164,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
 
   lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
+
+  lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
@@ -3240,6 +3332,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val loreDumpPath: Option[String] = get(LORE_DUMP_PATH)
 
   lazy val caseWhenFuseEnabled: Boolean = get(CASE_WHEN_FUSE)
+
+  lazy val isAsyncOutputWriteEnabled: Boolean = get(ENABLE_ASYNC_OUTPUT_WRITE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

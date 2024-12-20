@@ -271,13 +271,20 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           s"Set Parquet option ${ParquetOutputFormat.JOB_SUMMARY_LEVEL} to NONE.")
     }
 
+    val asyncOutputWriteEnabled = RapidsConf.ENABLE_ASYNC_OUTPUT_WRITE.get(sqlConf)
+    // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
+    val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
+      .getOrElse(asyncOutputWriteEnabled)
+
     new ColumnarOutputWriterFactory {
         override def newInstance(
           path: String,
           dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
+          context: TaskAttemptContext,
+          debugOutputPath: Option[String]): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
-          dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled)
+          dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
+          debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -299,8 +306,12 @@ class GpuParquetWriter(
     dateRebaseMode: DateTimeRebaseMode,
     timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
-    parquetFieldIdEnabled: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
+    parquetFieldIdEnabled: Boolean,
+    debugDumpPath: Option[String],
+    holdGpuBetweenBatches: Boolean,
+    useAsyncWrite: Boolean)
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true,
+    debugDumpPath, holdGpuBetweenBatches, useAsyncWrite) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
@@ -382,6 +393,7 @@ class GpuParquetWriter(
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
         parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)

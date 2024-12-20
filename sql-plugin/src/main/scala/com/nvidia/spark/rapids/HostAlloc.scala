@@ -18,8 +18,11 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.spill.SpillFramework
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
@@ -52,10 +55,22 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     }
   }
 
+  private def getHostAllocMetricsLogStr(metrics: GpuTaskMetrics): String = {
+    Option(TaskContext.get()).map { context =>
+      val taskId = context.taskAttemptId()
+      val totalSize = metrics.getHostBytesAllocated
+      val maxSize = metrics.getMaxHostBytesAllocated
+      s"total size for task $taskId is $totalSize, max size is $maxSize"
+    }.getOrElse("allocated memory outside of a task context")
+  }
+
   private def releasePinned(ptr: Long, amount: Long): Unit = {
     synchronized {
       currentPinnedAllocated -= amount
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.decHostBytesAllocated(amount)
+    logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -63,6 +78,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     synchronized {
       currentNonPinnedAllocated -= amount
     }
+    val metrics = GpuTaskMetrics.get
+    metrics.decHostBytesAllocated(amount)
+    logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
 
@@ -120,9 +138,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     require(retryCount >= 0,
       s"spillAndCheckRetry invoked with invalid retryCount $retryCount")
 
-    val store = RapidsBufferCatalog.getHostStorage
-    val storeSize = store.currentSize
-    val storeSpillableSize = store.currentSpillableSize
+    val store = SpillFramework.stores.hostStore
     val totalSize: Long = synchronized {
       currentPinnedAllocated + currentNonPinnedAllocated
     }
@@ -133,21 +149,20 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       "First attempt"
     }
 
-    logInfo(s"Host allocation of $allocSize bytes failed, host store has " +
-        s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
-    if (storeSpillableSize == 0) {
-      logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
-          s"Total host allocated is $totalSize bytes.")
-      false
-    } else {
-      val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-      logDebug(s"Targeting host store size of $targetSize bytes")
-      // We could not make it work so try and spill enough to make it work
-      val maybeAmountSpilled =
-        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
-      maybeAmountSpilled.foreach { amountSpilled =>
-        logInfo(s"Spilled $amountSpilled bytes from the host store")
+    val amountSpilled = store.spill(allocSize)
+
+    if (amountSpilled == 0) {
+      val shouldRetry = store.numHandles > 0
+      val exhaustedMsg = s"Host store exhausted, unable to allocate $allocSize bytes. " +
+          s"Total host allocated is $totalSize bytes. $attemptMsg."
+      if (!shouldRetry) {
+        logWarning(exhaustedMsg)
+      } else {
+        logWarning(s"$exhaustedMsg Attempting a retry.")
       }
+      shouldRetry
+    } else {
+      logInfo(s"Spilled $amountSpilled bytes from the host store")
       true
     }
   }
@@ -186,6 +201,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       allocAttemptFinishedWithoutException = true
     } finally {
       if (ret.isDefined) {
+        val metrics = GpuTaskMetrics.get
+        metrics.incHostBytesAllocated(amount)
+        logTrace(getHostAllocMetricsLogStr(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
       } else {
         // shouldRetry should indicate if spill did anything for us and we should try again.

@@ -21,7 +21,6 @@ import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
-import scala.collection
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -43,6 +42,7 @@ import org.apache.spark.shuffle.{ShuffleWriter, _}
 import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_COMBINE_TIME, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_SHUFFLE_SERIALIZATION_TIME, METRIC_SHUFFLE_WRITE_IO_TIME, METRIC_SHUFFLE_WRITE_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -247,13 +247,13 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         with RapidsShuffleWriterShimHelper {
   private val metrics = handle.metrics
   private val serializationTimeMetric =
-    metrics.get("rapidsShuffleSerializationTime")
+    metrics.get(METRIC_SHUFFLE_SERIALIZATION_TIME)
   private val shuffleWriteTimeMetric =
-    metrics.get("rapidsShuffleWriteTime")
+    metrics.get(METRIC_SHUFFLE_WRITE_TIME)
   private val shuffleCombineTimeMetric =
-    metrics.get("rapidsShuffleCombineTime")
+    metrics.get(METRIC_SHUFFLE_COMBINE_TIME)
   private val ioTimeMetric =
-    metrics.get("rapidsShuffleWriteIoTime")
+    metrics.get(METRIC_SHUFFLE_WRITE_IO_TIME)
   private val dep: ShuffleDependency[K, V, V] = handle.dependency
   private val shuffleId = dep.shuffleId
   private val partitioner = dep.partitioner
@@ -597,9 +597,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
   private val sqlMetrics = handle.metrics
   private val dep = handle.dependency
-  private val deserializationTimeNs = sqlMetrics.get("rapidsShuffleDeserializationTime")
-  private val shuffleReadTimeNs = sqlMetrics.get("rapidsShuffleReadTime")
-  private val dataReadSize = sqlMetrics.get("dataReadSize")
+  private val deserializationTimeNs = sqlMetrics.get(METRIC_SHUFFLE_DESERIALIZATION_TIME)
+  private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
+  private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
 
   private var shuffleReadRange: NvtxRange =
     new NvtxRange("ThreadedReader.read", NvtxColor.PURPLE)
@@ -764,14 +764,14 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
     case class BlockState(
         blockId: BlockId,
-        batchIter: SerializedBatchIterator,
+        batchIter: BaseSerializedTableIterator,
         origStream: AutoCloseable)
       extends Iterator[(Any, Any)] with AutoCloseable {
 
       private var nextBatchSize = {
         var success = false
         try {
-          val res = batchIter.tryReadNextHeader().getOrElse(0L)
+          val res = batchIter.peekNextBatchSize().getOrElse(0L)
           success = true
           res
         } finally {
@@ -791,7 +791,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         val nextBatch = batchIter.next()
         var success = false
         try {
-          nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
+          nextBatchSize = batchIter.peekNextBatchSize().getOrElse(0L)
           success = true
           nextBatch
         } finally {
@@ -942,7 +942,8 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               readBlockedTime += System.nanoTime() - readBlockedStart
 
               val deserStream = serializerInstance.deserializeStream(inputStream)
-              val batchIter = deserStream.asKeyValueIterator.asInstanceOf[SerializedBatchIterator]
+              val batchIter = deserStream.asKeyValueIterator
+                .asInstanceOf[BaseSerializedTableIterator]
               val blockState = BlockState(blockId, batchIter, inputStream)
               // get the next known batch size (there could be multiple batches)
               if (limiter.acquire(blockState.getNextBatchSize)) {
@@ -1048,7 +1049,7 @@ class RapidsCachingWriter[K, V](
     metrics: Map[String, SQLMetric])
   extends RapidsCachingWriterBase[K, V](blockManager, handle, mapId, rapidsShuffleServer, catalog) {
 
-  private val uncompressedMetric: SQLMetric = metrics("dataSize")
+  private val uncompressedMetric: SQLMetric = metrics(METRIC_DATA_SIZE)
 
   // This is here for the special case where we have no columns like with the .count
   // case or when we have 0-byte columns. We pick 100 as an arbitrary number so that
@@ -1073,7 +1074,7 @@ class RapidsCachingWriter[K, V](
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
         if (batch.numRows > 0 && batch.numCols > 0) {
           // Add the table to the shuffle store
-          val handle = batch.column(0) match {
+          batch.column(0) match {
             case c: GpuPackedTableColumn =>
               val contigTable = c.getContiguousTable
               partSize = c.getTableBuffer.getLength
@@ -1081,23 +1082,14 @@ class RapidsCachingWriter[K, V](
               catalog.addContiguousTable(
                 blockId,
                 contigTable,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
-                // we don't need to sync here, because we sync on the cuda
-                // stream after sliceInternalOnGpu (contiguous_split)
-                needsSync = false)
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c: GpuCompressedColumnVector =>
-              val buffer = c.getTableBuffer
-              partSize = buffer.getLength
-              val tableMeta = c.getTableMeta
-              uncompressedMetric += tableMeta.bufferMeta().uncompressedSize()
-              catalog.addBuffer(
+              partSize = c.getTableBuffer.getLength
+              uncompressedMetric += c.getTableMeta.bufferMeta().uncompressedSize()
+              catalog.addCompressedBatch(
                 blockId,
-                buffer,
-                tableMeta,
-                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
-                // we don't need to sync here, because we sync on the cuda
-                // stream after compression.
-                needsSync = false)
+                batch,
+                SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY)
             case c =>
               throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
@@ -1111,21 +1103,18 @@ class RapidsCachingWriter[K, V](
           } else {
             sizes(partId) += partSize
           }
-          handle
         } else {
           // no device data, tracking only metadata
           val tableMeta = MetaUtils.buildDegenerateTableMeta(batch)
-          val handle =
-            catalog.addDegenerateRapidsBuffer(
-              blockId,
-              tableMeta)
+          catalog.addDegenerateRapidsBuffer(
+            blockId,
+            tableMeta)
 
           // ensure that we set the partition size to the default in this case if
           // we have non-zero rows, so this degenerate batch is shuffled.
           if (batch.numRows > 0) {
             sizes(partId) += DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT
           }
-          handle
         }
       }
       metricsReporter.incBytesWritten(bytesWritten)
@@ -1279,9 +1268,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     if (rapidsConf.isGPUShuffle && !isDriver) {
       val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
-        override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
-          val handle = catalog.getShuffleBufferHandle(tableId)
-          catalog.acquireBuffer(handle)
+        override def getShuffleHandle(tableId: Int): RapidsShuffleHandle = {
+          catalog.getShuffleBufferHandle(tableId)
         }
 
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {

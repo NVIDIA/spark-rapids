@@ -265,6 +265,8 @@ ToUTCTimestamp,4
 ToUnixTimestamp,4
 TransformKeys,4
 TransformValues,4
+TruncDate,4
+TruncTimestamp,4
 UnaryMinus,4
 UnaryPositive,4
 UnboundedFollowing$,4
