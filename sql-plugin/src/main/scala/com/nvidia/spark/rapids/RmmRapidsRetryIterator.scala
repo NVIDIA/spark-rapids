@@ -606,6 +606,7 @@ object RmmRapidsRetryIterator extends Logging {
       var doSplit = false
       var isFromGpuOom = true
       while (result.isEmpty && attemptIter.hasNext) {
+        RetryStateTracker.setCurThreadRetrying(!firstAttempt)
         if (!firstAttempt) {
           // call thread block API
           try {
@@ -685,6 +686,7 @@ object RmmRapidsRetryIterator extends Logging {
           // else another exception wrapped a retry. So we are going to try again
         }
       }
+      RetryStateTracker.clearCurThreadRetrying()
       if (result.isEmpty) {
         // then lastException must be set, throw it.
         throw lastException
@@ -790,4 +792,22 @@ object RmmRapidsRetryIterator extends Logging {
  */
 case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
   override def close(): Unit = ()
+}
+
+/**
+ * This leverages a ThreadLocal of boolean to track if a task thread is currently
+ * executing a retry. And the boolean state will be used by all the
+ * `GpuExpressionRetryable`s to determine if the context is safe to retry the evaluation.
+ */
+object RetryStateTracker {
+  private val localIsRetrying = new ThreadLocal[java.lang.Boolean]()
+
+  def isCurThreadRetrying: Boolean = {
+    val ret = localIsRetrying.get()
+    ret != null && ret
+  }
+
+  def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
+
+  def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
 }
