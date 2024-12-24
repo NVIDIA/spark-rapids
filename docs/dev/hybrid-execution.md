@@ -6,6 +6,7 @@ parent: Developer Overview
 ---
 
 # The Hybrid(on CPU) execution
+Note: this is an experimental feature currently.
 
 ## Overview
 The Hybrid execution frame provides a way to run Parquet scan on CPU by leveraging
@@ -31,7 +32,7 @@ git checkout v1.2.0
 git cherry-pick 2a6a974d6fbaa38869eb9a0b91b2e796a578884c
 ./dev/package.sh
 ```
-Note: Should cherry-pick a fix as show in the above steps. 
+Note: Should cherry-pick a fix as shown in the above steps.
 In the $Gluten_ROOT/package/target, you can get the bundle third_party jars.
 
 ### Download Rapids Hybrid jar from Maven repo
@@ -51,7 +52,7 @@ the Rapids hybrid jar) in the classpath by specifying:
 `--jars=<gluten-bundle-jar>,<gluten-thirdparty-jar>,<rapids-hybrid-jar>`
 
 ## Limitations
-- Only supports V1 Parquet data source
-- Only supports Scala 2.12, do not supports Scala 2.13
+- Only supports V1 Parquet data source.
+- Only supports Scala 2.12, do not support Scala 2.13.
 - Support Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 like [Gluten supports](https://github.com/apache/incubator-gluten/releases/tag/v1.2.0),
-other Spark versions 32x, 33x, 34x, 35x also work, but did not fully test.
+other Spark versions 32x, 33x, 34x, 35x also work, but are not fully tested.
