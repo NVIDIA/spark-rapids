@@ -527,6 +527,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)
 
+      // Check Hybrid jar if needed.
+      if (conf.useHybridParquetReader) {
+        HybridExecutionUtils.checkHybridJarInClassPath()
+      }
+
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true

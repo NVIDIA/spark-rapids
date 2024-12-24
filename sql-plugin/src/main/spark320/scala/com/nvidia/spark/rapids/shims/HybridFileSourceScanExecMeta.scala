@@ -100,8 +100,6 @@ class HybridFileSourceScanExecMeta(plan: FileSourceScanExec,
 }
 
 object HybridFileSourceScanExecMeta {
-  private val HYBRID_JAR_PLUGIN_CLASS_NAME = "com.nvidia.spark.rapids.hybrid.HybridPluginWrapper"
-
   // Determines whether using HybridScan or GpuScan
   def useHybridScan(conf: RapidsConf, fsse: FileSourceScanExec): Boolean = {
     val isEnabled = if (conf.useHybridParquetReader) {
@@ -148,7 +146,7 @@ object HybridFileSourceScanExecMeta {
    */
   def checkRuntimes(v1DataSourceList: String): Unit = {
     checkNotRunningCDHorDatabricks()
-    checkHybridJarInClassPath()
+    HybridExecutionUtils.checkHybridJarInClassPath()
     checkJavaVersion()
     checkScalaVersion()
     checkV1Datasource(v1DataSourceList)
@@ -163,21 +161,6 @@ object HybridFileSourceScanExecMeta {
       throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
           "Spark releases, Please disable Hybrid feature by setting " +
           "spark.rapids.sql.parquet.useHybridReader=false")
-    }
-  }
-
-  /**
-   * Check if the Hybrid jar is in the classpath,
-   * report error if not
-   */
-  private def checkHybridJarInClassPath(): Unit = {
-    try {
-      Class.forName(HYBRID_JAR_PLUGIN_CLASS_NAME)
-    } catch {
-      case e: ClassNotFoundException => throw new RuntimeException(
-        "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
-            "Please disable Hybrid feature by setting " +
-            "spark.rapids.sql.parquet.useHybridReader=false", e)
     }
   }
 
