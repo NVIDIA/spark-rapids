@@ -33,4 +33,5 @@ abstract class GpuBasePythonRunner[IN](
     evalType: Int,
     argOffsets: Array[Array[Int]],
     jobArtifactUUID: Option[String]
-) extends BasePythonRunner[IN, ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID)
+) extends BasePythonRunner[IN, ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID,
+    metrics = Map.empty)
