@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.Locale
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.ShuffleManagerShimUtils
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
@@ -105,21 +106,25 @@ object GpuShuffleEnv extends Logging {
   //
   def initShuffleManager(): Unit = {
     val shuffleManager = SparkEnv.get.shuffleManager
-    shuffleManager match {
-      case rapidsShuffleManager: RapidsShuffleManagerLike =>
-        rapidsShuffleManager.initialize
-      case _ =>
-        val rsmLoaderViaShuffleManager = shuffleManager.getClass.getSuperclass.getInterfaces
-          .collectFirst {
-            case c if c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
-          }
-        val rsmLoaderDirect = classOf[RapidsShuffleManagerLike].getClassLoader
- 
-        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager " +
-          s"${shuffleManager}! Expected: an instance of RapidsShuffleManagerLike loaded by " +
-          s"${rsmLoaderDirect}. Actual: ${shuffleManager} tagged with RapidsShuffleManagerLike " +
-          s"loaded by: ${rsmLoaderViaShuffleManager}"
-        )
+    if (ShuffleManagerShimUtils.eagerlyInitialized) {
+      // skip deferred init
+    } else {
+      shuffleManager match {
+        case rapidsShuffleManager: RapidsShuffleManagerLike =>
+          rapidsShuffleManager.initialize
+        case _ =>
+          val rsmLoaderViaShuffleManager = shuffleManager.getClass.getSuperclass.getInterfaces
+            .collectFirst {
+              case c if c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
+            }
+          val rsmLoaderDirect = classOf[RapidsShuffleManagerLike].getClassLoader
+  
+          throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager " +
+            s"${shuffleManager}! Expected: an instance of RapidsShuffleManagerLike loaded by " +
+            s"${rsmLoaderDirect}. Actual: ${shuffleManager} tagged with RapidsShuffleManagerLike " +
+            s"loaded by: ${rsmLoaderViaShuffleManager}"
+          )
+      }
     }
   }
 
