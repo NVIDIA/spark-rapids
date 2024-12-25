@@ -26,6 +26,9 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
+# configs for Hybrid feature
+GLUTEN_VERSION=1.2.0
+GLUTEN_FOR_OS=20.04
 
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
