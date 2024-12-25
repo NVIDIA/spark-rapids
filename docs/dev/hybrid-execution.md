@@ -5,12 +5,11 @@ nav_order: 14
 parent: Developer Overview
 ---
 
-# The Hybrid(on CPU) execution
+# The Hybrid(CPU/GPU) execution
 Note: this is an experimental feature currently.
 
 ## Overview
-The Hybrid execution frame provides a way to run Parquet scan on CPU by leveraging
-Gluten/Velox.
+The Hybrid execution provides a way to offload Parquet scan onto CPU by leveraging Gluten/Velox.
 
 ## Configuration
 To enable Hybrid Execution, please set the following configurations:
@@ -20,7 +19,7 @@ To enable Hybrid Execution, please set the following configurations:
 "spark.rapids.sql.hybrid.loadBackend": "true"
 ```
 
-## Building
+## Build
 ### Build Gluten bundle and third party jars.
 Hybrid execution targets Gluten v1.2.0 code tag.
 For the Gluten building, please refer to [link](https://github.com/apache/incubator-gluten).
