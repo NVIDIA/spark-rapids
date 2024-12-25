@@ -160,6 +160,30 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/stop-master.sh
 }
 
+prepare_for_hybrid_feature() {
+    PROJECT_VERSION="25.02.0-SNAPSHOT"
+    HYBRID_JAR="rapids-4-spark-hybrid_2.12-${PROJECT_VERSION}.jar"
+    GLUTEN_BUNDLE_JAR="gluten-velox-bundle-spark3.2_2.12-ubuntu_20.04_x86_64-1.2.0.jar"
+    GLUTEN_THIRD_PARTY_JAR="gluten-thirdparty-lib-1.2.0-ubuntu-20.04-x86_64.jar"
+    mvn dependency:get -DgroupId=com.nvidia \
+                       -DartifactId=rapids-4-spark-hybrid_2.12 \
+                       -Dversion=${PROJECT_VERSION} \
+                       -Dpackaging=jar \
+                       -Dtransitive=false \
+                       -Ddest=/tmp/$HYBRID_JAR
+    mvn dependency:get -DgroupId=com.nvidia \
+                       -DartifactId=gluten-velox-bundle \
+                       -Dversion=1.2.0 \
+                       -Dpackaging=jar \
+                       -Dclassifier=spark3.2_2.12-ubuntu_20.04
+                       -Dtransitive=false \
+                       -Ddest=/tmp/$GLUTEN_BUNDLE_JAR
+    wget -O /tmp/$GLUTEN_THIRD_PARTY_JAR https://urm.nvidia.com/artifactory/sw-spark-maven/com/nvidia/gluten-thirdparty-lib/1.2.0/gluten-thirdparty-lib-1.2.0-ubuntu-20.04-x86_64.jar
+    export HYBRID_BACKEND_JARS=/tmp/${HYBRID_JAR},/tmp/${GLUTEN_BUNDLE_JAR},/tmp/${GLUTEN_THIRD_PARTY_JAR}
+    # enable Hybrid feature
+    export LOAD_HYBRID_BACKEND=1
+}
+
 ci_2() {
     echo "Run premerge ci 2 testings..."
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
@@ -174,6 +198,8 @@ ci_2() {
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    prepare_for_hybrid_feature
 
     # put some mvn tests here to balance durations of parallel stages
     echo "Run mvn package..."
