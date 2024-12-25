@@ -140,14 +140,12 @@ object HybridFileSourceScanExecMeta {
    * Check if runtimes are satisfied, including:
    * - Spark distribution is not CDH or Databricks
    * - Hybrid jar in the classpath
-   * - Java version is 1.8
    * - Scala version is 2.12
    * - Parquet V1 data source
    */
   def checkRuntimes(v1DataSourceList: String): Unit = {
     checkNotRunningCDHorDatabricks()
     HybridExecutionUtils.checkHybridJarInClassPath()
-    checkJavaVersion()
     checkScalaVersion()
     checkV1Datasource(v1DataSourceList)
   }
@@ -161,23 +159,6 @@ object HybridFileSourceScanExecMeta {
       throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
           "Spark releases, Please disable Hybrid feature by setting " +
           "spark.rapids.sql.parquet.useHybridReader=false")
-    }
-  }
-
-  /**
-   * Hybrid feature only supports 1.8 Java version,
-   * report error if not
-   */
-  private def checkJavaVersion(): Unit = {
-    val javaVersion = System.getProperty("java.version")
-    if (javaVersion == null) {
-      throw new RuntimeException("Hybrid feature: Can not read java.version, get null")
-    }
-    if (!javaVersion.startsWith("1.8")) {
-      throw new RuntimeException(
-        "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
-            "Please disable Hybrid feature by setting " +
-            "spark.rapids.sql.parquet.useHybridReader=false")
     }
   }
 
