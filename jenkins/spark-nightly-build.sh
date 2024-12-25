@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 
 
 DIST_PL="dist"
 DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
+SQL_PLGUIN_PATH="sql-plugin"
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
     # Run scala2.13 build and test against JDK17
@@ -33,6 +34,7 @@ if [ $SCALA_BINARY_VER == "2.13" ]; then
 
     MVN="$MVN -f scala2.13/"
     DIST_PATH="scala2.13/$DIST_PL"
+    SQL_PLGUIN_PATH="scala2.13/$SQL_PLGUIN_PATH"
 fi
 
 WORKSPACE=${WORKSPACE:-$(pwd)}
@@ -180,7 +182,6 @@ installDistArtifact ${DEFAULT_CUDA_CLASSIFIER}
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
-    distWithReducedPom "deploy"
 
     # this deploys selected submodules that is unconditionally built with Spark 3.2.0
     $MVN -B deploy -pl "!${DIST_PL}" \
@@ -189,6 +190,18 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
         -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER
+
+    # dist module does not have javadoc and sources jars, use 'sql-plugin' ones instead
+    SQL_ART_PATH="$(echo -n $SQL_PLGUIN_PATH/target/spark*)/rapids-4-spark-sql_${SCALA_BINARY_VER}-${ART_VER}"
+    cp $SQL_ART_PATH-sources.jar $DIST_PATH/target/${ART_ID}-${ART_VER}-sources.jar
+    cp $SQL_ART_PATH-javadoc.jar $DIST_PATH/target/${ART_ID}-${ART_VER}-javadoc.jar
+    # Deploy the sources and javadoc to make sure nightly CICD includes all jars required by Sonatype release
+    DEPLOY_TYPES="${DEPLOY_TYPES},jar,jar"
+    DEPLOY_FILES="${DEPLOY_FILES},$DIST_PL/target/${ART_ID}-${ART_VER}-sources.jar,$DIST_PL/target/${ART_ID}-${ART_VER}-javadoc.jar"
+    DEPLOY_CLASSIFIERS="${DEPLOY_CLASSIFIERS},sources,javadoc"
+    ls ${DIST_PATH}/target/
+    # Deploy dist jars in the final step to ensure that the POM files are not overwritten
+    distWithReducedPom "deploy"
 fi
 
 # Parse Spark files from local mvn repo
