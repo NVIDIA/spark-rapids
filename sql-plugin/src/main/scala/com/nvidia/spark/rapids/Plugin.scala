@@ -365,7 +365,7 @@ object RapidsPluginUtils extends Logging {
         source.close()
         plugins ++= loadExtensions(classOf[SparkPlugin], pluginClasses)
       }
-      plugins
+      plugins.toSeq
     }
   }
 
