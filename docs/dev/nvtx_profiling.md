@@ -46,7 +46,7 @@ You should have a *.qdrep file once the trace completes. This can now be opened 
 If you are in Java or Scala land you can do the following:
 
 ```
-val nvtxRange = new NvtxRange(<name of the range>, NvtxColor.YELLOW)
+val nvtxRange = new NvtxRangeWithDoc(<NvtxId>, NvtxColor.YELLOW)
 try {
   // the code you want to profile
 } finally {

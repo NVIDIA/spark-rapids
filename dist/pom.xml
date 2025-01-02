@@ -358,6 +358,9 @@ self.log("... OK")
                                             <arg value="${project.basedir}/../docs/configs.md"/>
                                             <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
                                         </java>
+                                        <java classname="com.nvidia.spark.rapids.NvtxRangeDocs" failonerror="true">
+                                            <arg value="${project.basedir}/../docs/nvtx_ranges.md"/>
+                                        </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
                                             <arg value="${project.basedir}/../docs/supported_ops.md"/>
                                         </java>
