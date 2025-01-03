@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.nio.charset.Charset
 import java.text.DecimalFormatSymbols
 import java.util.{EnumSet, Locale, Optional}
+import java.util.regex.Pattern
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -1173,9 +1174,11 @@ class GpuRLikeMeta(
       GpuRegExpUtils.tagForRegExpEnabled(this)
       expr.right match {
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+          val originalPattern = str.toString
+          // check that this is valid in Java
+          Pattern.compile(originalPattern)
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            val originalPattern = str.toString
             val regexAst = new RegexParser(originalPattern).parse()
             if (conf.isRlikeRegexRewriteEnabled) {
               rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
@@ -1438,8 +1441,10 @@ class GpuRegExpExtractMeta(
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+        val javaRegexpPattern = str.toString
+        // check that this is valid in Java
+        Pattern.compile(javaRegexpPattern)
         try {
-          val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
@@ -1567,8 +1572,10 @@ class GpuRegExpExtractAllMeta(
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+        val javaRegexpPattern = str.toString
+        // check that this is valid in Java
+        Pattern.compile(javaRegexpPattern)
         try {
-          val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
