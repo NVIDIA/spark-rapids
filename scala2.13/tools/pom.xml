@@ -62,7 +62,7 @@
                         <executions>
                             <execution>
                                 <id>if_modified_files</id>
-                                <phase>verify</phase>
+                                <phase>package</phase>
                                 <goals>
                                     <goal>exec</goal>
                                 </goals>
