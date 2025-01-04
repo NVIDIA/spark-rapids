@@ -1837,6 +1837,8 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
           case Some(simplified) =>
             pattern = simplified
           case None =>
+            // check that this is valid in Java
+            Pattern.compile(utf8Str.toString)
             try {
               val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None, None)
               GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
