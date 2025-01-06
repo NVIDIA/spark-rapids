@@ -2441,7 +2441,7 @@ class MultiFileCloudParquetPartitionReader(
           val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset)
           allOutputBlocks ++= outputBlocks
           offset += columnDataSize
-          hmbInfo.hmbs.foreach(_.close())
+          hmbInfo.hmbs.safeClose()
         }
       }
       if (buffers.isEmpty) {
@@ -2697,7 +2697,7 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.foreach(_.hmbs.safeClose())
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema,
@@ -2713,7 +2713,7 @@ class MultiFileCloudParquetPartitionReader(
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.foreach(_.hmbs.safeClose())
+          hostBuffers.flatMap(_.hmbs).safeClose(e)
           throw e
       }
       val bufferTime = System.nanoTime() - bufferStartTime

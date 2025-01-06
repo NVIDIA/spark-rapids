@@ -853,11 +853,11 @@ class GpuMultiFileCloudAvroPartitionReader(
               } // end of while
 
               val bufAndSize: Array[SingleHMBAndMeta] = if (readDataSchema.isEmpty) {
-                hostBuffers.foreach(_.hmbs.safeClose())
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 Array(SingleHMBAndMeta.empty(totalRowsNum))
               } else if (isDone) {
                 // got close before finishing, return null buffer and zero size
-                hostBuffers.foreach(_.hmbs.safeClose())
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 Array(SingleHMBAndMeta.empty())
               } else {
                 hostBuffers.toArray
@@ -865,7 +865,7 @@ class GpuMultiFileCloudAvroPartitionReader(
               createBufferAndMeta(bufAndSize, startingBytesRead)
             } catch {
               case e: Throwable =>
-                hostBuffers.foreach(_.hmbs.safeClose(e))
+                hostBuffers.flatMap(_.hmbs).safeClose(e)
                 throw e
             }
           }
