@@ -46,6 +46,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.adaptive._
@@ -86,4 +87,18 @@ class GpuCustomShuffleReaderMeta(reader: AQEShuffleReadExec,
     shuffleEx.getTagValue(GpuShuffleMetaBase.availableRuntimeDataTransition)
         .getOrElse(false)
   }
+
+  override def checkExistingTags(): Unit = {
+    // Some rules perform a transform and may replace ShuffleQueryStageExec
+    // with CustomShuffleReaderExec, causing tags to be copied from ShuffleQueryStageExec to
+    // CustomShuffleReaderExec, including the "no need to replace ShuffleQueryStageExec" tag.
+
+    val noNeedReason = noNeedToReplaceReason(classOf[ShuffleQueryStageExec])
+
+    wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
+      .foreach(_.diff(cannotBeReplacedReasons.get)
+        .filterNot(s => noNeedReason.equals(s))
+        .foreach(willNotWorkOnGpu))
+  }
+
 }
