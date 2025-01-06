@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
 import org.apache.spark.sql.hive.rapids.shims.GpuInsertIntoHiveTableMeta
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -214,8 +215,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
       override def newInstance(path: String,
           dataSchema: StructType,
           context: TaskAttemptContext,
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
           debugOutputPath: Option[String]): ColumnarOutputWriter = {
-        new GpuHiveParquetWriter(path, dataSchema, context, compressionType, debugOutputPath)
+        new GpuHiveParquetWriter(path, dataSchema, context, compressionType, statsTrackers,
+          debugOutputPath)
       }
     }
   }
@@ -223,8 +226,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
 
 class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
     context: TaskAttemptContext, compType: CompressionType,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugOutputPath: Option[String])
-  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, debugOutputPath) {
+  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, statsTrackers,
+    debugOutputPath) {
 
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils
@@ -253,8 +258,9 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
       override def newInstance(path: String,
                                dataSchema: StructType,
                                context: TaskAttemptContext,
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
                                debugOutputPath: Option[String]): ColumnarOutputWriter = {
-        new GpuHiveTextWriter(path, dataSchema, context, debugOutputPath)
+        new GpuHiveTextWriter(path, dataSchema, context, statsTrackers, debugOutputPath)
       }
     }
   }
@@ -263,8 +269,10 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 class GpuHiveTextWriter(override val path: String,
                         dataSchema: StructType,
                         context: TaskAttemptContext,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
                         debugOutputPath: Option[String])
-  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false, debugOutputPath) {
+  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false, statsTrackers,
+    debugOutputPath) {
 
   /**
    * This reformats columns, to iron out inconsistencies between

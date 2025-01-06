@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,13 @@ package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Executors, Future, RejectedExecutionException, TimeUnit}
 
+import org.apache.hadoop.conf.Configuration
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
+
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
 
 class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
 
@@ -30,6 +35,13 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
   var throttle: HostMemoryThrottle = _
   var trafficController: TrafficController = _
   var executor: ThrottlingExecutor = _
+
+  // Initialize SparkContext which is needed in GpuWriteJobStatsTracker.taskMetrics()
+  val sparkConf = new SparkConf()
+  sparkConf.set("spark.master", "local")
+  sparkConf.set("spark.app.name", "ThrottlingExecutorSuite")
+  SparkContext.getOrCreate(sparkConf)
+  val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
 
   class TestTask extends Callable[Unit] {
     val latch = new CountDownLatch(1)
@@ -43,7 +55,8 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     trafficController = new TrafficController(throttle)
     executor = new ThrottlingExecutor(
       Executors.newSingleThreadExecutor(),
-      trafficController
+      trafficController,
+      Seq(new GpuWriteTaskStatsTracker(new Configuration(), taskMetrics))
     )
   }
 
@@ -141,5 +154,58 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     assertCause(e1, classOf[InterruptedException])
     val e2 = intercept[ExecutionException](future2.get())
     assertCause(e2, classOf[RejectedExecutionException])
+  }
+
+  test("test task metrics") {
+    val exec = Executors.newSingleThreadExecutor()
+    // Run a task. Note that the first task never waits in ThrottlingExecutor.
+    var runningTask = new TestTask
+    exec.submit(new Runnable {
+      override def run(): Unit = executor.submit(runningTask, 100)
+    })
+    var taskCount = 1
+
+    for (i <- 0 to 9) {
+      val sleepTimeMs = (i + 1) * 10L
+      val waitingTask = new TestTask
+      // Latch indicating that the Runnable has been submitted.
+      val runnableSubmitted = new CountDownLatch(1)
+      // Latch indicating that waitingTask has been submitted to ThrottlingExecutor.
+      val waitingTaskSubmitted = new CountDownLatch(1)
+      exec.submit(new Runnable {
+        override def run(): Unit = {
+          runnableSubmitted.countDown()
+          executor.submit(waitingTask, 100)
+          waitingTaskSubmitted.countDown()
+        }
+      })
+      taskCount += 1
+      // Wait until the Runnable is submitted, and then sleep.
+      // This is to ensure that the waitingTask will wait for at least sleepTimeMs.
+      runnableSubmitted.await(longTimeoutSec, TimeUnit.SECONDS)
+      // Let the waitingTask wait for sleepTimeMs.
+      Thread.sleep(sleepTimeMs)
+      // Finish the running task.
+      runningTask.latch.countDown()
+      // Wait until the waitingTask is submitted.
+      waitingTaskSubmitted.await(longTimeoutSec, TimeUnit.SECONDS)
+      executor.updateMetrics()
+
+      // Skip the check on the min throttle time as the first task never waits.
+
+      assert(TimeUnit.MILLISECONDS.toNanos(sleepTimeMs) <=
+        taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MAX_THROTTLE_TIME_KEY).value
+      )
+
+      runningTask = waitingTask
+    }
+
+    // Finish the last task.
+    runningTask.latch.countDown()
+
+    // Verify the average throttle time.
+    executor.updateMetrics()
+    assert(Seq.range(0, 10).sum * TimeUnit.MILLISECONDS.toNanos(10).toDouble / taskCount <=
+      taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_AVG_THROTTLE_TIME_KEY).value)
   }
 }

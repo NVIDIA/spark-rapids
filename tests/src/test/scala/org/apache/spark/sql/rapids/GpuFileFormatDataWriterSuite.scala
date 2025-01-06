@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           dataSchema,
           rangeName,
           includeRetry,
+          Seq.empty,
           None) {
 
     // this writer (for tests) doesn't do anything and passes through the
@@ -94,7 +95,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       types,
       "",
       includeRetry))
-    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any()))
+    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any(), any()))
         .thenAnswer(_ => mockOutputWriter)
   }
 
@@ -312,7 +313,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         singleWriter.commit()
         // we write 2 batches
         verify(mockOutputWriter, times(2))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(mockOutputWriter, times(1)).close()
       }
     }
@@ -333,7 +334,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         singleWriter.commit()
         // twice for the first batch given the split, and once for the second batch
         verify(mockOutputWriter, times(3))
-            .writeSpillableAndClose(any(), any())
+          .writeSpillableAndClose(any())
         // three because we wrote 3 files (15 rows, limit was 5 rows per file)
         verify(mockOutputWriter, times(3)).close()
       }
@@ -355,7 +356,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicSingleWriter.commit()
         // we write 9 batches (4 partitions in the first bach, and 5 partitions in the second)
         verify(mockOutputWriter, times(9))
-            .writeSpillableAndClose(any(), any())
+          .writeSpillableAndClose(any())
         verify(dynamicSingleWriter, times(9)).newWriter(any(), any(), any())
         // it uses 9 writers because the single writer mode only keeps one writer open at a time
         // and once a new partition is seen, the old writer is closed and a new one is opened.
@@ -385,7 +386,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           val dynamicSingleWriter = prepareDynamicPartitionSingleWriter()
           dynamicSingleWriter.writeWithIterator(cbs.iterator)
           dynamicSingleWriter.commit()
-          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any(), any())
+          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any())
           verify(dynamicSingleWriter, times(numNewWriters)).newWriter(any(), any(), any())
           verify(mockOutputWriter, times(numNewWriters)).close()
         }
@@ -406,7 +407,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicSingleWriter.commit()
         // we get 13 calls because we write 13 individual batches after splitting
         verify(mockOutputWriter, times(13))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicSingleWriter, times(13)).newWriter(any(), any(), any())
         // since we have a limit of 1 record per file, we write 13 files
         verify(mockOutputWriter, times(13))
@@ -430,7 +431,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicConcurrentWriter.commit()
         // we get 9 calls because we have 9 partitions total
         verify(mockOutputWriter, times(9))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         // we write 5 files because we write 1 file per partition, since this concurrent
         // writer was able to keep the writers alive
         verify(dynamicConcurrentWriter, times(5)).newWriter(any(), any(), any())
@@ -463,7 +464,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
             prepareDynamicPartitionConcurrentWriter(maxWriters = 20, batchSize = 100)
           dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
           dynamicConcurrentWriter.commit()
-          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any(), any())
+          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any())
           verify(dynamicConcurrentWriter, times(numNewWriters)).newWriter(any(), any(), any())
           verify(mockOutputWriter, times(numNewWriters)).close()
         }
@@ -487,7 +488,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
 
         // we get 13 calls here because we write 1 row files
         verify(mockOutputWriter, times(13))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(13)).newWriter(any(), any(), any())
 
         // we have to open 13 writers (1 per row) given the record limit of 1
@@ -513,7 +514,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         // 6 batches written, one per partition (no splitting) plus one written by
         // the concurrent writer.
         verify(mockOutputWriter, times(6))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(5)).newWriter(any(), any(), any())
         // 5 files written because this is the single writer mode
         verify(mockOutputWriter, times(5)).close()
@@ -537,7 +538,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicConcurrentWriter.commit()
         // 18 batches are written, once per row above given maxRecorsPerFile
         verify(mockOutputWriter, times(18))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(18)).newWriter(any(), any(), any())
         // dynamic partitioning code calls close several times on the same ColumnarOutputWriter
         // that doesn't seem to be an issue right now, but verifying that the writer was closed
@@ -591,7 +592,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
 
         // 1 batch is written, all rows fit
         verify(mockOutputWriter, times(1))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         // we call newBatch once
         verify(statsTracker, times(1)).newBatch(any(), any())
         if (includeRetry) {
@@ -643,7 +644,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         verify(mockOutputWriter, times(0)).bufferBatchAndClose(any())
         // we attempt to write one batch
         verify(mockOutputWriter, times(1))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         // we call newBatch once
         verify(statsTracker, times(1)).newBatch(any(), any())
       }

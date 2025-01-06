@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.concurrent.TimeUnit
+
 import com.nvidia.spark.rapids.GpuDataWritingCommand
+import com.nvidia.spark.rapids.GpuMetric
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkContext
@@ -39,6 +42,12 @@ class GpuWriteTaskStatsTracker(
   def addWriteTime(nanos: Long): Unit = {
     taskMetrics(GpuWriteJobStatsTracker.WRITE_TIME_KEY) += nanos
   }
+
+  def setAsyncWriteThrottleTimes(avgNs: Double, minNs: Long, maxNs: Long): Unit = {
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_AVG_THROTTLE_TIME_KEY).set(avgNs.toLong)
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MIN_THROTTLE_TIME_KEY).set(minNs)
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MAX_THROTTLE_TIME_KEY).set(maxNs)
+  }
 }
 
 /**
@@ -60,7 +69,11 @@ class GpuWriteJobStatsTracker(
 object GpuWriteJobStatsTracker {
   val GPU_TIME_KEY = "gpuTime"
   val WRITE_TIME_KEY = "writeTime"
+  val ASYNC_WRITE_AVG_THROTTLE_TIME_KEY = "asyncWriteAvgThrottleTime"
+  val ASYNC_WRITE_MIN_THROTTLE_TIME_KEY = "asyncWriteMinThrottleTime"
+  val ASYNC_WRITE_MAX_THROTTLE_TIME_KEY = "asyncWriteMaxThrottleTime"
 
+  // TODO: make them GpuMetrics with metricsLevel
   def basicMetrics: Map[String, SQLMetric] = BasicColumnarWriteJobStatsTracker.metrics
 
   def taskMetrics: Map[String, SQLMetric] = {
@@ -68,7 +81,13 @@ object GpuWriteJobStatsTracker {
     Map(
       GPU_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU time"),
       WRITE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "write time"),
-      TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME)
+      TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME),
+      ASYNC_WRITE_AVG_THROTTLE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext,
+        "async write avg throttle time"),
+      ASYNC_WRITE_MIN_THROTTLE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext,
+        "async write min throttle time"),
+      ASYNC_WRITE_MAX_THROTTLE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext,
+        "async write max throttle time")
     )
   }
 
