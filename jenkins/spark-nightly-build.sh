@@ -24,7 +24,6 @@ MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 
 
 DIST_PL="dist"
 DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
-SQL_PLGUIN_PATH="sql-plugin"
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
     # Run scala2.13 build and test against JDK17
@@ -34,7 +33,6 @@ if [ $SCALA_BINARY_VER == "2.13" ]; then
 
     MVN="$MVN -f scala2.13/"
     DIST_PATH="scala2.13/$DIST_PL"
-    SQL_PLGUIN_PATH="scala2.13/$SQL_PLGUIN_PATH"
 fi
 
 WORKSPACE=${WORKSPACE:-$(pwd)}
@@ -63,9 +61,6 @@ if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]] && [[ -n ${SPARK_SHIM_VERSIONS_DA
     DIST_PROFILE_OPT="$DIST_PROFILE_OPT,"$(IFS=,; echo "${SPARK_SHIM_VERSIONS_DATABRICKS[*]}")
 fi
 
-DEPLOY_TYPES='jar'
-DEPLOY_FILES="${DIST_FPATH}.jar"
-DEPLOY_CLASSIFIERS="$DEFAULT_CUDA_CLASSIFIER"
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
 # discrepancies between the build machines regardless of how the local repo was populated.
@@ -78,16 +73,6 @@ function distWithReducedPom {
             mvnCmd="install:install-file"
             mvnExtraFlags="-Dpackaging=jar"
             ;;
-
-        deploy)
-            mvnCmd="deploy:deploy-file"
-            if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
-              # try move tmp artifacts back to target folder for simplifying separate release process
-              mv ${TMP_PATH}/${ART_ID}-${ART_VER}-*.jar ${DIST_PATH}/target/
-            fi
-            mvnExtraFlags="-Durl=${URM_URL}-local -DrepositoryId=snapshots -Dtypes=${DEPLOY_TYPES} -Dfiles=${DEPLOY_FILES} -Dclassifiers=${DEPLOY_CLASSIFIERS}"
-            ;;
-
         *)
             echo "Unknown command: $cmd"
             ;;
@@ -170,10 +155,6 @@ if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
     # move artifacts to temp for deployment later
     artifactFile="${ART_ID}-${ART_VER}-${classifier}.jar"
     mv ${DIST_PATH}/target/${artifactFile} ${TMP_PATH}/
-    # update deployment properties
-    DEPLOY_TYPES="${DEPLOY_TYPES},jar"
-    DEPLOY_FILES="${DEPLOY_FILES},${DIST_PL}/target/${artifactFile}"
-    DEPLOY_CLASSIFIERS="${DEPLOY_CLASSIFIERS},${classifier}"
   done
 fi
 # build dist w/ default cuda classifier
@@ -182,7 +163,6 @@ installDistArtifact ${DEFAULT_CUDA_CLASSIFIER}
 distWithReducedPom "install"
 
 if [[ $SKIP_DEPLOY != 'true' ]]; then
-
     # this deploys selected submodules that is unconditionally built with Spark 3.2.0
     $MVN -B deploy -pl "!${DIST_PL}" \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
@@ -191,17 +171,12 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER
 
-    # dist module does not have javadoc and sources jars, use 'sql-plugin' ones instead
-    SQL_ART_PATH="$(echo -n $SQL_PLGUIN_PATH/target/spark*)/rapids-4-spark-sql_${SCALA_BINARY_VER}-${ART_VER}"
-    cp $SQL_ART_PATH-sources.jar $DIST_PATH/target/${ART_ID}-${ART_VER}-sources.jar
-    cp $SQL_ART_PATH-javadoc.jar $DIST_PATH/target/${ART_ID}-${ART_VER}-javadoc.jar
-    # Deploy the sources and javadoc to make sure nightly CICD includes all jars required by Sonatype release
-    DEPLOY_TYPES="${DEPLOY_TYPES},jar,jar"
-    DEPLOY_FILES="${DEPLOY_FILES},$DIST_PL/target/${ART_ID}-${ART_VER}-sources.jar,$DIST_PL/target/${ART_ID}-${ART_VER}-javadoc.jar"
-    DEPLOY_CLASSIFIERS="${DEPLOY_CLASSIFIERS},sources,javadoc"
-    ls ${DIST_PATH}/target/
+    # try move tmp artifacts back to target folder for simplifying separate release process
+    if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
+        mv ${TMP_PATH}/${ART_ID}-${ART_VER}-*.jar ${DIST_PATH}/target/
+    fi
     # Deploy dist jars in the final step to ensure that the POM files are not overwritten
-    distWithReducedPom "deploy"
+    jenkins/deploy.sh
 fi
 
 # Parse Spark files from local mvn repo
