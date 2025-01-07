@@ -176,7 +176,7 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
         mv ${TMP_PATH}/${ART_ID}-${ART_VER}-*.jar ${DIST_PATH}/target/
     fi
     # Deploy dist jars in the final step to ensure that the POM files are not overwritten
-    jenkins/deploy.sh
+    SERVER_URL=${SERVER_URL:-"$URM_URL"} SERVER_ID=${SERVER_ID:-"snapshots"} jenkins/deploy.sh
 fi
 
 # Parse Spark files from local mvn repo
