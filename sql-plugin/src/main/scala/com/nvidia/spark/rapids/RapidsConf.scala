@@ -1976,6 +1976,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(20)
 
+  val SHUFFLE_PARTITIONING_MAX_CPU_BATCH_SIZE =
+    conf("spark.rapids.shuffle.partitioning.maxCpuBatchSize")
+      .doc("The maximum size of a sliced batch output to the CPU side " +
+        "when GPU partitioning shuffle data. This is used to limit the peak on-heap memory used " +
+        "by CPU to serialize the shuffle data, especially for skew data cases. " +
+        "The default value is maximum size of an Array minus 2k overhead (2147483639L - 2048L), " +
+        "user should only set a smaller value than default value.")
+      .bytesConf(ByteUnit.BYTE)
+      // The maximum size of an Array minus a bit for overhead for metadata
+      .createWithDefault(2147483639L - 2048L)
+
   val SHUFFLE_MULTITHREADED_READER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.reader.threads")
         .doc("The number of threads to use for reading shuffle blocks per executor in the " +
@@ -3175,6 +3186,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
 
   lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
+
+  lazy val shuffleParitioningMaxCpuBatchSize: Long = get(SHUFFLE_PARTITIONING_MAX_CPU_BATCH_SIZE)
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
