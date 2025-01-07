@@ -81,16 +81,16 @@ trait GpuExec extends SparkPlan {
     GpuMetric.create(level, name)
 
   def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createNanoTimingMetric(level, name)
+    GpuMetric.createNanoTiming(level, name)
 
   def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createSizeMetric(level, name)
+    GpuMetric.createSize(level, name)
 
   def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createAverageMetric(level, name)
+    GpuMetric.createAverage(level, name)
 
   def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createTimingMetric(level, name)
+    GpuMetric.createTiming(level, name)
 
   protected def createFileCacheMetrics(): Map[String, GpuMetric] = {
     if (FileCacheConf.FILECACHE_ENABLED.get(conf)) {

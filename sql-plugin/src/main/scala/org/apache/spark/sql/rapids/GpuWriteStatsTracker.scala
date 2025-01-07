@@ -81,17 +81,17 @@ object GpuWriteJobStatsTracker {
 
   def taskMetrics: Map[String, GpuMetric] = {
     Map(
-      GPU_TIME_KEY -> GpuMetric.createNanoTimingMetric(GpuMetric.ESSENTIAL_LEVEL, "GPU time"),
-      WRITE_TIME_KEY -> GpuMetric.createNanoTimingMetric(GpuMetric.ESSENTIAL_LEVEL,
+      GPU_TIME_KEY -> GpuMetric.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL, "GPU time"),
+      WRITE_TIME_KEY -> GpuMetric.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL,
         "write time"),
       TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME),
-      ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> GpuMetric.createNanoTimingMetric(
+      ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "total throttle time"),
-      ASYNC_WRITE_AVG_THROTTLE_TIME_KEY -> GpuMetric.createNanoTimingMetric(
+      ASYNC_WRITE_AVG_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "avg throttle time per async write"),
-      ASYNC_WRITE_MIN_THROTTLE_TIME_KEY -> GpuMetric.createNanoTimingMetric(
+      ASYNC_WRITE_MIN_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "min throttle time per async write"),
-      ASYNC_WRITE_MAX_THROTTLE_TIME_KEY -> GpuMetric.createNanoTimingMetric(
+      ASYNC_WRITE_MAX_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "max throttle time per async write")
     )
   }

@@ -241,15 +241,15 @@ object BasicColumnarWriteJobStatsTracker {
     Map(
       NUM_FILES_KEY -> GpuMetric.create(GpuMetric.ESSENTIAL_LEVEL,
         "number of written files"),
-      NUM_OUTPUT_BYTES_KEY -> GpuMetric.createSizeMetric(GpuMetric.ESSENTIAL_LEVEL,
+      NUM_OUTPUT_BYTES_KEY -> GpuMetric.createSize(GpuMetric.ESSENTIAL_LEVEL,
         "written output"),
       NUM_OUTPUT_ROWS_KEY -> GpuMetric.create(GpuMetric.ESSENTIAL_LEVEL,
         "number of output rows"),
       NUM_PARTS_KEY -> GpuMetric.create(GpuMetric.ESSENTIAL_LEVEL,
         "number of dynamic part"),
-      TASK_COMMIT_TIME -> GpuMetric.createTimingMetric(GpuMetric.ESSENTIAL_LEVEL,
+      TASK_COMMIT_TIME -> GpuMetric.createTiming(GpuMetric.ESSENTIAL_LEVEL,
         "task commit time"),
-      JOB_COMMIT_TIME -> GpuMetric.createTimingMetric(GpuMetric.ESSENTIAL_LEVEL,
+      JOB_COMMIT_TIME -> GpuMetric.createTiming(GpuMetric.ESSENTIAL_LEVEL,
         "job commit time")
     )
   }

@@ -154,16 +154,16 @@ object GpuMetric extends Logging with SQLConfHelper {
   def create(level: MetricsLevel, name: String): GpuMetric =
     createInternal(level, SQLMetrics.createMetric(sparkContext, name))
 
-  def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createNanoTiming(level: MetricsLevel, name: String): GpuMetric =
     createInternal(level, SQLMetrics.createNanoTimingMetric(sparkContext, name))
 
-  def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createSize(level: MetricsLevel, name: String): GpuMetric =
     createInternal(level, SQLMetrics.createSizeMetric(sparkContext, name))
 
-  def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createAverage(level: MetricsLevel, name: String): GpuMetric =
     createInternal(level, SQLMetrics.createAverageMetric(sparkContext, name))
 
-  def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+  def createTiming(level: MetricsLevel, name: String): GpuMetric =
     createInternal(level, SQLMetrics.createTimingMetric(sparkContext, name))
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
