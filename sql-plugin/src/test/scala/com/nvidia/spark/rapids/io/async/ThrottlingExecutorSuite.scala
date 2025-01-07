@@ -18,12 +18,12 @@ package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Executors, Future, RejectedExecutionException, TimeUnit}
 
+import com.nvidia.spark.rapids.GpuMetric
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
 
 class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
@@ -41,7 +41,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
   sparkConf.set("spark.master", "local")
   sparkConf.set("spark.app.name", "ThrottlingExecutorSuite")
   SparkContext.getOrCreate(sparkConf)
-  val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
+  val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics
 
   class TestTask extends Callable[Unit] {
     val latch = new CountDownLatch(1)

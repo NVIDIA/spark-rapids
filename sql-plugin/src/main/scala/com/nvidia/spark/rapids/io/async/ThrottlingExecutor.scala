@@ -30,16 +30,16 @@ class ThrottlingExecutor(executor: ExecutorService, throttler: TrafficController
 
   private var numTasksScheduled = 0
   private var accumulatedThrottleTimeNs = 0L
-  private var minThrottleTime = Long.MaxValue
-  private var maxThrottleTime = 0L
+  private var minThrottleTimeNs = Long.MaxValue
+  private var maxThrottleTimeNs = 0L
 
   private def blockUntilTaskRunnable(task: Task[_]): Unit = {
     val blockStart = System.nanoTime()
     throttler.blockUntilRunnable(task)
     val blockTimeNs = System.nanoTime() - blockStart
     accumulatedThrottleTimeNs += blockTimeNs
-    minThrottleTime = Math.min(minThrottleTime, blockTimeNs)
-    maxThrottleTime = Math.max(maxThrottleTime, blockTimeNs)
+    minThrottleTimeNs = Math.min(minThrottleTimeNs, blockTimeNs)
+    maxThrottleTimeNs = Math.max(maxThrottleTimeNs, blockTimeNs)
     numTasksScheduled += 1
     updateMetrics()
   }
@@ -58,14 +58,9 @@ class ThrottlingExecutor(executor: ExecutorService, throttler: TrafficController
   }
 
   def updateMetrics(): Unit = {
-    val avgThrottleTime = if (numTasksScheduled > 0) {
-      accumulatedThrottleTimeNs / numTasksScheduled
-    } else {
-      0
-    }
     statsTrackers.foreach {
       case gpuStatsTracker: GpuWriteTaskStatsTracker => gpuStatsTracker.setAsyncWriteThrottleTimes(
-        avgThrottleTime, minThrottleTime, maxThrottleTime)
+        numTasksScheduled, accumulatedThrottleTimeNs, minThrottleTimeNs, maxThrottleTimeNs)
       case _ =>
     }
   }
