@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1979,11 +1979,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   val SHUFFLE_PARTITIONING_MAX_CPU_BATCH_SIZE =
     conf("spark.rapids.shuffle.partitioning.maxCpuBatchSize")
       .doc("The maximum size of a sliced batch output to the CPU side " +
-        "when GPU partitioning shuffle data. This is used to limit the peak on-heap memory used " +
-        "by CPU to serialize the shuffle data, especially for skew data cases. " +
+        "when GPU partitioning shuffle data. This can be used to limit the peak on-heap memory " +
+        "used by CPU to serialize the shuffle data, especially for skew data cases. " +
         "The default value is maximum size of an Array minus 2k overhead (2147483639L - 2048L), " +
-        "user should only set a smaller value than default value.")
+        "user should only set a smaller value than default value to avoid subsequent failures.")
+      .internal()
       .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v > 0 && v <= 2147483639L - 2048L,
+        s"maxCpuBatchSize must be positive and not exceed ${2147483639L - 2048L} bytes.")
       // The maximum size of an Array minus a bit for overhead for metadata
       .createWithDefault(2147483639L - 2048L)
 
