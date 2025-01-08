@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{Closeable, EOFException, FileNotFoundException, IOException, InputStream, OutputStream}
+import java.io.{Closeable, EOFException, FileNotFoundException, InputStream, IOException, OutputStream}
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
