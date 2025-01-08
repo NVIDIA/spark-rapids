@@ -435,9 +435,9 @@ object PreProjectSplitIterator {
             })
           }
         case otherType => // primitive types
-          val hasOffset = hasOffset(otherType)
-          if (nullable || hasOffset) {
-            getOrInitAt(depth, new LitMeta(nullable, hasOffset)).incRowsNum()
+          val hasOffsetBuf = hasOffset(otherType)
+          if (nullable || hasOffsetBuf) {
+            getOrInitAt(depth, new LitMeta(nullable, hasOffsetBuf)).incRowsNum()
           }
       }
     }
