@@ -314,7 +314,7 @@ object PreProjectSplitIterator {
           }.orElse {
             // A literal has an exact size that should be taken into account.
             extractGpuLit(boundExprs.exprTiers.last(index)).map { gpuLit =>
-              calcMemorySizeForLiteral(gpuLit.value, gpuLit.dataType, numRows)
+              calcSizeForLiteral(gpuLit.value, gpuLit.dataType, numRows)
             }
           }.getOrElse {
             GpuBatchUtils.minGpuMemory(dataType, true, numRows)
@@ -323,48 +323,134 @@ object PreProjectSplitIterator {
     }.sum
   }
 
-  private def calcMemorySizeForLiteral(litVal: Any, litType: DataType, numRows: Int): Long = {
-    // One literal size = value size + additional buffers size (offset and/or validity)
-    val litSize = calcLitValueSize(litVal, litType) + {
-      val pickRowNum: Int => Int = rowNum => if (litVal == null) 0 else rowNum
-      litType match {
-        case ArrayType(elemType, hasNullElem) =>
-          val numElems = pickRowNum(litVal.asInstanceOf[ArrayData].numElements())
-          // A GPU array literal requires only one column as the child
-          estimateLitAdditionSize(hasNullElem, hasOffset(elemType), numElems)
-        case StructType(fields) =>
-          val childrenNumRows = pickRowNum(1)
-          // A GPU struct literal requires "fields.size" columns as the children.
-          fields.map(f =>
-            estimateLitAdditionSize(f.nullable, hasOffset(f.dataType), childrenNumRows)
-          ).sum
-        case MapType(keyType, valType, hasNullValue) =>
-          val mapRowsNum = pickRowNum(litVal.asInstanceOf[MapData].numElements())
-          // A GPU map literal requires 4 columns as the children.
-          // the key and value column, along with two wrapper columns as below
-          //   " list<struct{key, value}> "
-          estimateLitAdditionSize(false, hasOffset(keyType), mapRowsNum) + // key
-            estimateLitAdditionSize(hasNullValue, hasOffset(valType), mapRowsNum) + // value
-              estimateLitAdditionSize(false, false, mapRowsNum) + // struct
-                estimateLitAdditionSize(false, true, mapRowsNum) // top list
-        case _ => 0L // primitive types has no nested additional buffers
-      }
-    }
-    // totalSize = litSize * numRows + top additional buffers size after expanding to a column.
-    litSize * numRows + estimateLitAdditionSize(litVal == null, hasOffset(litType), numRows)
+  @scala.annotation.tailrec
+  def extractGpuLit(exp: Expression): Option[GpuLiteral] = exp match {
+    case gl: GpuLiteral => Some(gl)
+    case ga: GpuAlias => extractGpuLit(ga.child)
+    case _ => None
   }
 
-  private def estimateLitAdditionSize(hasNull: Boolean, hasOffset: Boolean, rows: Int): Long = {
-    // Additional buffers size, it is not nested for literals,
-    // so no need to do it recursively.
-    var totalSize = 0L
-    if (hasNull) {
-      totalSize += GpuBatchUtils.calculateValidityBufferSize(rows)
+  private def calcSizeForLiteral(litVal: Any, litType: DataType, numRows: Int): Long = {
+    // First calculate the meta buffers size
+    val metaSize = new LitMetaCollector(litVal, litType).collect.map { litMeta =>
+      val expandedRowsNum = litMeta.getRowsNum * numRows
+      var totalSize = 0L
+      if (litMeta.hasNull) {
+        totalSize += GpuBatchUtils.calculateValidityBufferSize(expandedRowsNum)
+      }
+      if (litMeta.hasOffset) {
+        totalSize += GpuBatchUtils.calculateOffsetBufferSize(expandedRowsNum)
+      }
+      totalSize
+    }.sum
+    // finalSize = oneLitValueSize * numRows + metadata size
+    calcLitValueSize(litVal, litType) * numRows + metaSize
+  }
+
+  /**
+   * Represent the metadata information of a literal or one of its children,
+   * which will be used to calculate the final metadata size after expanding
+   * this literal to a column.
+   */
+  private class LitMeta(val hasNull: Boolean, val hasOffset: Boolean) {
+    private var rowsNum: Int = 0
+    def incRowsNum(rows: Int = 1): Unit = rowsNum += rows
+    def getRowsNum: Int = rowsNum
+  }
+
+  /**
+   * Collect the metadata information of a literal, the result also includes
+   * its children for a nested type literal.
+   */
+  private class LitMetaCollector(litValue: Any, litType: DataType) {
+    private var collected = false
+    private val metaInfos: ArrayBuffer[LitMeta] = ArrayBuffer.empty
+
+    def collect: Seq[LitMeta] = {
+      if (!collected) {
+        executeCollect(litValue, litType, litValue == null, 0)
+        collected = true
+      }
+      metaInfos.filter(_ != null).toSeq
     }
-    if (hasOffset) {
-      totalSize += GpuBatchUtils.calculateOffsetBufferSize(rows)
+
+    /**
+     * Go through the literal and all its children to collect the meta information and
+     * save to the cache, call "collect" to get the result.
+     * Each LitMeta indicates whether the literal or a child will has offset/validity
+     * buffers after being expanded to a column, along with the number of original rows.
+     * For nested types, it follows the type definition from
+     *   https://github.com/rapidsai/cudf/blob/a0487be669326175982c8bfcdab4d61184c88e27/
+     *   cpp/doxygen/developer_guide/DEVELOPER_GUIDE.md#list-columns
+     */
+    private def executeCollect(lit: Any, litTp: DataType, nullable: Boolean,
+        depth: Int): Unit = {
+      litTp match {
+        case ArrayType(elemType, hasNullElem) =>
+          // It may be at a middle element of a nested array, so use the nullable
+          // from the parent.
+          getOrInitAt(depth, new LitMeta(nullable, true)).incRowsNum()
+          // Go into the child
+          val arrayData = lit.asInstanceOf[ArrayData]
+          if (arrayData == null || arrayData.numElements() <= 0) {
+            // Null or an empty list, still need to check the child meta
+            executeCollect(null, elemType, hasNullElem, depth + 1)
+          } else { // a nonempty list, normal case
+            (0 until arrayData.numElements()).foreach( i =>
+              executeCollect(arrayData.get(i, elemType), elemType, hasNullElem, depth + 1)
+            )
+          }
+        case StructType(fields) =>
+          if (nullable && depth == 0) {
+            // Add a meta for only the top nullable struct according to
+            // the struct construction in cudf, see
+            // https://github.com/rapidsai/cudf/blob/v24.12.00/cpp/src/column/
+            //         column_factories.cu#L117, and
+            // https://github.com/rapidsai/cudf/blob/v24.12.00/java/src/main/
+            //         native/src/ColumnViewJni.cpp#L2574
+            // and a struct doesnt' have offsets.
+            getOrInitAt(depth, new LitMeta(nullable, false)).incRowsNum()
+          }
+          // Go into children
+          fields.zipWithIndex.foreach { case (f, i) =>
+            val fLit = if (lit == null) {
+              null
+            } else {
+              lit.asInstanceOf[InternalRow].get(i, f.dataType)
+            }
+            executeCollect(fLit, f.dataType, f.nullable, depth + 1 + i)
+          }
+        case MapType(keyType, valType, hasNullValue) =>
+          // Map is list of struct in cudf. But the nested struct has no offset or
+          // validity, so only need a meta for the top list.
+          getOrInitAt(depth, new LitMeta(nullable, true)).incRowsNum()
+          val mapData = lit.asInstanceOf[MapData]
+          if (mapData == null || mapData.numElements() == 0) {
+            executeCollect(null, keyType, false, depth + 1)
+            executeCollect(null, valType, hasNullValue, depth + 2)
+          } else {
+            mapData.foreach(keyType, valType, { case (key, value) =>
+              executeCollect(key, keyType, false, depth + 1)
+              executeCollect(value, valType, hasNullValue, depth + 2)
+            })
+          }
+        case otherType => // primitive types
+          val hasOffset = hasOffset(otherType)
+          if (nullable || hasOffset) {
+            getOrInitAt(depth, new LitMeta(nullable, hasOffset)).incRowsNum()
+          }
+      }
     }
-    totalSize
+
+    private def getOrInitAt(pos: Int, initMeta: LitMeta): LitMeta = {
+      if (pos >= metaInfos.length) {
+        (metaInfos.length until pos).foreach { _ =>
+          metaInfos.append(null)
+        }
+        metaInfos.append(initMeta)
+      }
+      metaInfos(pos)
+    }
   }
 
   private def calcLitValueSize(lit: Any, litTp: DataType): Long = if (lit == null) {
@@ -378,7 +464,10 @@ object PreProjectSplitIterator {
       case StringType => lit.asInstanceOf[UTF8String].numBytes()
       case BinaryType => lit.asInstanceOf[Array[Byte]].length
       case ArrayType(elemType, _) =>
-        lit.asInstanceOf[ArrayData].array.map(calcLitValueSize(_, elemType)).sum
+        val arrayData = lit.asInstanceOf[ArrayData]
+        (0 until arrayData.numElements()).map(idx =>
+          calcLitValueSize(arrayData.get(idx, elemType), elemType)
+        ).sum
       case StructType(fields) =>
         val stData = lit.asInstanceOf[InternalRow]
         fields.zipWithIndex.map { case (f, i) =>
@@ -394,13 +483,6 @@ object PreProjectSplitIterator {
         }.sum
       case _ => litTp.defaultSize
     }
-  }
-
-  @scala.annotation.tailrec
-  def extractGpuLit(exp: Expression): Option[GpuLiteral] = exp match {
-    case gl: GpuLiteral => Some(gl)
-    case ga: GpuAlias => extractGpuLit(ga.child)
-    case _ => None
   }
 }
 
