@@ -23,7 +23,7 @@ import org.apache.hadoop.conf.Configuration
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
 
 class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
@@ -36,11 +36,13 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
   var trafficController: TrafficController = _
   var executor: ThrottlingExecutor = _
 
-  // Initialize SparkContext which is needed in GpuWriteJobStatsTracker.taskMetrics()
-  val sparkConf = new SparkConf()
-  sparkConf.set("spark.master", "local")
-  sparkConf.set("spark.app.name", "ThrottlingExecutorSuite")
-  SparkContext.getOrCreate(sparkConf)
+  // Initialize SparkSession to initialize the GpuMetrics.
+  SparkSession.builder
+       .master("local")
+       .appName("ThrottlingExecutorSuite")
+       .config("spark.rapids.sql.metrics.level", "DEBUG")
+       .getOrCreate()
+
   val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics
 
   class TestTask extends Callable[Unit] {
