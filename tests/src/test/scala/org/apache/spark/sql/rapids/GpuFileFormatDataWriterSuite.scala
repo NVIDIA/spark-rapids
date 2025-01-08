@@ -60,7 +60,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           dataSchema,
           rangeName,
           includeRetry,
-          Seq.empty,
+          mockJobDescription.statsTrackers.map(_.newTaskInstance()),
           None) {
 
     // this writer (for tests) doesn't do anything and passes through the
@@ -558,22 +558,26 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     resetMocksWithAndWithoutRetry {
       val cb = buildBatchWithPartitionedCol(1, 1, 1, 1, 1, 1, 1, 1, 1)
       val cbs = Seq(spy(cb))
-      withColumnarBatchesVerifyClosed(cbs) {
-        // I would like to not flush on the first iteration of the `write` method
-        when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
-        when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
 
-        val statsTracker = mock[ColumnarWriteTaskStatsTracker]
-        val jobTracker = new ColumnarWriteJobStatsTracker {
-          override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
-            statsTracker
-          }
-          override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      // Mock jobDescription before it is passed to the mockOutputWriter in
+      // withColumnarBatchesVerifyClosed().
+
+      // I would like to not flush on the first iteration of the `write` method
+      when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
+      when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
+
+      val statsTracker = mock[ColumnarWriteTaskStatsTracker]
+      val jobTracker = new ColumnarWriteJobStatsTracker {
+        override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+          statsTracker
         }
-        when(mockJobDescription.statsTrackers)
-            .thenReturn(Seq(jobTracker))
+        override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      }
+      when(mockJobDescription.statsTrackers)
+        .thenReturn(Seq(jobTracker))
 
-        // throw once from bufferBatchAndClose to simulate an exception after we call the
+      withColumnarBatchesVerifyClosed(cbs) {
+                // throw once from bufferBatchAndClose to simulate an exception after we call the
         // stats tracker
         mockOutputWriter.throwOnNextBufferBatchAndClose(
           new GpuSplitAndRetryOOM("mocking a split and retry"))
@@ -615,23 +619,28 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     resetMocksWithAndWithoutRetry {
       val cb = buildBatchWithPartitionedCol(1, 1, 1, 1, 1, 1, 1, 1, 1)
       val cbs = Seq(spy(cb))
-      withColumnarBatchesVerifyClosed(cbs) {
-        // I would like to not flush on the first iteration of the `write` method
-        when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
-        when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
 
-        val statsTracker = mock[ColumnarWriteTaskStatsTracker]
-        val jobTracker = new ColumnarWriteJobStatsTracker {
-          override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
-            statsTracker
-          }
+      // Mock jobDescription before mockOutputWriter is initialized in
+      // withColumnarBatchesVerifyClosed().
 
-          override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      // I would like to not flush on the first iteration of the `write` method
+      when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
+      when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
+
+      val statsTracker = mock[ColumnarWriteTaskStatsTracker]
+      val jobTracker = new ColumnarWriteJobStatsTracker {
+        override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+          statsTracker
         }
-        when(mockJobDescription.statsTrackers)
-            .thenReturn(Seq(jobTracker))
-        when(statsTracker.newBatch(any(), any()))
-            .thenThrow(new GpuRetryOOM("mocking a retry"))
+
+        override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      }
+      when(mockJobDescription.statsTrackers)
+        .thenReturn(Seq(jobTracker))
+      when(statsTracker.newBatch(any(), any()))
+        .thenThrow(new GpuRetryOOM("mocking a retry"))
+
+      withColumnarBatchesVerifyClosed(cbs) {
         val dynamicConcurrentWriter =
           prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
 

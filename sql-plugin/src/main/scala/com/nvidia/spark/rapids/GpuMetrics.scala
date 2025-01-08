@@ -14,18 +14,17 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids;
+package com.nvidia.spark.rapids
 
 import scala.collection.immutable.TreeMap
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 
+import org.apache.spark.SparkContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.SQLConfHelper
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
@@ -41,7 +40,34 @@ object MetricsLevel {
   }
 }
 
-object GpuMetric extends Logging with SQLConfHelper {
+class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
+
+  private [this] def createInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
+    if (level >= metricsConf) {
+      // only enable companion metrics (excluding semaphore wait time) for DEBUG_LEVEL
+      WrappedGpuMetric(f, withMetricsExclSemWait = GpuMetric.DEBUG_LEVEL >= metricsConf)
+    } else {
+      NoopMetric
+    }
+  }
+
+  def create(level: MetricsLevel, name: String): GpuMetric =
+    createInternal(level, SQLMetrics.createMetric(context, name))
+
+  def createNanoTiming(level: MetricsLevel, name: String): GpuMetric =
+    createInternal(level, SQLMetrics.createNanoTimingMetric(context, name))
+
+  def createSize(level: MetricsLevel, name: String): GpuMetric =
+    createInternal(level, SQLMetrics.createSizeMetric(context, name))
+
+  def createAverage(level: MetricsLevel, name: String): GpuMetric =
+    createInternal(level, SQLMetrics.createAverageMetric(context, name))
+
+  def createTiming(level: MetricsLevel, name: String): GpuMetric =
+    createInternal(level, SQLMetrics.createTimingMetric(context, name))
+}
+
+object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
   val COPY_BUFFER_TIME = "copyBufferTime"
@@ -125,46 +151,6 @@ object GpuMetric extends Logging with SQLConfHelper {
   val DESCRIPTION_CONCAT_HEADER_TIME = "concat header time"
   val DESCRIPTION_CONCAT_BUFFER_TIME = "concat buffer time"
   val DESCRIPTION_COPY_TO_HOST_TIME = "deviceToHost memory copy time"
-
-  private final val session = Option(SparkSession.getActiveSession.orNull)
-
-  private def sparkContext = {
-    if (session.isDefined) {
-      session.get.sparkContext
-    } else {
-      throw new IllegalStateException("No active SparkSession")
-    }
-  }
-
-  override def conf: SQLConf = {
-    session.map(_.sessionState.conf).getOrElse(super.conf)
-  }
-
-  private [this] lazy val metricsConf = MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf))
-
-  private [this] def createInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
-    if (level >= metricsConf) {
-      // only enable companion metrics (excluding semaphore wait time) for DEBUG_LEVEL
-      WrappedGpuMetric(f, withMetricsExclSemWait = GpuMetric.DEBUG_LEVEL >= metricsConf)
-    } else {
-      NoopMetric
-    }
-  }
-
-  def create(level: MetricsLevel, name: String): GpuMetric =
-    createInternal(level, SQLMetrics.createMetric(sparkContext, name))
-
-  def createNanoTiming(level: MetricsLevel, name: String): GpuMetric =
-    createInternal(level, SQLMetrics.createNanoTimingMetric(sparkContext, name))
-
-  def createSize(level: MetricsLevel, name: String): GpuMetric =
-    createInternal(level, SQLMetrics.createSizeMetric(sparkContext, name))
-
-  def createAverage(level: MetricsLevel, name: String): GpuMetric =
-    createInternal(level, SQLMetrics.createAverageMetric(sparkContext, name))
-
-  def createTiming(level: MetricsLevel, name: String): GpuMetric =
-    createInternal(level, SQLMetrics.createTimingMetric(sparkContext, name))
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric

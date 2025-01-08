@@ -16,8 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuDataWritingCommand, GpuMetric}
+import com.nvidia.spark.rapids.{GpuDataWritingCommand, GpuMetric, GpuMetricFactory, MetricsLevel, RapidsConf}
 import org.apache.hadoop.conf.Configuration
+import org.apache.spark.SparkContext
 
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME
 import org.apache.spark.util.SerializableConfiguration
@@ -80,18 +81,22 @@ object GpuWriteJobStatsTracker {
   def basicMetrics: Map[String, GpuMetric] = BasicColumnarWriteJobStatsTracker.metrics
 
   def taskMetrics: Map[String, GpuMetric] = {
+    val sparkContext = SparkContext.getActive.get
+    val metricsConf = MetricsLevel(sparkContext.conf.get(RapidsConf.METRICS_LEVEL.key,
+      RapidsConf.METRICS_LEVEL.defaultValue))
+    val metricFactory = new GpuMetricFactory(metricsConf, sparkContext)
     Map(
-      GPU_TIME_KEY -> GpuMetric.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL, "GPU time"),
-      WRITE_TIME_KEY -> GpuMetric.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL,
+      GPU_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL, "GPU time"),
+      WRITE_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL,
         "write time"),
       TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME),
-      ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
+      ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "total throttle time"),
-      ASYNC_WRITE_AVG_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
+      ASYNC_WRITE_AVG_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "avg throttle time per async write"),
-      ASYNC_WRITE_MIN_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
+      ASYNC_WRITE_MIN_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "min throttle time per async write"),
-      ASYNC_WRITE_MAX_THROTTLE_TIME_KEY -> GpuMetric.createNanoTiming(
+      ASYNC_WRITE_MAX_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
         GpuMetric.DEBUG_LEVEL, "max throttle time per async write")
     )
   }

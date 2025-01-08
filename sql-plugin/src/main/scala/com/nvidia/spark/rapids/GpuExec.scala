@@ -44,6 +44,7 @@ object GpuExec {
 
 trait GpuExec extends SparkPlan {
   import GpuMetric._
+
   def sparkSession: SparkSession = {
     SparkShimImpl.sessionFromPlan(this)
   }
@@ -77,20 +78,23 @@ trait GpuExec extends SparkPlan {
    */
   def outputBatching: CoalesceGoal = null
 
+  @transient private [this] lazy val metricFactory = new GpuMetricFactory(
+    MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf)), sparkContext)
+
   def createMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.create(level, name)
+    metricFactory.create(level, name)
 
   def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createNanoTiming(level, name)
+    metricFactory.createNanoTiming(level, name)
 
   def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createSize(level, name)
+    metricFactory.createSize(level, name)
 
   def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createAverage(level, name)
+    metricFactory.createAverage(level, name)
 
   def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
-    GpuMetric.createTiming(level, name)
+    metricFactory.createTiming(level, name)
 
   protected def createFileCacheMetrics(): Map[String, GpuMetric] = {
     if (FileCacheConf.FILECACHE_ENABLED.get(conf)) {

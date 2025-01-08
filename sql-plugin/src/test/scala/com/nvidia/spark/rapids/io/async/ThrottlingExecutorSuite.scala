@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Executors, Future, RejectedExecutionException, TimeUnit}
 
-import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.{GpuMetric, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
@@ -40,7 +40,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
   SparkSession.builder
        .master("local")
        .appName("ThrottlingExecutorSuite")
-       .config("spark.rapids.sql.metrics.level", "DEBUG")
+       .config(RapidsConf.METRICS_LEVEL.key, "DEBUG")
        .getOrCreate()
 
   val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics

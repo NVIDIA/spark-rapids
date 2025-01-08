@@ -21,11 +21,11 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.{GpuMetric, GpuMetricFactory, MetricsLevel, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-
 import org.apache.spark.{SparkContext, TaskContext}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
@@ -238,18 +238,22 @@ object BasicColumnarWriteJobStatsTracker {
   val FILE_LENGTH_XATTR = "header.x-hadoop-s3a-magic-data-length"
 
   def metrics: Map[String, GpuMetric] = {
+    val sparkContext = SparkContext.getActive.get
+    val metricsConf = MetricsLevel(sparkContext.conf.get(RapidsConf.METRICS_LEVEL.key,
+      RapidsConf.METRICS_LEVEL.defaultValue))
+    val metricFactory = new GpuMetricFactory(metricsConf, sparkContext)
     Map(
-      NUM_FILES_KEY -> GpuMetric.create(GpuMetric.ESSENTIAL_LEVEL,
+      NUM_FILES_KEY -> metricFactory.create(GpuMetric.ESSENTIAL_LEVEL,
         "number of written files"),
-      NUM_OUTPUT_BYTES_KEY -> GpuMetric.createSize(GpuMetric.ESSENTIAL_LEVEL,
+      NUM_OUTPUT_BYTES_KEY -> metricFactory.createSize(GpuMetric.ESSENTIAL_LEVEL,
         "written output"),
-      NUM_OUTPUT_ROWS_KEY -> GpuMetric.create(GpuMetric.ESSENTIAL_LEVEL,
+      NUM_OUTPUT_ROWS_KEY -> metricFactory.create(GpuMetric.ESSENTIAL_LEVEL,
         "number of output rows"),
-      NUM_PARTS_KEY -> GpuMetric.create(GpuMetric.ESSENTIAL_LEVEL,
+      NUM_PARTS_KEY -> metricFactory.create(GpuMetric.ESSENTIAL_LEVEL,
         "number of dynamic part"),
-      TASK_COMMIT_TIME -> GpuMetric.createTiming(GpuMetric.ESSENTIAL_LEVEL,
+      TASK_COMMIT_TIME -> metricFactory.createTiming(GpuMetric.ESSENTIAL_LEVEL,
         "task commit time"),
-      JOB_COMMIT_TIME -> GpuMetric.createTiming(GpuMetric.ESSENTIAL_LEVEL,
+      JOB_COMMIT_TIME -> metricFactory.createTiming(GpuMetric.ESSENTIAL_LEVEL,
         "job commit time")
     )
   }
