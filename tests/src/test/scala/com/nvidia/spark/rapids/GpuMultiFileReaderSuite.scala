@@ -58,7 +58,6 @@ class GpuMultiFileReaderSuite extends AnyFunSuite {
       override def getBatchRunner(
           tc: TaskContext,
           file: PartitionedFile,
-          origFile: Option[PartitionedFile],
           conf: Configuration,
           filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
         () => null

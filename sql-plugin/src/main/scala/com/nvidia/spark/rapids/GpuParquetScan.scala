@@ -121,11 +121,11 @@ case class GpuParquetScan(
       logInfo("Using the original per file parquet reader")
       GpuParquetPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        options.asScala.toMap, None)
+        options.asScala.toMap)
     } else {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        queryUsesInputFile, None)
+        queryUsesInputFile)
     }
   }
 
@@ -1065,10 +1065,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
-    queryUsesInputFile: Boolean,
-    alluxioPathReplacementMap: Option[Map[String, String]])
-  extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf,
-    rapidsConf, alluxioPathReplacementMap) {
+    queryUsesInputFile: Boolean)
+  extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -1106,15 +1104,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           "the deprecated one will be honored if both are set.")
         deprecatedVal
       }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
-  private val alluxioReplacementTaskTime =
-    AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
   private val compressCfg = CpuCompressionConfig.forParquet(rapidsConf)
 
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
-  // and we don't know which file is associated with each row. If this changes we need to
-  // make sure the Alluxio path replacement also handles setting the input file name to
-  // the non-Alluxio path like the multi-threaded reader does.
+  // and we don't know which file is associated with each row.
   override val canUseCoalesceFilesReader: Boolean =
     rapidsConf.isParquetCoalesceFileReadEnabled && !(queryUsesInputFile || ignoreCorruptFiles)
 
@@ -1142,8 +1136,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
       useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, compressCfg,
       metrics, partitionSchema, numThreads, maxNumFileProcessed, ignoreMissingFiles,
-      ignoreCorruptFiles, readUseFieldId, alluxioPathReplacementMap.getOrElse(Map.empty),
-      alluxioReplacementTaskTime, queryUsesInputFile, keepReadsInOrderFromConf, combineConf)
+      ignoreCorruptFiles, readUseFieldId, queryUsesInputFile, keepReadsInOrderFromConf,
+      combineConf)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1208,18 +1202,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
    * @return coalescing reading PartitionReader
    */
   override def buildBaseColumnarReaderForCoalescing(
-      origFiles: Array[PartitionedFile],
+      files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // update the file paths for Alluxio if needed, the coalescing reader doesn't support
-    // input_file_name so no need to track what the non Alluxio file name is
-    val files = if (alluxioReplacementTaskTime) {
-      AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxioPathReplacementMap).map(_.toRead)
-    } else {
-      // Since coalescing reader isn't supported if input_file_name is used, so won't
-      // ever get here with that. So with convert time or no Alluxio just use the files as
-      // passed in.
-      origFiles
-    }
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
     val metaAndFilesArr = if (numFilesFilterParallel > 0) {
@@ -1288,8 +1272,7 @@ case class GpuParquetPartitionReaderFactory(
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String],
-    alluxioPathReplacementMap: Option[Map[String, String]])
+    @transient params: Map[String, String])
   extends ShimFilePartitionReaderFactory(params) with Logging {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
@@ -2338,8 +2321,6 @@ class MultiFileParquetPartitionReader(
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  * @param useFieldId Whether to use field id for column matching
- * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
- * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  * @param queryUsesInputFile Whether the query requires the input file name functionality
  * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
  *                         Defaults to true for formats that don't explicitly handle this.
@@ -2366,14 +2347,12 @@ class MultiFileCloudParquetPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean,
-    alluxioPathReplacementMap: Map[String, String],
-    alluxioReplacementTaskTime: Boolean,
     queryUsesInputFile: Boolean,
     keepReadsInOrder: Boolean,
     combineConf: CombineConf)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
-    alluxioPathReplacementMap, alluxioReplacementTaskTime, keepReadsInOrder, combineConf)
+    keepReadsInOrder, combineConf)
   with ParquetPartitionReaderBase {
 
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
@@ -2465,7 +2444,6 @@ class MultiFileCloudParquetPartitionReader(
         combinedMeta.allPartValues.map(_._1).sum, Seq.empty)
       val newHmbMeta = HostMemoryBuffersWithMetaData(
         metaToUse.partitionedFile,
-        metaToUse.origPartitionedFile, // this doesn't matter since already read
         Array(newHmbBufferInfo),
         offset,
         metaToUse.dateRebaseMode,
@@ -2565,7 +2543,6 @@ class MultiFileCloudParquetPartitionReader(
       if (combinedEmptyMeta.allEmpty) {
         val metaForEmpty = combinedEmptyMeta.metaForEmpty
         HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
-          metaForEmpty.origPartitionedFile,
           combinedEmptyMeta.emptyBufferSize,
           combinedEmptyMeta.emptyTotalBytesRead,
           metaForEmpty.dateRebaseMode, // these shouldn't matter since data is empty
@@ -2584,7 +2561,6 @@ class MultiFileCloudParquetPartitionReader(
 
   private case class HostMemoryEmptyMetaData(
       override val partitionedFile: PartitionedFile,
-      override val origPartitionedFile: Option[PartitionedFile],
       bufferSize: Long,
       override val bytesRead: Long,
       dateRebaseMode: DateTimeRebaseMode,
@@ -2601,7 +2577,6 @@ class MultiFileCloudParquetPartitionReader(
 
   case class HostMemoryBuffersWithMetaData(
       override val partitionedFile: PartitionedFile,
-      override val origPartitionedFile: Option[PartitionedFile],
       override val memBuffersAndSizes: Array[SingleHMBAndMeta],
       override val bytesRead: Long,
       dateRebaseMode: DateTimeRebaseMode,
@@ -2614,7 +2589,6 @@ class MultiFileCloudParquetPartitionReader(
 
   private class ReadBatchRunner(
       file: PartitionedFile,
-      origPartitionedFile: Option[PartitionedFile],
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
       taskContext: TaskContext) extends Callable[HostMemoryBuffersWithMetaDataBase] with Logging {
 
@@ -2635,7 +2609,7 @@ class MultiFileCloudParquetPartitionReader(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${file.filePath}", e)
-          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0,
+          HostMemoryEmptyMetaData(file, 0, 0,
             DateTimeRebaseLegacy, DateTimeRebaseLegacy,
             hasInt96Timestamps = false, null, null, 0)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
@@ -2643,7 +2617,7 @@ class MultiFileCloudParquetPartitionReader(
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0,
+          HostMemoryEmptyMetaData(file, 0, 0,
             DateTimeRebaseLegacy, DateTimeRebaseLegacy,
             hasInt96Timestamps = false, null, null, 0)
       } finally {
@@ -2664,7 +2638,7 @@ class MultiFileCloudParquetPartitionReader(
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
+          HostMemoryEmptyMetaData(file, 0, bytesRead,
             fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
             fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
         } else {
@@ -2672,14 +2646,14 @@ class MultiFileCloudParquetPartitionReader(
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
-            HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
+            HostMemoryEmptyMetaData(file, 0, bytesRead,
               fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
               fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
           } else {
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-              HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
+              HostMemoryEmptyMetaData(file, 0, bytesRead,
                 fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
                 numRows)
@@ -2698,12 +2672,12 @@ class MultiFileCloudParquetPartitionReader(
               if (isDone) {
                 // got close before finishing
                 hostBuffers.flatMap(_.hmbs).safeClose()
-                HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
+                HostMemoryEmptyMetaData(file, 0, bytesRead,
                   fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema,
                   fileBlockMeta.readSchema, 0)
               } else {
-                HostMemoryBuffersWithMetaData(file, origPartitionedFile, hostBuffers.toArray,
+                HostMemoryBuffersWithMetaData(file, hostBuffers.toArray,
                   bytesRead, fileBlockMeta.dateRebaseMode,
                   fileBlockMeta.timestampRebaseMode, fileBlockMeta.hasInt96Timestamps,
                   fileBlockMeta.schema, fileBlockMeta.readSchema, None)
@@ -2734,10 +2708,9 @@ class MultiFileCloudParquetPartitionReader(
   override def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
-      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
-    new ReadBatchRunner(file, origFile, filterFunc, tc)
+    new ReadBatchRunner(file, filterFunc, tc)
   }
 
   /**
