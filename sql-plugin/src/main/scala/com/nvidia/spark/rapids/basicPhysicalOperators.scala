@@ -448,8 +448,18 @@ object PreProjectSplitIterator {
           metaInfos.append(null)
         }
         metaInfos.append(initMeta)
+        initMeta
+      } else {
+        val meta = metaInfos(pos)
+        if (meta == null) {
+          metaInfos(pos) = initMeta
+          initMeta
+        } else {
+          meta
+        }
+
       }
-      metaInfos(pos)
+
     }
   }
 
