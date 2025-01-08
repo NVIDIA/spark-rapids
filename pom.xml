@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2024, NVIDIA CORPORATION.
+  Copyright (c) 2020-2025, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -831,7 +831,6 @@
         <spark-rapids-jni.version>25.02.0-SNAPSHOT</spark-rapids-jni.version>
         <spark-rapids-private.version>25.02.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
-        <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
         <!--
@@ -1077,13 +1076,6 @@
               <groupId>org.rogach</groupId>
               <artifactId>scallop_${scala.binary.version}</artifactId>
               <version>3.5.1</version>
-            </dependency>
-            <dependency>
-                <!-- Used for Alluxio mounting -->
-                <groupId>org.alluxio</groupId>
-                <artifactId>alluxio-shaded-client</artifactId>
-                <version>${alluxio.client.version}</version>
-                <scope>provided</scope>
             </dependency>
             <dependency>
                 <!-- For shade, spark 3.2 and earlier uses an older version(0.9.0), which doesn't
