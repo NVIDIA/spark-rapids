@@ -321,10 +321,6 @@ class SpillableHostBufferHandle private (
   private var toSpill: Option[HostMemoryBuffer] = None
   override def releaseHostResource(): Unit = {
     super.releaseHostResource()
-    synchronized {
-      toSpill.foreach(_.close())
-      toSpill = None
-    }
   }
 
   override def spill(): Long = {
@@ -334,6 +330,8 @@ class SpillableHostBufferHandle private (
       val thisThreadSpills = synchronized {
         if (disk.isEmpty && host.isDefined && toSpill.isEmpty) {
           toSpill = host
+          // incRefCount here so that if close() is called
+          // while we are spilling, we will prevent the buffer being freed
           toSpill.get.incRefCount()
           true
         } else {
@@ -362,7 +360,10 @@ class SpillableHostBufferHandle private (
             val staging = Some(diskHandleBuilder.build)
             synchronized {
               disk = staging
-              host = None
+              // really what we could to is remove it from the store/tracker here
+              // but only close the buffer outside of sync block
+              // edit: actually we already get that for free by having toSpill track it separately
+              releaseHostResource()
             }
           }
         }
@@ -370,7 +371,13 @@ class SpillableHostBufferHandle private (
       } else {
           0
       }
-      releaseHostResource()
+      // only release toSpill at the end of the spill op, not when close()ing
+      // actually did we already close it above due to the withResource
+//      toSpill.foreach(_.close())
+      toSpill = None
+      // is this a leak (before my changes)? what if someone comes in and
+      // grabs host now, but we release
+//      releaseHostResource()
       spilled
     }
   }
@@ -478,12 +485,13 @@ class SpillableDeviceBufferHandle private (
   }
 
   private var toSpill: Option[DeviceMemoryBuffer] = None
+  private var spilled: Option[DeviceMemoryBuffer] = None
   override def releaseDeviceResource(): Unit = {
-    super.releaseDeviceResource()
     synchronized {
-      toSpill.foreach(_.close())
-      toSpill = None
+      spilled.foreach(_.close())
+      spilled = None
     }
+    super.releaseDeviceResource()
   }
 
   override def spill(): Long = {
@@ -493,6 +501,8 @@ class SpillableDeviceBufferHandle private (
       val thisThreadSpills = synchronized {
         if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
           toSpill = dev
+          // incRefCount here so that if close() is called
+          // while we are spilling, we will prevent the buffer being freed
           toSpill.get.incRefCount()
           true
         } else {
@@ -509,6 +519,8 @@ class SpillableDeviceBufferHandle private (
           synchronized {
             host = stagingHost
             dev = None
+            spilled = toSpill
+            toSpill = None
           }
         }
         sizeInBytes
@@ -519,6 +531,8 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def close(): Unit = {
+    // do we need to Cuda.deviceSynchronize here?
+    // what if we don't spill
     releaseDeviceResource()
     synchronized {
       host.foreach(_.close())
