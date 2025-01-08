@@ -24,8 +24,8 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.{GpuMetric, GpuMetricFactory, MetricsLevel, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.{SparkContext, TaskContext}
 
+import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
