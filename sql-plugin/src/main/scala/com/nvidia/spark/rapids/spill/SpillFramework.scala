@@ -748,27 +748,60 @@ class SpillableColumnarBatchFromBufferHandle private (
     materialized
   }
 
+  override def releaseDeviceResource(): Unit = {
+    synchronized {
+      super.releaseDeviceResource()
+      spilled.foreach(_.close())
+      spilled = None
+    }
+  }
+
+  private var toSpill: Option[ColumnarBatch] = None
+  private var spilled: Option[ColumnarBatch] = None
   override def spill(): Long = {
     if (!spillable) {
       0
     } else {
-      synchronized {
-        if (host.isEmpty && dev.isDefined) {
-          val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-          meta = Some(cvFromBuffer.getTableMeta)
-          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-            cvFromBuffer.getBuffer))
-          sizeInBytes
+      val thisThreadSpills = synchronized {
+        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
+          toSpill = dev
+          GpuColumnVector.incRefCounts(toSpill.get)
+          true
         } else {
-          0L
+          false
         }
+      }
+      if (thisThreadSpills) {
+        val batch = toSpill.get
+        withResource(batch) { cb =>
+          val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
+          meta = Some(cvFromBuffer.getTableMeta)
+          val staging = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+            cvFromBuffer.getBuffer))
+          // probably can pull out some duplicated code
+          synchronized {
+            host = staging
+            // set spilled to dev instead of toSpill so that if dev was already closed during spill
+            // , we won't re-close
+            spilled = dev
+            dev = None
+            toSpill = None
+          }
+          sizeInBytes
+        }
+      } else {
+        0L
       }
     }
   }
 
   override def close(): Unit = {
-    releaseDeviceResource()
     synchronized {
+      if (toSpill.isEmpty) {
+        // also, does this break if a kernel is running if no spill?
+        releaseDeviceResource()
+      }
+      // if we are currently spilling, this won't be closed properly
       host.foreach(_.close())
       host = None
     }
@@ -832,30 +865,61 @@ class SpillableCompressedColumnarBatchHandle private (
     materialized
   }
 
+  private var toSpill: Option[ColumnarBatch] = None
+  private var spilled: Option[ColumnarBatch] = None
+
+  override def releaseDeviceResource(): Unit = {
+    synchronized {
+      super.releaseDeviceResource()
+      spilled.foreach(_.close())
+      spilled = None
+    }
+  }
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
-      synchronized {
-        if (host.isEmpty && dev.isDefined) {
-          val cvFromBuffer = dev.get.column(0).asInstanceOf[GpuCompressedColumnVector]
-          meta = Some(cvFromBuffer.getTableMeta)
-          host = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-            cvFromBuffer.getTableBuffer))
-          compressedSizeInBytes
+      val thisThreadSpills = synchronized {
+        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
+          toSpill = dev
+          GpuCompressedColumnVector.incRefCounts(toSpill.get)
+          true
         } else {
-          0L
+          false
         }
+      }
+      if (thisThreadSpills) {
+        val batch = toSpill.get
+        withResource(batch) { cb =>
+          val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
+          meta = Some(cvFromBuffer.getTableMeta)
+          val staging = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+            cvFromBuffer.getTableBuffer))
+          synchronized {
+            host = staging
+            // set spilled to dev instead of toSpill so that if dev was already closed during spill
+            // , we won't re-close
+            spilled = dev
+            dev = None
+            toSpill = None
+          }
+          compressedSizeInBytes
+        }
+      } else {
+        0L
       }
     }
   }
 
   override def close(): Unit = {
-    releaseDeviceResource()
     synchronized {
+      if (toSpill.isEmpty) {
+        // also, does this break if a kernel is running if no spill?
+        releaseDeviceResource()
+      }
+      // if we are currently spilling, this won't be closed properly
       host.foreach(_.close())
       host = None
-      meta = None
     }
   }
 }
@@ -916,27 +980,41 @@ class SpillableHostColumnarBatchHandle private (
     materialized
   }
 
+  private var toSpill: Option[ColumnarBatch] = None
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
-      val spilled = synchronized {
-        if (disk.isEmpty && host.isDefined) {
+      val thisThreadSpills = synchronized {
+        if (disk.isEmpty && host.isDefined && toSpill.isEmpty) {
+          toSpill = host
+          RapidsHostColumnVector.incRefCounts(toSpill.get)
+          true
+        } else {
+          false
+        }
+      }
+      val bytesSpilled = if (thisThreadSpills) {
+        val batch = toSpill.get
+        withResource(batch) { cb =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
               val dos = diskHandleBuilder.getDataOutputStream
-              val columns = RapidsHostColumnVector.extractBases(host.get)
-              JCudfSerialization.writeToStream(columns, dos, 0, host.get.numRows())
+              val columns = RapidsHostColumnVector.extractBases(cb)
+              JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
             }
-            disk = Some(diskHandleBuilder.build)
+            val staging = Some(diskHandleBuilder.build)
+            synchronized {
+              disk = staging
+            }
             approxSizeInBytes
           }
-        } else {
-          0L
         }
+      } else {
+        0L
       }
       releaseHostResource()
-      spilled
+      bytesSpilled
     }
   }
 
