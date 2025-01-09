@@ -657,8 +657,12 @@ class SpillableColumnarBatchHandle private (
   }
 
   override def close(): Unit = {
-    releaseDeviceResource()
     synchronized {
+      if (toSpill.isEmpty) {
+        // also, does this break if a kernel is running if no spill?
+        releaseDeviceResource()
+      }
+      // if we are currently spilling, this won't be closed properly
       host.foreach(_.close())
       host = None
     }
