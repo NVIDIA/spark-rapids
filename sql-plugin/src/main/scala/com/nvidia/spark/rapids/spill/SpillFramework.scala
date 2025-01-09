@@ -518,8 +518,8 @@ class SpillableDeviceBufferHandle private (
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
           synchronized {
             host = stagingHost
+            spilled = dev
             dev = None
-            spilled = toSpill
             toSpill = None
           }
         }
@@ -592,33 +592,62 @@ class SpillableColumnarBatchHandle private (
     materialized
   }
 
+
+  private var toSpill: Option[ColumnarBatch] = None
+  private var spilled: Option[ColumnarBatch] = None
+  override def releaseDeviceResource(): Unit = {
+    synchronized {
+      super.releaseDeviceResource()
+      spilled.foreach(_.close())
+      spilled = None
+    }
+  }
+
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
-      synchronized {
-        if (host.isEmpty && dev.isDefined) {
-          withChunkedPacker { chunkedPacker =>
-            meta = Some(chunkedPacker.getPackedMeta)
-            host = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
-          }
-          // We return the size we were created with. This is not the actual size
-          // of this batch when it is packed, and it is used by the calling code
-          // to figure out more or less how much did we free in the device.
-          approxSizeInBytes
+      val thisThreadSpills = synchronized {
+        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
+          toSpill = dev
+          GpuColumnVector.incRefCounts(toSpill.get)
+          true
         } else {
-          0L
+          false
         }
+      }
+      if (thisThreadSpills) {
+        withChunkedPacker { chunkedPacker =>
+          meta = Some(chunkedPacker.getPackedMeta)
+          val staging = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
+          synchronized {
+            host = staging
+            // set spilled to dev instead of toSpill so that if dev was already closed during spill
+            // , we won't re-close
+            spilled = dev
+            dev = None
+            toSpill = None
+          }
+        }
+        // We return the size we were created with. This is not the actual size
+        // of this batch when it is packed, and it is used by the calling code
+        // to figure out more or less how much did we free in the device.
+        approxSizeInBytes
+      } else {
+        0L
       }
     }
   }
 
   private def withChunkedPacker[T](body: ChunkedPacker => T): T = {
     val tbl = synchronized {
-      if (dev.isEmpty) {
+      if (toSpill.isEmpty) {
         throw new IllegalStateException("cannot get copier without a batch")
       }
-      GpuColumnVector.from(dev.get)
+      val buf = toSpill.get
+      withResource(buf) { b =>
+        GpuColumnVector.from(b)
+      }
     }
     withResource(tbl) { _ =>
       withResource(new ChunkedPacker(tbl, SpillFramework.chunkedPackBounceBufferPool)) { packer =>

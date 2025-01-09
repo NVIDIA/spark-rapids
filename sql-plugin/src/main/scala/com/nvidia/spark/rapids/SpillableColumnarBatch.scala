@@ -323,6 +323,7 @@ class SpillableHostColumnarBatchImpl (
   /**
    * Remove the `ColumnarBatch` from the cache.
    */
+    // should this be synchronized?
   override def close(): Unit = {
     refCount -= 1
     if (refCount == 0) {
