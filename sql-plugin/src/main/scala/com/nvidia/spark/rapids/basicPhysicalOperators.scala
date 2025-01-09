@@ -330,7 +330,7 @@ object PreProjectSplitIterator {
     case _ => None
   }
 
-  private def calcSizeForLiteral(litVal: Any, litType: DataType, numRows: Int): Long = {
+  private[rapids] def calcSizeForLiteral(litVal: Any, litType: DataType, numRows: Int): Long = {
     // First calculate the meta buffers size
     val metaSize = new LitMetaCollector(litVal, litType).collect.map { litMeta =>
       val expandedRowsNum = litMeta.getRowsNum * numRows
@@ -356,6 +356,9 @@ object PreProjectSplitIterator {
     private var rowsNum: Int = 0
     def incRowsNum(rows: Int = 1): Unit = rowsNum += rows
     def getRowsNum: Int = rowsNum
+
+    override def toString: String =
+      s"LitMeta{rowsNum: $rowsNum, hasNull: $hasNull, hasOffset: $hasOffset}"
   }
 
   /**
@@ -392,32 +395,20 @@ object PreProjectSplitIterator {
           getOrInitAt(depth, new LitMeta(nullable, true)).incRowsNum()
           // Go into the child
           val arrayData = lit.asInstanceOf[ArrayData]
-          if (arrayData == null || arrayData.numElements() <= 0) {
-            // Null or an empty list, still need to check the child meta
-            executeCollect(null, elemType, hasNullElem, depth + 1)
-          } else { // a nonempty list, normal case
-            (0 until arrayData.numElements()).foreach( i =>
+          if (arrayData != null) { // Only need to go into child when nonempty
+            (0 until arrayData.numElements()).foreach(i =>
               executeCollect(arrayData.get(i, elemType), elemType, hasNullElem, depth + 1)
             )
           }
         case StructType(fields) =>
-          if (nullable && depth == 0) {
-            // Add a meta for only the top nullable struct according to
-            // the struct construction in cudf, see
-            // https://github.com/rapidsai/cudf/blob/v24.12.00/cpp/src/column/
-            //         column_factories.cu#L117, and
-            // https://github.com/rapidsai/cudf/blob/v24.12.00/java/src/main/
-            //         native/src/ColumnViewJni.cpp#L2574
-            // and a struct doesnt' have offsets.
+          if (nullable) {
+            // Add a meta for only a nullable struct, and a struct doesn't have offsets.
             getOrInitAt(depth, new LitMeta(nullable, false)).incRowsNum()
           }
-          // Go into children
+          // Always go into children, which is different from array.
+          val stData = lit.asInstanceOf[InternalRow]
           fields.zipWithIndex.foreach { case (f, i) =>
-            val fLit = if (lit == null) {
-              null
-            } else {
-              lit.asInstanceOf[InternalRow].get(i, f.dataType)
-            }
+            val fLit = if (stData != null) stData.get(i, f.dataType) else null
             executeCollect(fLit, f.dataType, f.nullable, depth + 1 + i)
           }
         case MapType(keyType, valType, hasNullValue) =>
@@ -425,10 +416,7 @@ object PreProjectSplitIterator {
           // validity, so only need a meta for the top list.
           getOrInitAt(depth, new LitMeta(nullable, true)).incRowsNum()
           val mapData = lit.asInstanceOf[MapData]
-          if (mapData == null || mapData.numElements() == 0) {
-            executeCollect(null, keyType, false, depth + 1)
-            executeCollect(null, valType, hasNullValue, depth + 2)
-          } else {
+          if (mapData != null) {
             mapData.foreach(keyType, valType, { case (key, value) =>
               executeCollect(key, keyType, false, depth + 1)
               executeCollect(value, valType, hasNullValue, depth + 2)
@@ -448,48 +436,47 @@ object PreProjectSplitIterator {
           metaInfos.append(null)
         }
         metaInfos.append(initMeta)
-        initMeta
-      } else {
-        val meta = metaInfos(pos)
-        if (meta == null) {
-          metaInfos(pos) = initMeta
-          initMeta
-        } else {
-          meta
-        }
-
+      } else if (metaInfos(pos) == null) {
+        metaInfos(pos) = initMeta
       }
-
+      metaInfos(pos)
     }
   }
 
-  private def calcLitValueSize(lit: Any, litTp: DataType): Long = if (lit == null) {
-    if (GpuBatchUtils.isFixedWidth(litTp)) {
-      litTp.defaultSize
-    } else {
-      0L
-    }
-  } else {
+  private def calcLitValueSize(lit: Any, litTp: DataType): Long = {
     litTp match {
-      case StringType => lit.asInstanceOf[UTF8String].numBytes()
-      case BinaryType => lit.asInstanceOf[Array[Byte]].length
+      case StringType =>
+        if (lit == null) 0L else lit.asInstanceOf[UTF8String].numBytes()
+      case BinaryType =>
+        if (lit == null) 0L else lit.asInstanceOf[Array[Byte]].length
       case ArrayType(elemType, _) =>
         val arrayData = lit.asInstanceOf[ArrayData]
-        (0 until arrayData.numElements()).map(idx =>
-          calcLitValueSize(arrayData.get(idx, elemType), elemType)
-        ).sum
-      case StructType(fields) =>
-        val stData = lit.asInstanceOf[InternalRow]
-        fields.zipWithIndex.map { case (f, i) =>
-          calcLitValueSize(stData.get(i, f.dataType), f.dataType)
-        }.sum
+        if (arrayData == null) {
+          0L
+        } else {
+          (0 until arrayData.numElements()).map { idx =>
+            calcLitValueSize(arrayData.get(idx, elemType), elemType)
+          }.sum
+        }
       case MapType(keyType, valType, _) =>
         val mapData = lit.asInstanceOf[MapData]
-        val keyData = mapData.keyArray()
-        val valData = mapData.valueArray()
-        (0 until mapData.numElements()).map { i =>
-          calcLitValueSize(keyData.get(i, keyType), keyType) +
-            calcLitValueSize(valData.get(i, valType), valType)
+        if (mapData == null) {
+          0L
+        } else {
+          val keyData = mapData.keyArray()
+          val valData = mapData.valueArray()
+          (0 until mapData.numElements()).map { i =>
+            calcLitValueSize(keyData.get(i, keyType), keyType) +
+              calcLitValueSize(valData.get(i, valType), valType)
+          }.sum
+        }
+      case StructType(fields) =>
+        // A special case that it should always go into children even lit is null.
+        // Because the children of fixed width will always take some memory.
+        val stData = lit.asInstanceOf[InternalRow]
+        fields.zipWithIndex.map { case (f, i) =>
+          val fLit = if (stData == null) null else stData.get(i, f.dataType)
+          calcLitValueSize(fLit, f.dataType)
         }.sum
       case _ => litTp.defaultSize
     }
