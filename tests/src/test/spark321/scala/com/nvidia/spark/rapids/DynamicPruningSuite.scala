@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,11 +90,11 @@ class DynamicPruningSuite
       case BroadcastQueryStageExec(id, plan, _canonicalized) =>
         val newPlan = replaceSubquery(plan)
         BroadcastQueryStageExec(id, newPlan, _canonicalized)
-      case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, apm, rps) =>
+      case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, rps) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         val rc = g.rapidsConf
         GpuFileSourceScanExec(r, o, rs, newPartitionFilters,
-          obs, oncb, df, ti, dbs, quif, apm, rps)(rc)
+          obs, oncb, df, ti, dbs, quif, rps)(rc)
       case FileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         FileSourceScanExec(r, o, rs, newPartitionFilters, obs, oncb, df, ti, dbs)

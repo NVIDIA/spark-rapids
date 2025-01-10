@@ -1012,14 +1012,16 @@ def test_regexp_replace_simple(regexp_enabled):
             'REGEXP_REPLACE(a, "ab", "PROD")',
             'REGEXP_REPLACE(a, "ae", "PROD")',
             'REGEXP_REPLACE(a, "bc", "PROD")',
-            'REGEXP_REPLACE(a, "fa", "PROD")'
+            'REGEXP_REPLACE(a, "fa", "PROD")',
+            'REGEXP_REPLACE(a, "a\n", "PROD")',
+            'REGEXP_REPLACE(a, "\n", "PROD")'
         ),
         conf=conf
     )
 
 @pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
 def test_regexp_replace_multi_optimization(regexp_enabled):
-    gen = mk_str_gen('[abcdef]{0,2}')
+    gen = mk_str_gen('[abcdef\t\n\a]{0,3}')
 
     conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
 
@@ -1032,7 +1034,9 @@ def test_regexp_replace_multi_optimization(regexp_enabled):
             'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
             'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
-            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")',
+            'REGEXP_REPLACE(a, "a\n|b\a|c\t", "PROD")',
+            'REGEXP_REPLACE(a, "a\ta|b\nb", "PROD")'
         ),
         conf=conf
     )

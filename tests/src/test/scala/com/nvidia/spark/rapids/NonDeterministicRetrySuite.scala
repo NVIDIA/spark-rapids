@@ -38,8 +38,11 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
       Array(GpuColumnVector.from(ColumnVector.fromInts(ints: _*), IntegerType)), ints.length)
   }
 
+  private def newGpuRand(ctxCheck: Boolean=false) =
+    GpuRand(GpuLiteral(RAND_SEED, IntegerType), ctxCheck)
+
   test("GPU rand outputs the same sequence with checkpoint and restore") {
-    val gpuRand = GpuRand(GpuLiteral(RAND_SEED, IntegerType))
+    val gpuRand = newGpuRand()
     withResource(buildBatch()) { inputCB =>
       // checkpoint the state
       gpuRand.checkpoint()
@@ -65,8 +68,7 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
   }
 
   test("GPU project retry with GPU rand") {
-    def projectRand(): Seq[GpuExpression] = Seq(
-      GpuAlias(GpuRand(GpuLiteral(RAND_SEED)), "rand")())
+    def projectRand(): Seq[GpuExpression] = Seq(GpuAlias(newGpuRand(), "rand")())
 
     Seq(true, false).foreach { useTieredProject =>
       val conf = new SQLConf()
@@ -109,7 +111,7 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
   test("GPU filter retry with GPU rand") {
     def filterRand(): Seq[GpuExpression] = Seq(
       GpuGreaterThan(
-        GpuRand(GpuLiteral.create(RAND_SEED, IntegerType)),
+        newGpuRand(),
         GpuLiteral.create(0.1d, DoubleType)))
 
     Seq(true, false).foreach { useTieredProject =>
@@ -155,4 +157,70 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
+  test("GPU project with GPU rand for context check enabled") {
+    // We dont check the output correctness, so it is ok to reuse the bound expressions.
+    val boundCheckExprs = GpuBindReferences.bindGpuReferences(
+      Seq(GpuAlias(newGpuRand(true), "rand")()),
+      batchAttrs)
+
+    // 1) Context check + no-retry + no checkpoint-restore
+    assertThrows[IllegalStateException] {
+      GpuProjectExec.projectAndClose(buildBatch(), boundCheckExprs, NoopMetric)
+    }
+
+    // 2) Context check + retry + no checkpoint-restore
+    assertThrows[IllegalStateException] {
+      RmmRapidsRetryIterator.withRetryNoSplit(buildBatch()) { cb =>
+        GpuProjectExec.project(cb, boundCheckExprs)
+      }
+    }
+
+    // 3) Context check + retry + checkpoint-restore
+    //    This is the expected usage for the GPU Rand.
+    Seq(true, false).foreach { forceOOM =>
+      val scb = SpillableColumnarBatch(buildBatch(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      if (forceOOM) { // make a retrying really happen during the projection
+        RmmSpark.forceRetryOOM(
+          RmmSpark.getCurrentThreadId, 1, RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      }
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(scb, boundCheckExprs).close()
+    }
+  }
+
+  test("GPU project with GPU rand for context check disabled") {
+    // We dont check the output correctness, so it is ok to reuse the bound expressions.
+    val boundExprs = GpuBindReferences.bindGpuReferences(
+      Seq(GpuAlias(newGpuRand(false), "rand")()),
+      batchAttrs)
+
+    // 1) No context check + no retry + no checkpoint-restore
+    //    It works but not the expected usage for the GPU Rand
+    GpuProjectExec.projectAndClose(buildBatch(), boundExprs, NoopMetric).close()
+
+    // 2) No context check + retry (no real retrying) + no checkpoint-restore
+    //    It works but not the expected usage for the GPU Rand
+    RmmRapidsRetryIterator.withRetryNoSplit(buildBatch()) { cb =>
+      GpuProjectExec.project(cb, boundExprs)
+    }.close()
+
+    // 3) No context check + retry (A retrying happens) + no checkpoint-restore
+    assertThrows[IllegalStateException] {
+      val cb = buildBatch()
+      // Make a retrying really happen
+      RmmSpark.forceRetryOOM(
+        RmmSpark.getCurrentThreadId, 1, RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      RmmRapidsRetryIterator.withRetryNoSplit(cb)(GpuProjectExec.project(_, boundExprs))
+    }
+
+    // 4) No context check + retry + checkpoint-restore
+    //    This is the expected usage for the GPU Rand
+    Seq(true, false).foreach { forceOOM =>
+      val scb = SpillableColumnarBatch(buildBatch(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      if (forceOOM) { // make a retrying really happen during the projection
+        RmmSpark.forceRetryOOM(
+          RmmSpark.getCurrentThreadId, 1, RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      }
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(scb, boundExprs).close()
+    }
+  }
 }

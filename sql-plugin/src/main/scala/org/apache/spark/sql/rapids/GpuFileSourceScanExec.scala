@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,6 @@ import org.apache.spark.util.collection.BitSet
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
- * @param alluxioPathsMap Map containing mapping of DFS scheme to Alluxio scheme
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -76,7 +75,6 @@ case class GpuFileSourceScanExec(
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
     queryUsesInputFile: Boolean = false,
-    alluxioPathsMap: Option[Map[String, String]],
     requiredPartitionSchema: Option[StructType] = None)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
@@ -91,12 +89,6 @@ case class GpuFileSourceScanExec(
   }.getOrElse(originalOutput)
 
   val readPartitionSchema = requiredPartitionSchema.getOrElse(relation.partitionSchema)
-
-  // this is set only when we either explicitly replaced a path for CONVERT_TIME
-  // or when TASK_TIME if one of the paths will be replaced.
-  // If reading large s3 files on a cluster with slower disks,
-  // should update this to None and read directly from s3 to get faster.
-  private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   @transient private val gpuFormat = relation.fileFormat match {
     case g: GpuReadFileFormatWithMetrics => g
@@ -135,31 +127,7 @@ case class GpuFileSourceScanExec(
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
-      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
-        alluxioPathReplacementMap = None
-      } else {
-        // this is not ideal, here we check to see if we will replace any paths, which is an
-        // extra iteration through paths
-        alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
-          relation.sparkSession.sparkContext.hadoopConfiguration,
-          relation.sparkSession.conf)
-      }
-    } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
-      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
-        alluxioPathReplacementMap = None
-      } else {
-        alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
-          relation.sparkSession.sparkContext.hadoopConfiguration,
-          relation.sparkSession.conf)
-      }
-    }
-
-    logDebug(s"File listing and possibly replace with Alluxio path " +
-      s"took: ${System.nanoTime() - startTime}")
-
+    logDebug(s"File listing took: ${System.nanoTime() - startTime}")
     setFilesNumAndSizeMetric(pds, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
@@ -369,8 +337,7 @@ case class GpuFileSourceScanExec(
           options = relation.options,
           hadoopConf =
             relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
-          metrics = allMetrics,
-          alluxioPathReplacementMap)
+          metrics = allMetrics)
         Some(reader)
       } else {
         None
@@ -645,8 +612,7 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, originalOutput),
       None,
-      queryUsesInputFile,
-      alluxioPathsMap = alluxioPathsMap)(rapidsConf)
+      queryUsesInputFile)(rapidsConf)
   }
 
 }

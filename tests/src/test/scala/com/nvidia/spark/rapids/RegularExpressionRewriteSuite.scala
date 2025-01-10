@@ -17,10 +17,12 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.unsafe.types.UTF8String
+
 class RegularExpressionRewriteSuite extends AnyFunSuite {
 
-  private def verifyRewritePattern(patterns: Seq[String], excepted: Seq[RegexOptimizationType]): 
-      Unit = {
+  private def verifyRewritePattern(patterns: Seq[String], 
+      excepted: Seq[RegexOptimizationType]): Unit = {
     val results = patterns.map { pattern =>
       val ast = new RegexParser(pattern).parse()
       RegexRewrite.matchSimplePattern(ast)
@@ -87,11 +89,11 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       "(火花|急流)"
     )
     val excepted = Seq(
-      MultipleContains(Seq("abc", "def")),
-      MultipleContains(Seq("abc", "def", "ghi")),
-      MultipleContains(Seq("abc", "def")),
-      MultipleContains(Seq("abc", "def")),
-      MultipleContains(Seq("火花", "急流"))
+      MultipleContains(Seq("abc", "def").map(UTF8String.fromString)),
+      MultipleContains(Seq("abc", "def", "ghi").map(UTF8String.fromString)),
+      MultipleContains(Seq("abc", "def").map(UTF8String.fromString)),
+      MultipleContains(Seq("abc", "def").map(UTF8String.fromString)),
+      MultipleContains(Seq("火花", "急流").map(UTF8String.fromString))
     )
     verifyRewritePattern(patterns, excepted)
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.TableWriter
-import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, RapidsBufferCatalog, RapidsDeviceMemoryStore, ScalableTaskCompletion}
+import ai.rapids.cudf.{Rmm, RmmAllocationMode, TableWriter}
+import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, RapidsConf, ScalableTaskCompletion}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM}
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataOutputStream
 import org.apache.hadoop.mapred.TaskAttemptContext
@@ -28,6 +29,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar.mock
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
@@ -42,7 +44,6 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   private var mockCommitter: FileCommitProtocol = _
   private var mockOutputWriterFactory: ColumnarOutputWriterFactory = _
   private var mockOutputWriter: NoTransformColumnarOutputWriter = _
-  private var devStore: RapidsDeviceMemoryStore = _
   private var allCols: Seq[AttributeReference] = _
   private var partSpec: Seq[AttributeReference] = _
   private var dataSpec: Seq[AttributeReference] = _
@@ -58,7 +59,9 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           context,
           dataSchema,
           rangeName,
-          includeRetry) {
+          includeRetry,
+          mockJobDescription.statsTrackers.map(_.newTaskInstance()),
+          None) {
 
     // this writer (for tests) doesn't do anything and passes through the
     // batch passed to it when asked to transform, which is done to
@@ -92,7 +95,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       types,
       "",
       includeRetry))
-    when(mockOutputWriterFactory.newInstance(any(), any(), any()))
+    when(mockOutputWriterFactory.newInstance(any(), any(), any(), any(), any()))
         .thenAnswer(_ => mockOutputWriter)
   }
 
@@ -175,16 +178,13 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   override def beforeEach(): Unit = {
-    devStore = new RapidsDeviceMemoryStore()
-    val catalog = new RapidsBufferCatalog(devStore)
-    RapidsBufferCatalog.setCatalog(catalog)
+    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    SpillFramework.initialize(new RapidsConf(new SparkConf))
   }
 
   override def afterEach(): Unit = {
-    // test that no buffers we left in the spill framework
-    assertResult(0)(RapidsBufferCatalog.numBuffers)
-    RapidsBufferCatalog.close()
-    devStore.close()
+    SpillFramework.shutdown()
+    Rmm.shutdown()
   }
 
   def buildEmptyBatch: ColumnarBatch =
@@ -231,7 +231,8 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     spy(new GpuDynamicPartitionDataSingleWriter(
       mockJobDescription,
       mockTaskAttemptContext,
-      mockCommitter))
+      mockCommitter,
+      None))
   }
 
   def prepareDynamicPartitionConcurrentWriter(maxWriters: Int, batchSize: Long):
@@ -249,7 +250,8 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       mockJobDescription,
       mockTaskAttemptContext,
       mockCommitter,
-      concurrentSpec))
+      concurrentSpec,
+      None))
   }
 
   test("empty directory data writer") {
@@ -291,7 +293,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       withColumnarBatchesVerifyClosed(cbs) {
         withResource(cbs) { _ =>
           val singleWriter = spy(new GpuSingleDirectoryDataWriter(
-            mockJobDescription, mockTaskAttemptContext, mockCommitter))
+            mockJobDescription, mockTaskAttemptContext, mockCommitter, None))
           singleWriter.writeWithIterator(Iterator.empty)
           singleWriter.commit()
         }
@@ -306,12 +308,12 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
       val cbs = Seq(spy(cb), spy(cb2))
       withColumnarBatchesVerifyClosed(cbs) {
         val singleWriter = spy(new GpuSingleDirectoryDataWriter(
-          mockJobDescription, mockTaskAttemptContext, mockCommitter))
+          mockJobDescription, mockTaskAttemptContext, mockCommitter, None))
         singleWriter.writeWithIterator(cbs.iterator)
         singleWriter.commit()
         // we write 2 batches
         verify(mockOutputWriter, times(2))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(mockOutputWriter, times(1)).close()
       }
     }
@@ -326,13 +328,13 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         // setting this to 5 makes the single writer have to split at the 5 row boundary
         when(mockJobDescription.maxRecordsPerFile).thenReturn(5)
         val singleWriter = spy(new GpuSingleDirectoryDataWriter(
-          mockJobDescription, mockTaskAttemptContext, mockCommitter))
+          mockJobDescription, mockTaskAttemptContext, mockCommitter, None))
 
         singleWriter.writeWithIterator(cbs.iterator)
         singleWriter.commit()
         // twice for the first batch given the split, and once for the second batch
         verify(mockOutputWriter, times(3))
-            .writeSpillableAndClose(any(), any())
+          .writeSpillableAndClose(any())
         // three because we wrote 3 files (15 rows, limit was 5 rows per file)
         verify(mockOutputWriter, times(3)).close()
       }
@@ -354,7 +356,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicSingleWriter.commit()
         // we write 9 batches (4 partitions in the first bach, and 5 partitions in the second)
         verify(mockOutputWriter, times(9))
-            .writeSpillableAndClose(any(), any())
+          .writeSpillableAndClose(any())
         verify(dynamicSingleWriter, times(9)).newWriter(any(), any(), any())
         // it uses 9 writers because the single writer mode only keeps one writer open at a time
         // and once a new partition is seen, the old writer is closed and a new one is opened.
@@ -384,7 +386,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           val dynamicSingleWriter = prepareDynamicPartitionSingleWriter()
           dynamicSingleWriter.writeWithIterator(cbs.iterator)
           dynamicSingleWriter.commit()
-          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any(), any())
+          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any())
           verify(dynamicSingleWriter, times(numNewWriters)).newWriter(any(), any(), any())
           verify(mockOutputWriter, times(numNewWriters)).close()
         }
@@ -405,7 +407,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicSingleWriter.commit()
         // we get 13 calls because we write 13 individual batches after splitting
         verify(mockOutputWriter, times(13))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicSingleWriter, times(13)).newWriter(any(), any(), any())
         // since we have a limit of 1 record per file, we write 13 files
         verify(mockOutputWriter, times(13))
@@ -429,7 +431,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicConcurrentWriter.commit()
         // we get 9 calls because we have 9 partitions total
         verify(mockOutputWriter, times(9))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         // we write 5 files because we write 1 file per partition, since this concurrent
         // writer was able to keep the writers alive
         verify(dynamicConcurrentWriter, times(5)).newWriter(any(), any(), any())
@@ -462,7 +464,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
             prepareDynamicPartitionConcurrentWriter(maxWriters = 20, batchSize = 100)
           dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
           dynamicConcurrentWriter.commit()
-          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any(), any())
+          verify(mockOutputWriter, times(numWrites)).writeSpillableAndClose(any())
           verify(dynamicConcurrentWriter, times(numNewWriters)).newWriter(any(), any(), any())
           verify(mockOutputWriter, times(numNewWriters)).close()
         }
@@ -486,7 +488,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
 
         // we get 13 calls here because we write 1 row files
         verify(mockOutputWriter, times(13))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(13)).newWriter(any(), any(), any())
 
         // we have to open 13 writers (1 per row) given the record limit of 1
@@ -512,7 +514,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         // 6 batches written, one per partition (no splitting) plus one written by
         // the concurrent writer.
         verify(mockOutputWriter, times(6))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(5)).newWriter(any(), any(), any())
         // 5 files written because this is the single writer mode
         verify(mockOutputWriter, times(5)).close()
@@ -536,7 +538,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dynamicConcurrentWriter.commit()
         // 18 batches are written, once per row above given maxRecorsPerFile
         verify(mockOutputWriter, times(18))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         verify(dynamicConcurrentWriter, times(18)).newWriter(any(), any(), any())
         // dynamic partitioning code calls close several times on the same ColumnarOutputWriter
         // that doesn't seem to be an issue right now, but verifying that the writer was closed
@@ -556,22 +558,26 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     resetMocksWithAndWithoutRetry {
       val cb = buildBatchWithPartitionedCol(1, 1, 1, 1, 1, 1, 1, 1, 1)
       val cbs = Seq(spy(cb))
-      withColumnarBatchesVerifyClosed(cbs) {
-        // I would like to not flush on the first iteration of the `write` method
-        when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
-        when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
 
-        val statsTracker = mock[ColumnarWriteTaskStatsTracker]
-        val jobTracker = new ColumnarWriteJobStatsTracker {
-          override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
-            statsTracker
-          }
-          override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      // Mock jobDescription before it is passed to the mockOutputWriter in
+      // withColumnarBatchesVerifyClosed().
+
+      // I would like to not flush on the first iteration of the `write` method
+      when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
+      when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
+
+      val statsTracker = mock[ColumnarWriteTaskStatsTracker]
+      val jobTracker = new ColumnarWriteJobStatsTracker {
+        override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+          statsTracker
         }
-        when(mockJobDescription.statsTrackers)
-            .thenReturn(Seq(jobTracker))
+        override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      }
+      when(mockJobDescription.statsTrackers)
+        .thenReturn(Seq(jobTracker))
 
-        // throw once from bufferBatchAndClose to simulate an exception after we call the
+      withColumnarBatchesVerifyClosed(cbs) {
+                // throw once from bufferBatchAndClose to simulate an exception after we call the
         // stats tracker
         mockOutputWriter.throwOnNextBufferBatchAndClose(
           new GpuSplitAndRetryOOM("mocking a split and retry"))
@@ -590,7 +596,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
 
         // 1 batch is written, all rows fit
         verify(mockOutputWriter, times(1))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         // we call newBatch once
         verify(statsTracker, times(1)).newBatch(any(), any())
         if (includeRetry) {
@@ -613,23 +619,28 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     resetMocksWithAndWithoutRetry {
       val cb = buildBatchWithPartitionedCol(1, 1, 1, 1, 1, 1, 1, 1, 1)
       val cbs = Seq(spy(cb))
-      withColumnarBatchesVerifyClosed(cbs) {
-        // I would like to not flush on the first iteration of the `write` method
-        when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
-        when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
 
-        val statsTracker = mock[ColumnarWriteTaskStatsTracker]
-        val jobTracker = new ColumnarWriteJobStatsTracker {
-          override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
-            statsTracker
-          }
+      // Mock jobDescription before mockOutputWriter is initialized in
+      // withColumnarBatchesVerifyClosed().
 
-          override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      // I would like to not flush on the first iteration of the `write` method
+      when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
+      when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
+
+      val statsTracker = mock[ColumnarWriteTaskStatsTracker]
+      val jobTracker = new ColumnarWriteJobStatsTracker {
+        override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+          statsTracker
         }
-        when(mockJobDescription.statsTrackers)
-            .thenReturn(Seq(jobTracker))
-        when(statsTracker.newBatch(any(), any()))
-            .thenThrow(new GpuRetryOOM("mocking a retry"))
+
+        override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+      }
+      when(mockJobDescription.statsTrackers)
+        .thenReturn(Seq(jobTracker))
+      when(statsTracker.newBatch(any(), any()))
+        .thenThrow(new GpuRetryOOM("mocking a retry"))
+
+      withColumnarBatchesVerifyClosed(cbs) {
         val dynamicConcurrentWriter =
           prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
 
@@ -642,7 +653,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         verify(mockOutputWriter, times(0)).bufferBatchAndClose(any())
         // we attempt to write one batch
         verify(mockOutputWriter, times(1))
-            .writeSpillableAndClose(any(), any())
+            .writeSpillableAndClose(any())
         // we call newBatch once
         verify(statsTracker, times(1)).newBatch(any(), any())
       }

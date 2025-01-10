@@ -82,7 +82,8 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
       query = wrapped.query,
       overwrite = wrapped.overwrite,
       ifPartitionNotExists = wrapped.ifPartitionNotExists,
-      outputColumnNames = wrapped.outputColumnNames
+      outputColumnNames = wrapped.outputColumnNames,
+      baseOutputDebugPath = conf.outputDebugDumpPrefix
     )
   }
 
@@ -96,7 +97,8 @@ case class GpuInsertIntoHiveTable(
     query: LogicalPlan,
     overwrite: Boolean,
     ifPartitionNotExists: Boolean,
-    outputColumnNames: Seq[String]) extends GpuSaveAsHiveFile {
+    outputColumnNames: Seq[String],
+    baseOutputDebugPath: Option[String]) extends GpuSaveAsHiveFile {
 
   /**
    * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
@@ -219,7 +221,8 @@ case class GpuInsertIntoHiveTable(
       forceHiveHashForBucketing = forceHiveHashForBucketing,
       partitionAttributes = partitionAttributes,
       bucketSpec = BucketSpecForHiveShim.getBucketSpec(table, forceHiveHashForBucketing),
-      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec))
+      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec),
+      baseDebugOutputPath = baseOutputDebugPath)
 
     if (partition.nonEmpty) {
       if (numDynamicPartitions > 0) {

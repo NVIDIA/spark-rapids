@@ -24,6 +24,6 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.internal.ExpressionUtils.{column, expression}
 
 object DFUDFShims {
-  def columnToExpr(c: Column): Expression = c
-  def exprToColumn(e: Expression): Column = e
+  def columnToExpr(c: Column): Expression = expression(c)
+  def exprToColumn(e: Expression): Column = column(e)
 }

@@ -113,7 +113,8 @@ class RapidsShuffleThreadedReaderSuite
       val shuffleId = 22
       val numMaps = 6
       val keyValuePairsPerMap = 10
-      val serializer = new GpuColumnarBatchSerializer(NoopMetric, Array.empty, false)
+      val serializer = new GpuColumnarBatchSerializer(Map.empty.withDefaultValue(NoopMetric),
+        Array.empty, false)
 
       // Make a mock BlockManager that will return RecordingManagedByteBuffers of data, so that we
       // can ensure retain() and release() are properly called.
