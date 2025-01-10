@@ -1,5 +1,5 @@
 # Change log
-Generated on 2024-12-16
+Generated on 2025-01-10
 
 ## Release 24.12
 
@@ -24,7 +24,10 @@ Generated on 2024-12-16
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#11842](https://github.com/NVIDIA/spark-rapids/issues/11842)|[BUG] udf-examples-native case failed core dump|
+|[#11718](https://github.com/NVIDIA/spark-rapids/issues/11718)|[BUG] update date/time APIs in CUDF java to avoid deprecated functions|
 |[#10907](https://github.com/NVIDIA/spark-rapids/issues/10907)|from_json function parses a column containing an empty array, throws an exception.|
+|[#11807](https://github.com/NVIDIA/spark-rapids/issues/11807)|[BUG] mismatched cpu and gpu result in test_lead_lag_for_structs_with_arrays intermittently|
 |[#11793](https://github.com/NVIDIA/spark-rapids/issues/11793)|[BUG] "Time in Heuristic" should not include previous operator's compute time|
 |[#11798](https://github.com/NVIDIA/spark-rapids/issues/11798)|[BUG] mismatch CPU and GPU result in test_months_between_first_day[DATAGEN_SEED=1733006411, TZ=Africa/Casablanca]|
 |[#11790](https://github.com/NVIDIA/spark-rapids/issues/11790)|[BUG] test_hash_* failed "java.util.NoSuchElementException: head of empty list" or "Too many times of repartition, may hit a bug?"|
@@ -72,6 +75,10 @@ Generated on 2024-12-16
 ### PRs
 |||
 |:---|:---|
+|[#11947](https://github.com/NVIDIA/spark-rapids/pull/11947)|Update version to 24.12.1-SNAPSHOT [skip ci]|
+|[#11943](https://github.com/NVIDIA/spark-rapids/pull/11943)|Update rapids JNI dependency to 24.12.1|
+|[#11944](https://github.com/NVIDIA/spark-rapids/pull/11944)|Update download page for 24.12.1 hot fix release [skip ci]|
+|[#11876](https://github.com/NVIDIA/spark-rapids/pull/11876)|Update latest changelog [skip ci]|
 |[#11874](https://github.com/NVIDIA/spark-rapids/pull/11874)|Remove 350db143 shim's build [skip ci]|
 |[#11851](https://github.com/NVIDIA/spark-rapids/pull/11851)|Update latest changelog [skip ci]|
 |[#11849](https://github.com/NVIDIA/spark-rapids/pull/11849)|Update rapids JNI and private dependency to 24.12.0|
@@ -236,8 +243,6 @@ Generated on 2024-12-16
 |[#11183](https://github.com/NVIDIA/spark-rapids/issues/11183)|[BUG] Failed to split an empty string with error "ai.rapids.cudf.CudfException: parallel_for failed: cudaErrorInvalidDevice: invalid device ordinal"|
 |[#11008](https://github.com/NVIDIA/spark-rapids/issues/11008)|Fix tests failures in ast_test.py|
 |[#11265](https://github.com/NVIDIA/spark-rapids/issues/11265)|[BUG] segfaults seen in cuDF after prefetch calls intermittently|
-|[#11025](https://github.com/NVIDIA/spark-rapids/issues/11025)|Fix tests failures in date_time_test.py|
-|[#11065](https://github.com/NVIDIA/spark-rapids/issues/11065)|[BUG]  Spark Connect Server (3.5.1) Can Not Running Correctly|
 
 ### PRs
 |||
