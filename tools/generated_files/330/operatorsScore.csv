@@ -139,6 +139,7 @@ HiveGenericUDF,4
 HiveHash,4
 HiveSimpleUDF,4
 Hour,4
+HyperLogLogPlusPlus,4
 Hypot,4
 If,4
 In,4
