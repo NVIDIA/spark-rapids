@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.delta
 
 import java.lang.reflect.Field
 
-import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 import scala.util.Try
 
@@ -43,7 +42,7 @@ import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelati
 /**
  * Implements the DeltaProvider interface for open source delta.io Delta Lake.
  */
-abstract class DeltaIOProvider extends DeltaProviderImplBase {
+abstract class DeltaIOProviderBase extends DeltaProviderImplBase {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
     Seq(
@@ -68,31 +67,13 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     catalogClass == classOf[DeltaCatalog]
   }
 
-  override def tagForGpu(
+  def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
-    require(isSupportedCatalog(cpuExec.catalog.getClass))
-    if (!meta.conf.isDeltaWriteEnabled) {
-      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-    checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
-    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
-  }
+      meta: AtomicCreateTableAsSelectExecMeta): Unit
 
-  override def tagForGpu(
+  def tagForGpu(
       cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
-    require(isSupportedCatalog(cpuExec.catalog.getClass))
-    if (!meta.conf.isDeltaWriteEnabled) {
-      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-    checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
-    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
-  }
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit
 
   private case class DeltaWriteV1Config(
       deltaLog: DeltaLog,
@@ -211,7 +192,7 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
-  private def checkDeltaProvider(
+  protected def checkDeltaProvider(
       meta: RapidsMeta[_, _, _],
       properties: Map[String, String],
       conf: SQLConf): Unit = {

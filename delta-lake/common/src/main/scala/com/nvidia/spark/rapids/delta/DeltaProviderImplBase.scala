@@ -32,8 +32,8 @@ abstract class DeltaProviderImplBase extends DeltaProvider {
       ),
       GpuOverrides.exec[RapidsDeltaWriteExec](
         "GPU write into a Delta Lake table",
-        ExecChecks.hiddenHack(),
-        (wrapped, conf, p, r) => new RapidsDeltaWriteExecMeta(wrapped, conf, p, r)).invisible()
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (wrapped, conf, p, r) => new RapidsDeltaWriteExecMeta(wrapped, conf, p, r))
     ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
   }
 

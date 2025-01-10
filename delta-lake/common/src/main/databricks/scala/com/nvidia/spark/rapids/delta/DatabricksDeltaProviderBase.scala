@@ -24,7 +24,7 @@ import scala.collection.mutable
 import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
-import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge, WriteIntoDelta}
+import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge, WriteIntoDeltaEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuDeltaSupportsWrite, GpuDeltaV1Write, GpuWriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
@@ -36,7 +36,7 @@ import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrit
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, LogicalRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
@@ -107,9 +107,8 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
     }
   }
 
-  override def getReadFileFormat(format: FileFormat): FileFormat = {
-    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
-    GpuDeltaParquetFileFormat.convertToGpu(cpuFormat)
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+    GpuDeltaParquetFileFormat.convertToGpu(relation)
   }
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {
@@ -296,7 +295,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
           val deltaLog = writeConfig.deltaLog
 
           // TODO: Get the config from WriteIntoDelta's txn.
-          val cpuWrite = WriteIntoDelta(
+          val cpuWrite = WriteIntoDeltaEdge(
             deltaLog,
             if (writeConfig.forceOverwrite) SaveMode.Overwrite else SaveMode.Append,
             new DeltaOptions(writeConfig.options.toMap, session.sessionState.conf),

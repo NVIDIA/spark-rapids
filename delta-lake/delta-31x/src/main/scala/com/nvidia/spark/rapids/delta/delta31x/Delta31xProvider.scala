@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta24x
+package com.nvidia.spark.rapids.delta.delta31x
 
 import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuOverrides, GpuReadParquetFileFormat, RunnableCommandRule, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
-import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
@@ -30,7 +29,7 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
-object Delta24xProvider extends DeltaIOProvider {
+object Delta31xProvider extends DeltaIOProvider {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
@@ -53,19 +52,19 @@ object Delta24xProvider extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
-      val requiredSchema = meta.wrapped.requiredSchema
-      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
-      }
-      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
-        meta.willNotWorkOnGpu(
-          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
-      }
-      if (deltaFormat.hasDeletionVectorMap()) {
-        meta.willNotWorkOnGpu("deletion vectors are not supported")
-      }
+//      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
+//      val requiredSchema = meta.wrapped.requiredSchema
+//      if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
+//        meta.willNotWorkOnGpu(
+//          s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
+//      }
+//      if (requiredSchema.exists(_.name == ROW_INDEX_COLUMN_NAME)) {
+//        meta.willNotWorkOnGpu(
+//          s"reading metadata column $ROW_INDEX_COLUMN_NAME is not supported")
+//      }
+//      if (deltaFormat.hasDeletionVectorMap()) {
+//        meta.willNotWorkOnGpu("deletion vectors are not supported")
+//      }
       GpuReadParquetFileFormat.tagSupport(meta)
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
@@ -74,8 +73,9 @@ object Delta24xProvider extends DeltaIOProvider {
 
   override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
     val cpuFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    GpuDelta24xParquetFileFormat(cpuFormat.metadata, cpuFormat.isSplittable,
-      cpuFormat.disablePushDowns, cpuFormat.broadcastDvMap)
+    GpuDelta31xParquetFileFormat(cpuFormat.columnMappingMode, cpuFormat.referenceSchema,
+      cpuFormat.isSplittable, cpuFormat.disablePushDowns, cpuFormat.broadcastDvMap,
+      cpuFormat.tablePath, cpuFormat.broadcastHadoopConf)
   }
 
   override def convertToGpu(
@@ -86,8 +86,7 @@ object Delta24xProvider extends DeltaIOProvider {
       DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
       cpuExec.ident,
       cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.query,
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.ifNotExists)
@@ -101,8 +100,7 @@ object Delta24xProvider extends DeltaIOProvider {
       DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
       cpuExec.ident,
       cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.query,
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.orCreate,
