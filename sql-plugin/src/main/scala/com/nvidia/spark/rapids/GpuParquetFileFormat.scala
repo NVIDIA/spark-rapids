@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -281,10 +282,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext,
+            statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
           debugOutputPath: Option[String]): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
-          debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled)
+          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -307,10 +309,11 @@ class GpuParquetWriter(
     timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean,
     useAsyncWrite: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true,
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true, statsTrackers,
     debugDumpPath, holdGpuBetweenBatches, useAsyncWrite) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
