@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,28 @@ object DumpUtils extends Logging {
       val (out, path) = FileUtils.createTempFile(conf, prefix, suffix)
       withResource(out) { _ =>
         withResource(data.slice(offset, len)) { hmb =>
+          withResource(new HostMemoryInputStream(hmb, hmb.getLength)) { in =>
+            IOUtils.copy(in, out)
+          }
+        }
+      }
+      path.toString
+    } catch {
+      case e: Exception =>
+        log.error(s"Error attempting to dump data", e)
+        s"<error writing data $e>"
+    }
+  }
+
+  def dumpBuffer(
+      conf: Configuration,
+      data: Array[HostMemoryBuffer],
+      prefix: String,
+      suffix: String): String = {
+    try {
+      val (out, path) = FileUtils.createTempFile(conf, prefix, suffix)
+      withResource(out) { _ =>
+        data.foreach { hmb =>
           withResource(new HostMemoryInputStream(hmb, hmb.getLength)) { in =>
             IOUtils.copy(in, out)
           }
