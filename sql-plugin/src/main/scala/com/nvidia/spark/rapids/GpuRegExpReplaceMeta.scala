@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.nvidia.spark.rapids
+
+import java.util.regex.Pattern
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils}
@@ -51,6 +53,8 @@ class GpuRegExpReplaceMeta(
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         javaPattern = Some(s.toString())
+        // check that this is valid in Java
+        Pattern.compile(javaPattern.toString)
         try {
           val (pat, repl) =
               new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
