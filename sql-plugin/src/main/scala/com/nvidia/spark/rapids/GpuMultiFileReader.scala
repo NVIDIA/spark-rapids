@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,8 +69,6 @@ object SingleHMBAndMeta {
 trait HostMemoryBuffersWithMetaDataBase {
   // PartitionedFile to be read
   def partitionedFile: PartitionedFile
-  // Original PartitionedFile if path was replaced with Alluxio
-  def origPartitionedFile: Option[PartitionedFile] = None
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
   def memBuffersAndSizes: Array[SingleHMBAndMeta]
   // Total bytes read
@@ -174,16 +172,12 @@ object MultiFileReaderUtils {
     filePaths.exists(fp => cloudSchemes.contains(fp.getScheme))
   }
 
-  // If Alluxio is enabled and we do task time replacement we have to take that
-  // into account here so we use the Coalescing reader instead of the MultiThreaded reader.
   def useMultiThreadReader(
       coalescingEnabled: Boolean,
       multiThreadEnabled: Boolean,
       files: Array[String],
-      cloudSchemes: Set[String],
-      anyAlluxioPathsReplaced: Boolean = false): Boolean =
-    !coalescingEnabled || (multiThreadEnabled &&
-      (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
+      cloudSchemes: Set[String]): Boolean =
+    !coalescingEnabled || (multiThreadEnabled && hasPathInCloud(files, cloudSchemes))
 }
 
 /**
@@ -193,14 +187,11 @@ object MultiFileReaderUtils {
  * @param sqlConf         the SQLConf
  * @param broadcastedConf the Hadoop configuration
  * @param rapidsConf      the Rapids configuration
- * @param alluxioPathReplacementMap Optional map containing mapping of DFS
- *                                  scheme to Alluxio scheme
  */
 abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
-    @transient rapidsConf: RapidsConf,
-    alluxioPathReplacementMap: Option[Map[String, String]] = None)
+    @transient rapidsConf: RapidsConf)
   extends PartitionReaderFactory with Logging {
 
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
@@ -283,7 +274,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
   /** for testing */
   private[rapids] def useMultiThread(filePaths: Array[String]): Boolean =
     MultiFileReaderUtils.useMultiThreadReader(canUseCoalesceFilesReader,
-      canUseMultiThreadReader, filePaths, allCloudSchemes, alluxioPathReplacementMap.isDefined)
+      canUseMultiThreadReader, filePaths, allCloudSchemes)
 }
 
 /**
@@ -310,11 +301,6 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   }
 }
 
-// Contains the actual file path to read from and then an optional original path if its read from
-// Alluxio. To make it transparent to the user, we return the original non-Alluxio path
-// for input_file_name.
-case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Option[PartitionedFile])
-
 case class CombineConf(
     combineThresholdSize: Long, // The size to combine to when combining small files
     combineWaitTime: Int) // The amount of time to wait for other files ready for combination.
@@ -334,8 +320,6 @@ case class CombineConf(
  * @param filters push down filters
  * @param execMetrics the metrics
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
- * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
- * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
  *                         Defaults to true for formats that don't explicitly handle this.
  * @param combineConf configs relevant to combination
@@ -350,8 +334,6 @@ abstract class MultiFileCloudPartitionReaderBase(
     maxReadBatchSizeRows: Int,
     maxReadBatchSizeBytes: Long,
     ignoreCorruptFiles: Boolean = false,
-    alluxioPathReplacementMap: Map[String, String] = Map.empty,
-    alluxioReplacementTaskTime: Boolean = false,
     keepReadsInOrder: Boolean = true,
     combineConf: CombineConf = CombineConf(-1, -1))
   extends FilePartitionReaderBase(conf, execMetrics) {
@@ -369,23 +351,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   // like in the case of a limit call and we don't read all files
   private var fcs: ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase] = null
 
-  private val files: Array[PartitionedFileInfoOptAlluxio] = {
-    if (alluxioPathReplacementMap.nonEmpty) {
-      if (alluxioReplacementTaskTime) {
-        AlluxioUtils.updateFilesTaskTimeIfAlluxio(inputFiles, Some(alluxioPathReplacementMap))
-      } else {
-        // was done at CONVERT_TIME, need to recalculate the original path to set for
-        // input_file_name
-        AlluxioUtils.getOrigPathFromReplaced(inputFiles, alluxioPathReplacementMap)
-      }
-    } else {
-      inputFiles.map(PartitionedFileInfoOptAlluxio(_, None))
-    }
-  }
-
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
-    val limit = math.min(maxNumFileProcessed, files.length)
+    val limit = math.min(maxNumFileProcessed, inputFiles.length)
     val tc = TaskContext.get
     if (!keepReadsInOrder) {
       logDebug("Not keeping reads in order")
@@ -404,25 +372,25 @@ abstract class MultiFileCloudPartitionReaderBase(
     // the files in the future. ie try to start some of the larger files but we may not want
     // them all to be large
     for (i <- 0 until limit) {
-      val file = files(i)
-      logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
+      val file = inputFiles(i)
+      logDebug(s"MultiFile reader using file $file")
       if (!keepReadsInOrder) {
-        val futureRunner = fcs.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters))
+        val futureRunner = fcs.submit(getBatchRunner(tc, file, conf, filters))
         tasks.add(futureRunner)
       } else {
         // Add these in the order as we got them so that we can make sure
         // we process them in the same order as CPU would.
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        tasks.add(threadPool.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters)))
+        tasks.add(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
       }
     }
     // queue up any left to add once others finish
-    for (i <- limit until files.length) {
-      val file = files(i)
-      tasksToRun.enqueue(getBatchRunner(tc, file.toRead, file.original, conf, filters))
+    for (i <- limit until inputFiles.length) {
+      val file = inputFiles(i)
+      tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
     }
     isInitted = true
-    filesToRead = files.length
+    filesToRead = inputFiles.length
   }
 
   // Each format should implement combineHMBs and canUseCombine if they support combining
@@ -441,7 +409,6 @@ abstract class MultiFileCloudPartitionReaderBase(
    *
    * @param tc task context to use
    * @param file file to be read
-   * @param origFile optional original unmodified file if replaced with Alluxio
    * @param conf the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
@@ -449,7 +416,6 @@ abstract class MultiFileCloudPartitionReaderBase(
   def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
-      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
 
@@ -618,8 +584,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
     // this is combine mode so input file shouldn't be used at all but update to
     // what would be closest so we at least don't have same file as last batch
-    val inputFileToSet =
-    fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
+    val inputFileToSet = fileBufsAndMeta.partitionedFile
     InputFileUtils.setInputFileBlock(
       inputFileToSet.filePath.toString(),
       inputFileToSet.start,
@@ -663,12 +628,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
-          // if we replaced the path with Alluxio, set it to the original filesystem file
-          // since Alluxio replacement is supposed to be transparent to the user
-          // Note that combine mode would have fallen back to not use combine mode if
-          // the inputFile was required.
-          val inputFileToSet =
-          fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
+          val inputFileToSet = fileBufsAndMeta.partitionedFile
           InputFileUtils.setInputFileBlock(
             inputFileToSet.filePath.toString(),
             inputFileToSet.start,

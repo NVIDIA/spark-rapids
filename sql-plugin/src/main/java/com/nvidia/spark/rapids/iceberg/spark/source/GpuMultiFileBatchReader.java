@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -352,13 +352,12 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       return new MultiFileCloudParquetPartitionReader(conf, pFiles,
           this::filterParquetBlocks, caseSensitive, parquetDebugDumpPrefix, parquetDebugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
-          useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes, metrics, partitionSchema,
+          useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+          CpuCompressionConfig$.MODULE$.disabled(), metrics, partitionSchema,
           numThreads, maxNumFileProcessed,
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles
           false, // useFieldId
-          scala.collection.immutable.Map$.MODULE$.empty(), // alluxioPathReplacementMap
-          false, // alluxioReplacementTaskTime
           queryUsesInputFile,
           true, // keepReadsInOrder
           new CombineConf(
@@ -411,7 +410,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           JavaConverters.asJavaCollection(filteredInfo.parquetBlockMeta.blocks()).stream()
             .map(b -> ParquetSingleDataBlockMeta.apply(
                 filteredInfo.parquetBlockMeta.filePath(),
-                ParquetDataBlock.apply(b),
+                ParquetDataBlock.apply(b, CpuCompressionConfig$.MODULE$.disabled()),
                 InternalRow.empty(),
                 ParquetSchemaWrapper.apply(filteredInfo.parquetBlockMeta.schema()),
                 filteredInfo.parquetBlockMeta.readSchema(),
@@ -431,6 +430,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           caseSensitive, parquetDebugDumpPrefix, parquetDebugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes,
           useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+          CpuCompressionConfig$.MODULE$.disabled(),
           metrics, partitionSchema, numThreads,
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles

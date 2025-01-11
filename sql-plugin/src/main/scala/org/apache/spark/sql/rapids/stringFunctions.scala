@@ -24,7 +24,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, RoundMode, Scalar}
+import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, RoundMode, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -1202,7 +1202,7 @@ class GpuRLikeMeta(
         }
         case StartsWith(s) => GpuStartsWith(lhs, GpuLiteral(s, StringType))
         case Contains(s) => GpuContains(lhs, GpuLiteral(UTF8String.fromString(s), StringType))
-        case MultipleContains(ls) => GpuMultipleContains(lhs, ls)
+        case MultipleContains(ls) => GpuContainsAny(lhs, ls)
         case PrefixRange(s, length, start, end) =>
           GpuLiteralRangePattern(lhs, GpuLiteral(s, StringType), length, start, end)
         case _ => throw new IllegalStateException("Unexpected optimization type")
@@ -1233,7 +1233,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def dataType: DataType = BooleanType
 }
 
-case class GpuMultipleContains(input: Expression, searchList: Seq[String])
+case class GpuContainsAny(input: Expression, targets: Seq[UTF8String])
   extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
@@ -1242,19 +1242,24 @@ case class GpuMultipleContains(input: Expression, searchList: Seq[String])
 
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
 
-  override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    assert(searchList.length > 1)
-    val accInit = withResource(Scalar.fromString(searchList.head)) { searchScalar =>
-      input.getBase.stringContains(searchScalar)
+  def multiOrsAst: ast.AstExpression = {
+    (1 until targets.length)
+    .foldLeft(new ast.ColumnReference(0).asInstanceOf[ast.AstExpression]) { (acc, id) =>
+      new ast.BinaryOperation(ast.BinaryOperator.NULL_LOGICAL_OR, acc, new ast.ColumnReference(id))
     }
-    searchList.tail.foldLeft(accInit) { (acc, search) =>
-      val containsSearch = withResource(Scalar.fromString(search)) { searchScalar =>
-        input.getBase.stringContains(searchScalar)
-      }
-      withResource(acc) { _ =>
-        withResource(containsSearch) { _ =>
-          acc.or(containsSearch)
-        }
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val targetsBytes = targets.map(t => t.getBytes).toArray
+    val boolCvs = withResource(ColumnVector.fromUTF8Strings(targetsBytes: _*)) { targetsCv =>
+      input.getBase.stringContains(targetsCv)
+    }
+    val boolTable = withResource(boolCvs) { _ =>
+      new Table(boolCvs: _*)
+    }
+    withResource(boolTable) { _ =>
+      withResource(multiOrsAst.compile()) { compiledAst =>
+        compiledAst.computeColumn(boolTable)
       }
     }
   }

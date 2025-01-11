@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -137,9 +138,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     require(retryCount >= 0,
       s"spillAndCheckRetry invoked with invalid retryCount $retryCount")
 
-    val store = RapidsBufferCatalog.getHostStorage
-    val storeSize = store.currentSize
-    val storeSpillableSize = store.currentSpillableSize
+    val store = SpillFramework.stores.hostStore
     val totalSize: Long = synchronized {
       currentPinnedAllocated + currentNonPinnedAllocated
     }
@@ -150,21 +149,20 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       "First attempt"
     }
 
-    logInfo(s"Host allocation of $allocSize bytes failed, host store has " +
-        s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
-    if (storeSpillableSize == 0) {
-      logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
-          s"Total host allocated is $totalSize bytes.")
-      false
-    } else {
-      val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-      logDebug(s"Targeting host store size of $targetSize bytes")
-      // We could not make it work so try and spill enough to make it work
-      val maybeAmountSpilled =
-        RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, targetSize)
-      maybeAmountSpilled.foreach { amountSpilled =>
-        logInfo(s"Spilled $amountSpilled bytes from the host store")
+    val amountSpilled = store.spill(allocSize)
+
+    if (amountSpilled == 0) {
+      val shouldRetry = store.numHandles > 0
+      val exhaustedMsg = s"Host store exhausted, unable to allocate $allocSize bytes. " +
+          s"Total host allocated is $totalSize bytes. $attemptMsg."
+      if (!shouldRetry) {
+        logWarning(exhaustedMsg)
+      } else {
+        logWarning(s"$exhaustedMsg Attempting a retry.")
       }
+      shouldRetry
+    } else {
+      logInfo(s"Spilled $amountSpilled bytes from the host store")
       true
     }
   }

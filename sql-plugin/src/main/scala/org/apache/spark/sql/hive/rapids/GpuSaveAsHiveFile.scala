@@ -43,6 +43,7 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
       fileFormat: ColumnarFileFormat,
       outputLocation: String,
       forceHiveHashForBucketing: Boolean,
+      baseDebugOutputPath: Option[String],
       customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
       partitionAttributes: Seq[Attribute] = Nil,
       bucketSpec: Option[BucketSpec] = None,
@@ -67,7 +68,8 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
       options = options,
       useStableSort = false,                  // TODO: Fetch from RapidsConf.
       forceHiveHashForBucketing = forceHiveHashForBucketing,
-      concurrentWriterPartitionFlushSize = 0L // TODO: Fetch from RapidsConf.
+      concurrentWriterPartitionFlushSize = 0L, // TODO: Fetch from RapidsConf.
+      baseDebugOutputPath = baseDebugOutputPath
     )
   }
 }

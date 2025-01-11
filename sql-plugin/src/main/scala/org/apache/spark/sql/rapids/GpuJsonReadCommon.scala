@@ -193,18 +193,22 @@ object GpuJsonReadCommon {
     val allowUnquotedControlChars = options.buildJsonFactory()
       .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
 
+    baseCudfJsonOptionsBuilder()
+      .withNormalizeSingleQuotes(options.allowSingleQuotes)
+      .withLeadingZeros(options.allowNumericLeadingZeros)
+      .withNonNumericNumbers(options.allowNonNumericNumbers)
+      .withUnquotedControlChars(allowUnquotedControlChars)
+      .build()
+  }
+
+  def baseCudfJsonOptionsBuilder(): ai.rapids.cudf.JSONOptions.Builder = {
     ai.rapids.cudf.JSONOptions.builder()
       .withRecoverWithNull(true)
       .withMixedTypesAsStrings(true)
       .withNormalizeWhitespace(true)
       .withKeepQuotes(true)
-      .withNormalizeSingleQuotes(options.allowSingleQuotes)
       .withStrictValidation(true)
-      .withLeadingZeros(options.allowNumericLeadingZeros)
-      .withNonNumericNumbers(options.allowNonNumericNumbers)
-      .withUnquotedControlChars(allowUnquotedControlChars)
       .withCudfPruneSchema(true)
       .withExperimental(true)
-      .build()
   }
 }

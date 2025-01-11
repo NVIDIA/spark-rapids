@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2024, NVIDIA CORPORATION.
+  Copyright (c) 2020-2025, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
-        <version>24.12.0-SNAPSHOT</version>
+        <version>25.02.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>24.12.0-SNAPSHOT</version>
+    <version>25.02.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>sql-plugin</rapids.module>
@@ -91,11 +91,6 @@
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
-        </dependency>
-        <dependency>
-            <!-- Used for Alluxio mounting -->
-            <groupId>org.alluxio</groupId>
-            <artifactId>alluxio-shaded-client</artifactId>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>

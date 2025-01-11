@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.ZoneId
-
-import scala.collection.mutable
-
+import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
+import java.time.ZoneId
+import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp,  WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
@@ -64,6 +63,8 @@ final class NoRuleDataFromReplacementRule extends DataFromReplacementRule {
 
 object RapidsMeta {
   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+
+  def noNeedToReplaceReason(klass: Class[_]) = s"there is no need to replace $klass"
 }
 
 /**
@@ -936,7 +937,7 @@ final class DoNotReplaceOrWarnSparkPlanMeta[INPUT <: SparkPlan](
   override def suppressWillWorkOnGpuInfo: Boolean = true
 
   override def tagPlanForGpu(): Unit =
-    willNotWorkOnGpu(s"there is no need to replace ${plan.getClass}")
+    willNotWorkOnGpu(noNeedToReplaceReason(plan.getClass))
 
   override def convertToGpu(): GpuExec =
     throw new IllegalStateException("Cannot be converted to GPU")
