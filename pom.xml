@@ -94,6 +94,7 @@
         <profile>
             <id>release320</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>320</value>
@@ -227,6 +228,7 @@
             <id>release330</id>
             <activation>
                 <!-- #if scala-2.13 --><!--
+                <activeByDefault>true</activeByDefault>
                 --><!-- #endif scala-2.13 -->
                 <property>
                     <name>buildver</name>
@@ -607,7 +609,6 @@
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=350db143 -->
             <id>release350db143</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
                 <property>
                     <name>buildver</name>
                     <value>350db143</value>
