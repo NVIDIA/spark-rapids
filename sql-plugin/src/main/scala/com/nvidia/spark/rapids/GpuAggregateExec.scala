@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1095,16 +1095,13 @@ class GpuMergeAggregateIterator(
           closeOnExcept(new ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]) {
             toAggregateBuckets =>
               var currentSize = 0L
-              while (batchesByBucket.nonEmpty &&
-                (
-                  // for some test cases targetMergeBatchSize is too small to fit any bucket,
-                  // in this case we put the first bucket into toAggregateBuckets anyway
-                  // refer to https://github.com/NVIDIA/spark-rapids/issues/11790 for examples
-                  toAggregateBuckets.isEmpty ||
-                    batchesByBucket.last.size() + currentSize <= targetMergeBatchSize)) {
-                val bucket = batchesByBucket.remove(batchesByBucket.size - 1)
-                currentSize += bucket.map(_.sizeInBytes).sum
-                toAggregateBuckets += bucket
+              var keepGoing = true
+              while (batchesByBucket.nonEmpty && keepGoing) {
+                currentSize += batchesByBucket.last.map(_.sizeInBytes).sum
+                keepGoing = currentSize <= targetMergeBatchSize || toAggregateBuckets.isEmpty
+                if (keepGoing) {
+                  toAggregateBuckets += batchesByBucket.remove(batchesByBucket.size - 1)
+                }
               }
 
               AggregateUtils.concatenateAndMerge(
