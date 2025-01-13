@@ -22,7 +22,7 @@ import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
 import java.util
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue}
 
 import scala.collection.mutable
 
@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.internal.HostByteBufferIterator
 import org.apache.commons.io.IOUtils
+import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
@@ -256,9 +257,11 @@ object SpillableHostBufferHandle extends Logging {
       while (chunkedPacker.hasNext) {
         val (bb, len) = chunkedPacker.next()
         withResource(bb) { _ =>
-          builder.copyNext(bb.dmb, len, Cuda.DEFAULT_STREAM)
-          // copyNext is synchronous w.r.t. the cuda stream passed,
-          // no need to synchronize here.
+          withResource(new NvtxRange("chunked packer bounce buffer", NvtxColor.RED)) { _ =>
+            builder.copyNext(bb.dmb, len, Cuda.DEFAULT_STREAM)
+            // copyNext is synchronous w.r.t. the cuda stream passed,
+            // no need to synchronize here.
+          }
         }
       }
       builder.build
@@ -1044,8 +1047,12 @@ trait SpillableStore[T <: SpillableHandle]
       0L
     } else {
       withResource(spillNvtxRange) { _ =>
-        val plan = makeSpillPlan(spillNeeded)
-        val amountSpilled = plan.trySpill()
+        val plan = withResource(new NvtxRange("makeSpillPlan", NvtxColor.ORANGE)) { _ =>
+          makeSpillPlan(spillNeeded)
+        }
+        val amountSpilled = withResource(new NvtxRange("trySpill", NvtxColor.CYAN)) { _ =>
+          plan.trySpill()
+        }
         postSpill(plan)
         amountSpilled
       }
@@ -1486,6 +1493,16 @@ object SpillableColumnarBatchHandle {
   }
 }
 
+
+class PooledDeviceBounceBuffer(var buf: DeviceMemoryBuffer,
+                               deviceBounceBufferPool: DeviceBounceBufferPool)
+  extends DeviceBounceBuffer(buf) {
+  override def close(): Unit = {
+    super.close()
+    deviceBounceBufferPool.returnBuffer(this)
+  }
+}
+
 object SpillFramework extends Logging {
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
@@ -1500,7 +1517,28 @@ object SpillFramework extends Logging {
   }
 
   // TODO: these should be pools, instead of individual buffers
-  private var hostSpillBounceBuffer: HostMemoryBuffer = _
+//  private var hostSpillBounceBuffer: HostMemoryBuffer = _
+  class HostBounceBufferPool(rapidsConf: RapidsConf) {
+    private val pool = new ConcurrentLinkedQueue[HostMemoryBuffer]()
+
+    for (_ <- 1 to 4) {
+      pool.offer(HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize))
+    }
+
+    def nextBuffer(): HostMemoryBuffer = {
+      var buf = pool.poll()
+      while (buf == null) {
+        Thread.sleep(10)
+        buf = pool.poll()
+      }
+      buf
+    }
+
+    def returnToPool(hmb: HostMemoryBuffer): Unit = {
+      pool.offer(hmb)
+    }
+  }
+  private var hostSpillBounceBufferPool: HostBounceBufferPool = _
 
   private lazy val conf: SparkConf = {
     val env = SparkEnv.get
@@ -1526,19 +1564,39 @@ object SpillFramework extends Logging {
       Some(rapidsConf.hostSpillStorageSize)
     }
     // this should hopefully be pinned, but it would work without
-    hostSpillBounceBuffer = HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize)
+//    hostSpillBounceBuffer = HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize)
+    hostSpillBounceBufferPool = new HostBounceBufferPool(rapidsConf)
 
     chunkedPackBounceBufferPool = new DeviceBounceBufferPool {
-      private val bounceBuffer: DeviceBounceBuffer =
-        DeviceBounceBuffer(DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize))
+      private val pool = new ConcurrentLinkedQueue[DeviceBounceBuffer]()
+
+      for (_ <- 1 to 4) {
+        pool.offer(new PooledDeviceBounceBuffer(
+          DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize), this))
+      }
+
+//      private val bounceBuffer: DeviceBounceBuffer =
+//        DeviceBounceBuffer(DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize))
       override def bufferSize: Long = rapidsConf.chunkedPackBounceBufferSize
       override def nextBuffer(): DeviceBounceBuffer = {
-        // can block waiting for bounceBuffer to be released
-        bounceBuffer.acquire()
+//        // can block waiting for bounceBuffer to be released
+//        bounceBuffer.acquire()
+        var buffer = pool.poll()
+        while (buffer == null) {
+          Thread.sleep(10)
+          buffer = pool.poll()
+        }
+
+        buffer.acquire()
       }
       override def close(): Unit = {
         // this closes the DeviceMemoryBuffer wrapped by the bounce buffer class
-        bounceBuffer.release()
+//        bounceBuffer.release()
+        pool.asScala.foreach(_.release())
+      }
+
+      override def returnBuffer(buffer: DeviceBounceBuffer): Unit = {
+        pool.offer(buffer)
       }
     }
     storesInternal = new SpillableStores {
@@ -1551,10 +1609,10 @@ object SpillFramework extends Logging {
   }
 
   def shutdown(): Unit = {
-    if (hostSpillBounceBuffer != null) {
-      hostSpillBounceBuffer.close()
-      hostSpillBounceBuffer = null
-    }
+//    if (hostSpillBounceBuffer != null) {
+//      hostSpillBounceBuffer.close()
+//      hostSpillBounceBuffer = null
+//    }
     if (chunkedPackBounceBufferPool != null) {
       chunkedPackBounceBufferPool.close()
       chunkedPackBounceBufferPool = null
@@ -1565,10 +1623,14 @@ object SpillFramework extends Logging {
     }
   }
 
-  def withHostSpillBounceBuffer[T](body: HostMemoryBuffer => T): T =
-    hostSpillBounceBuffer.synchronized {
-      body(hostSpillBounceBuffer)
+  def withHostSpillBounceBuffer[T](body: HostMemoryBuffer => T): T = {
+    val hmb = hostSpillBounceBufferPool.nextBuffer()
+    withResource(new NvtxRange("host spill bounce buffer", NvtxColor.RED)) { _ =>
+      val res = body(hmb)
+      hostSpillBounceBufferPool.returnToPool(hmb)
+      res
     }
+  }
 
   var chunkedPackBounceBufferPool: DeviceBounceBufferPool = _
 
@@ -1650,6 +1712,7 @@ private[spill] case class DeviceBounceBuffer(var dmb: DeviceMemoryBuffer) extend
 trait DeviceBounceBufferPool extends AutoCloseable {
   def bufferSize: Long
   def nextBuffer(): DeviceBounceBuffer
+  def returnBuffer(buffer: DeviceBounceBuffer): Unit
 }
 
 /**
@@ -1719,14 +1782,15 @@ class ChunkedPacker(table: Table,
   }
 
   override def next(): (DeviceBounceBuffer, Long) = {
+    // this ONLY CLOSES if EXCEPT
     closeOnExcept(bounceBufferPool.nextBuffer()) { bounceBuffer =>
       if (closed) {
         throw new IllegalStateException(s"ChunkedPacker is closed")
       }
-      val bytesWritten = chunkedPack.next(bounceBuffer.dmb)
-      // we increment the refcount because the caller has no idea where
-      // this memory came from, so it should close it.
-      (bounceBuffer, bytesWritten)
+        val bytesWritten = chunkedPack.next(bounceBuffer.dmb)
+        // we increment the refcount because the caller has no idea where
+        // this memory came from, so it should close it.
+        (bounceBuffer, bytesWritten)
     }
   }
 
