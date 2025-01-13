@@ -40,7 +40,6 @@ jobs:
         github.actor == 'anfeng' ||
         github.actor == 'firestarman' ||
         github.actor == 'GaryShen2008' ||
-        github.actor == 'jlowe' ||
         github.actor == 'kuhushukla' ||
         github.actor == 'mythrocks' ||
         github.actor == 'nartal1' ||
