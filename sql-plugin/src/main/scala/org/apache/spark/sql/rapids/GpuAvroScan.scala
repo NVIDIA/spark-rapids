@@ -663,7 +663,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufsAndSizes = buffer.memBuffersAndSizes
       val bufAndSizeInfo = bufsAndSizes.head
       val partitionValues = buffer.partitionedFile.partitionValues
-      val batchIter = if (bufAndSizeInfo.hmbs.nonEmpty) {
+      val batchIter = if (bufAndSizeInfo.hmbs.isEmpty) {
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
