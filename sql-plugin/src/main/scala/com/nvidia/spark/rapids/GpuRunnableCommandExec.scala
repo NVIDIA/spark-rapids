@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,10 +39,10 @@ import org.apache.spark.util.SerializableConfiguration
  * An extension of `RunnableCommand` that allows columnar execution.
  */
 trait GpuRunnableCommand extends RunnableCommand with ShimUnaryCommand {
-  lazy val basicMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.basicMetrics
-  lazy val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
+  lazy val basicMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.basicMetrics
+  lazy val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics
 
-  override lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
+  override lazy val metrics: Map[String, SQLMetric] = GpuMetric.unwrap(basicMetrics ++ taskMetrics)
 
   override final def run(sparkSession: SparkSession): Seq[Row] =
     throw new UnsupportedOperationException(

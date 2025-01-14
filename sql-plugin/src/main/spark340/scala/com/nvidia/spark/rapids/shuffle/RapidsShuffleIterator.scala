@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
+{"spark": "354"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shuffle
@@ -36,7 +37,7 @@ import scala.collection
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuSemaphore, RapidsConf, RapidsShuffleHandle, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -87,7 +88,7 @@ class RapidsShuffleIterator(
    * A result for a successful buffer received
    * @param handle - the shuffle received buffer handle as tracked in the catalog
    */
-  case class BufferReceived(handle: RapidsBufferHandle) extends ShuffleClientResult
+  case class BufferReceived(handle: RapidsShuffleHandle) extends ShuffleClientResult
 
   /**
    * A result for a failed attempt at receiving block metadata, or corresponding batches.
@@ -223,7 +224,7 @@ class RapidsShuffleIterator(
 
           override def getTaskIds: Array[Long] = taskIds
 
-          def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
+          override def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
             if (expectedBatches == 0) {
               throw new IllegalStateException(
                 s"Received an invalid response from shuffle server: " +
@@ -242,7 +243,7 @@ class RapidsShuffleIterator(
           def clientDone: Boolean = clientExpectedBatches > 0 &&
             clientExpectedBatches == clientResolvedBatches
 
-          def batchReceived(handle: RapidsBufferHandle): Boolean = {
+          override def batchReceived(handle: RapidsShuffleHandle): Boolean = {
             resolvedBatches.synchronized {
               if (taskComplete) {
                 false
@@ -307,8 +308,7 @@ class RapidsShuffleIterator(
       logWarning(s"Iterator for task ${taskAttemptIdStr} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
       resolvedBatches.forEach {
-        case BufferReceived(handle) =>
-          GpuShuffleEnv.getReceivedCatalog.removeBuffer(handle)
+        case BufferReceived(handle) => handle.close()
         case _ =>
       }
       // tell the client to cancel pending requests
@@ -334,8 +334,6 @@ class RapidsShuffleIterator(
   }
 
   override def next(): ColumnarBatch = {
-    var cb: ColumnarBatch = null
-    var sb: RapidsBuffer = null
     val range = new NvtxRange(s"RapidshuffleIterator.next", NvtxColor.RED)
 
     // If N tasks downstream are accumulating memory we run the risk OOM
@@ -377,16 +375,12 @@ class RapidsShuffleIterator(
         val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
           NvtxColor.PURPLE)
         try {
-          sb = catalog.acquireBuffer(handle)
-          cb = sb.getColumnarBatch(sparkTypes)
-          metricsUpdater.update(blockedTime, 1, sb.memoryUsedBytes, cb.numRows())
+          val (cb, memoryUsedBytes) = catalog.getColumnarBatchAndRemove(handle, sparkTypes)
+          metricsUpdater.update(blockedTime, 1, memoryUsedBytes, cb.numRows())
+          cb
         } finally {
           nvtxRangeAfterGettingBatch.close()
           range.close()
-          if (sb != null) {
-            sb.close()
-          }
-          catalog.removeBuffer(handle)
         }
       case Some(
         TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>
@@ -412,6 +406,5 @@ class RapidsShuffleIterator(
       case _ =>
         throw new IllegalStateException(s"Invalid result type $result")
     }
-    cb
   }
 }

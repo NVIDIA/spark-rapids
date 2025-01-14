@@ -108,6 +108,31 @@ case class GpuXxHash64(children: Seq[Expression], seed: Long) extends GpuHashExp
   }
 }
 
+object XxHash64Utils {
+  /**
+   * Compute the max stack size that `inputType` will use,
+   * refer to the function `check_nested_depth` in src/main/cpp/src/xxhash64.cu
+   * in spark-rapids-jni repo.
+   * Note:
+   * - This should be sync with `check_nested_depth`
+   * - Map in cuDF is list of struct
+   *
+   * @param inputType the input type
+   * @return the max stack size that inputType will use for this input type.
+   */
+  def computeMaxStackSize(inputType: DataType): Int = {
+    inputType match {
+      case ArrayType(c: StructType, _) => 1 + computeMaxStackSize(c)
+      case ArrayType(c, _) => computeMaxStackSize(c)
+      case st: StructType =>
+        1 + st.map(f => computeMaxStackSize(f.dataType)).max
+      case mt: MapType =>
+        2 + math.max(computeMaxStackSize(mt.keyType), computeMaxStackSize(mt.valueType))
+      case _ => 1 // primitive types
+    }
+  }
+}
+
 case class GpuHiveHash(children: Seq[Expression]) extends GpuHashExpression {
   override def dataType: DataType = IntegerType
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -169,7 +169,8 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
                             options: Map[String, String],
                             dataSchema: StructType): ColumnarOutputWriterFactory = {
 
-    val orcOptions = new OrcOptions(options, sparkSession.sessionState.conf)
+    val sqlConf = sparkSession.sessionState.conf
+    val orcOptions = new OrcOptions(options, sqlConf)
 
     val conf = job.getConfiguration
 
@@ -180,11 +181,19 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
     conf.asInstanceOf[JobConf]
       .setOutputFormat(classOf[org.apache.orc.mapred.OrcOutputFormat[OrcStruct]])
 
+    val asyncOutputWriteEnabled = RapidsConf.ENABLE_ASYNC_OUTPUT_WRITE.get(sqlConf)
+    // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
+    val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
+      .getOrElse(asyncOutputWriteEnabled)
+
     new ColumnarOutputWriterFactory {
       override def newInstance(path: String,
                                dataSchema: StructType,
-                               context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuOrcWriter(path, dataSchema, context)
+                               context: TaskAttemptContext,
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+                               debugOutputPath: Option[String]): ColumnarOutputWriter = {
+        new GpuOrcWriter(path, dataSchema, context, statsTrackers, debugOutputPath,
+          holdGpuBetweenBatches, asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -203,14 +212,20 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
   }
 }
 
-class GpuOrcWriter(override val path: String,
-                   dataSchema: StructType,
-                   context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "ORC", true) {
+class GpuOrcWriter(
+    override val path: String,
+    dataSchema: StructType,
+    context: TaskAttemptContext,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+    debugOutputPath: Option[String],
+    holdGpuBetweenBatches: Boolean,
+    useAsyncWrite: Boolean)
+  extends ColumnarOutputWriter(context, dataSchema, "ORC", true, statsTrackers, debugOutputPath,
+    holdGpuBetweenBatches, useAsyncWrite) {
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils
-      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
+      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema, nullable = false)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
     Table.writeORCChunked(builder.build(), this)
   }

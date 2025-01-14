@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -164,8 +164,7 @@ query ($after: String, $since: DateTime) {
 """
 
 
-def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, no_project_prs: list,
-                      token: str):
+def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, token: str):
     if resource_type == PULL_REQUESTS:
         items = process_pr(releases=releases, token=token)
         time_field = 'mergedAt'
@@ -178,14 +177,14 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
 
     for item in items:
         if len(item["projectItems"]["nodes"]) == 0 or not item["projectItems"]["nodes"][0]['roadmap']:
-            # compatibility support for project API V1
-            if len(item['projectCards']['nodes']) == 0:
-                if resource_type == PULL_REQUESTS:
-                    if '[bot]' in item['title']:
-                        continue  # skip auto-gen PR
-                    no_project_prs.append(item)
+            if resource_type == PULL_REQUESTS:
+                if '[bot]' in item['title']:
+                    continue  # skip auto-gen PR
+                # Obtain the version from the PR's target branch, e.g. branch-x.y --> x.y
+                ver = item['baseRefName'].replace('branch-', '')
+                project = f"{RELEASE} {ver}"
+            else:
                 continue
-            project = item['projectCards']['nodes'][0]['project']['name']
         else:
             ver = item["projectItems"]["nodes"][0]['roadmap']['name']
             project = f"{RELEASE} {ver}"
@@ -309,12 +308,6 @@ def form_subsection(issues: dict, subtitle: str):
     return subsection
 
 
-def print_no_project_pr(no_project_prs: list):
-    if len(no_project_prs) != 0:
-        print("\nNOTE: Merged Pull Requests w/o Project:")
-    for pr in no_project_prs:
-        print(f"{pr['baseRefName']} #{pr['number']} {pr['title']} {pr['url']}")
-
 
 def main(rels: str, path: str, token: str):
     print('Generating changelog ...')
@@ -323,16 +316,13 @@ def main(rels: str, path: str, token: str):
         changelog = {}  # changelog dict
         releases = {x.strip() for x in rels.split(',')}
         projects = {f"{RELEASE} {rel}" for rel in releases}
-        no_project_prs = []  # list of merge pr w/o project
 
         print('Processing pull requests ...')
         process_changelog(resource_type=PULL_REQUESTS, changelog=changelog,
-                          releases=releases, projects=projects,
-                          no_project_prs=no_project_prs, token=token)
+                          releases=releases, projects=projects, token=token)
         print('Processing issues ...')
         process_changelog(resource_type=ISSUES, changelog=changelog,
-                          releases=releases, projects=projects,
-                          no_project_prs=no_project_prs, token=token)
+                          releases=releases, projects=projects, token=token)
         # form doc
         form_changelog(path=path, changelog=changelog)
     except Exception as e:  # pylint: disable=broad-except
@@ -340,8 +330,6 @@ def main(rels: str, path: str, token: str):
         sys.exit(1)
 
     print('Done.')
-    # post action
-    print_no_project_pr(no_project_prs=no_project_prs)
 
 
 if __name__ == '__main__':

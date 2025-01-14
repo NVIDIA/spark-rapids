@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,8 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import allow_non_gpu, ignore_order
-from spark_session import is_before_spark_320
 
-# Spark 3.1.x does not normalize -0.0 and 0.0 but GPU version does
-_xxhash_gens = [
+_atomic_gens = [
     null_gen,
     boolean_gen,
     byte_gen,
@@ -31,36 +29,136 @@ _xxhash_gens = [
     timestamp_gen,
     decimal_gen_32bit,
     decimal_gen_64bit,
-    decimal_gen_128bit]
-if not is_before_spark_320():
-    _xxhash_gens += [float_gen, double_gen]
+    decimal_gen_128bit,
+    float_gen,
+    double_gen
+]
 
-_struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_xxhash_gens)])
+_struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_atomic_gens)])
 
-_xxhash_fallback_gens = single_level_array_gens + nested_array_gens_sample + [
-    all_basic_struct_gen,
-    struct_array_gen,
-    _struct_of_xxhash_gens]
-if is_before_spark_320():
-    _xxhash_fallback_gens += [float_gen, double_gen]
+# will be used by HyperLogLogPlusPLus(approx_count_distinct)
+xxhash_gens = (_atomic_gens + [_struct_of_xxhash_gens] + single_level_array_gens
+               + nested_array_gens_sample + [
+                   all_basic_struct_gen,
+                   struct_array_gen,
+                   _struct_of_xxhash_gens
+               ] + map_gens_sample)
+
 
 @ignore_order(local=True)
-@pytest.mark.parametrize("gen", _xxhash_gens, ids=idfn)
+@pytest.mark.parametrize("gen", xxhash_gens, ids=idfn)
 def test_xxhash64_single_column(gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, gen).selectExpr("a", "xxhash64(a)"))
+        lambda spark: unary_op_df(spark, gen).selectExpr("a", "xxhash64(a)"),
+        {"spark.sql.legacy.allowHashOnMapType": True})
+
 
 @ignore_order(local=True)
 def test_xxhash64_multi_column():
     gen = StructGen(_struct_of_xxhash_gens.children, nullable=False)
     col_list = ",".join(gen.data_type.fieldNames())
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, gen).selectExpr("c0", f"xxhash64({col_list})"))
+        lambda spark: gen_df(spark, gen).selectExpr("c0", f"xxhash64({col_list})"),
+        {"spark.sql.legacy.allowHashOnMapType": True})
+
+
+def test_xxhash64_8_depth():
+    gen_8_depth = (
+        StructGen([('l1',  # level 1
+                    StructGen([('l2',
+                                StructGen([('l3',
+                                            StructGen([('l4',
+                                                        StructGen([('l5',
+                                                                    StructGen([('l6',
+                                                                                StructGen([('l7',
+                                                                                            int_gen)]))]))]))]))]))]))]))  # level 8
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen_8_depth).selectExpr("a", "xxhash64(a)"))
+
 
 @allow_non_gpu("ProjectExec")
-@ignore_order(local=True)
-@pytest.mark.parametrize("gen", _xxhash_fallback_gens, ids=idfn)
-def test_xxhash64_fallback(gen):
+def test_xxhash64_fallback_exceeds_stack_size_array_of_structure():
+    gen_9_depth = (
+        ArrayGen(  # depth += 1
+            StructGen([('c',  # depth += 1
+                        ArrayGen(  # depth += 1
+                            StructGen([('c',  # depth += 1
+                                        ArrayGen(  # depth += 1
+                                            StructGen([('c',  # depth += 1
+                                                        ArrayGen(  # depth += 1
+                                                            StructGen([('c',  # depth += 1
+                                                                        int_gen)]),  # depth += 1
+                                                            max_length=1))]),
+                                            max_length=1))]),
+                            max_length=1))]),
+            max_length=1))
     assert_gpu_fallback_collect(
-        lambda spark : unary_op_df(spark, gen).selectExpr("a", "xxhash64(a)"),
+        lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
         "ProjectExec")
+
+
+@allow_non_gpu("ProjectExec")
+def test_xxhash64_array_of_other():
+    gen_9_depth = (
+        ArrayGen(  # array(other: not struct): depth += 0
+            ArrayGen(  # array(other: not struct): depth += 0
+                ArrayGen(  # array(other: not struct): depth += 0
+                    MapGen(  # map: depth += 2
+                        IntegerGen(nullable=False),
+                        ArrayGen(  # array(other: not struct): depth += 0
+                            MapGen(  # map: depth += 2
+                                IntegerGen(nullable=False),
+                                ArrayGen(  # array(other: not struct): depth += 0
+                                    MapGen(  # map: depth += 2
+                                        IntegerGen(nullable=False),
+                                        int_gen,  # primitive: depth += 1
+                                        max_length=1),
+                                    max_length=1),
+                                max_length=1),
+                            max_length=1),
+                        max_length=1),
+                    max_length=1),
+                max_length=1),
+            max_length=1))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
+        {"spark.sql.legacy.allowHashOnMapType": True})
+
+
+@allow_non_gpu("ProjectExec")
+def test_xxhash64_fallback_exceeds_stack_size_structure():
+    gen_9_depth = (
+        StructGen([('l1',  # level 1
+                    StructGen([('l2',
+                                StructGen([('l3',
+                                            StructGen([('l4',
+                                                        StructGen([('l5',
+                                                                    StructGen([('l6',
+                                                                                StructGen([('l7',
+                                                                                            StructGen([('l8',
+                                                                                                        int_gen)]))]))]))]))]))]))]))]))  # level 9
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
+        "ProjectExec")
+
+
+@allow_non_gpu("ProjectExec")
+def test_xxhash64_fallback_exceeds_stack_size_map():
+    gen_9_depth = (
+        MapGen(  # depth += 2
+            IntegerGen(nullable=False),
+            MapGen(  # depth += 2
+                IntegerGen(nullable=False),
+                MapGen(  # depth += 2
+                    IntegerGen(nullable=False),
+                    MapGen(  # depth += 2
+                        IntegerGen(nullable=False),  # depth += 1
+                        IntegerGen(nullable=False),
+                        max_length=1),
+                    max_length=1),
+                max_length=1),
+            max_length=1))
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen_9_depth).selectExpr("a", "xxhash64(a)"),
+        "ProjectExec",
+        {"spark.sql.legacy.allowHashOnMapType": True})
