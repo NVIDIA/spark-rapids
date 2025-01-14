@@ -85,7 +85,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     // Narrow down all used metrics on the Executor side, in case transferring unnecessary metrics
     val embeddedMetrics = {
       val mapBuilder = mutable.Map.empty[String, GpuMetric]
-      commonMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
+      hybridCommonMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
       nativeMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
       mapBuilder.toMap
     }
@@ -102,7 +102,10 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     inputRDD :: Nil
   }
 
-  private val commonMetrics: Map[String, () => GpuMetric] = Map[String, () => GpuMetric](
+  /**
+   * Note: Databricks SparkPlan has a lazy value `commonMetrics`, here use another name
+   */
+  private val hybridCommonMetrics: Map[String, () => GpuMetric] = Map[String, () => GpuMetric](
     "HybridScanTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "HybridScanTime")),
     "GpuAcquireTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "GpuAcquireTime")),
   )
@@ -121,7 +124,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     val mapBuilder = Map.newBuilder[String, GpuMetric]
     mapBuilder += "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "TotalTime")
     // Add common embedded metrics
-    commonMetrics.foreach { case (key, generator) =>
+    hybridCommonMetrics.foreach { case (key, generator) =>
       mapBuilder += key -> generator()
     }
     // NativeConverter and RoundTripConverter uses different metrics
