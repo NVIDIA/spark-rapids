@@ -160,6 +160,11 @@ trait StoreHandle extends AutoCloseable {
    *   removed on shutdown, or by handle.close, but 0-byte handles are not spillable.
    */
   val approxSizeInBytes: Long
+
+  /**
+   * This is used to resolve races between closing a handle while spilling.
+   */
+  private[spill] var closed: Boolean = false
 }
 
 trait SpillableHandle extends StoreHandle {
@@ -356,10 +361,9 @@ class SpillableHostBufferHandle private (
             }
             val staging = Some(diskHandleBuilder.build)
             synchronized {
-              disk = staging
-              // really what we could do is remove it from the store/tracker here
-              // but only close the buffer outside of sync block
-              // edit: actually we already get that for free by having toSpill track it separately
+              if (!closed) {
+                disk = staging
+              }
               releaseHostResource()
             }
           }
@@ -378,6 +382,7 @@ class SpillableHostBufferHandle private (
     synchronized {
       disk.foreach(_.close())
       disk = None
+      closed = true
     }
   }
 
@@ -508,7 +513,9 @@ class SpillableDeviceBufferHandle private (
           val stagingHost =
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
           synchronized {
-            host = stagingHost
+            if (!closed) {
+              host = stagingHost
+            }
             spilled = dev
             dev = None
             toSpill = None
@@ -528,6 +535,7 @@ class SpillableDeviceBufferHandle private (
     synchronized {
       host.foreach(_.close())
       host = None
+      closed = true
     }
   }
 }
@@ -594,7 +602,6 @@ class SpillableColumnarBatchHandle private (
     }
   }
 
-  var closed = false
   override def spill(): Long = {
     if (!spillable) {
       0L
@@ -751,7 +758,6 @@ class SpillableColumnarBatchFromBufferHandle private (
 
   private var toSpill: Option[ColumnarBatch] = None
   private var spilled: Option[ColumnarBatch] = None
-  var closed = false
   override def spill(): Long = {
     if (!spillable) {
       0
@@ -871,7 +877,6 @@ class SpillableCompressedColumnarBatchHandle private (
     }
   }
 
-  var closed = false
   override def spill(): Long = {
     if (!spillable) {
       0L
@@ -1003,7 +1008,9 @@ class SpillableHostColumnarBatchHandle private (
             }
             val staging = Some(diskHandleBuilder.build)
             synchronized {
-              disk = staging
+              if (!closed) {
+                disk = staging
+              }
             }
             approxSizeInBytes
           }
@@ -1020,9 +1027,8 @@ class SpillableHostColumnarBatchHandle private (
     releaseHostResource()
     synchronized {
       disk.foreach(_.close())
-      // not properly closed if spilling
-      // need to check other handle types as well
       disk = None
+      closed = true
     }
   }
 }
