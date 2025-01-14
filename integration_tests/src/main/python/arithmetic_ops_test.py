@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -843,6 +843,11 @@ def test_degrees(data_gen):
 def test_degrees_small(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))
+
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+def test_bin_long(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('bin(a)'))
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

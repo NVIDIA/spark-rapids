@@ -210,6 +210,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Atanh"></a>spark.rapids.sql.expression.Atanh|`atanh`|Inverse hyperbolic tangent|true|None|
 <a name="sql.expression.AttributeReference"></a>spark.rapids.sql.expression.AttributeReference| |References an input column|true|None|
 <a name="sql.expression.BRound"></a>spark.rapids.sql.expression.BRound|`bround`|Round an expression to d decimal places using HALF_EVEN rounding mode|true|None|
+<a name="sql.expression.Bin"></a>spark.rapids.sql.expression.Bin|`bin`|Returns the string representation of the long value `expr` represented in binary|true|None|
 <a name="sql.expression.BitLength"></a>spark.rapids.sql.expression.BitLength|`bit_length`|The bit length of string data|true|None|
 <a name="sql.expression.BitwiseAnd"></a>spark.rapids.sql.expression.BitwiseAnd|`&`|Returns the bitwise AND of the operands|true|None|
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
