@@ -59,15 +59,6 @@
             </roles>
             <timezone>-6</timezone>
         </developer>
-        <developer>
-            <id>jlowe</id>
-            <name>Jason Lowe</name>
-            <email>jlowe@nvidia.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
     </developers>
     <!-- modules shared among profiles -->
     <modules>
