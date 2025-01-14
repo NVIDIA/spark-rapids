@@ -213,20 +213,23 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
 
       override def newInstance(path: String,
           dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuHiveParquetWriter(path, dataSchema, context, compressionType)
+          context: TaskAttemptContext,
+          debugOutputPath: Option[String]): ColumnarOutputWriter = {
+        new GpuHiveParquetWriter(path, dataSchema, context, compressionType, debugOutputPath)
       }
     }
   }
 }
 
 class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
-    context: TaskAttemptContext, compType: CompressionType)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true) {
+    context: TaskAttemptContext, compType: CompressionType,
+    debugOutputPath: Option[String])
+  extends ColumnarOutputWriter(context, dataSchema, "HiveParquet", true, debugOutputPath) {
 
   override protected val tableWriter: CudfTableWriter = {
     val optionsBuilder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         writeInt96 = true,      // Hive 1.2 write timestamp as INT96
         parquetFieldIdEnabled = false)
       .withCompressionType(compType)
@@ -249,8 +252,9 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 
       override def newInstance(path: String,
                                dataSchema: StructType,
-                               context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuHiveTextWriter(path, dataSchema, context)
+                               context: TaskAttemptContext,
+                               debugOutputPath: Option[String]): ColumnarOutputWriter = {
+        new GpuHiveTextWriter(path, dataSchema, context, debugOutputPath)
       }
     }
   }
@@ -258,8 +262,9 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 
 class GpuHiveTextWriter(override val path: String,
                         dataSchema: StructType,
-                        context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false) {
+                        context: TaskAttemptContext,
+                        debugOutputPath: Option[String])
+  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false, debugOutputPath) {
 
   /**
    * This reformats columns, to iron out inconsistencies between

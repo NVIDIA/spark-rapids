@@ -208,7 +208,8 @@ abstract class GpuShuffleExchangeExecBase(
     PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
     NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
+    NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    COPY_TO_HOST_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_TO_HOST_TIME)
   ) ++ additionalMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
@@ -364,6 +365,12 @@ object GpuShuffleExchangeExecBase {
       rdd
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
+    // Inject debugging subMetrics, such as D2HTime before SliceOnCpu
+    // The injected metrics will be serialized as the members of GpuPartitioning
+    partitioner match {
+      case pt: GpuPartitioning => pt.setupDebugMetrics(metrics)
+      case _ =>
+    }
     val partitionTime: GpuMetric = metrics(METRIC_SHUFFLE_PARTITION_TIME)
     def getPartitioned: ColumnarBatch => Any = {
       batch => partitionTime.ns {

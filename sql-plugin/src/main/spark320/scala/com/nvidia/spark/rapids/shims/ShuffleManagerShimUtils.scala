@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,36 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
 {"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
-{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.python.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions}
-import org.apache.spark.sql.vectorized.ColumnarBatch
-
-abstract class GpuBasePythonRunner[IN](
-    funcs: Seq[ChainedPythonFunctions],
-    evalType: Int,
-    argOffsets: Array[Array[Int]],
-    jobArtifactUUID: Option[String]
-) extends BasePythonRunner[IN, ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID)
+object ShuffleManagerShimUtils {
+  def eagerlyInitialized = false  
+}

@@ -1643,6 +1643,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val TEST_RETRY_CONTEXT_CHECK_ENABLED = conf("spark.rapids.sql.test.retryContextCheck.enabled")
+    .doc("Only to be used in tests. When set to true, enable the context check for " +
+      "GPU nondeterministic expressions but declaring to be retryable. A GPU retryable " +
+      "nondeterministic expression should run inside a checkpoint-restore context. And it " +
+      "will blow up when the context does not satisfy.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1681,6 +1690,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val OUTPUT_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.output.debug.dumpPrefix")
+    .doc("A path prefix where data that is intended to be written out as the result " +
+      "of a query should be dumped for debugging. The format of this is based on " +
+      "JCudfSerialization and is trying to capture the underlying table so that if " +
+      "there are errors in the output format we can try to recreate it.")
+    .internal()
+    .stringConf
+    .createOptional
 
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
@@ -2444,7 +2462,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .doc("Option to turn on the async query output write. During the final output write, the " +
         "task first copies the output to the host memory, and then writes it into the storage. " +
         "When this option is enabled, the task will asynchronously write the output in the host " +
-        "memory to the storage. Only the Parquet format is supported currently.")
+        "memory to the storage. Only the Parquet and ORC formats are supported currently.")
       .internal()
       .booleanConf
       .createWithDefault(false)
@@ -2724,6 +2742,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
+  lazy val isRetryContextCheckEnabled: Boolean = get(TEST_RETRY_CONTEXT_CHECK_ENABLED)
+
   lazy val isFoldableNonLitAllowed: Boolean = get(FOLDABLE_NON_LIT_ALLOWED)
 
   lazy val asyncWriteMaxInFlightHostMemoryBytes: Long =
@@ -2882,6 +2902,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
 
   lazy val maxGpuColumnSizeBytes: Long = get(MAX_GPU_COLUMN_SIZE_BYTES)
+
+  lazy val outputDebugDumpPrefix: Option[String] = get(OUTPUT_DEBUG_DUMP_PREFIX)
 
   lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 

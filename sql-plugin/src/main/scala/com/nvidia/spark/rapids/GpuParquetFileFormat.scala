@@ -280,10 +280,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
         override def newInstance(
           path: String,
           dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
+          context: TaskAttemptContext,
+          debugOutputPath: Option[String]): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
-          holdGpuBetweenBatches)
+          debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -306,8 +307,11 @@ class GpuParquetWriter(
     timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean,
-    holdGpuBetweenBatches: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true, holdGpuBetweenBatches) {
+    debugDumpPath: Option[String],
+    holdGpuBetweenBatches: Boolean,
+    useAsyncWrite: Boolean)
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true,
+    debugDumpPath, holdGpuBetweenBatches, useAsyncWrite) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
@@ -389,6 +393,7 @@ class GpuParquetWriter(
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
         parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)
