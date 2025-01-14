@@ -932,6 +932,7 @@ class SpillableCompressedColumnarBatchHandle private (
       }
       host.foreach(_.close())
       host = None
+      meta = None
       closed = true
     }
   }
