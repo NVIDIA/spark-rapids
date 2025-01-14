@@ -102,11 +102,11 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     inputRDD :: Nil
   }
 
-  private val commonMetrics = Map[String, () => GpuMetric](
+  private val commonMetrics: Map[String, () => GpuMetric] = Map[String, () => GpuMetric](
     "HybridScanTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "HybridScanTime")),
     "GpuAcquireTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "GpuAcquireTime")),
   )
-  private val nativeMetrics = Map[String, () => GpuMetric](
+  private val nativeMetrics: Map[String, () => GpuMetric] = Map[String, () => GpuMetric](
     "CoalescedBatches" -> (() => createMetric(MODERATE_LEVEL, "CoalescedBatches")),
     "CpuReaderBatches" -> (() => createMetric(MODERATE_LEVEL, "CpuReaderBatches")),
     "C2COutputSize" -> (() => createSizeMetric(MODERATE_LEVEL, "C2COutputSize")),
