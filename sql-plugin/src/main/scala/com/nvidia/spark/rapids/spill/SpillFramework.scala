@@ -174,6 +174,10 @@ trait SpillableHandle extends StoreHandle {
    * thread will win and perform the spilling, and the other thread will make
    * no modification.
    *
+   * If the disk is full, or a spill failure occurs otherwise (eg. device issues),
+   * we make no attempt to handle it or restore state, as we expect to be in a non-recoverable
+   * state at the task/executor level.
+   *
    * @note The size returned from this method is only used by the spill framework
    *       to track the approximate size. It should just return `approxSizeInBytes`, as
    *       that's the size that it used when it first started tracking the object.
