@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -74,7 +74,6 @@ jobs:
         github.actor == 'binmahone' ||
         github.actor == 'zpuller' ||
         github.actor == 'pxLi'  ||
-        github.actor == 'Feng-Jiang28' ||
         github.actor == 'SurajAralihalli' ||
         github.actor == 'jihoonson' ||
         github.actor == 'ustcfy' ||
@@ -91,7 +90,7 @@ jobs:
   Vulnerability-scan:
     name: Vulnerability scan
     needs: [Authorization]
-    runs-on: ubuntu-latest
+    runs-on: vulnerability-scan
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

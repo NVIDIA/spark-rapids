@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
     new AsyncOutputStream(() => {
       val file = File.createTempFile("async-write-test", "tmp")
       new BufferedOutputStream(new FileOutputStream(file))
-    }, trafficController)
+    }, trafficController, Seq.empty)
   }
 
   test("open, write, and close") {
@@ -108,7 +108,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   test("write after error") {
-    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController)
+    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
 
     // The first call to `write` should succeed
     os.write(buf)
@@ -134,7 +134,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   test("flush after error") {
-    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController)
+    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
 
     // The first write should succeed
     os.write(buf)
@@ -151,7 +151,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   test("close after error") {
-    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController)
+    val os = new AsyncOutputStream(() => new ThrowingOutputStream, trafficController, Seq.empty)
 
     os.write(buf)
 
