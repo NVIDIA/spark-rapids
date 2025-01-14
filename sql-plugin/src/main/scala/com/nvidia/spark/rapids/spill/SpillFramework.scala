@@ -73,7 +73,7 @@ import org.apache.spark.storage.BlockId
  * An object is spillable (it will be copied to host or disk during OOM) if:
  * - it has a approxSizeInBytes > 0
  * - it is not actively being referenced by the user (call to `materialize`, or aliased)
- * - it hasn't already spilled
+ * - it hasn't already spilled, or is not currently being spilled
  * - it hasn't been closed
  *
  * Aliasing:
@@ -139,11 +139,6 @@ import org.apache.spark.storage.BlockId
  * different because they don't spill, as disk is considered the final store. When a user calls
  * `materialize` on a handle, the handle must guarantee that it can satisfy that, even if the caller
  * should wait until a spill happens. This is currently implemented using the handle lock.
- *
- * Note that we hold the handle lock while we are spilling (performing IO). That means that no other
- * consumer can access this spillable device handle while it is being spilled, including a second
- * thread that is trying to spill and is generating a spill plan, as the handle lock is likely held
- * up with IO. We will relax this likely in follow on work.
  *
  * We never hold a store-wide coarse grain lock in the stores when we do IO.
  */
