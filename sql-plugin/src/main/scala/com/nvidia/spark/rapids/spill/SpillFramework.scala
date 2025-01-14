@@ -170,6 +170,10 @@ trait SpillableHandle extends StoreHandle {
    * This will not free the spilled data. If you would like to free the spill
    * call `releaseSpilled`
    *
+   * This is a thread-safe method. If multiple threads call it at the same time, one
+   * thread will win and perform the spilling, and the other thread will make
+   * no modification.
+   *
    * @note The size returned from this method is only used by the spill framework
    *       to track the approximate size. It should just return `approxSizeInBytes`, as
    *       that's the size that it used when it first started tracking the object.
@@ -178,7 +182,14 @@ trait SpillableHandle extends StoreHandle {
   def spill(): Long
 
   /**
-   * Method used to determine whether a handle tracks an object that could be spilled
+   * Method used to determine whether a handle tracks an object that could be spilled.
+   * This is just a primary filtering mechanism, because there is a case where a handle
+   * will appear spillable according to this check, but then a thread will not be able to
+   * spill upon an attempt, because another thread has already started spilling the handle.
+   * However, this is not expected to cause an issue, as it only would come up with multiple
+   * threads trying to spill with overlapping spill plans. It would not, for instance,
+   * produce any false negatives.
+   *
    * @note At the level of `SpillableHandle`, the only requirement of spillability
    *       is that the size of the handle is > 0. `approxSizeInBytes` is known at
    *       construction, and is immutable.
