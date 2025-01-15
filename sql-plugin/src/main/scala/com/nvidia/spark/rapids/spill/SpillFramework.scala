@@ -333,6 +333,9 @@ class SpillableHostBufferHandle private (
     materialized
   }
 
+  // used to gate when a spill is actively being done so that a second thread won't
+  // also begin spilling, and a handle won't release the underlying buffer if it's
+  // closed while spilling
   private var toSpill: Option[HostMemoryBuffer] = None
 
   override def spill(): Long = {
@@ -351,8 +354,7 @@ class SpillableHostBufferHandle private (
         }
       }
       val spilled = if (thisThreadSpills) {
-        val buf = toSpill.get
-        withResource(buf) { _ =>
+        withResource(toSpill.get) { buf =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
             // the spill IO is non-blocking as it won't impact dev or host directly
@@ -371,10 +373,13 @@ class SpillableHostBufferHandle private (
             }
             val staging = Some(diskHandleBuilder.build)
             synchronized {
-              if (!closed) {
+              if (closed) {
+                staging.foreach(_.close())
+              } else {
                 disk = staging
               }
               releaseHostResource()
+              toSpill = None
             }
           }
         }
@@ -382,7 +387,6 @@ class SpillableHostBufferHandle private (
       } else {
           0
       }
-      toSpill = None
       spilled
     }
   }
@@ -490,7 +494,13 @@ class SpillableDeviceBufferHandle private (
     materialized
   }
 
+  // used to gate when a spill is actively being done so that a second thread won't
+  // also begin spilling, and a handle won't release the underlying buffer if it's
+  // closed while spilling
   private var toSpill: Option[DeviceMemoryBuffer] = None
+
+  // used to ensure the resource gets cleaned up properly after spilling and avoids
+  // double freeing
   private var spilled: Option[DeviceMemoryBuffer] = None
   override def releaseDeviceResource(): Unit = {
     synchronized {
@@ -516,8 +526,7 @@ class SpillableDeviceBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        val buf = toSpill.get
-        withResource(buf) { _ =>
+        withResource(toSpill.get) { buf =>
           // the spill IO is non-blocking as it won't impact dev or host directly
           // instead we "atomically" swap the buffers below once they are ready
           val stagingHost =
@@ -539,8 +548,6 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def close(): Unit = {
-    // do we need to Cuda.deviceSynchronize here?
-    // what if we don't spill
     releaseDeviceResource()
     synchronized {
       host.foreach(_.close())
@@ -602,7 +609,13 @@ class SpillableColumnarBatchHandle private (
   }
 
 
+  // used to gate when a spill is actively being done so that a second thread won't
+  // also begin spilling, and a handle won't release the underlying buffer if it's
+  // closed while spilling
   private var toSpill: Option[ColumnarBatch] = None
+
+  // used to ensure the resource gets cleaned up properly after spilling and avoids
+  // double freeing
   private var spilled: Option[ColumnarBatch] = None
   override def releaseDeviceResource(): Unit = {
     synchronized {
@@ -630,7 +643,9 @@ class SpillableColumnarBatchHandle private (
           meta = Some(chunkedPacker.getPackedMeta)
           val staging = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
           synchronized {
-            if (!closed) {
+            if (closed) {
+              staging.foreach(_.close())
+            } else {
               host = staging
             }
             // set spilled to dev instead of toSpill so that if dev was already closed during spill,
@@ -655,9 +670,8 @@ class SpillableColumnarBatchHandle private (
       if (toSpill.isEmpty) {
         throw new IllegalStateException("cannot get copier without a batch")
       }
-      val buf = toSpill.get
-      withResource(buf) { b =>
-        GpuColumnVector.from(b)
+      withResource(toSpill.get) { buf =>
+        GpuColumnVector.from(buf)
       }
     }
     withResource(tbl) { _ =>
@@ -782,8 +796,7 @@ class SpillableColumnarBatchFromBufferHandle private (
         }
       }
       if (thisThreadSpills) {
-        val batch = toSpill.get
-        withResource(batch) { cb =>
+        withResource(toSpill.get) { cb =>
           val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
           meta = Some(cvFromBuffer.getTableMeta)
           val staging = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
@@ -901,8 +914,7 @@ class SpillableCompressedColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        val batch = toSpill.get
-        withResource(batch) { cb =>
+        withResource(toSpill.get) { cb =>
           val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
           meta = Some(cvFromBuffer.getTableMeta)
           val staging = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
@@ -1009,8 +1021,7 @@ class SpillableHostColumnarBatchHandle private (
         }
       }
       val bytesSpilled = if (thisThreadSpills) {
-        val batch = toSpill.get
-        withResource(batch) { cb =>
+        withResource(toSpill.get) { cb =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
               val dos = diskHandleBuilder.getDataOutputStream
