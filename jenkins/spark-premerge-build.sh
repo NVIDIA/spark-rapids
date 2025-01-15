@@ -112,7 +112,12 @@ mvn_verify() {
 
     # test Hybrid feature
     source "${WORKSPACE}/jenkins/hybrid_execution.sh"
-    test_hybrid_feature
+    result=$(hybrid_prepare)
+    if [ $result == 0 ]; then
+        hybrid_test
+    else
+        echo "Skipped hybrid execution tests $result"
+    fi
 }
 
 rapids_shuffle_smoke_test() {

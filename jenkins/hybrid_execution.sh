@@ -19,33 +19,31 @@ set -ex
 
 . jenkins/version-def.sh
 
-test_hybrid_feature() {
-    echo "Run hybrid execution test cases..."
+export GLUTEN_BUNDLE_JAR
+export HYBRID_JAR
+export GLUTEN_THIRDPARTY_JAR
 
-    # parameters for Hybrid featrue
-    spark_prefix="${SPARK_VER:0:3}" # get prefix from SPARK_VER, e.g.: 3.2, 3.3 ... 3.5
-    GLUTEN_BUNDLE_JAR="gluten-velox-bundle-spark${spark_prefix}_2.12-ubuntu_${GLUTEN_FOR_OS}_x86_64-${GLUTEN_VERSION}.jar"
-    HYBRID_JAR="rapids-4-spark-hybrid_2.12-${PROJECT_TEST_VER}.jar"
-    GLUTEN_THIRD_PARTY_JAR="gluten-thirdparty-lib-${GLUTEN_VERSION}-ubuntu-${GLUTEN_FOR_OS}-x86_64.jar"
+hybrid_prepare(){
+    echo "Checking hybrid exeicution tests environmet..."
+    local cup_arch=$(uname -m)
+    local os_version=$(source /etc/os-release > /dev/null 2>&1 && echo ${ID}_${VERSION_ID})
+    echo "cup_arch=$cup_arch, os_version=$os_version, SCALA_BINARY_VER=$SCALA_BINARY_VER"
+    if [[ ! ("$cup_arch" == "x86_64" && ("$os_version" == "ubuntu_20.04" || "$os_version" == "ubuntu_22.04") && "$SCALA_BINARY_VER" == "2.12") ]]; then
+        echo "SKIP! Only supports running Scala 2.12 hybrid execution tests on an x86_64 processor under Ubuntu 20.04 or 22.04."
+    fi
 
-    # download Gluten, Hybrid jars
-    mvn -B dependency:get -DgroupId=com.nvidia \
-                       -DartifactId=gluten-velox-bundle \
-                       -Dversion=${GLUTEN_VERSION} \
-                       -Dpackaging=jar \
-                       -Dclassifier=spark${spark_prefix}_2.12-ubuntu_${GLUTEN_FOR_OS}
-                       -Dtransitive=false \
-                       -Ddest=/tmp/$GLUTEN_BUNDLE_JAR
-    mvn -B dependency:get -DgroupId=com.nvidia \
-                       -DartifactId=rapids-4-spark-hybrid_2.12 \
-                       -Dversion=${PROJECT_TEST_VER} \
-                       -Dpackaging=jar \
-                       -Dtransitive=false \
-                       -Ddest=/tmp/$HYBRID_JAR
-    wget -O /tmp/${GLUTEN_THIRD_PARTY_JAR} ${MVN_URM_MIRROR}/com/nvidia/gluten-thirdparty-lib/${GLUTEN_VERSION}/${GLUTEN_THIRD_PARTY_JAR}
+    echo "Downloading hybrid execution dependency jars..."
+    local spark_prefix="${SPARK_VER:0:3}" # get prefix from SPARK_VER, e.g.: 3.2, 3.3 ... 3.5
+    GLUTEN_BUNDLE_JAR="gluten-velox-bundle-${GLUTEN_VERSION}-spark${spark_prefix}_${SCALA_BINARY_VER}-${os_version}_${cup_arch}.jar"
+    HYBRID_JAR="rapids-4-spark-hybrid_${SCALA_BINARY_VER}-${PROJECT_VER}.jar"
+    GLUTEN_THIRDPARTY_JAR="gluten-thirdparty-lib-${GLUTEN_VERSION}-${os_version}-${cup_arch}.jar"
+    wget -q -O /tmp/$GLUTEN_BUNDLE_JAR $URM_URL/com/nvidia/gluten-velox-bundle/$GLUTEN_VERSION/$GLUTEN_BUNDLE_JAR
+    wget -q -O /tmp/$HYBRID_JAR $URM_URL/com/nvidia/rapids-4-spark-hybrid_${SCALA_BINARY_VER}/$PROJECT_VER/$HYBRID_JAR
+    wget -q -O /tmp/$GLUTEN_THIRDPARTY_JAR  $URM_URL/com/nvidia/gluten-thirdparty-lib/$GLUTEN_VERSION/$GLUTEN_THIRDPARTY_JAR
+}
 
-    # run Hybrid Python tests
-    LOAD_HYBRID_BACKEND=1 \
-    HYBRID_BACKEND_JARS=/tmp/${HYBRID_JAR},/tmp/${GLUTEN_BUNDLE_JAR},/tmp/${GLUTEN_THIRD_PARTY_JAR} \
-    ./integration_tests/run_pyspark_from_build.sh -m hybrid_test
+hybrid_test() {
+    echo "Run hybrid execution tests..."
+    LOAD_HYBRID_BACKEND=1 HYBRID_BACKEND_JARS=/tmp/${HYBRID_JAR},/tmp/${GLUTEN_BUNDLE_JAR},/tmp/${GLUTEN_THIRDPARTY_JAR} \
+        integration_tests/run_pyspark_from_build.sh -m hybrid_test
 }

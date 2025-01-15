@@ -352,9 +352,14 @@ if [[ "$TEST_MODE" == "NON_UTC_TZ" ]]; then
 fi
 
 # hybrid execution tests
-if [[ "$TEST_MODE" == "HYBRID_EXECUTION" ]]; then
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "HYBRID_EXECUTION" ]]; then
   source "${WORKSPACE}/jenkins/hybrid_execution.sh"
-  test_hybrid_feature
+  result=$(hybrid_prepare)
+  if [ $result == 0 ]; then
+    hybrid_test
+  else
+    echo "Skipped hybrid execution tests $result"
+  fi
 fi
 
 popd
