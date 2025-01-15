@@ -392,8 +392,10 @@ class SpillableHostBufferHandle private (
   }
 
   override def close(): Unit = {
-    releaseHostResource()
     synchronized {
+      if (toSpill.isEmpty) {
+        releaseHostResource()
+      }
       disk.foreach(_.close())
       disk = None
       closed = true
@@ -548,8 +550,10 @@ class SpillableDeviceBufferHandle private (
   }
 
   override def close(): Unit = {
-    releaseDeviceResource()
     synchronized {
+      if (toSpill.isEmpty) {
+        releaseDeviceResource()
+      }
       host.foreach(_.close())
       host = None
       closed = true
@@ -1046,8 +1050,10 @@ class SpillableHostColumnarBatchHandle private (
   }
 
   override def close(): Unit = {
-    releaseHostResource()
     synchronized {
+      if (toSpill.isEmpty) {
+        releaseHostResource()
+      }
       disk.foreach(_.close())
       disk = None
       closed = true
