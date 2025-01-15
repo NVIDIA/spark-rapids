@@ -1516,13 +1516,14 @@ object SpillFramework extends Logging {
     storesInternal
   }
 
-  // TODO: these should be pools, instead of individual buffers
-//  private var hostSpillBounceBuffer: HostMemoryBuffer = _
-  class HostBounceBufferPool(rapidsConf: RapidsConf) {
+  class HostBounceBufferPool(rapidsConf: RapidsConf) extends AutoCloseable {
     private val pool = new ConcurrentLinkedQueue[HostMemoryBuffer]()
 
-    for (_ <- 1 to 4) {
-      pool.offer(HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize))
+    {
+      val bbCount = rapidsConf.spillToDiskBounceBufferCount
+      for (_ <- 1L to bbCount) {
+        pool.offer(HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize))
+      }
     }
 
     def nextBuffer(): HostMemoryBuffer = {
@@ -1536,6 +1537,11 @@ object SpillFramework extends Logging {
 
     def returnToPool(hmb: HostMemoryBuffer): Unit = {
       pool.offer(hmb)
+    }
+
+    override def close(): Unit = {
+      // this doesn't work if some buffers are currently acquired
+      pool.forEach(_.close())
     }
   }
   private var hostSpillBounceBufferPool: HostBounceBufferPool = _
@@ -1564,23 +1570,22 @@ object SpillFramework extends Logging {
       Some(rapidsConf.hostSpillStorageSize)
     }
     // this should hopefully be pinned, but it would work without
-//    hostSpillBounceBuffer = HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize)
     hostSpillBounceBufferPool = new HostBounceBufferPool(rapidsConf)
 
     chunkedPackBounceBufferPool = new DeviceBounceBufferPool {
       private val pool = new ConcurrentLinkedQueue[DeviceBounceBuffer]()
 
-      for (_ <- 1 to 4) {
-        pool.offer(new PooledDeviceBounceBuffer(
-          DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize), this))
+      {
+        val bbCount = rapidsConf.chunkedPackBounceBufferCount
+        for (_ <- 1L to bbCount) {
+          pool.offer(new PooledDeviceBounceBuffer(
+            DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize), this))
+        }
       }
 
-//      private val bounceBuffer: DeviceBounceBuffer =
-//        DeviceBounceBuffer(DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize))
       override def bufferSize: Long = rapidsConf.chunkedPackBounceBufferSize
       override def nextBuffer(): DeviceBounceBuffer = {
-//        // can block waiting for bounceBuffer to be released
-//        bounceBuffer.acquire()
+        // can block waiting for bounceBuffer to be released
         var buffer = pool.poll()
         while (buffer == null) {
           Thread.sleep(10)
@@ -1591,7 +1596,6 @@ object SpillFramework extends Logging {
       }
       override def close(): Unit = {
         // this closes the DeviceMemoryBuffer wrapped by the bounce buffer class
-//        bounceBuffer.release()
         pool.asScala.foreach(_.release())
       }
 
@@ -1609,10 +1613,10 @@ object SpillFramework extends Logging {
   }
 
   def shutdown(): Unit = {
-//    if (hostSpillBounceBuffer != null) {
-//      hostSpillBounceBuffer.close()
-//      hostSpillBounceBuffer = null
-//    }
+    if (hostSpillBounceBufferPool != null) {
+      hostSpillBounceBufferPool.close()
+      hostSpillBounceBufferPool = null
+    }
     if (chunkedPackBounceBufferPool != null) {
       chunkedPackBounceBufferPool.close()
       chunkedPackBounceBufferPool = null
