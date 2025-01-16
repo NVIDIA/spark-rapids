@@ -37,16 +37,16 @@ object RaiseErrorShim {
       (a, conf, p, r) => new BinaryExprMeta[RaiseError](a, conf, p, r) {
 
         override def tagExprForGpu(): Unit = {
-          // In Databricks 14.3 and Spark 4.0, RaiseError forwards the lhs expression (i.e. the error-class)
-          // as a scalar value.  A vector/column here would be surprising.
+          // In Databricks 14.3 and Spark 4.0, RaiseError forwards the lhs expression
+          // (i.e. the error-class) as a scalar value.  A vector/column here would be surprising.
           a.errorClass match {
             case _: Literal => // Supported.
             case _ => willNotWorkOnGpu(s"expected error-class to be a STRING literal")
           }
         }
 
-        override def convertToGpu(lhsErrorClass: Expression, rhsErrorParams: Expression): GpuExpression =
-          GpuRaiseError(lhsErrorClass, rhsErrorParams)
+        override def convertToGpu(lhsErrorClass: Expression, rhsErrorParams: Expression)
+          : GpuExpression = GpuRaiseError(lhsErrorClass, rhsErrorParams)
       })).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }

@@ -31,11 +31,12 @@ import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Implements `raise_error()` for Databricks 14.3 and Spark 4.0.
- * Note that while the arity `raise_error()` remains 1 for all user-facing APIs (SQL, Scala, Python).
- * But internally, the implementation uses a binary expression, where the first argument indicates
- * the "error-class" for the error being raised.
+ * Note that while the arity `raise_error()` remains 1 for all user-facing APIs
+ * (SQL, Scala, Python). But internally, the implementation uses a binary expression,
+ * where the first argument indicates the "error-class" for the error being raised.
  */
-case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryExpression with ExpectsInputTypes {
+case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryExpression
+  with ExpectsInputTypes {
 
   val errorClass: Expression = left
   val errorParams: Expression = right
@@ -70,7 +71,8 @@ case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryE
   }
 
   private def makeMapData(listOfStructs: ColumnView): MapData = {
-    val THRESHOLD: Int = 10 // Avoiding surprises with large maps.  All testing indicates a map with 1 entry.
+    val THRESHOLD: Int = 10 // Avoiding surprises with large maps.
+                            // All testing indicates a map with 1 entry.
     val mapSize = listOfStructs.getRowCount
 
     if (mapSize > THRESHOLD)
@@ -96,7 +98,8 @@ case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryE
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
     if (rhs.getRowCount <= 0) {
       // For the case: when(condition, raise_error(col("a"))
-      // When `condition` selects no rows, a vector of nulls should be returned, instead of throwing.
+      // When `condition` selects no rows, a vector of nulls should be returned,
+      // instead of throwing.
       return GpuColumnVector.columnVectorFromNull(0, NullType)
     }
 
@@ -113,7 +116,8 @@ case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryE
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
       if (numRows <= 0) {
         // For the case: when(condition, raise_error(col("a"))
-        // When `condition` selects no rows, a vector of nulls should be returned, instead of throwing.
+        // When `condition` selects no rows, a vector of nulls should be returned,
+        // instead of throwing.
         return GpuColumnVector.columnVectorFromNull(0, NullType)
       }
 
