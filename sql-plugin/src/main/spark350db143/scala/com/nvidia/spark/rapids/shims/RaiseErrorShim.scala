@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{ExprRule, GpuOverrides}
-import com.nvidia.spark.rapids.{ExprChecks, GpuExpression, TypeSig, BinaryExprMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, ExprChecks, GpuExpression, TypeSig}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RaiseError}
 import org.apache.spark.sql.rapids.shims.GpuRaiseError

@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuBinaryExpression, GpuMapUtils, GpuScalar}
+import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuMapUtils, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
@@ -75,8 +75,9 @@ case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryE
                             // All testing indicates a map with 1 entry.
     val mapSize = listOfStructs.getRowCount
 
-    if (mapSize > THRESHOLD)
+    if (mapSize > THRESHOLD) {
       throw new UnsupportedOperationException("Unexpectedly large error-parameter map")
+    }
 
     val outputKeys: Array[UTF8String] =
       withResource(GpuMapUtils.getKeysAsListView(listOfStructs)) { listOfKeys =>
