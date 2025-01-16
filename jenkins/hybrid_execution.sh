@@ -30,6 +30,7 @@ hybrid_prepare(){
     echo "cup_arch=$cup_arch, os_version=$os_version, SCALA_BINARY_VER=$SCALA_BINARY_VER"
     if [[ ! ("$cup_arch" == "x86_64" && ("$os_version" == "ubuntu_20.04" || "$os_version" == "ubuntu_22.04") && "$SCALA_BINARY_VER" == "2.12") ]]; then
         echo "SKIP! Only supports running Scala 2.12 hybrid execution tests on an x86_64 processor under Ubuntu 20.04 or 22.04."
+        return 1
     fi
 
     echo "Downloading hybrid execution dependency jars..."
