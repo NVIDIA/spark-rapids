@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,27 +33,58 @@ def test_part_id():
                 f.col('a'),
                 f.spark_partition_id()))
 
+# Spark conf key for choosing legacy error semantics.
+legacy_semantics_key = "spark.sql.legacy.raiseErrorWithoutErrorClass"
+is_new_raise_error_semantics_version=is_spark_400_or_later() or is_databricks_version_or_later(14, 3)
 
-@pytest.mark.skipif(condition=is_spark_400_or_later() or is_databricks_version_or_later(14, 3),
-                    reason="raise_error() not currently implemented for Spark 4.0, or Databricks 14.3. "
-                           "See https://github.com/NVIDIA/spark-rapids/issues/10107.")
-def test_raise_error():
+def raise_error_test_impl(test_conf):
+    use_new_error_semantics = legacy_semantics_key in test_conf and test_conf[legacy_semantics_key] == False
+
     data_gen = ShortGen(nullable=False, min_val=0, max_val=20, special_cases=[])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices=2).select(
-            f.when(f.col('a') > 30, f.raise_error("unexpected"))))
+            f.when(f.col('a') > 30, f.raise_error("unexpected"))),
+        conf=test_conf)
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.range(0).select(f.raise_error(f.col("id"))))
+        lambda spark: spark.range(0).select(f.raise_error(f.col("id"))),
+        conf=test_conf)
 
+    error_fragment = "org.apache.spark.SparkRuntimeException" if use_new_error_semantics \
+      else "java.lang.RuntimeException"
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, null_gen, length=2, num_slices=1).select(
                 f.raise_error(f.col('a'))).collect(),
-        conf={},
-        error_message="java.lang.RuntimeException")
+        conf=test_conf,
+        error_message=error_fragment)
 
+    error_fragment = error_fragment + (": [USER_RAISED_EXCEPTION] unexpected" if use_new_error_semantics
+      else ": unexpected")
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, short_gen, length=2, num_slices=1).select(
                 f.raise_error(f.lit("unexpected"))).collect(),
-        conf={},
-        error_message="java.lang.RuntimeException: unexpected")
+        conf=test_conf,
+        error_message=error_fragment)
+
+
+def test_raise_error_legacy_semantics():
+    """
+    Tests the "legacy" semantics of raise_error(), i.e. where the error
+    does not include an error class.
+    """
+    if is_new_raise_error_semantics_version:
+        raise_error_test_impl(test_conf={legacy_semantics_key: True})
+    else:
+        raise_error_test_impl(test_conf={})
+
+
+@pytest.mark.skipif(condition=not is_new_raise_error_semantics_version,
+                    reason="New raise_error semantics (with error-class) is only available "
+                           "on Spark 4.0 and Databricks 14.3.")
+def test_raise_error_new_semantics():
+    """
+    Tests the "new" semantics of raise_error(), i.e. where the error
+    includes an error class.  Unsupported in Spark versions predating
+    Spark 4.0, Databricks 14.3.
+    """
+    raise_error_test_impl(test_conf={legacy_semantics_key: False})
