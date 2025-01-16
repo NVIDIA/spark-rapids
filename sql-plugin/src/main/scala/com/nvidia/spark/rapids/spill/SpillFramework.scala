@@ -1526,21 +1526,25 @@ object SpillFramework extends Logging {
       }
     }
 
-    def nextBuffer(): HostMemoryBuffer = {
+    def nextBuffer(): HostMemoryBuffer = synchronized {
       var buf = pool.poll()
       while (buf == null) {
-        Thread.sleep(10)
+        wait()
         buf = pool.poll()
       }
       buf
     }
 
-    def returnToPool(hmb: HostMemoryBuffer): Unit = {
+    def returnToPool(hmb: HostMemoryBuffer): Unit = synchronized {
       pool.offer(hmb)
+      notifyAll()
     }
 
     override def close(): Unit = {
-      // this doesn't work if some buffers are currently acquired
+      if (pool.size() != rapidsConf.spillToDiskBounceBufferCount) {
+        throw new IllegalStateException("HostBounceBufferPool closed while buffers are " +
+          "still being used");
+      }
       pool.forEach(_.close())
     }
   }
@@ -1584,11 +1588,11 @@ object SpillFramework extends Logging {
       }
 
       override def bufferSize: Long = rapidsConf.chunkedPackBounceBufferSize
-      override def nextBuffer(): DeviceBounceBuffer = {
+      override def nextBuffer(): DeviceBounceBuffer = synchronized {
         // can block waiting for bounceBuffer to be released
         var buffer = pool.poll()
         while (buffer == null) {
-          Thread.sleep(10)
+          wait()
           buffer = pool.poll()
         }
 
@@ -1599,8 +1603,9 @@ object SpillFramework extends Logging {
         pool.asScala.foreach(_.release())
       }
 
-      override def returnBuffer(buffer: DeviceBounceBuffer): Unit = {
+      override def returnBuffer(buffer: DeviceBounceBuffer): Unit = synchronized {
         pool.offer(buffer)
+        notifyAll()
       }
     }
     storesInternal = new SpillableStores {
