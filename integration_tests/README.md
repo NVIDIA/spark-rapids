@@ -385,7 +385,7 @@ test_my_new_added_case_for_sequence_operator()
 ```
 
 ### Running with Hybrid execution
-The Hybrid tests requires extra jars, to enable Hybrid tests, need following pre requirements:
+The hybrid tests require extra jars. To enable hybrid tests, the following prerequisites are required::
 - Build Gluten bundle jar, Gluten thirdparty jar, refer to [link](../docs/dev/hybrid-execution.md#build)
 - Download Hybrid jar, refer to [link](../docs/dev/hybrid-execution.md#download-rapids-hybrid-jar-from-maven-repo)
 
