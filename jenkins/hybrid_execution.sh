@@ -28,13 +28,9 @@ hybrid_prepare(){
     local cup_arch=$(uname -m)
     local os_version=$(source /etc/os-release > /dev/null 2>&1 && echo ${ID}_${VERSION_ID})
     local spark_prefix="${SPARK_VER:0:3}" # get prefix from SPARK_VER, e.g.: 3.2, 3.3 ... 3.5
-    if [[ ! "$SUPPORTED_HYBRID_SHIMS" == *"$spark_prefix"* ]]; then
-        echo "SKIP! spark $spark_prefix is not in the support hybrid shim list $SUPPORTED_HYBRID_SHIMS"
-        return 1
-    fi
-    echo "cup_arch=$cup_arch, os_version=$os_version, SCALA_BINARY_VER=$SCALA_BINARY_VER"
-    if [[ ! ("$cup_arch" == "x86_64" && ("$os_version" == "ubuntu_20.04" || "$os_version" == "ubuntu_22.04") && "$SCALA_BINARY_VER" == "2.12") ]]; then
-        echo "SKIP! Only supports running Scala 2.12 hybrid execution tests on an x86_64 processor under Ubuntu 20.04 or 22.04."
+    echo "cup_arch=$cup_arch, os_version=$os_version, SCALA_BINARY_VER=$SCALA_BINARY_VER, spark_prefix=$spark_prefix"
+    if [[ ! ( "$SUPPORTED_HYBRID_SHIMS" == *"$spark_prefix"* && "$cup_arch" == "x86_64" && ("$os_version" == "ubuntu_20.04" || "$os_version" == "ubuntu_22.04") && "$SCALA_BINARY_VER" == "2.12") ]]; then
+        echo "SKIP! Hybrid only supports shims $SUPPORTED_HYBRID_SHIMS running Scala 2.12 tests on an x86_64 processor under Ubuntu 20.04 or 22.04."
         return 1
     fi
 
