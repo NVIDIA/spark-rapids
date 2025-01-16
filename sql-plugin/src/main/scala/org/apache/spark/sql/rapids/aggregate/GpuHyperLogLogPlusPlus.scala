@@ -47,13 +47,12 @@ case class CudfHLLPP(override val dataType: DataType,
           cudf.Scalar.structFromColumnViews(cvs: _*)
         }
       } else {
-        withResource(new HyperLogLogPlusPlusHostUDF(AggregationType.Reduction, precision)) { hll =>
-          input.reduce(ReductionAggregation.hostUDF(hll), DType.STRUCT)
-        }
+        val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.Reduction, precision)
+        input.reduce(ReductionAggregation.hostUDF(hll), DType.STRUCT)
       }
     }
-  override lazy val groupByAggregate: GroupByAggregation =
-    withResource(new HyperLogLogPlusPlusHostUDF(AggregationType.GroupBy, precision)) { hll =>
+  override lazy val groupByAggregate: GroupByAggregation = {
+      val hll =new HyperLogLogPlusPlusHostUDF(AggregationType.GroupBy, precision)
       GroupByAggregation.hostUDF(hll)
     }
   override val name: String = "CudfHyperLogLogPlusPlus"
@@ -63,14 +62,13 @@ case class CudfMergeHLLPP(override val dataType: DataType,
     precision: Int)
     extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (input: cudf.ColumnVector) => withResource(
-      new HyperLogLogPlusPlusHostUDF(AggregationType.ReductionMerge, precision)) { hll =>
+    (input: cudf.ColumnVector) => {
+      val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.ReductionMerge, precision)
       input.reduce(ReductionAggregation.hostUDF(hll), DType.STRUCT)
     }
 
-  override lazy val groupByAggregate: GroupByAggregation =
-    withResource(
-      new HyperLogLogPlusPlusHostUDF(AggregationType.GroupByMerge, precision)) { hll =>
+  override lazy val groupByAggregate: GroupByAggregation = {
+      val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.GroupByMerge, precision)
       GroupByAggregation.hostUDF(hll)
     }
 
