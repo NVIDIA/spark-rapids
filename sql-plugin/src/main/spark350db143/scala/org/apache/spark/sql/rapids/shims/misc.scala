@@ -20,10 +20,10 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuMapUtils, GpuScalar}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuMapUtils, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, RaiseError}
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, MapData}
 import org.apache.spark.sql.errors.QueryExecutionErrors.raiseError
 import org.apache.spark.sql.types.{AbstractDataType, DataType, NullType, StringType}
@@ -125,4 +125,13 @@ case class GpuRaiseError(left: Expression, right: Expression, dataType: DataType
       val errorParams = rhs.getValue.asInstanceOf[MapData]
       throw raiseError(errorClass, errorParams)
   }
+}
+
+class RaiseErrorMeta(r: RaiseError,
+                     conf: RapidsConf,
+                     parent: Option[RapidsMeta[_, _, _]],
+                     rule: DataFromReplacementRule )
+  extends BinaryExprMeta[RaiseError](r, conf, parent, rule) {
+  override def convertToGpu(lhsErrorClass: Expression, rhsErrorParams: Expression): GpuExpression
+    = GpuRaiseError(lhsErrorClass, rhsErrorParams, r.dataType)
 }
