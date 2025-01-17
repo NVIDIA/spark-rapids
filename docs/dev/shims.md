@@ -40,6 +40,16 @@ for conflicting Shim implementations.
 
 ### Compile-time issues
 
+#### Methods added in new versions
+
+If the new methods are a superset of functionality from previous versions and can be implemented
+with default behavior, they can be added directly to the unshimmed class. For methods introduced
+in newer versions that do not exist in older versions, removing the override keyword ensures that
+these methods are treated as new additions rather than overrides. This allows the same class to work
+across different Spark versions.
+
+#### Different parent class signatures
+
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes

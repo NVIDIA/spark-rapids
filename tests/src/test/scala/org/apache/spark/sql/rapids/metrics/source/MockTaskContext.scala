@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.apache.spark.sql.rapids.metrics.source
 
+import java.io.Closeable
 import java.util
 import java.util.Properties
 
@@ -102,4 +103,16 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
    * removing the override keyword.
    */
   def isFailed(): Boolean = false
+
+  /**
+   * These below methods were introduced in Spark-4. It's not shimmed and added to the common class
+   * removing the override keyword.
+   */
+
+  private[spark] def interruptible(): Boolean = false
+
+  private[spark] def pendingInterrupt(threadToInterrupt: Option[Thread], reason: String): Unit = {}
+
+  private[spark] def createResourceUninterruptibly[T <: Closeable](
+      resourceBuilder: => T): T = resourceBuilder
 }
