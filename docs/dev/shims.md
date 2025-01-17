@@ -42,7 +42,7 @@ for conflicting Shim implementations.
 
 #### Methods added in new versions
 
-If the new methods are a superset of functionality from previous versions and can be implemented
+If the base class or trait in the new version just adds new methods on top of previous versions and can be implemented
 with default behavior, they can be added directly to the unshimmed class. For methods introduced
 in newer versions that do not exist in older versions, removing the override keyword ensures that
 these methods are treated as new additions rather than overrides. This allows the same class to work
