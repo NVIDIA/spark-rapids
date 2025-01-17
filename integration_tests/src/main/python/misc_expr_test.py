@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
@@ -41,9 +41,23 @@ def raise_error_test_impl(test_conf):
     use_new_error_semantics = legacy_semantics_key in test_conf and test_conf[legacy_semantics_key] == False
 
     data_gen = ShortGen(nullable=False, min_val=0, max_val=20, special_cases=[])
+
+    # Test for "when" selecting the "raise_error()" expression (null-type).
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices=2).select(
             f.when(f.col('a') > 30, f.raise_error("unexpected"))),
+        conf=test_conf)
+
+    # Test for if/else, with raise_error in the else.
+    # This should test if the data-type of raise_error() interferes with
+    # the result-type of the parent expression (if/else).
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: unary_op_df(spark, data_gen, num_slices=2),
+        'test_table',
+        """
+        SELECT IF( a < 30, a, raise_error('unexpected') )
+        FROM test_table
+        """,
         conf=test_conf)
 
     assert_gpu_and_cpu_are_equal_collect(

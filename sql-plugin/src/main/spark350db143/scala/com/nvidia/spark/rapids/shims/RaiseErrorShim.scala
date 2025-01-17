@@ -38,7 +38,7 @@ object RaiseErrorShim {
       ),
       (a, conf, p, r) => new BinaryExprMeta[RaiseError](a, conf, p, r) {
         override def convertToGpu(lhsErrorClass: Expression, rhsErrorParams: Expression)
-          : GpuExpression = GpuRaiseError(lhsErrorClass, rhsErrorParams)
+          : GpuExpression = GpuRaiseError(lhsErrorClass, rhsErrorParams, a.dataType)
       })).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }

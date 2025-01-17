@@ -35,13 +35,12 @@ import org.apache.spark.unsafe.types.UTF8String
  * (SQL, Scala, Python). But internally, the implementation uses a binary expression,
  * where the first argument indicates the "error-class" for the error being raised.
  */
-case class GpuRaiseError(left: Expression, right: Expression) extends GpuBinaryExpression
-  with ExpectsInputTypes {
+case class GpuRaiseError(left: Expression, right: Expression, dataType: DataType)
+  extends GpuBinaryExpression with ExpectsInputTypes {
 
   val errorClass: Expression = left
   val errorParams: Expression = right
 
-  override def dataType: DataType = NullType
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
   override def toString: String = s"raise_error($errorClass, $errorParams)"
 
