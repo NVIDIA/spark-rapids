@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2024, NVIDIA CORPORATION.
+  Copyright (c) 2020-2025, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -54,15 +54,6 @@
             <id>tgravescs</id>
             <name>Thomas Graves</name>
             <email>tgraves@nvidia.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>jlowe</id>
-            <name>Jason Lowe</name>
-            <email>jlowe@nvidia.com</email>
             <roles>
                 <role>Committer</role>
             </roles>
@@ -694,6 +685,27 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release354</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>354</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>354</buildver>
+                <spark.version>${spark354.version}</spark.version>
+                <spark.test.version>${spark354.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -831,7 +843,6 @@
         <spark-rapids-jni.version>25.02.0-SNAPSHOT</spark-rapids-jni.version>
         <spark-rapids-private.version>25.02.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.13</scala.binary.version>
-        <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.13.14</scala.version>
         <!--
@@ -902,6 +913,7 @@
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
         <spark353.version>3.5.3</spark353.version>
+        <spark354.version>3.5.4</spark354.version>
         <spark400.version>4.0.0-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
@@ -1077,13 +1089,6 @@
               <groupId>org.rogach</groupId>
               <artifactId>scallop_${scala.binary.version}</artifactId>
               <version>3.5.1</version>
-            </dependency>
-            <dependency>
-                <!-- Used for Alluxio mounting -->
-                <groupId>org.alluxio</groupId>
-                <artifactId>alluxio-shaded-client</artifactId>
-                <version>${alluxio.client.version}</version>
-                <scope>provided</scope>
             </dependency>
             <dependency>
                 <!-- For shade, spark 3.2 and earlier uses an older version(0.9.0), which doesn't

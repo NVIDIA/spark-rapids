@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -29,14 +30,15 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * and executed in the order they were scheduled. This class is not thread-safe and should only be
  * used by a single thread.
  */
-class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: TrafficController)
+class AsyncOutputStream(openFn: Callable[OutputStream], trafficController: TrafficController,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker])
   extends OutputStream {
 
   private var closed = false
 
   private val executor = new ThrottlingExecutor(
-    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1),
-    trafficController)
+    TrampolineUtil.newDaemonCachedThreadPool("AsyncOutputStream", 1, 1), trafficController,
+    statsTrackers)
 
   // Open the underlying stream asynchronously as soon as the AsyncOutputStream is constructed,
   // so that the open can be done in parallel with other operations. This could help with

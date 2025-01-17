@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,22 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "332db"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "400"}
+{"spark": "354"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark354
 
-import org.apache.spark.sql.execution.datasources.FileIndexOptions
+import com.nvidia.spark.rapids.SparkShimVersion
 
-object FileIndexOptionsShims {
-  val BASE_PATH_PARAM = FileIndexOptions.BASE_PATH_PARAM
+object SparkShimServiceProvider {
+  val VERSION = SparkShimVersion(3, 5, 4)
+  val VERSIONNAMES = Seq(s"$VERSION")
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+
+  override def matchesVersion(version: String): Boolean = {
+    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+  }
 }

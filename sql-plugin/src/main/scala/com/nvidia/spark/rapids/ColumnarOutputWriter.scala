@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,6 +62,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
       path: String,
       dataSchema: StructType,
       context: TaskAttemptContext,
+      statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
       debugOutputPath: Option[String]): ColumnarOutputWriter
 }
 
@@ -74,6 +75,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
     includeRetry: Boolean,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean = false,
     useAsyncWrite: Boolean = false) extends HostBufferConsumer with Logging {
@@ -128,7 +130,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   protected def getOutputStream: OutputStream = {
     if (useAsyncWrite) {
       logWarning("Async output write enabled")
-      new AsyncOutputStream(() => openOutputStream(), trafficController)
+      new AsyncOutputStream(() => openOutputStream(), trafficController, statsTrackers)
     } else {
       openOutputStream()
     }
@@ -156,8 +158,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private[this] def updateStatistics(
       writeStartTime: Long,
-      gpuTime: Long,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+      gpuTime: Long): Unit = {
     // Update statistics
     val writeTime = System.nanoTime - writeStartTime - gpuTime
     statsTrackers.foreach {
@@ -183,9 +184,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
    * during the distributed filesystem transfer to allow other tasks to start/continue
    * GPU processing.
    */
-  def writeSpillableAndClose(
-      spillableBatch: SpillableColumnarBatch,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
+  def writeSpillableAndClose(spillableBatch: SpillableColumnarBatch): Long = {
     val writeStartTime = System.nanoTime
     closeOnExcept(spillableBatch) { _ =>
       val cb = withRetryNoSplit[ColumnarBatch] {
@@ -222,7 +221,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
 
     writeBufferedData()
-    updateStatistics(writeStartTime, gpuTime, statsTrackers)
+    updateStatistics(writeStartTime, gpuTime)
     spillableBatch.numRows()
   }
 
