@@ -35,7 +35,6 @@ def test_part_id():
 
 # Spark conf key for choosing legacy error semantics.
 legacy_semantics_key = "spark.sql.legacy.raiseErrorWithoutErrorClass"
-is_new_raise_error_semantics_version=is_spark_400_or_later() or is_databricks_version_or_later(14, 3)
 
 def raise_error_test_impl(test_conf):
     use_new_error_semantics = legacy_semantics_key in test_conf and test_conf[legacy_semantics_key] == False
@@ -86,15 +85,19 @@ def test_raise_error_legacy_semantics():
     Tests the "legacy" semantics of raise_error(), i.e. where the error
     does not include an error class.
     """
-    if is_new_raise_error_semantics_version:
+    if is_spark_400_or_later() or is_databricks_version_or_later(14, 3):
+        # Spark 4+ and Databricks 14.3+ support RaiseError with error-classes included.
+        # Must test "legacy" mode, where error-classes are excluded.
         raise_error_test_impl(test_conf={legacy_semantics_key: True})
     else:
+        # Spark versions preceding 4.0, or Databricks 14.3 do not support RaiseError with
+        # error-classes.  No legacy mode need be selected.
         raise_error_test_impl(test_conf={})
 
 
-@pytest.mark.skipif(condition=not is_new_raise_error_semantics_version,
-                    reason="New raise_error semantics (with error-class) is only available "
-                           "on Spark 4.0 and Databricks 14.3.")
+@pytest.mark.skipif(condition=not (is_spark_400_or_later() or is_databricks_version_or_later(14, 3)),
+                    reason="RaiseError semantics with error-classes are only supported "
+                           "on Spark 4.0+ and Databricks 14.3+.")
 def test_raise_error_new_semantics():
     """
     Tests the "new" semantics of raise_error(), i.e. where the error
