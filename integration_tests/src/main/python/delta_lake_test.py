@@ -20,7 +20,7 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
-    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors
+    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -28,6 +28,7 @@ _conf = {'spark.rapids.sql.explain': 'ALL'}
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(not (is_databricks_runtime() or is_spark_320_or_later()), \
     reason="Delta Lake is already configured on Databricks and CI supports Delta Lake OSS with Spark 3.2.x so far")
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason='We support deletion vectors read on Databricks 14.3')
 def test_delta_metadata_query_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     def setup_delta_table(spark):
@@ -74,6 +75,7 @@ def test_delta_merge_query(spark_tmp_table_factory):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason='We support deletion vectors read on Databricks 14.3')
 def test_delta_deletion_vector_read_fallback(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true"}
@@ -101,6 +103,11 @@ if is_spark_340_or_later() or is_databricks_runtime():
 @pytest.mark.parametrize("reader_confs", reader_opt_confs_no_native, ids=idfn)
 @pytest.mark.parametrize("mapping", column_mappings, ids=idfn)
 def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
+    non_gpu_conf = {}
+    if (reader_confs["spark.rapids.sql.format.parquet.reader.type"] != "PERFILE" and is_databricks143_or_later()): 
+        # We only support deletion vector reads on Databricks 14.3 
+        non_gpu_conf = {"spark.rapids.sql.test.allowedNonGpu": "FileSourceScanExec,ColumnarToRowExec,FilterExec"}
+
     data_path = spark_tmp_path + "/DELTA_DATA"
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
@@ -112,7 +119,7 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
         "spark.databricks.delta.properties.defaults.minReaderVersion": "2",
         "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
         "spark.sql.parquet.fieldId.read.enabled": "true"
-    })
+    }, non_gpu_conf)
     with_cpu_session(
         lambda spark: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
             .partitionBy("b", "d") \

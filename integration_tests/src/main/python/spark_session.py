@@ -161,7 +161,7 @@ def with_gpu_session(func, conf={}):
         copy['spark.rapids.sql.test.enabled'] = 'false'
     else:
         copy['spark.rapids.sql.test.enabled'] = 'true'
-        copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
+        copy['spark.rapids.sql.test.allowedNonGpu'] = copy.get('spark.rapids.sql.test.allowedNonGpu', '') + ','.join(get_non_gpu_allowed())
 
     copy['spark.rapids.sql.test.validateExecsInGpuPlan'] = ','.join(get_validate_execs_in_gpu_plan())
     return with_spark_session(func, conf=copy)
@@ -274,6 +274,9 @@ def is_databricks122_or_later():
 
 def is_databricks133_or_later():
     return is_databricks_version_or_later(13, 3)
+
+def is_databricks143_or_later():
+    return is_databricks_version_or_later(14, 3)
 
 def supports_delta_lake_deletion_vectors():
     if is_databricks_runtime():

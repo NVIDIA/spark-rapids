@@ -278,6 +278,9 @@ case class GpuDeltaParquetFileFormat(
 
 object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    if (!meta.conf.isParquetPerFileReadEnabled) {
+      meta.willNotWorkOnGpu("Deletion vectors only supported for PERFILE reader")
+    }
   }
 
   /** Utility method to create a new writable vector */
