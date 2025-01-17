@@ -122,6 +122,10 @@ case class GpuRaiseError(left: Expression, right: Expression, dataType: DataType
       }
 
       val errorClass = lhs.getValue.asInstanceOf[UTF8String]
+      // TODO (future):  Check if the map-data needs to be extracted differently.
+      // All testing indicates that the host value of the map literal is set always pre-set.
+      // But if it isn't, then GpuScalar.getValue might extract it incorrectly.
+      // https://github.com/NVIDIA/spark-rapids/issues/11974
       val errorParams = rhs.getValue.asInstanceOf[MapData]
       throw raiseError(errorClass, errorParams)
   }
