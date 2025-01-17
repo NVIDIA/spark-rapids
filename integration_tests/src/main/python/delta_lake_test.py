@@ -20,7 +20,8 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
-    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later
+    is_databricks_version_or_later, is_spark_320_or_later, is_spark_340_or_later, \
+    supports_delta_lake_deletion_vectors, is_databricks143_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -100,6 +101,8 @@ if is_spark_340_or_later() or is_databricks_runtime():
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("reader_confs", reader_opt_confs_no_native, ids=idfn)
 @pytest.mark.parametrize("mapping", column_mappings, ids=idfn)
 def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
@@ -133,6 +136,8 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
 @ignore_order(local=True)
 @pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
                     reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 def test_delta_name_column_mapping_no_field_ids(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_parquet_table(spark):

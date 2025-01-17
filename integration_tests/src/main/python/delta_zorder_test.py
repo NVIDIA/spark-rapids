@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import allow_non_gpu, ignore_order, delta_lake
-from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks113_or_later
+from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks113_or_later, is_databricks_version_or_later
 
 from dpp_test import _exchange_reuse_conf
 
@@ -115,6 +115,8 @@ _statements = [
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(not is_databricks104_or_later(), reason="Dynamic File Pruning is only supported in Databricks 10.4+")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'])
 def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aqe_enabled):
