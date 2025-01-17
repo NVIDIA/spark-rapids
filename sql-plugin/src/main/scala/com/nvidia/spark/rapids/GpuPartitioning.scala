@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,15 +29,12 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuPartitioning {
-  // The maximum size of an Array minus a bit for overhead for metadata
-  val MaxCpuBatchSize = 2147483639L - 2048L
-}
-
 trait GpuPartitioning extends Partitioning {
-  private[this] val (maxCompressionBatchSize, _useGPUShuffle, _useMultiThreadedShuffle) = {
+  private[this] val (
+    maxCpuBatchSize, maxCompressionBatchSize, _useGPUShuffle, _useMultiThreadedShuffle) = {
     val rapidsConf = new RapidsConf(SQLConf.get)
-    (rapidsConf.shuffleCompressionMaxBatchMemory,
+    (rapidsConf.shuffleParitioningMaxCpuBatchSize,
+      rapidsConf.shuffleCompressionMaxBatchMemory,
       GpuShuffleEnv.useGPUShuffle(rapidsConf),
       GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf))
   }
@@ -124,7 +121,7 @@ trait GpuPartitioning extends Partitioning {
     // This should be a temp work around.
     partitionColumns.foreach(_.getBase.getNullCount)
     val totalInputSize = GpuColumnVector.getTotalDeviceMemoryUsed(partitionColumns)
-    val mightNeedToSplit = totalInputSize > GpuPartitioning.MaxCpuBatchSize
+    val mightNeedToSplit = totalInputSize > maxCpuBatchSize
 
     // We have to wrap the NvtxWithMetrics over both copyToHostAsync and corresponding CudaSync,
     // because the copyToHostAsync calls above are not guaranteed to be asynchronous (e.g.: when
@@ -164,7 +161,7 @@ trait GpuPartitioning extends Partitioning {
           case (batch, part) =>
             val totalSize = SlicedGpuColumnVector.getTotalHostMemoryUsed(batch)
             val numOutputBatches =
-              math.ceil(totalSize.toDouble / GpuPartitioning.MaxCpuBatchSize).toInt
+              math.ceil(totalSize.toDouble / maxCpuBatchSize).toInt
             if (numOutputBatches > 1) {
               // For now we are going to slice it on number of rows instead of looking
               // at each row to try and decide. If we get in trouble we can probably

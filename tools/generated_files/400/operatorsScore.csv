@@ -218,6 +218,7 @@ PythonUDAF,4
 PythonUDF,4
 Quarter,4
 RLike,4
+RaiseError,4
 Rand,4
 Rank,4
 RegExpExtract,4

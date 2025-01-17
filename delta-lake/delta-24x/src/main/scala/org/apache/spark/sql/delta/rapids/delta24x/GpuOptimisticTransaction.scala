@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -203,8 +203,8 @@ class GpuOptimisticTransaction
         val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
         val basicWriteJobStatsTracker = new BasicColumnarWriteJobStatsTracker(
           serializableHadoopConf,
-          BasicWriteJobStatsTracker.metrics)
-        registerSQLMetrics(spark, basicWriteJobStatsTracker.driverSideMetrics)
+          GpuMetric.wrap(BasicWriteJobStatsTracker.metrics))
+        registerSQLMetrics(spark, GpuMetric.unwrap(basicWriteJobStatsTracker.driverSideMetrics))
         statsTrackers.append(basicWriteJobStatsTracker)
         gpuRapidsWrite.foreach { grw =>
           val tracker = new GpuWriteJobStatsTracker(serializableHadoopConf,

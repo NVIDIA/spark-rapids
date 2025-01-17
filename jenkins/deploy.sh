@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,6 +42,9 @@ DIST_PL=${DIST_PL:-"dist"}
 ###### Build the path of jar(s) to be deployed ######
 MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
 MVN="mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 -s $MVN_SETTINGS"
+SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
+[ $SCALA_BINARY_VER == "2.13" ] && MVN="$MVN -f scala2.13/"
+
 function mvnEval {
     $MVN help:evaluate -q -DforceStdout -pl $1 -Dexpression=$2
 }
@@ -73,9 +76,13 @@ DEPLOY_FILES=$(echo $CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
 SQL_ART_ID=$(mvnEval $SQL_PL project.artifactId)
 SQL_ART_VER=$(mvnEval $SQL_PL project.version)
 JS_FPATH="$(echo -n ${SQL_PL}/target/spark*)/${SQL_ART_ID}-${SQL_ART_VER}"
-cp $JS_FPATH-sources.jar $FPATH-sources.jar
-cp $JS_FPATH-javadoc.jar $FPATH-javadoc.jar
-
+if [ $SCALA_BINARY_VER == "2.13" ]; then
+    cp scala2.13/$JS_FPATH-sources.jar scala2.13/$FPATH-sources.jar
+    cp scala2.13/$JS_FPATH-javadoc.jar scala2.13/$FPATH-javadoc.jar
+else
+    cp $JS_FPATH-sources.jar $FPATH-sources.jar
+    cp $JS_FPATH-javadoc.jar $FPATH-javadoc.jar
+fi
 echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
 GPG_PLUGIN="org.apache.maven.plugins:maven-gpg-plugin:3.1.0:sign-and-deploy-file"
