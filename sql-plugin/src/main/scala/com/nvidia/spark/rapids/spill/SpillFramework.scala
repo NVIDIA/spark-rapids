@@ -256,11 +256,9 @@ object SpillableHostBufferHandle extends Logging {
       while (chunkedPacker.hasNext) {
         val (bb, len) = chunkedPacker.next()
         withResource(bb) { _ =>
-          withResource(new NvtxRange("chunked packer bounce buffer", NvtxColor.RED)) { _ =>
-            builder.copyNext(bb.buf.get, len, Cuda.DEFAULT_STREAM)
-            // copyNext is synchronous w.r.t. the cuda stream passed,
-            // no need to synchronize here.
-          }
+          builder.copyNext(bb.buf.get, len, Cuda.DEFAULT_STREAM)
+          // copyNext is synchronous w.r.t. the cuda stream passed,
+          // no need to synchronize here.
         }
       }
       builder.build
@@ -1046,12 +1044,8 @@ trait SpillableStore[T <: SpillableHandle]
       0L
     } else {
       withResource(spillNvtxRange) { _ =>
-        val plan = withResource(new NvtxRange("makeSpillPlan", NvtxColor.ORANGE)) { _ =>
-          makeSpillPlan(spillNeeded)
-        }
-        val amountSpilled = withResource(new NvtxRange("trySpill", NvtxColor.CYAN)) { _ =>
-          plan.trySpill()
-        }
+        val plan = makeSpillPlan(spillNeeded)
+        val amountSpilled = plan.trySpill()
         postSpill(plan)
         amountSpilled
       }
@@ -1599,7 +1593,7 @@ object SpillFramework extends Logging {
  * The bounce buffer is acquired from a BounceBufferPool, so any calls to
  * BounceBufferPool.nextBuffer will block if the pool has no available buffers.
  *
- * 'close' restores a bounce buffer to the pool for other callers to use.
+ * `close` restores a bounce buffer to the pool for other callers to use.
  *
  * `release` actually closes the underlying buffer, and should be called
  * once at the end of the lifetime of the executor.
@@ -1734,10 +1728,10 @@ class ChunkedPacker(table: Table,
       if (closed) {
         throw new IllegalStateException(s"ChunkedPacker is closed")
       }
-        val bytesWritten = chunkedPack.next(bounceBuffer.buf.get)
-        // we increment the refcount because the caller has no idea where
-        // this memory came from, so it should close it.
-        (bounceBuffer, bytesWritten)
+      val bytesWritten = chunkedPack.next(bounceBuffer.buf.get)
+      // we increment the refcount because the caller has no idea where
+      // this memory came from, so it should close it.
+      (bounceBuffer, bytesWritten)
     }
   }
 
