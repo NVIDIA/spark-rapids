@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.jni.HyperLogLogPlusPlusHostUDF
 import com.nvidia.spark.rapids.jni.HyperLogLogPlusPlusHostUDF.AggregationType
-
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
