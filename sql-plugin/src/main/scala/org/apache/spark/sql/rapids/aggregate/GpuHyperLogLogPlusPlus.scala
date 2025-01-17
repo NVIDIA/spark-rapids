@@ -29,6 +29,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.rapids.{GpuCreateNamedStruct, GpuGetStructField}
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -139,7 +140,7 @@ case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
   /**
    * cuDF HLLPP sketch type: struct<long, ..., long>
    */
-  private lazy val cuDFBufferType: DataType = StructType.fromAttributes(aggBufferAttributes)
+  private lazy val cuDFBufferType: DataType = DataTypeUtilsShim.fromAttributes(aggBufferAttributes)
 
   /**
    * cuDF uses Struct<long, ..., long> column to do aggregate
