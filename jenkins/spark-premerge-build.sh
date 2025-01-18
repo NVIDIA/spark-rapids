@@ -113,7 +113,7 @@ mvn_verify() {
     # test Hybrid feature
     source "${WORKSPACE}/jenkins/hybrid_execution.sh"
     if hybrid_prepare ; then
-        hybrid_test
+        LOAD_HYBRID_BACKEND=1 ./integration_tests/run_pyspark_from_build.sh -m hybrid_test
     fi
 }
 
