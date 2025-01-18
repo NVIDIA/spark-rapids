@@ -17,7 +17,7 @@
 
 set -ex
 
-. jenkins/version-def.sh
+source "${WORKSPACE}/jenkins/version-def.sh"
 
 export GLUTEN_BUNDLE_JAR
 export HYBRID_JAR
