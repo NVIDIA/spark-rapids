@@ -371,10 +371,12 @@ class SpillableHostBufferHandle private (
                 }
               }
             }
-            val staging = Some(diskHandleBuilder.build)
+            var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
             synchronized {
               if (closed) {
                 staging.foreach(_.close())
+                staging = None
+                doClose()
               } else {
                 disk = staging
               }
@@ -391,14 +393,16 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  override def close(): Unit = {
-    synchronized {
-      if (toSpill.isEmpty) {
-        releaseHostResource()
-      }
-      disk.foreach(_.close())
-      disk = None
-      closed = true
+  private def doClose(): Unit = synchronized {
+    releaseHostResource()
+    disk.foreach(_.close())
+    disk = None
+  }
+
+  override def close(): Unit = synchronized {
+    closed = true
+    if (toSpill.isEmpty) {
+      doClose()
     }
   }
 
@@ -531,10 +535,14 @@ class SpillableDeviceBufferHandle private (
         withResource(toSpill.get) { buf =>
           // the spill IO is non-blocking as it won't impact dev or host directly
           // instead we "atomically" swap the buffers below once they are ready
-          val stagingHost =
+          var stagingHost: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
           synchronized {
-            if (!closed) {
+            if (closed) {
+              stagingHost.foreach(_.close())
+              stagingHost = None
+              doClose()
+            } else {
               host = stagingHost
             }
             spilled = dev
@@ -549,14 +557,16 @@ class SpillableDeviceBufferHandle private (
     }
   }
 
-  override def close(): Unit = {
-    synchronized {
-      if (toSpill.isEmpty) {
-        releaseDeviceResource()
-      }
-      host.foreach(_.close())
-      host = None
-      closed = true
+  private def doClose(): Unit = synchronized {
+    releaseDeviceResource()
+    host.foreach(_.close())
+    host = None
+  }
+
+  override def close(): Unit = synchronized {
+    closed = true
+    if (toSpill.isEmpty) {
+      doClose()
     }
   }
 }
@@ -645,10 +655,13 @@ class SpillableColumnarBatchHandle private (
       if (thisThreadSpills) {
         withChunkedPacker { chunkedPacker =>
           meta = Some(chunkedPacker.getPackedMeta)
-          val staging = Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
+          var staging: Option[SpillableHostBufferHandle] =
+            Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
           synchronized {
             if (closed) {
               staging.foreach(_.close())
+              staging = None
+              doClose()
             } else {
               host = staging
             }
@@ -685,14 +698,16 @@ class SpillableColumnarBatchHandle private (
     }
   }
 
-  override def close(): Unit = {
-    synchronized {
-      if (toSpill.isEmpty) {
-        releaseDeviceResource()
-      }
-      host.foreach(_.close())
-      host = None
-      closed = true
+  private def doClose(): Unit = synchronized {
+    releaseDeviceResource()
+    host.foreach(_.close())
+    host = None
+  }
+
+  override def close(): Unit = synchronized {
+    closed = true
+    if (toSpill.isEmpty) {
+      doClose()
     }
   }
 }
@@ -803,11 +818,16 @@ class SpillableColumnarBatchFromBufferHandle private (
         withResource(toSpill.get) { cb =>
           val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
           meta = Some(cvFromBuffer.getTableMeta)
-          val staging = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-            cvFromBuffer.getBuffer))
+          var staging: Option[SpillableHostBufferHandle] =
+            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+              cvFromBuffer.getBuffer))
           // probably can pull out some duplicated code
           synchronized {
-            if (!closed) {
+            if (closed) {
+              doClose()
+              staging.foreach(_.close())
+              staging = None
+            } else {
               host = staging
             }
             // set spilled to dev instead of toSpill so that if dev was already closed during spill,
@@ -824,14 +844,16 @@ class SpillableColumnarBatchFromBufferHandle private (
     }
   }
 
-  override def close(): Unit = {
-    synchronized {
-      if (toSpill.isEmpty) {
-        releaseDeviceResource()
-      }
-      host.foreach(_.close())
-      host = None
-      closed = true
+  private def doClose(): Unit = synchronized {
+    releaseDeviceResource()
+    host.foreach(_.close())
+    host = None
+  }
+
+  override def close(): Unit = synchronized {
+    closed = true
+    if (toSpill.isEmpty) {
+      doClose()
     }
   }
 }
@@ -921,10 +943,14 @@ class SpillableCompressedColumnarBatchHandle private (
         withResource(toSpill.get) { cb =>
           val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
           meta = Some(cvFromBuffer.getTableMeta)
-          val staging = Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
-            cvFromBuffer.getTableBuffer))
+          var staging: Option[SpillableHostBufferHandle] =
+            Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
+              cvFromBuffer.getTableBuffer))
           synchronized {
-            if (!closed) {
+            if (closed) {
+              doClose()
+              staging = None
+            } else {
               host = staging
             }
             // set spilled to dev instead of toSpill so that if dev was already closed during spill,
@@ -941,15 +967,17 @@ class SpillableCompressedColumnarBatchHandle private (
     }
   }
 
-  override def close(): Unit = {
-    synchronized {
-      if (toSpill.isEmpty) {
-        releaseDeviceResource()
-      }
-      host.foreach(_.close())
-      host = None
-      meta = None
-      closed = true
+  private def doClose(): Unit = synchronized {
+    releaseDeviceResource()
+    host.foreach(_.close())
+    host = None
+    meta = None
+  }
+
+  override def close(): Unit = synchronized {
+    closed = true
+    if (toSpill.isEmpty) {
+      doClose()
     }
   }
 }
@@ -1032,9 +1060,13 @@ class SpillableHostColumnarBatchHandle private (
               val columns = RapidsHostColumnVector.extractBases(cb)
               JCudfSerialization.writeToStream(columns, dos, 0, cb.numRows())
             }
-            val staging = Some(diskHandleBuilder.build)
+            var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
             synchronized {
-              if (!closed) {
+              if (closed) {
+                doClose()
+                staging.foreach(_.close())
+                staging = None
+              } else {
                 disk = staging
               }
             }
@@ -1049,14 +1081,16 @@ class SpillableHostColumnarBatchHandle private (
     }
   }
 
-  override def close(): Unit = {
-    synchronized {
-      if (toSpill.isEmpty) {
-        releaseHostResource()
-      }
-      disk.foreach(_.close())
-      disk = None
-      closed = true
+  private def doClose(): Unit = synchronized {
+    releaseHostResource()
+    disk.foreach(_.close())
+    disk = None
+  }
+
+  override def close(): Unit = synchronized {
+    closed = true
+    if (toSpill.isEmpty) {
+      doClose()
     }
   }
 }
