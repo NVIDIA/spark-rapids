@@ -17,11 +17,8 @@
 
 set -ex
 
-. jenkins/version-def.sh
-
-export GLUTEN_BUNDLE_JAR
-export HYBRID_JAR
-export GLUTEN_THIRDPARTY_JAR
+# Explicitly export HYBRID_BACKEND_JARS for hybrid execution tests.
+export HYBRID_BACKEND_JARS
 
 hybrid_prepare(){
     echo "Checking hybrid exeicution tests environmet..."
@@ -41,10 +38,5 @@ hybrid_prepare(){
     wget -q -O /tmp/$GLUTEN_BUNDLE_JAR $URM_URL/com/nvidia/gluten-velox-bundle/$GLUTEN_VERSION/$GLUTEN_BUNDLE_JAR
     wget -q -O /tmp/$HYBRID_JAR $URM_URL/com/nvidia/rapids-4-spark-hybrid_${SCALA_BINARY_VER}/$PROJECT_VER/$HYBRID_JAR
     wget -q -O /tmp/$GLUTEN_THIRDPARTY_JAR  $URM_URL/com/nvidia/gluten-thirdparty-lib/$GLUTEN_VERSION/$GLUTEN_THIRDPARTY_JAR
-}
-
-hybrid_test() {
-    echo "Run hybrid execution tests..."
-    LOAD_HYBRID_BACKEND=1 HYBRID_BACKEND_JARS=/tmp/${HYBRID_JAR},/tmp/${GLUTEN_BUNDLE_JAR},/tmp/${GLUTEN_THIRDPARTY_JAR} \
-        integration_tests/run_pyspark_from_build.sh -m hybrid_test
+    HYBRID_BACKEND_JARS=/tmp/${HYBRID_JAR},/tmp/${GLUTEN_BUNDLE_JAR},/tmp/${GLUTEN_THIRDPARTY_JAR}
 }
