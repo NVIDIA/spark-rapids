@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids
 
 import java.sql.SQLException
+import java.util.regex.Pattern
 
 import scala.collection.mutable.ListBuffer
 
@@ -53,6 +54,9 @@ class RegexParser(pattern: String) {
   private var pos = 0
 
   def parse(): RegexAST = {
+    // Validate if the pattern is compatible with Java, as this would throw an error otherwise
+    Pattern.compile(pattern)
+
     val ast = parseUntil(() => eof())
     if (!eof()) {
       throw new RegexUnsupportedException("Failed to parse full regex. Last character parsed was",
@@ -725,6 +729,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       regex: RegexAST,
       extractIndex: Option[Int],
       repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
+
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))

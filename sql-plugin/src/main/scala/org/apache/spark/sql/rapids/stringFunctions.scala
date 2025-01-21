@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 import java.nio.charset.Charset
 import java.text.DecimalFormatSymbols
 import java.util.{EnumSet, Locale, Optional}
-import java.util.regex.Pattern
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -1174,11 +1173,9 @@ class GpuRLikeMeta(
       GpuRegExpUtils.tagForRegExpEnabled(this)
       expr.right match {
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
-          val originalPattern = str.toString
-          // check that this is valid in Java
-          Pattern.compile(originalPattern)
           try {
             // verify that we support this regex and can transpile it to cuDF format
+            val originalPattern = str.toString
             val regexAst = new RegexParser(originalPattern).parse()
             if (conf.isRlikeRegexRewriteEnabled) {
               rewriteOptimizationType = RegexRewrite.matchSimplePattern(regexAst)
@@ -1441,11 +1438,9 @@ class GpuRegExpExtractMeta(
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
-        val javaRegexpPattern = str.toString
-        // check that this is valid in Java
-        Pattern.compile(javaRegexpPattern)
         try {
           // verify that we support this regex and can transpile it to cuDF format
+          val javaRegexpPattern = str.toString
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
               javaRegexpPattern, groupIdx, None)
@@ -1572,10 +1567,8 @@ class GpuRegExpExtractAllMeta(
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
-        val javaRegexpPattern = str.toString
-        // check that this is valid in Java
-        Pattern.compile(javaRegexpPattern)
         try {
+          val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
@@ -1837,8 +1830,6 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
           case Some(simplified) =>
             pattern = simplified
           case None =>
-            // check that this is valid in Java
-            Pattern.compile(utf8Str.toString)
             try {
               val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None, None)
               GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)

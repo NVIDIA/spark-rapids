@@ -15,8 +15,6 @@
  */
 package com.nvidia.spark.rapids
 
-import java.util.regex.Pattern
-
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils}
 import org.apache.spark.sql.types.DataTypes
@@ -53,8 +51,6 @@ class GpuRegExpReplaceMeta(
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         javaPattern = Some(s.toString())
-        // check that this is valid in Java
-        Pattern.compile(javaPattern.toString)
         try {
           val (pat, repl) =
               new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
