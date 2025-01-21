@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,18 +131,23 @@ object GpuShuffleEnv extends Logging {
   def isRapidsShuffleAvailable(conf: RapidsConf): Boolean = {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
-    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[RapidsShuffleManagerLike]
-    if (isRapidsManager) {
-      validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
+    if (sparkEnv == null) {
+      // we may hit this in some tests that don't need to use the RAPIDS shuffle manager.
+      false
+    } else {
+      val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[RapidsShuffleManagerLike]
+      if (isRapidsManager) {
+        validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
+      }
+      // executors have `env` defined when this is checked
+      // in tests
+      val isConfiguredInEnv = Option(env).exists(_.isRapidsShuffleConfigured)
+      (isConfiguredInEnv || isRapidsManager) &&
+        (conf.isMultiThreadedShuffleManagerMode ||
+          (conf.isGPUShuffle && !isExternalShuffleEnabled &&
+            !isSparkAuthenticateEnabled)) &&
+        conf.isSqlExecuteOnGPU
     }
-    // executors have `env` defined when this is checked
-    // in tests
-    val isConfiguredInEnv = Option(env).exists(_.isRapidsShuffleConfigured)
-    (isConfiguredInEnv || isRapidsManager) &&
-      (conf.isMultiThreadedShuffleManagerMode ||
-        (conf.isGPUShuffle && !isExternalShuffleEnabled &&
-          !isSparkAuthenticateEnabled)) &&
-      conf.isSqlExecuteOnGPU
   }
 
   def useGPUShuffle(conf: RapidsConf): Boolean = {
