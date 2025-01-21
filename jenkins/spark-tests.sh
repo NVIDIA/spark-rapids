@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -349,6 +349,14 @@ fi
 # Non-UTC time zone tests
 if [[ "$TEST_MODE" == "NON_UTC_TZ" ]]; then
   run_non_utc_time_zone_tests
+fi
+
+# hybrid execution tests
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "HYBRID_EXECUTION" ]]; then
+  source "${WORKSPACE}/jenkins/hybrid_execution.sh"
+  if hybrid_prepare ; then
+    LOAD_HYBRID_BACKEND=1 ./run_pyspark_from_build.sh -m hybrid_test
+  fi
 fi
 
 popd

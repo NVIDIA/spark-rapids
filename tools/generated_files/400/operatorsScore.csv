@@ -75,6 +75,7 @@ Atanh,4
 AttributeReference,4
 Average,4
 BRound,4
+Bin,4
 BitLength,4
 BitwiseAnd,4
 BitwiseNot,4
@@ -218,6 +219,7 @@ PythonUDAF,4
 PythonUDF,4
 Quarter,4
 RLike,4
+RaiseError,4
 Rand,4
 Rank,4
 RegExpExtract,4
