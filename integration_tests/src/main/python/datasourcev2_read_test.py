@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
 from data_gen import non_utc_allow
 from marks import *
+from spark_session import is_databricks143_or_later
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'
 
@@ -27,15 +28,18 @@ def readTable(types, classToUse):
         .orderBy("col1")
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11988')
 def test_read_int():
     assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass))
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
 @allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11988')
 def test_read_strings():
     assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass))
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11988')
 def test_read_all_types():
     assert_gpu_and_cpu_are_equal_collect(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
@@ -45,6 +49,7 @@ def test_read_all_types():
 @disable_ansi_mode  # Cannot run in ANSI mode until COUNT aggregation is supported.
                     # See https://github.com/NVIDIA/spark-rapids/issues/5114
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11988')
 def test_read_all_types_count():
     assert_gpu_and_cpu_row_counts_equal(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
@@ -52,6 +57,7 @@ def test_read_all_types_count():
 
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+@pytest.mark.xfail(is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11988')
 def test_read_arrow_off():
     assert_gpu_and_cpu_are_equal_collect(
         readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),

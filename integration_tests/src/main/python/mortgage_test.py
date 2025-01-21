@@ -16,12 +16,14 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_iterator
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limit
+from spark_session import is_databricks143_or_later
 
 @incompat
 @approximate_float
 @limit
 @ignore_order
 @allow_non_gpu(any=True)
+@pytest.mark.xfail(is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/8910')
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))
