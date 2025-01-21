@@ -18,7 +18,7 @@ from data_gen import copy_and_update
 from delta_lake_utils import delta_meta_allow
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
-from spark_session import is_databricks104_or_later
+from spark_session import is_databricks104_or_later, is_databricks143_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL',
          'spark.databricks.delta.autoCompact.minNumFiles': 3}  # Num files before compaction.
@@ -180,6 +180,8 @@ def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
+@pytest.mark.xfail(condition=is_databricks143_or_later(),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 def test_auto_compact_min_num_files(spark_tmp_path):
     """
     This test verifies that auto-compaction honours the minNumFiles setting.

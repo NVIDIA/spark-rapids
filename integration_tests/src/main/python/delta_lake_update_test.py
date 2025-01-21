@@ -171,6 +171,8 @@ def test_delta_update_rows_with_dv(spark_tmp_path, use_cdf, partition_columns, e
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10025')
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 def test_delta_update_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"

@@ -172,6 +172,8 @@ def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, us
     " WHEN NOT MATCHED AND s.b > 'b' AND s.b < 'f' THEN INSERT *" \
     " WHEN NOT MATCHED AND s.b > 'f' AND s.b < 'z' THEN INSERT (b) VALUES ('not here')" ], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, merge_sql, num_slices):
     do_test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                                               merge_sql, num_slices, num_slices == 1,
