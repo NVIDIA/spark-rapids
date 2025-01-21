@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -982,6 +982,12 @@ object GpuOverrides extends Logging {
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[ToRadians](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuToRadians = GpuToRadians(child)
+      }),
+    expr[Bin](
+      "Returns the string representation of the long value `expr` represented in binary",
+      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING, TypeSig.LONG, TypeSig.LONG),
+      (a, conf, p, r) => new UnaryExprMeta[Bin](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuBin = GpuBin(child)
       }),
     expr[WindowExpression](
       "Calculates a return value for every input row of a table based on a group (or " +

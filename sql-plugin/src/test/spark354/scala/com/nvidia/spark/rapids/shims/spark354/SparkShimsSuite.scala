@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "332db"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "400"}
+{"spark": "354"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark354
 
-import org.apache.spark.sql.execution.datasources.FileIndexOptions
+import com.nvidia.spark.rapids._
+import org.scalatest.funsuite.AnyFunSuite
 
-object FileIndexOptionsShims {
-  val BASE_PATH_PARAM = FileIndexOptions.BASE_PATH_PARAM
+class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
+  test("spark shims version") {
+    assert(ShimLoader.getShimVersion === SparkShimVersion(3, 5, 4))
+  }
+
+  test("shuffle manager class") {
+    assert(ShimLoader.getRapidsShuffleManagerClass ===
+      classOf[com.nvidia.spark.rapids.spark354.RapidsShuffleManager].getCanonicalName)
+  }
+
 }

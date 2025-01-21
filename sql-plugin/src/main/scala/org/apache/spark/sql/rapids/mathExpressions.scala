@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.CastStrings
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -65,6 +66,17 @@ case class GpuToRadians(child: Expression) extends GpuUnaryMathExpression("RADIA
     withResource(Scalar.fromDouble(Math.PI / 180d)) { multiplier =>
       input.getBase.mul(multiplier)
     }
+  }
+}
+
+case class GpuBin(child: Expression) extends GpuUnaryExpression
+  with ImplicitCastInputTypes with Serializable  {
+  override def nullable: Boolean = true
+  override def inputTypes: Seq[AbstractDataType] = Seq(LongType)
+  override def dataType: DataType = StringType
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    CastStrings.fromLongToBinary(input.getBase)
   }
 }
 

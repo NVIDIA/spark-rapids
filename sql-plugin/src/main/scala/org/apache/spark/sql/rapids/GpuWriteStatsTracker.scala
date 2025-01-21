@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.GpuDataWritingCommand
+import com.nvidia.spark.rapids.{GpuDataWritingCommand, GpuMetric, GpuMetricFactory, MetricsLevel, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkContext
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME
 import org.apache.spark.util.SerializableConfiguration
 
@@ -30,7 +29,7 @@ import org.apache.spark.util.SerializableConfiguration
  */
 class GpuWriteTaskStatsTracker(
     hadoopConf: Configuration,
-    taskMetrics: Map[String, SQLMetric])
+    taskMetrics: Map[String, GpuMetric])
     extends BasicColumnarWriteTaskStatsTracker(hadoopConf, taskMetrics.get(TASK_COMMIT_TIME)) {
   def addGpuTime(nanos: Long): Unit = {
     taskMetrics(GpuWriteJobStatsTracker.GPU_TIME_KEY) += nanos
@@ -38,6 +37,20 @@ class GpuWriteTaskStatsTracker(
 
   def addWriteTime(nanos: Long): Unit = {
     taskMetrics(GpuWriteJobStatsTracker.WRITE_TIME_KEY) += nanos
+  }
+
+  def setAsyncWriteThrottleTimes(numTasks: Int, accumulatedThrottleTimeNs: Long, minNs: Long,
+      maxNs: Long): Unit = {
+    val avg = if (numTasks > 0) {
+      accumulatedThrottleTimeNs.toDouble / numTasks
+    } else {
+      0
+    }
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY).set(
+      accumulatedThrottleTimeNs)
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_AVG_THROTTLE_TIME_KEY).set(avg.toLong)
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MIN_THROTTLE_TIME_KEY).set(minNs)
+    taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MAX_THROTTLE_TIME_KEY).set(maxNs)
   }
 }
 
@@ -49,8 +62,8 @@ class GpuWriteTaskStatsTracker(
  */
 class GpuWriteJobStatsTracker(
     serializableHadoopConf: SerializableConfiguration,
-    @transient driverSideMetrics: Map[String, SQLMetric],
-    taskMetrics: Map[String, SQLMetric])
+    @transient driverSideMetrics: Map[String, GpuMetric],
+    taskMetrics: Map[String, GpuMetric])
     extends BasicColumnarWriteJobStatsTracker(serializableHadoopConf, driverSideMetrics) {
   override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
     new GpuWriteTaskStatsTracker(serializableHadoopConf.value, taskMetrics)
@@ -60,15 +73,31 @@ class GpuWriteJobStatsTracker(
 object GpuWriteJobStatsTracker {
   val GPU_TIME_KEY = "gpuTime"
   val WRITE_TIME_KEY = "writeTime"
+  val ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY = "asyncWriteTotalThrottleTime"
+  val ASYNC_WRITE_AVG_THROTTLE_TIME_KEY = "asyncWriteAvgThrottleTime"
+  val ASYNC_WRITE_MIN_THROTTLE_TIME_KEY = "asyncWriteMinThrottleTime"
+  val ASYNC_WRITE_MAX_THROTTLE_TIME_KEY = "asyncWriteMaxThrottleTime"
 
-  def basicMetrics: Map[String, SQLMetric] = BasicColumnarWriteJobStatsTracker.metrics
+  def basicMetrics: Map[String, GpuMetric] = BasicColumnarWriteJobStatsTracker.metrics
 
-  def taskMetrics: Map[String, SQLMetric] = {
+  def taskMetrics: Map[String, GpuMetric] = {
     val sparkContext = SparkContext.getActive.get
+    val metricsConf = MetricsLevel(sparkContext.conf.get(RapidsConf.METRICS_LEVEL.key,
+      RapidsConf.METRICS_LEVEL.defaultValue))
+    val metricFactory = new GpuMetricFactory(metricsConf, sparkContext)
     Map(
-      GPU_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU time"),
-      WRITE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "write time"),
-      TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME)
+      GPU_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL, "GPU time"),
+      WRITE_TIME_KEY -> metricFactory.createNanoTiming(GpuMetric.ESSENTIAL_LEVEL,
+        "write time"),
+      TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME),
+      ASYNC_WRITE_TOTAL_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
+        GpuMetric.DEBUG_LEVEL, "total throttle time"),
+      ASYNC_WRITE_AVG_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
+        GpuMetric.DEBUG_LEVEL, "avg throttle time per async write"),
+      ASYNC_WRITE_MIN_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
+        GpuMetric.DEBUG_LEVEL, "min throttle time per async write"),
+      ASYNC_WRITE_MAX_THROTTLE_TIME_KEY -> metricFactory.createNanoTiming(
+        GpuMetric.DEBUG_LEVEL, "max throttle time per async write")
     )
   }
 
@@ -77,7 +106,7 @@ object GpuWriteJobStatsTracker {
     new GpuWriteJobStatsTracker(serializableHadoopConf, command.basicMetrics, command.taskMetrics)
 
   def apply(serializableHadoopConf: SerializableConfiguration,
-      basicMetrics: Map[String, SQLMetric],
-      taskMetrics: Map[String, SQLMetric]): GpuWriteJobStatsTracker = 
+      basicMetrics: Map[String, GpuMetric],
+      taskMetrics: Map[String, GpuMetric]): GpuWriteJobStatsTracker =
     new GpuWriteJobStatsTracker(serializableHadoopConf, basicMetrics, taskMetrics)
 }
