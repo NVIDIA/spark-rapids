@@ -18,8 +18,8 @@ from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, a
 from data_gen import *
 from delta_lake_utils import *
 from marks import *
-from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
-    with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks_version_or_later, \
+    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
@@ -156,6 +156,8 @@ def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
 def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns):
     # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
@@ -175,6 +177,8 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
 def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
     from delta.tables import DeltaTable

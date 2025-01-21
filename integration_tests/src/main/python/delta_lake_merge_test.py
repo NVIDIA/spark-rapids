@@ -18,7 +18,7 @@ import pytest
 from delta_lake_merge_common import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, spark_version
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks_version_or_later, spark_version
 
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
@@ -37,6 +37,8 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                           delta_writes_enabled_conf  # Test disabled by default
                          ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, disable_conf):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
@@ -78,6 +80,8 @@ def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_ta
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
@@ -104,6 +108,8 @@ def test_delta_merge_partial_fallback_via_conf(spark_tmp_path, spark_tmp_table_f
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("table_ranges", [(range(20), range(10)),  # partial insert of source
                                           (range(5), range(5)),  # no-op insert
                                           (range(10), range(20, 30))  # full insert of source
@@ -121,6 +127,8 @@ def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_facto
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("table_ranges", [(range(10), range(20)),  # partial delete of target
                                           (range(5), range(5)),  # full delete of target
                                           (range(10), range(20, 30))  # no-op delete
@@ -138,6 +146,8 @@ def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, 
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
 def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
@@ -172,6 +182,8 @@ def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_facto
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
 def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
@@ -184,6 +196,8 @@ def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spa
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf):
     do_test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf,
@@ -194,6 +208,8 @@ def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_fac
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.xfail(not is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7573")
+@pytest.mark.xfail(condition=is_databricks_version_or_later(14,3),
+                   reason="Will be triaged as part of https://github.com/NVIDIA/spark-rapids/issues/11541")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
 def test_delta_merge_dataframe_api(spark_tmp_path, use_cdf, num_slices):
