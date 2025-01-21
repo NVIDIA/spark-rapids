@@ -75,6 +75,7 @@ Atanh,4
 AttributeReference,4
 Average,4
 BRound,4
+Bin,4
 BitLength,4
 BitwiseAnd,4
 BitwiseNot,4
