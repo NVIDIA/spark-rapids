@@ -160,12 +160,10 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
     table_properties = {
         'delta.enableChangeDataFeed': str(use_cdf).lower(),
     }
-    # prevent on 11.3: Unknown configuration was specified: delta.enableDeletionVectors
-    # TODO OSS Delta 2.3+
-    if is_databricks122_or_later():
+    if supports_delta_lake_deletion_vectors():
         table_properties['delta.enableDeletionVectors'] = str(enable_deletion_vectors).lower()
 
-    if use_cdf or enable_deletion_vectors:
+    if supports_delta_lake_deletion_vectors():
         # if any table properties are specified then we need to use SQL to define the table
         sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
         if partition_columns:
