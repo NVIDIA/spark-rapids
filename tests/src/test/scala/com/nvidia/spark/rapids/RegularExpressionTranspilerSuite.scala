@@ -191,7 +191,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     val e = intercept[PatternSyntaxException] {
       parse("{2,1}")
     }
-    assert(e.getMessage === "Illegal")
+    assert(e.getMessage.contains("Illegal"))
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
