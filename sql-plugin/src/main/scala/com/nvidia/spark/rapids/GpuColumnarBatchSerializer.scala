@@ -130,7 +130,7 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
  * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Array[DataType],
-    useKudo: Boolean)
+    useKudo: Boolean, kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
   private lazy val kudo = {
@@ -143,7 +143,7 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
 
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
-      new KudoSerializerInstance(metrics, dataTypes, kudo)
+      new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
     }
@@ -348,7 +348,8 @@ object SerializedTableColumn {
 private class KudoSerializerInstance(
     val metrics: Map[String, GpuMetric],
     val dataTypes: Array[DataType],
-    val kudo: Option[KudoSerializer]
+    val kudo: Option[KudoSerializer],
+    val measureBufferCopyTime: Boolean,
 ) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
@@ -399,8 +400,10 @@ private class KudoSerializerInstance(
 
             dataSize += writeMetric.getWrittenBytes
             serCalcHeaderTime += writeMetric.getCalcHeaderTime
-            serCopyHeaderTime += writeMetric.getCopyHeaderTime
-            serCopyBufferTime += writeMetric.getCopyBufferTime
+            if (measureBufferCopyTime) {
+              serCopyHeaderTime += writeMetric.getCopyHeaderTime
+              serCopyBufferTime += writeMetric.getCopyBufferTime
+            }
           }
         } else {
           withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>
