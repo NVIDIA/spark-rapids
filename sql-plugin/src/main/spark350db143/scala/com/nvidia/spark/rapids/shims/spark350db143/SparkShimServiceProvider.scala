@@ -19,6 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark350db143
 
+import org.apache.spark.SparkEnv
+
 import com.nvidia.spark.rapids._
 
 object SparkShimServiceProvider {
@@ -30,6 +32,18 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
-    DatabricksShimServiceProvider.matchesVersion("14.3.x")
+    val shimEnabledProp = "spark.rapids.shims.spark350db143" + ".enabled"
+    // disabled by default
+    val shimEnabled = Option(SparkEnv.get)
+      .flatMap(_.conf.getOption(shimEnabledProp).map(_.toBoolean))
+      .getOrElse(false)
+
+    DatabricksShimServiceProvider.matchesVersion(
+      dbrVersion = "14.3.x",
+      shimMatchEnabled = shimEnabled,
+      disclaimer =
+      s"""|!!!! Databricks 14.3.x support is incomplete: https://github.com/NVIDIA/spark-rapids/issues/10661
+          |!!!! It can be experimentally enabled by configuring ${shimEnabledProp}=true.""".stripMargin
+    )
   }
 }

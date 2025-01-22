@@ -24,7 +24,12 @@ package com.nvidia.spark.rapids
 
 object DatabricksShimServiceProvider {
   val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
-  def matchesVersion(dbrVersion: String): Boolean = {
+
+  def matchesVersion(dbrVersion: String,
+    shimMatchEnabled: Boolean = true,
+    disclaimer: String = ""
+  ): Boolean = {
+    var ignoreExceptions = true
     try {
       val sparkBuildInfo = org.apache.spark.BuildInfo
       val databricksBuildInfo = com.databricks.BuildInfo
@@ -39,12 +44,20 @@ object DatabricksShimServiceProvider {
            .stripMargin
       if (matchRes) {
         log.warn(logMessage)
+        if (shimMatchEnabled) {
+          if (disclaimer.nonEmpty) {
+            log.warn(disclaimer)
+          }
+        } else {
+          ignoreExceptions = false
+          sys.error(disclaimer)
+        }
       } else {
         log.debug(logMessage)
       }
       matchRes
     } catch {
-      case x: Throwable =>
+      case x: Throwable if ignoreExceptions =>
         log.debug("Databricks detection failed: " + x, x)
         false
     }

@@ -78,6 +78,8 @@ IS_SPARK_321_OR_LATER=0
 export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
 
+export PYSP_TEST_spark_rapids_shims_spark350db143_enabled=${PYSP_TEST_spark_rapids_shims_spark350db143_enabled:-true}
+
 rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
 
