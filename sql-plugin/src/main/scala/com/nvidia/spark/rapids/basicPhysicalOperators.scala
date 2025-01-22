@@ -966,7 +966,7 @@ case class GpuFilterExecMeta(
 ) extends SparkPlanMeta[FilterExec](filter, conf, parentMetaOpt, rule) {
   override def convertToGpu(): GpuExec = {
     GpuFilterExec(childExprs.head.convertToGpu(),
-          childPlans.head.convertIfNeeded())()
+      childPlans.head.convertIfNeeded())()
   }
 }
 
