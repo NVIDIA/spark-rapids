@@ -1168,4 +1168,20 @@ class SpillFrameworkSuite
     }
   }
 
+  test("cb from buffer handle close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val (ct, dataTypes) = buildContiguousTable()
+      val handle = SpillableColumnarBatchFromBufferHandle(ct, dataTypes)
+      testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
+    }
+  }
+
+  test("compressed cb handle close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val ct = buildCompressedBatch(0, 1000)
+      val handle = SpillableCompressedColumnarBatchHandle(ct)
+      testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
+    }
+  }
+
 }

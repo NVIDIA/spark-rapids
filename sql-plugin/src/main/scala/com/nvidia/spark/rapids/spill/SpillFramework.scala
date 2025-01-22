@@ -336,25 +336,25 @@ class SpillableHostBufferHandle private (
   // used to gate when a spill is actively being done so that a second thread won't
   // also begin spilling, and a handle won't release the underlying buffer if it's
   // closed while spilling
-  private var toSpill: Option[HostMemoryBuffer] = None
+  private var spilling: Boolean = false
 
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (disk.isEmpty && host.isDefined && toSpill.isEmpty) {
-          toSpill = host
+        if (disk.isEmpty && host.isDefined && !spilling) {
+          spilling = true
           // incRefCount here so that if close() is called
           // while we are spilling, we will prevent the buffer being freed
-          toSpill.get.incRefCount()
+          host.get.incRefCount()
           true
         } else {
           false
         }
       }
       val spilled = if (thisThreadSpills) {
-        withResource(toSpill.get) { buf =>
+        withResource(host.get) { buf =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
             // the spill IO is non-blocking as it won't impact dev or host directly
@@ -373,6 +373,7 @@ class SpillableHostBufferHandle private (
             }
             var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
             synchronized {
+              spilling = false
               if (closed) {
                 staging.foreach(_.close())
                 staging = None
@@ -381,7 +382,6 @@ class SpillableHostBufferHandle private (
                 disk = staging
               }
               releaseHostResource()
-              toSpill = None
             }
           }
         }
@@ -405,7 +405,7 @@ class SpillableHostBufferHandle private (
     synchronized {
       closed = true
     }
-    if (toSpill.isEmpty) {
+    if (!spilling) {
       doClose()
     }
   }
@@ -507,39 +507,31 @@ class SpillableDeviceBufferHandle private (
   // used to gate when a spill is actively being done so that a second thread won't
   // also begin spilling, and a handle won't release the underlying buffer if it's
   // closed while spilling
-  private var toSpill: Option[DeviceMemoryBuffer] = None
-
-  override def releaseDeviceResource(): Unit = {
-    synchronized {
-      toSpill.foreach(_.close())
-      toSpill = None
-    }
-    super.releaseDeviceResource()
-  }
+  private var spilling: Boolean = false
 
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
-          toSpill = dev
+        if (host.isEmpty && dev.isDefined && !spilling) {
+          spilling = true
           // incRefCount here so that if close() is called
           // while we are spilling, we will prevent the buffer being freed
-          toSpill.get.incRefCount()
+          dev.get.incRefCount()
           true
         } else {
           false
         }
       }
       if (thisThreadSpills) {
-        withResource(toSpill.get) { buf =>
+        withResource(dev.get) { buf =>
           // the spill IO is non-blocking as it won't impact dev or host directly
           // instead we "atomically" swap the buffers below once they are ready
           var stagingHost: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
           synchronized {
-            dev = None
+            spilling = false
             if (closed) {
               stagingHost.foreach(_.close())
               stagingHost = None
@@ -568,7 +560,7 @@ class SpillableDeviceBufferHandle private (
     synchronized {
       closed = true
     }
-    if (toSpill.isEmpty) {
+    if (!spilling) {
       doClose()
     }
   }
@@ -629,36 +621,28 @@ class SpillableColumnarBatchHandle private (
   // used to gate when a spill is actively being done so that a second thread won't
   // also begin spilling, and a handle won't release the underlying buffer if it's
   // closed while spilling
-  private var toSpill: Option[ColumnarBatch] = None
-
-  override def releaseDeviceResource(): Unit = {
-    super.releaseDeviceResource()
-    synchronized {
-      toSpill.foreach(_.close())
-      toSpill = None
-    }
-  }
+  private var spilling: Boolean = false
 
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
-          toSpill = dev
-          GpuColumnVector.incRefCounts(toSpill.get)
+        if (host.isEmpty && dev.isDefined && !spilling) {
+          spilling = true
+          GpuColumnVector.incRefCounts(dev.get)
           true
         } else {
           false
         }
       }
       if (thisThreadSpills) {
-        withChunkedPacker(toSpill.get) { chunkedPacker =>
+        withChunkedPacker(dev.get) { chunkedPacker =>
           meta = Some(chunkedPacker.getPackedMeta)
           var staging: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
           synchronized {
-            dev = None
+            spilling = false
             if (closed) {
               staging.foreach(_.close())
               staging = None
@@ -701,7 +685,7 @@ class SpillableColumnarBatchHandle private (
     synchronized {
       closed = true
     }
-    if (toSpill.isEmpty) {
+    if (!spilling) {
       doClose()
     }
   }
@@ -786,38 +770,33 @@ class SpillableColumnarBatchFromBufferHandle private (
     materialized
   }
 
-  override def releaseDeviceResource(): Unit = {
-    super.releaseDeviceResource()
-    synchronized {
-      toSpill.foreach(_.close())
-      toSpill = None
-    }
-  }
+  // used to gate when a spill is actively being done so that a second thread won't
+  // also begin spilling, and a handle won't release the underlying buffer if it's
+  // closed while spilling
+  private var spilling: Boolean = false
 
-  private var toSpill: Option[ColumnarBatch] = None
   override def spill(): Long = {
     if (!spillable) {
       0
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
-          toSpill = dev
-          GpuColumnVector.incRefCounts(toSpill.get)
+        if (host.isEmpty && dev.isDefined && !spilling) {
+          spilling = true
+          GpuColumnVector.incRefCounts(dev.get)
           true
         } else {
           false
         }
       }
       if (thisThreadSpills) {
-        withResource(toSpill.get) { cb =>
+        withResource(dev.get) { cb =>
           val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
           meta = Some(cvFromBuffer.getTableMeta)
           var staging: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
               cvFromBuffer.getBuffer))
-          // probably can pull out some duplicated code
           synchronized {
-            dev = None
+            spilling = false
             if (closed) {
               doClose()
               staging.foreach(_.close())
@@ -846,7 +825,7 @@ class SpillableColumnarBatchFromBufferHandle private (
     synchronized {
       closed = true
     }
-    if (toSpill.isEmpty) {
+    if (!spilling) {
       doClose()
     }
   }
@@ -909,38 +888,33 @@ class SpillableCompressedColumnarBatchHandle private (
     materialized
   }
 
-  private var toSpill: Option[ColumnarBatch] = None
-
-  override def releaseDeviceResource(): Unit = {
-    synchronized {
-      super.releaseDeviceResource()
-      toSpill.foreach(_.close())
-      toSpill = None
-    }
-  }
+  // used to gate when a spill is actively being done so that a second thread won't
+  // also begin spilling, and a handle won't release the underlying buffer if it's
+  // closed while spilling
+  private var spilling: Boolean = false
 
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && toSpill.isEmpty) {
-          toSpill = dev
-          GpuCompressedColumnVector.incRefCounts(toSpill.get)
+        if (host.isEmpty && dev.isDefined && !spilling) {
+          spilling = true
+          GpuCompressedColumnVector.incRefCounts(dev.get)
           true
         } else {
           false
         }
       }
       if (thisThreadSpills) {
-        withResource(toSpill.get) { cb =>
+        withResource(dev.get) { cb =>
           val cvFromBuffer = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
           meta = Some(cvFromBuffer.getTableMeta)
           var staging: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
               cvFromBuffer.getTableBuffer))
           synchronized {
-            dev = None
+            spilling = false
             if (closed) {
               doClose()
               staging = None
@@ -969,7 +943,7 @@ class SpillableCompressedColumnarBatchHandle private (
     synchronized {
       closed = true
     }
-    if (toSpill.isEmpty) {
+    if (!spilling) {
       doClose()
     }
   }
@@ -1031,22 +1005,26 @@ class SpillableHostColumnarBatchHandle private (
     materialized
   }
 
-  private var toSpill: Option[ColumnarBatch] = None
+  // used to gate when a spill is actively being done so that a second thread won't
+  // also begin spilling, and a handle won't release the underlying buffer if it's
+  // closed while spilling
+  private var spilling: Boolean = false
+
   override def spill(): Long = {
     if (!spillable) {
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (disk.isEmpty && host.isDefined && toSpill.isEmpty) {
-          toSpill = host
-          RapidsHostColumnVector.incRefCounts(toSpill.get)
+        if (disk.isEmpty && host.isDefined && !spilling) {
+          spilling = true
+          RapidsHostColumnVector.incRefCounts(host.get)
           true
         } else {
           false
         }
       }
       val bytesSpilled = if (thisThreadSpills) {
-        withResource(toSpill.get) { cb =>
+        withResource(host.get) { cb =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
               val dos = diskHandleBuilder.getDataOutputStream
@@ -1055,6 +1033,7 @@ class SpillableHostColumnarBatchHandle private (
             }
             var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
             synchronized {
+              spilling = false
               if (closed) {
                 doClose()
                 staging.foreach(_.close())
@@ -1086,7 +1065,7 @@ class SpillableHostColumnarBatchHandle private (
     synchronized {
       closed = true
     }
-    if (toSpill.isEmpty) {
+    if (!spilling) {
       doClose()
     }
   }
