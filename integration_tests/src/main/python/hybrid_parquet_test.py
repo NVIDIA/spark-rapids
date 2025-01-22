@@ -145,3 +145,20 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
         })
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
+@hybrid_test
+def test_hybrid_parquet_filter_pushdown(spark_tmp_path, parquet_gens):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).filter("_c0 IS NOT NULL"),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.parquet.useHybridReader': 'true',
+        })
