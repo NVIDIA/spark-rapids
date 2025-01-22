@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids
 
 import java.sql.SQLException
-import java.util.regex.Pattern
+import java.util.regex.{Pattern, PatternSyntaxException}
 
 import scala.collection.mutable.ListBuffer
 
@@ -648,7 +648,7 @@ object RegexParser {
       val ast = parser.parse()
       isRegExpString(ast)
     } catch {
-      case _: RegexUnsupportedException =>
+      case _: RegexUnsupportedException | _: PatternSyntaxException =>
         // if we cannot parse it then assume that it might be valid regexp
         true
     }
