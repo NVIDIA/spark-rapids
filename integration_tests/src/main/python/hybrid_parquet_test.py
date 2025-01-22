@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 import pytest
 
 from asserts import *
@@ -88,7 +86,7 @@ def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
         lambda spark: spark.read.parquet(data_path),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
         })
 
 
@@ -97,19 +95,17 @@ def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
 # when coalescing is needed.
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_batch_size', [512, 1024, 2048], ids=idfn)
 @pytest.mark.parametrize('coalesced_batch_size', [1 << 25, 1 << 27], ids=idfn)
 @pytest.mark.parametrize('gen_rows', [8192, 10000], ids=idfn)
 @hybrid_test
 def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
+                                                         parquet_gens,
                                                          reader_batch_size,
                                                          coalesced_batch_size,
                                                          gen_rows):
-    gens = []
-    for g in parquet_gens_list:
-        gens.extend(g)
-
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
         lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
@@ -119,7 +115,7 @@ def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
         lambda spark: spark.read.parquet(data_path),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
             'spark.gluten.sql.columnar.maxBatchSize': reader_batch_size,
             'spark.rapids.sql.batchSizeBytes': coalesced_batch_size,
         })
@@ -143,5 +139,32 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
         non_exist_classes='HybridFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
+        })
+
+
+# Test the preloading feature with extreme tiny target batch size (and source batch size), creating
+# scenarios in which multiple target batches will be generated.
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('coalesced_batch_size', [1 << 17, 1 << 20], ids=idfn)
+@pytest.mark.parametrize('preloaded_batches', [1, 3, 5], ids=idfn)
+@hybrid_test
+def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preloaded_batches):
+    parquet_gens = parquet_gens_list[0].copy()
+    parquet_gens.extend(parquet_gens_list[1])
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list, length=4096).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
+            'spark.gluten.sql.columnar.maxBatchSize': 16,
+            'spark.rapids.sql.batchSizeBytes': coalesced_batch_size,
+            'spark.rapids.sql.hybrid.parquet.numPreloadedBatches': preloaded_batches,
         })

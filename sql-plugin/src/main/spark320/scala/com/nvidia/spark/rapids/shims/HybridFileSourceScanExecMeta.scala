@@ -163,7 +163,7 @@ object HybridFileSourceScanExecMeta {
     if (VersionUtils.isCloudera || VersionUtils.isDataBricks) {
       throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
           "Spark releases, Please disable Hybrid feature by setting " +
-          "spark.rapids.sql.parquet.useHybridReader=false")
+          "spark.rapids.sql.hybrid.parquet.enableReader=false")
     }
   }
 

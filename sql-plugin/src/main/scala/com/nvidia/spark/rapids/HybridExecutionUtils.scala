@@ -31,7 +31,7 @@ object HybridExecutionUtils {
       case e: ClassNotFoundException => throw new RuntimeException(
         "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
             "Please disable Hybrid feature by setting " +
-            "spark.rapids.sql.parquet.useHybridReader=false", e)
+            "spark.rapids.sql.hybrid.parquet.enableReader=false", e)
     }
   }
 }

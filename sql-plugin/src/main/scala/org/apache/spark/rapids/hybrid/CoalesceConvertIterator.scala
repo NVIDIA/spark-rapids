@@ -128,38 +128,68 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
 }
 
 object CoalesceConvertIterator extends Logging {
-
-  def hostToDevice(hostIter: Iterator[Array[RapidsHostColumn]],
+  /**
+   * Consumes the RapidsHostBatchProducer and converts the HostColumnVectors to Device ones.
+   */
+  def hostToDevice(hostProducer: RapidsHostBatchProducer,
                    outputAttr: Seq[Attribute],
                    metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
-    val dataTypes = outputAttr.map(_.dataType).toArray
+    new Iterator[ColumnarBatch] {
 
-    hostIter.map { hostVectors =>
-      Option(TaskContext.get()).foreach { ctx =>
-        withResource(new NvtxWithMetrics("gpuAcquireC2C", NvtxColor.GREEN,
-          metrics("GpuAcquireTime"))) { _ =>
-          GpuSemaphore.acquireIfNecessary(ctx)
+      private val dataTypes = outputAttr.map(_.dataType).toArray
+
+      override def hasNext: Boolean = hostProducer.hasNext
+
+      /**
+       * At here, for consuming AsyncProducer effectively, we would like to achieve two things:
+       * 1. Does NOT acquire GpuSemaphore until AsyncProducer is ready. It excludes the scenario
+       * that the task thread which holds GpuSemaphore doing nothing but waiting.
+       *
+       * 2. Does NOT commit the consumption of next element until getting GpuSemaphore. It means
+       * that the AsyncProducerThread will not be awakened until the previous element starts to
+       * be transferred to device.
+       */
+      override def next(): ColumnarBatch = {
+        // 1. Preparing Stage
+        // Before waiting for asynchronous cpu task, releases the potential GpuSemaphore being
+        // held by this thread. It may happen if there exists downstreaming nodes which coalesces
+        // multiple input batches (such as Aggregate).
+        Option(TaskContext.get()).foreach { ctx =>
+          GpuSemaphore.releaseIfNecessary(ctx)
         }
-      }
-
-      val deviceVectors: Array[ColumnVector] = hostVectors.zip(dataTypes).safeMap {
-        case (RapidsHostColumn(hcv, isPinned, totalBytes), dt) =>
-          val nvtxMetric = if (isPinned) {
-            metrics("PinnedH2DSize") += totalBytes
-            new NvtxWithMetrics("pinnedH2D", NvtxColor.DARK_GREEN, metrics("PinnedH2DTime"))
-          } else {
-            metrics("PageableH2DSize") += totalBytes
-            new NvtxWithMetrics("PageableH2D", NvtxColor.GREEN, metrics("PageableH2DTime"))
+        // Firstly, waits for the next host batch being ready
+        hostProducer.waitForNext()
+        // Then, acquires GpuSemaphore
+        Option(TaskContext.get()).foreach { ctx =>
+          withResource(new NvtxWithMetrics("gpuAcquireC2C", NvtxColor.GREEN,
+            metrics("GpuAcquireTime"))) { _ =>
+            GpuSemaphore.acquireIfNecessary(ctx)
           }
-          withResource(hcv) { _ =>
-            withResource(nvtxMetric) { _ =>
-              GpuColumnVector.from(hcv.copyToDevice(), dt)
+        }
+        // Finally, take the ownership of the next host batch, which might awake the asynchronous
+        // producer if the producer thread was stuck by the full lock.
+        val hostColumns = hostProducer.takeNext
+        val rowCount = hostColumns.head.vector.getRowCount.toInt
+
+        // 2. Transferring Stage
+        val deviceVectors: Array[ColumnVector] = hostColumns.zip(dataTypes).safeMap {
+          case (RapidsHostColumn(hcv, isPinned, totalBytes), dt) =>
+            val nvtxMetric = if (isPinned) {
+              metrics("PinnedH2DSize") += totalBytes
+              new NvtxWithMetrics("pinnedH2D", NvtxColor.DARK_GREEN, metrics("PinnedH2DTime"))
+            } else {
+              metrics("PageableH2DSize") += totalBytes
+              new NvtxWithMetrics("PageableH2D", NvtxColor.GREEN, metrics("PageableH2DTime"))
             }
-          }
-      }
+            withResource(hcv) { _ =>
+              withResource(nvtxMetric) { _ =>
+                GpuColumnVector.from(hcv.copyToDevice(), dt)
+              }
+            }
+        }
 
-      new ColumnarBatch(deviceVectors, hostVectors.head.vector.getRowCount.toInt)
+        new ColumnarBatch(deviceVectors, rowCount)
+      }
     }
   }
-
 }

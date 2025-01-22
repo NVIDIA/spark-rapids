@@ -372,11 +372,9 @@ EOF
         exit 1
       fi
       export PYSP_TEST_spark_jars="${PYSP_TEST_spark_jars},${HYBRID_BACKEND_JARS//:/,}"
-      export PYSP_TEST_spark_rapids_sql_parquet_useHybridReader=true
       export PYSP_TEST_spark_rapids_sql_hybrid_loadBackend=true
       export PYSP_TEST_spark_memory_offHeap_enabled=true
       export PYSP_TEST_spark_memory_offHeap_size=512M
-      export PYSP_TEST_spark_rapids_sql_hybrid_load=true
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
 
