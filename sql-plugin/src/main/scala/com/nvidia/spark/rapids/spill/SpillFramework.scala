@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
 import java.util
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
 
 import scala.collection.mutable
 
@@ -42,6 +42,7 @@ import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.BlockId
+
 
 /**
  * Spark-RAPIDS Spill Framework
@@ -256,7 +257,7 @@ object SpillableHostBufferHandle extends Logging {
       while (chunkedPacker.hasNext) {
         val (bb, len) = chunkedPacker.next()
         withResource(bb) { _ =>
-          builder.copyNext(bb.dmb, len, Cuda.DEFAULT_STREAM)
+          builder.copyNext(bb.buf, len, Cuda.DEFAULT_STREAM)
           // copyNext is synchronous w.r.t. the cuda stream passed,
           // no need to synchronize here.
         }
@@ -1499,8 +1500,7 @@ object SpillFramework extends Logging {
     storesInternal
   }
 
-  // TODO: these should be pools, instead of individual buffers
-  private var hostSpillBounceBuffer: HostMemoryBuffer = _
+  private var hostSpillBounceBufferPool: BounceBufferPool[HostMemoryBuffer] = _
 
   private lazy val conf: SparkConf = {
     val env = SparkEnv.get
@@ -1525,22 +1525,15 @@ object SpillFramework extends Logging {
     } else {
       Some(rapidsConf.hostSpillStorageSize)
     }
-    // this should hopefully be pinned, but it would work without
-    hostSpillBounceBuffer = HostMemoryBuffer.allocate(rapidsConf.spillToDiskBounceBufferSize)
+    hostSpillBounceBufferPool = new BounceBufferPool[HostMemoryBuffer](
+      rapidsConf.spillToDiskBounceBufferSize,
+      rapidsConf.spillToDiskBounceBufferCount,
+      HostMemoryBuffer.allocate)
 
-    chunkedPackBounceBufferPool = new DeviceBounceBufferPool {
-      private val bounceBuffer: DeviceBounceBuffer =
-        DeviceBounceBuffer(DeviceMemoryBuffer.allocate(rapidsConf.chunkedPackBounceBufferSize))
-      override def bufferSize: Long = rapidsConf.chunkedPackBounceBufferSize
-      override def nextBuffer(): DeviceBounceBuffer = {
-        // can block waiting for bounceBuffer to be released
-        bounceBuffer.acquire()
-      }
-      override def close(): Unit = {
-        // this closes the DeviceMemoryBuffer wrapped by the bounce buffer class
-        bounceBuffer.release()
-      }
-    }
+    chunkedPackBounceBufferPool = new BounceBufferPool[DeviceMemoryBuffer](
+      rapidsConf.chunkedPackBounceBufferSize,
+      rapidsConf.chunkedPackBounceBufferCount,
+      DeviceMemoryBuffer.allocate)
     storesInternal = new SpillableStores {
       override var deviceStore: SpillableDeviceStore = new SpillableDeviceStore
       override var hostStore: SpillableHostStore = new SpillableHostStore(hostSpillStorageSize)
@@ -1551,9 +1544,9 @@ object SpillFramework extends Logging {
   }
 
   def shutdown(): Unit = {
-    if (hostSpillBounceBuffer != null) {
-      hostSpillBounceBuffer.close()
-      hostSpillBounceBuffer = null
+    if (hostSpillBounceBufferPool != null) {
+      hostSpillBounceBufferPool.close()
+      hostSpillBounceBufferPool = null
     }
     if (chunkedPackBounceBufferPool != null) {
       chunkedPackBounceBufferPool.close()
@@ -1565,12 +1558,13 @@ object SpillFramework extends Logging {
     }
   }
 
-  def withHostSpillBounceBuffer[T](body: HostMemoryBuffer => T): T =
-    hostSpillBounceBuffer.synchronized {
-      body(hostSpillBounceBuffer)
+  def withHostSpillBounceBuffer[T](body: HostMemoryBuffer => T): T = {
+    withResource(hostSpillBounceBufferPool.nextBuffer()) { hmb =>
+      body(hmb.buf)
     }
+  }
 
-  var chunkedPackBounceBufferPool: DeviceBounceBufferPool = _
+  var chunkedPackBounceBufferPool: BounceBufferPool[DeviceMemoryBuffer] = _
 
   // if the stores have already shut down, we don't want to create them here
   // so we use `storesInternal` directly in these remove functions.
@@ -1597,59 +1591,80 @@ object SpillFramework extends Logging {
 /**
  * A bounce buffer wrapper class that supports the concept of acquisition.
  *
- * The bounce buffer is acquired exclusively. So any calls to acquire while the
- * buffer is in use will block at `acquire`. Calls to `release` notify the blocked
- * threads, and they will check to see if they can acquire.
+ * The bounce buffer is acquired from a BounceBufferPool, so any calls to
+ * BounceBufferPool.nextBuffer will block if the pool has no available buffers.
  *
- * `close` is the interface to unacquire the bounce buffer.
+ * `close` restores a bounce buffer to the pool for other callers to use.
  *
- * `release` actually closes the underlying DeviceMemoryBuffer, and should be called
+ * `release` actually closes the underlying buffer, and should be called
  * once at the end of the lifetime of the executor.
  *
- * @param dmb - actual cudf DeviceMemoryBuffer that this class is protecting.
+ * @param buf - actual cudf DeviceMemoryBuffer that this class is protecting.
+ * @param pool - the pool to which this buffer belongs
  */
-private[spill] case class DeviceBounceBuffer(var dmb: DeviceMemoryBuffer) extends AutoCloseable {
-  private var acquired: Boolean = false
-  def acquire(): DeviceBounceBuffer = synchronized {
-    while (acquired) {
-      wait()
-    }
-    acquired = true
-    this
-  }
-
-  private def unaquire(): Unit = synchronized {
-    acquired = false
-    notifyAll()
-  }
-
+private[spill] class BounceBuffer[T <: AutoCloseable](
+                                                       var buf: T,
+                                                       private val pool: BounceBufferPool[T])
+  extends AutoCloseable {
   override def close(): Unit = {
-    unaquire()
+    pool.returnBuffer(this)
   }
 
-  def release(): Unit = synchronized {
-    if (acquired) {
-      throw new IllegalStateException(
-        "closing device buffer pool, but some bounce buffers are in use.")
-    }
-    if (dmb != null) {
-      dmb.close()
-      dmb = null
-    }
+  def release(): Unit = {
+    buf.close()
+    buf = null.asInstanceOf[T]
   }
 }
 
+
 /**
- * A bounce buffer pool with buffers of size `bufferSize`
+ * A bounce buffer pool with buffers of size `bufSize`
  *
- * This pool returns instances of `DeviceBounceBuffer`, that should
+ * This pool returns instances of `BounceBuffer[T]`, that should
  * be closed in order to be reused.
  *
  * Callers should synchronize before calling close on their `DeviceMemoryBuffer`s.
  */
-trait DeviceBounceBufferPool extends AutoCloseable {
-  def bufferSize: Long
-  def nextBuffer(): DeviceBounceBuffer
+class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
+                                           private val bbCount: Long,
+                                           private val allocator: Long => T)
+  extends AutoCloseable with Logging {
+
+  private val pool = new LinkedBlockingQueue[BounceBuffer[T]]
+  for (_ <- 1L to bbCount) {
+    pool.offer(new BounceBuffer[T](allocator(bufSize), this))
+  }
+
+  def bufferSize: Long = bufSize
+  def nextBuffer(): BounceBuffer[T] = synchronized {
+    if (closed) {
+      logError("tried to acquire a bounce buffer after the" +
+        "pool has been closed!")
+    }
+    pool.take()
+  }
+
+  def returnBuffer(buffer: BounceBuffer[T]): Unit = synchronized {
+    if (closed) {
+      buffer.release()
+    } else {
+      pool.offer(buffer)
+    }
+  }
+
+  private var closed = false
+  override def close(): Unit = synchronized {
+    if (!closed) {
+      closed = true
+      if (pool.size() < bbCount) {
+        logError("tried to close BounceBufferPool when buffers are still " +
+          "being used")
+      }
+
+      pool.forEach(_.release())
+      pool.clear()
+    }
+  }
 }
 
 /**
@@ -1667,8 +1682,8 @@ trait DeviceBounceBufferPool extends AutoCloseable {
  * @param bounceBufferPool bounce buffer pool to use during the lifetime of this packer.
  */
 class ChunkedPacker(table: Table,
-                    bounceBufferPool: DeviceBounceBufferPool)
-  extends Iterator[(DeviceBounceBuffer, Long)] with Logging with AutoCloseable {
+                    bounceBufferPool: BounceBufferPool[DeviceMemoryBuffer])
+  extends Iterator[(BounceBuffer[DeviceMemoryBuffer], Long)] with Logging with AutoCloseable {
 
   private var closed: Boolean = false
 
@@ -1718,12 +1733,12 @@ class ChunkedPacker(table: Table,
     chunkedPack.hasNext
   }
 
-  override def next(): (DeviceBounceBuffer, Long) = {
+  override def next(): (BounceBuffer[DeviceMemoryBuffer], Long) = {
     closeOnExcept(bounceBufferPool.nextBuffer()) { bounceBuffer =>
       if (closed) {
         throw new IllegalStateException(s"ChunkedPacker is closed")
       }
-      val bytesWritten = chunkedPack.next(bounceBuffer.dmb)
+      val bytesWritten = chunkedPack.next(bounceBuffer.buf)
       // we increment the refcount because the caller has no idea where
       // this memory came from, so it should close it.
       (bounceBuffer, bytesWritten)
