@@ -1636,8 +1636,14 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
   }
 
   def bufferSize: Long = bufSize
-  def nextBuffer(): BounceBuffer[T] = pool.take()
-  def returnBuffer(buffer: BounceBuffer[T]): Unit = {
+  def nextBuffer(): BounceBuffer[T] = synchronized {
+    if (closed) {
+      logError("tried to acquire a bounce buffer after the" +
+        "pool has been closed!")
+    }
+    pool.take()
+  }
+  def returnBuffer(buffer: BounceBuffer[T]): Unit = synchronized {
     if (closed) {
       buffer.release()
     } else {
@@ -1646,7 +1652,7 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
   }
 
   private var closed = false
-  override def close(): Unit = {
+  override def close(): Unit = synchronized {
     if (!closed) {
       closed = true
       if (pool.size() < bbCount) {
@@ -1655,6 +1661,7 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
       }
 
       pool.forEach(_.release())
+      pool.clear()
     }
   }
 }
