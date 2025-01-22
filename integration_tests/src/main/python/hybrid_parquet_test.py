@@ -146,11 +146,6 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
             'spark.rapids.sql.parquet.useHybridReader': 'true',
         })
 
-# Gpu Support, Cpu not support: startswith
-# Gpu not support, Cpu support: ascii
-# Gpu support, Cpu support: lessthan
-# Gpu not support, Cpu not support: udf
-
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
@@ -159,6 +154,7 @@ def test_hybrid_parquet_filter_pushdown_gpu(spark_tmp_path):
     with_cpu_session(
         lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
+    # filter conditions should remain on the GPU
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter("startswith(a, '0')"),
         conf={
@@ -176,6 +172,7 @@ def test_hybrid_parquet_filter_pushdown_cpu(spark_tmp_path):
     with_cpu_session(
         lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
+    # filter conditions should be pushed down to the CPU, so the ascii will not fall back to CPU in the FilterExec
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter("startswith(a, '0') and ascii(a) = 72 and a < '1000'"),
         conf={
@@ -195,6 +192,8 @@ def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
     with_cpu_session(
         lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
+    
+    # UDf is not supported by GPU, so it should fallback to CPU in the FilterExec
     
     def udf_fallback(s):
         return f'udf_{s}'
