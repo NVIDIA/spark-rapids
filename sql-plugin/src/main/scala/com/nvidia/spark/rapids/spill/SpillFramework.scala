@@ -1643,6 +1643,7 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
     }
     pool.take()
   }
+
   def returnBuffer(buffer: BounceBuffer[T]): Unit = synchronized {
     if (closed) {
       buffer.release()
