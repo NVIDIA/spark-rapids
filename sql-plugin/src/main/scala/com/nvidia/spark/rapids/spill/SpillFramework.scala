@@ -157,7 +157,7 @@ trait StoreHandle extends AutoCloseable {
   val approxSizeInBytes: Long
 
   /**
-   * This is used to resolve races between closing a handle while spilling.
+   * This is used to resolve races between closing a handle and spilling.
    */
   private[spill] var closed: Boolean = false
 }
