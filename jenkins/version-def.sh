@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-
+GLUTEN_VERSION=${GLUTEN_VERSION:-"1.2.0"}
+SUPPORTED_HYBRID_SHIMS=${SUPPORTED_HYBRID_SHIMS:-"3.2 3.3 3.4 3.5"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 PROJECT_VER=${PROJECT_VER:-"25.02.0-SNAPSHOT"}

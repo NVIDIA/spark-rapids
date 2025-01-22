@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -165,7 +165,7 @@ abstract class GpuFileFormatDataWriter(
 
   protected final def writeUpdateMetricsAndClose(scb: SpillableColumnarBatch,
       writerStatus: WriterAndStatus): Unit = {
-    writerStatus.recordsInFile += writerStatus.writer.writeSpillableAndClose(scb, statsTrackers)
+    writerStatus.recordsInFile += writerStatus.writer.writeSpillableAndClose(scb)
   }
 
   /** Release all resources. Public for testing */
@@ -257,6 +257,7 @@ class GpuSingleDirectoryDataWriter(
       path = currentPath,
       dataSchema = description.dataColumns.toStructType,
       context = taskAttemptContext,
+      statsTrackers = statsTrackers,
       debugOutputPath = debugOutputPath)
 
     statsTrackers.foreach(_.newFile(currentPath))
@@ -599,6 +600,7 @@ class GpuDynamicPartitionDataSingleWriter(
       path = currentPath,
       dataSchema = description.dataColumns.toStructType,
       context = taskAttemptContext,
+      statsTrackers = statsTrackers,
       debugOutputPath = debugOutputPath)
 
     statsTrackers.foreach(_.newFile(currentPath))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,8 +65,7 @@ case class GpuDeltaParquetFileFormat(
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric],
-      alluxioPathReplacementMap: Option[Map[String, String]])
+      metrics: Map[String, GpuMetric])
   : PartitionedFile => Iterator[InternalRow] = {
 
     val dataReader = super.buildReaderWithPartitionValuesAndMetrics(
@@ -77,8 +76,7 @@ case class GpuDeltaParquetFileFormat(
       filters,
       options,
       hadoopConf,
-      metrics,
-      alluxioPathReplacementMap)
+      metrics)
 
     val delVecs = broadcastDvMap
     val maxDelVecScatterBatchSize = RapidsConf

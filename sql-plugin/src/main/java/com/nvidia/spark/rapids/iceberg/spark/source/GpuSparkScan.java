@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -270,7 +270,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
           .toArray(String[]::new);
       // Get the final decision for the subtype of the Rapids reader.
       boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(
-          canUseCoalescing, canUseMultiThread, files, allCloudSchemes, false);
+          canUseCoalescing, canUseMultiThread, files, allCloudSchemes);
       return scala.Tuple3.apply(canAccelerateRead, useMultiThread, ff);
     }
   }

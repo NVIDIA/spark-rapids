@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -190,9 +190,10 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
       override def newInstance(path: String,
                                dataSchema: StructType,
                                context: TaskAttemptContext,
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
                                debugOutputPath: Option[String]): ColumnarOutputWriter = {
-        new GpuOrcWriter(path, dataSchema, context, debugOutputPath, holdGpuBetweenBatches,
-          asyncOutputWriteEnabled)
+        new GpuOrcWriter(path, dataSchema, context, statsTrackers, debugOutputPath,
+          holdGpuBetweenBatches, asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -215,10 +216,11 @@ class GpuOrcWriter(
     override val path: String,
     dataSchema: StructType,
     context: TaskAttemptContext,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugOutputPath: Option[String],
     holdGpuBetweenBatches: Boolean,
     useAsyncWrite: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "ORC", true, debugOutputPath,
+  extends ColumnarOutputWriter(context, dataSchema, "ORC", true, statsTrackers, debugOutputPath,
     holdGpuBetweenBatches, useAsyncWrite) {
 
   override val tableWriter: TableWriter = {

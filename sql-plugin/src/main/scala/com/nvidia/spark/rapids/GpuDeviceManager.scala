@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -284,10 +284,29 @@ object GpuDeviceManager extends Logging {
 
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
-  private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
-    if (!Rmm.isInitialized) {
-      val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
+  private def initializeSpillAndMemoryEvents(conf: RapidsConf): Unit = {
+    SpillFramework.initialize(conf)
 
+    memoryEventHandler = new DeviceMemoryEventHandler(
+      SpillFramework.stores.deviceStore,
+      conf.gpuOomDumpDir,
+      conf.gpuOomMaxRetries)
+
+    if (conf.sparkRmmStateEnable) {
+      val debugLoc = if (conf.sparkRmmDebugLocation.isEmpty) {
+        null
+      } else {
+        conf.sparkRmmDebugLocation
+      }
+      RmmSpark.setEventHandler(memoryEventHandler, debugLoc)
+    } else {
+      logWarning("SparkRMM retry has been disabled")
+      Rmm.setEventHandler(memoryEventHandler)
+    }
+  }
+
+  private def initializeRmmGpuPool(gpuId: Int, conf: RapidsConf): Unit = {
+    if (!Rmm.isInitialized) {
       val poolSize = conf.chunkedPackPoolSize
       chunkedPackMemoryResource =
         if (poolSize > 0) {
@@ -391,30 +410,10 @@ object GpuDeviceManager extends Logging {
         }
       }
 
-      SpillFramework.initialize(conf)
-
-      memoryEventHandler = new DeviceMemoryEventHandler(
-        SpillFramework.stores.deviceStore,
-        conf.gpuOomDumpDir,
-        conf.gpuOomMaxRetries)
-
-      if (conf.sparkRmmStateEnable) {
-        val debugLoc = if (conf.sparkRmmDebugLocation.isEmpty) {
-          null
-        } else {
-          conf.sparkRmmDebugLocation
-        }
-        RmmSpark.setEventHandler(memoryEventHandler, debugLoc)
-      } else {
-        logWarning("SparkRMM retry has been disabled")
-        Rmm.setEventHandler(memoryEventHandler)
-      }
-      GpuShuffleEnv.init(conf)
     }
   }
 
-  private def initializeOffHeapLimits(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
-    val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
+  private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf): Unit = {
     val setCuioDefaultResource = conf.pinnedPoolCuioDefault
     val (pinnedSize, nonPinnedLimit) = if (conf.offHeapLimitEnabled) {
       logWarning("OFF HEAP MEMORY LIMITS IS ENABLED. " +
@@ -508,8 +507,13 @@ object GpuDeviceManager extends Logging {
             "Cannot initialize memory due to previous shutdown failing")
         } else if (singletonMemoryInitialized == Uninitialized) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
-          initializeRmm(gpu, rapidsConf)
-          initializeOffHeapLimits(gpu, rapidsConf)
+          val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
+          initializePinnedPoolAndOffHeapLimits(gpu, conf)
+          initializeRmmGpuPool(gpu, conf)
+          // we want to initialize this last because we want to take advantage
+          // of pinned memory if it is configured
+          initializeSpillAndMemoryEvents(conf)
+          GpuShuffleEnv.init(conf)
           singletonMemoryInitialized = Initialized
         }
       }

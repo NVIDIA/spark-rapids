@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1739,6 +1739,23 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
+    .doc("Use HybridScan to read Parquet data using CPUs. The underlying implementation " +
+        "leverages both Gluten and Velox. Supports Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 " +
+        "as Gluten does, also supports other versions but not fully tested.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  // This config name is the same as HybridPluginWrapper in Hybrid jar,
+  // can not refer to Hybrid jar because of the jar is optional.
+  val LOAD_HYBRID_BACKEND = conf("spark.rapids.sql.hybrid.loadBackend")
+    .doc("Load hybrid backend as an extra plugin of spark-rapids during launch time")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
       "\"all\" (try to replace all aggregates, default), " +
@@ -1976,6 +1993,20 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .integerConf
       .createWithDefault(20)
 
+  val SHUFFLE_PARTITIONING_MAX_CPU_BATCH_SIZE =
+    conf("spark.rapids.shuffle.partitioning.maxCpuBatchSize")
+      .doc("The maximum size of a sliced batch output to the CPU side " +
+        "when GPU partitioning shuffle data. This can be used to limit the peak on-heap memory " +
+        "used by CPU to serialize the shuffle data, especially for skew data cases. " +
+        "The default value is maximum size of an Array minus 2k overhead (2147483639L - 2048L), " +
+        "user should only set a smaller value than default value to avoid subsequent failures.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v > 0 && v <= 2147483639L - 2048L,
+        s"maxCpuBatchSize must be positive and not exceed ${2147483639L - 2048L} bytes.")
+      // The maximum size of an Array minus a bit for overhead for metadata
+      .createWithDefault(2147483639L - 2048L)
+
   val SHUFFLE_MULTITHREADED_READER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.reader.threads")
         .doc("The number of threads to use for reading shuffle blocks per executor in the " +
@@ -1993,108 +2024,6 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .booleanConf
     .createWithDefault(false)
-
-  // ALLUXIO CONFIGS
-  val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
-    .doc("The Alluxio master hostname. If not set, read Alluxio master URL from " +
-      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
-      "and Spark driver are not co-located.")
-    .startupOnly()
-    .stringConf
-    .createWithDefault("")
-
-  val ALLUXIO_MASTER_PORT = conf("spark.rapids.alluxio.master.port")
-    .doc("The Alluxio master port. If not set, read Alluxio master port from " +
-      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
-      "and Spark driver are not co-located.")
-    .startupOnly()
-    .integerConf
-    .createWithDefault(19998)
-
-  val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
-    .doc("The Alluxio installation home path or link to the installation home path. ")
-    .startupOnly()
-    .stringConf
-    .createWithDefault("/opt/alluxio")
-
-  val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
-    .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
-      "E.g. when configure is set to " +
-      "\"s3://foo->alluxio://0.1.2.3:19998/foo,gs://bar->alluxio://0.1.2.3:19998/bar\", " +
-      "it means: " +
-      "\"s3://foo/a.csv\" will be replaced to \"alluxio://0.1.2.3:19998/foo/a.csv\" and " +
-      "\"gs://bar/b.csv\" will be replaced to \"alluxio://0.1.2.3:19998/bar/b.csv\". " +
-      "To use this config, you have to mount the buckets to Alluxio by yourself. " +
-      "If you set this config, spark.rapids.alluxio.automount.enabled won't be valid.")
-    .startupOnly()
-    .stringConf
-    .toSequence
-    .createOptional
-
-  val ALLUXIO_AUTOMOUNT_ENABLED = conf("spark.rapids.alluxio.automount.enabled")
-    .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
-      "It requires the Alluxio master is the same node of Spark driver node. " +
-      "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
-      "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
-      "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
-      "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
-      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically.")
-    .booleanConf
-    .createWithDefault(false)
-
-  val ALLUXIO_BUCKET_REGEX = conf("spark.rapids.alluxio.bucket.regex")
-    .doc("A regex to decide which bucket should be auto-mounted to Alluxio. " +
-      "E.g. when setting as \"^s3://bucket.*\", " +
-      "the bucket which starts with \"s3://bucket\" will be mounted to Alluxio " +
-      "and the path \"s3://bucket-foo/a.csv\" will be replaced to " +
-      "\"alluxio://0.1.2.3:19998/bucket-foo/a.csv\". " +
-      "It's only valid when setting spark.rapids.alluxio.automount.enabled=true. " +
-      "The default value matches all the buckets in \"s3://\" or \"s3a://\" scheme.")
-    .stringConf
-    .createWithDefault("^s3a{0,1}://.*")
-
-  val ALLUXIO_USER = conf("spark.rapids.alluxio.user")
-      .doc("Alluxio user is set on the Alluxio client, " +
-          "which is used to mount or get information. " +
-          "By default it should be the user that running the Alluxio processes. " +
-          "The default value is ubuntu.")
-      .stringConf
-      .createWithDefault("ubuntu")
-
-  val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
-    .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
-      "and TASK_TIME are the valid options. CONVERT_TIME indicates that we do it " +
-      "when we convert it to a GPU file read, this has extra overhead of creating an entirely " +
-      "new file index, which requires listing the files and getting all new file info from " +
-      "Alluxio. TASK_TIME replaces the path as late as possible inside of the task. " +
-      "By waiting and replacing it at task time, it just replaces " +
-      "the path without fetching the file information again, this is faster " +
-      "but doesn't update locality information if that has a bit impact on performance.")
-    .stringConf
-    .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
-    .createWithDefault("TASK_TIME")
-
-  val ALLUXIO_LARGE_FILE_THRESHOLD = conf("spark.rapids.alluxio.large.file.threshold")
-    .doc("The threshold is used to identify whether average size of files is large " +
-      "when reading from S3. If reading large files from S3 and " +
-      "the disks used by Alluxio are slow, " +
-      "directly reading from S3 is better than reading caches from Alluxio, " +
-      "because S3 network bandwidth is faster than local disk. " +
-      "This improvement takes effect when spark.rapids.alluxio.slow.disk is enabled.")
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(64 * 1024 * 1024) // 64M
-
-  val ALLUXIO_SLOW_DISK = conf("spark.rapids.alluxio.slow.disk")
-    .doc("Indicates whether the disks used by Alluxio are slow. " +
-      "If it's true and reading S3 large files, " +
-      "Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
-      "Refer to spark.rapids.alluxio.large.file.threshold which defines a threshold that " +
-      "identifying whether files are large. " +
-      "Typically, it's slow disks if speed is less than 300M/second. " +
-      "If using convert time spark.rapids.alluxio.replacement.algo, " +
-      "this may not apply to all file types like Delta files")
-    .booleanConf
-    .createWithDefault(true)
 
   // USER FACING DEBUG CONFIGS
 
@@ -2294,8 +2223,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       "the files will be filtered in a multithreaded manner where each thread filters " +
       "the number of files set by this config. If this is set to zero the files are " +
       "filtered serially. This uses the same thread pool as the multithreaded reader, " +
-      s"see $MULTITHREAD_READ_NUM_THREADS. Note that filtering multithreaded " +
-      "is useful with Alluxio.")
+      s"see $MULTITHREAD_READ_NUM_THREADS.")
     .integerConf
     .createWithDefault(value = 0)
 
@@ -2917,6 +2845,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
 
+  lazy val useHybridParquetReader: Boolean = get(HYBRID_PARQUET_READER)
+
+  lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
+
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
@@ -3176,6 +3108,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
+  lazy val shuffleParitioningMaxCpuBatchSize: Long = get(SHUFFLE_PARTITIONING_MAX_CPU_BATCH_SIZE)
+
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
   def isUCXShuffleManagerMode: Boolean =
@@ -3239,32 +3173,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuReadMemorySpeed: Double = get(OPTIMIZER_GPU_READ_SPEED)
 
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
-
-  lazy val getAlluxioHome: String = get(ALLUXIO_HOME)
-
-  lazy val getAlluxioMaster: String = get(ALLUXIO_MASTER)
-
-  lazy val getAlluxioMasterPort: Int = get(ALLUXIO_MASTER_PORT)
-
-  lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
-
-  lazy val getAlluxioAutoMountEnabled: Boolean = get(ALLUXIO_AUTOMOUNT_ENABLED)
-
-  lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
-
-  lazy val getAlluxioUser: String = get(ALLUXIO_USER)
-
-  lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
-
-  lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
-    get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
-
-  lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
-    get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
-
-  lazy val getAlluxioLargeFileThreshold: Long = get(ALLUXIO_LARGE_FILE_THRESHOLD)
-
-  lazy val enableAlluxioSlowDisk: Boolean = get(ALLUXIO_SLOW_DISK)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

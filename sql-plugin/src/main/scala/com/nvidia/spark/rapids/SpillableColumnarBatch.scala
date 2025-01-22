@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,7 +145,8 @@ class SpillableColumnarBatchImpl (
   }
 
   override def toString: String =
-    s"SCB $handle $rowCount ${sparkTypes.toList} $refCount"
+    s"SCB size:$sizeInBytes, handle:$handle, rows:$rowCount, types:${sparkTypes.toList}," +
+      s" refCount:$refCount"
 }
 
 class SpillableCompressedColumnarBatchImpl(
@@ -198,7 +199,7 @@ class SpillableCompressedColumnarBatchImpl(
   }
 
   override def toString: String =
-    s"SCCB $handle $rowCount $refCount"
+    s"SCCB size:$sizeInBytes, handle:$handle, rows:$rowCount, refCount:$refCount"
 
   override def dataTypes: Array[DataType] = null
 }
