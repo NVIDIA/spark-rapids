@@ -16,12 +16,12 @@
 
 package org.apache.spark.rapids.hybrid
 
+import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.shims.HybridFileSourceScanExecMeta
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
-
-import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.shims.HybridFileSourceScanExecMeta
 
 object HybridScanUtils {
   val supportedByHybridFilters = {

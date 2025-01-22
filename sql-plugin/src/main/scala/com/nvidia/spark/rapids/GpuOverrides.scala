@@ -546,11 +546,12 @@ object GpuOverrides extends Logging with PredicateHelper {
     }
   }
 
-  /** Search the plan for FilterExec whose child is a FileSourceScanExec if Hybrid Scan is enabled
-    * and decide whether to push down a filter to the GPU or not according to whether CPU/GPU
-    * support it. After that we can remove the condition from one side to avoid duplicate execution
-    * or unnecessary fallback/crash.
-    */
+  /** 
+   * Search the plan for FilterExec whose child is a FileSourceScanExec if Hybrid Scan is enabled
+   * and decide whether to push down a filter to the GPU or not according to whether CPU/GPU
+   * support it. After that we can remove the condition from one side to avoid duplicate execution
+   * or unnecessary fallback/crash.
+   */
   def updateHybridScanFilters(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     plan.transformUp {
       case filter: FilterExec => {
@@ -564,7 +565,8 @@ object GpuOverrides extends Logging with PredicateHelper {
           }
           case (fsse: FileSourceScanExec, "CPU") => {
             val (supportedConditions, notSupportedConditions) = filters.partition {
-              case filter if HybridScanUtils.supportedByHybridFilters.exists(_.isInstance(filter)) =>
+              case filter if HybridScanUtils.supportedByHybridFilters
+                  .exists(_.isInstance(filter)) =>
                 true
               case _ => false
             }
