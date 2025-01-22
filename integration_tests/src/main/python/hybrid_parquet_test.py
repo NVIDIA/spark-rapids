@@ -146,19 +146,67 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
             'spark.rapids.sql.parquet.useHybridReader': 'true',
         })
 
+# Gpu Support, Cpu not support: startswith
+# Gpu not support, Cpu support: ascii
+# Gpu support, Cpu support: lessthan
+# Gpu not support, Cpu not support: udf
+
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
-@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @hybrid_test
-def test_hybrid_parquet_filter_pushdown(spark_tmp_path, parquet_gens):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+def test_hybrid_parquet_filter_pushdown_gpu(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter("_c0 IS NOT NULL"),
+        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '0')"),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU',
+            'spark.sql.adaptive.enabled': True
+        })
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+def test_hybrid_parquet_filter_pushdown_cpu(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '0') and ascii(a) = 72 and a < '1000'"),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
+            'spark.sql.adaptive.enabled': True,
+            'spark.rapids.sql.expression.Ascii': False
+        })
+
+@allow_non_gpu('FilterExec', 'BatchEvalPythonExec', 'PythonUDF')
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    
+    def udf_fallback(s):
+        return f'udf_{s}'
+    
+    with_cpu_session(lambda spark: spark.udf.register("udf_fallback", udf_fallback))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).filter("udf_fallback(a) = 'udf_100'"),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.parquet.useHybridReader': 'true',
+            'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
+            'spark.sql.adaptive.enabled': True,
+            'spark.rapids.sql.expression.Ascii': False
         })

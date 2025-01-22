@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercent
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.hybrid.HybridScanUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -437,7 +438,7 @@ object WriteFileOp extends FileFormatOp {
   override def toString = "write"
 }
 
-object GpuOverrides extends Logging {
+object GpuOverrides extends Logging with PredicateHelper {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
@@ -542,6 +543,40 @@ object GpuOverrides extends Logging {
             }.getOrElse(bqse)
           case _ => bqse
         }
+    }
+  }
+
+  /** Search the plan for FilterExec whose child is a FileSourceScanExec if Hybrid Scan is enabled
+    * and decide whether to push down a filter to the GPU or not according to whether CPU/GPU
+    * support it. After that we can remove the condition from one side to avoid duplicate execution
+    * or unnecessary fallback/crash.
+    */
+  def updateHybridScanFilters(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    plan.transformUp {
+      case filter: FilterExec => {
+        lazy val filters = splitConjunctivePredicates(filter.condition)
+        val canBePushed = HybridScanUtils.canBePushedToHybrid(filter.child, conf)
+        (filter.child, canBePushed) match {
+          case (fsse: FileSourceScanExec, "GPU") => {
+            val updatedFsseChild = fsse.copy(dataFilters = Seq.empty)
+            val updatedFilter = FilterExec(filters.reduceLeft(And), updatedFsseChild)
+            updatedFilter
+          }
+          case (fsse: FileSourceScanExec, "CPU") => {
+            val (supportedConditions, notSupportedConditions) = filters.partition {
+              case filter if HybridScanUtils.supportedByHybridFilters.exists(_.isInstance(filter)) =>
+                true
+              case _ => false
+            }
+            val updatedFsseChild = fsse.copy(dataFilters = supportedConditions)
+            notSupportedConditions match {
+              case Nil => updatedFsseChild
+              case _ => FilterExec(notSupportedConditions.reduceLeft(And), updatedFsseChild)
+            }
+          }
+          case _ => filter
+        }
+      }
     }
   }
 
@@ -4780,6 +4815,13 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       // when the RAPIDS Accelerator replaces the original exchange.
       if (conf.isAqeExchangeReuseFixupEnabled && plan.conf.exchangeReuseEnabled) {
         newPlan = GpuOverrides.fixupCpuReusedExchanges(newPlan)
+      }
+
+      // If Hybrid Scan is enabled, we need to decide whether to push down a filter to the CPU
+      // or not according to whether CPU/GPU support it. After that we can remove the condition
+      // from one side to avoid duplicate execution or unnecessary fallback/crash.
+      if (conf.useHybridParquetReader) {
+        newPlan = GpuOverrides.updateHybridScanFilters(newPlan, conf)
       }
 
       // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type

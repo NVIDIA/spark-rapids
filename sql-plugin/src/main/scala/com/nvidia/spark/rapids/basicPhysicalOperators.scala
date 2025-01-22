@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
-import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -958,71 +958,6 @@ object GpuFilter {
   }
 }
 
-object HybridFilterSplitter extends PredicateHelper {
-
-  // from https://gitlab-master.nvidia.com/nvspark/gluten-public/-/blob/branch-1.2/docs/velox-backend-support-progress.md
-  lazy val notSupportedByHybridFilters = Seq(
-    classOf[Factorial],
-    classOf[ConcatWs],
-    classOf[LengthOfJsonArray],
-    classOf[TruncDate],
-    classOf[Sequence],
-    classOf[MapFromArrays]
-  )
-
-  def canBePushedToHybrid(child: SparkPlan, conf: RapidsConf): String = {
-    child match {
-      case fsse: FileSourceScanExec if HybridFileSourceScanExecMeta.useHybridScan(conf, fsse) =>
-        conf.pushDownFiltersToHybrid
-      case _ => "UNCHANGED"
-    }
-  }
-
-  def checkHybridFilterPushdown(
-      filter: FilterExec,
-      conf: RapidsConf,
-      parentMetaOpt: Option[RapidsMeta[_, _, _]],
-      rule: DataFromReplacementRule): Option[GpuExec] = {
-    lazy val filters = splitConjunctivePredicates(filter.condition)
-    val child = filter.child
-    val canBePushed = canBePushedToHybrid(child, conf)
-    if (canBePushed == "UNCHANGED") {
-      None
-    } else {
-      val res = (filter.child, canBePushed) match {
-        case (fsse: FileSourceScanExec, "NONE") => {
-          val updatedFsseChild = fsse.copy(dataFilters = Seq.empty)
-          val updatedFilter = FilterExec(filters.reduceLeft(And), updatedFsseChild)
-          val newMeta = GpuFilterExecMeta(updatedFilter, conf, parentMetaOpt, rule)
-          GpuFilterExec(newMeta.childExprs.head.convertToGpu(),
-            (new HybridFileSourceScanExecMeta(updatedFsseChild, conf, parentMetaOpt, rule))
-              .convertToGpu())()
-        }
-        case (fsse: FileSourceScanExec, "ALL_SUPPORTED") => {
-            // we need to extract the unsupported conditions and push down the rest
-            val (notSupportedConditions, supportedConditions) = filters.partition {
-              case filter if notSupportedByHybridFilters.exists(_.isInstance(filter)) =>
-                true
-              case _ => false
-            }
-            val updatedFsseChild = fsse.copy(dataFilters = supportedConditions)
-            val notPushedCondition = notSupportedConditions match {
-              case Nil => Literal(true)
-              case _ => notSupportedConditions.reduceLeft(And)
-            }
-            val updatedFilter = FilterExec(notPushedCondition, updatedFsseChild)
-
-            val newMeta = GpuFilterExecMeta(updatedFilter, conf, parentMetaOpt, rule)
-            GpuFilterExec(newMeta.childExprs.head.convertToGpu(),
-              (new HybridFileSourceScanExecMeta(updatedFsseChild, conf, parentMetaOpt, rule))
-                .convertToGpu())()
-        }
-      }
-      Some(res)
-    }
-  }
-}
-
 case class GpuFilterExecMeta(
   filter: FilterExec,
   override val conf: RapidsConf,
@@ -1030,11 +965,8 @@ case class GpuFilterExecMeta(
   rule: DataFromReplacementRule
 ) extends SparkPlanMeta[FilterExec](filter, conf, parentMetaOpt, rule) {
   override def convertToGpu(): GpuExec = {
-    // If HybridScan is enabled, we need to check if the filter can be pushed down to HybridScan
-    HybridFilterSplitter.checkHybridFilterPushdown(filter, conf, parentMetaOpt, rule).getOrElse {
-      GpuFilterExec(childExprs.head.convertToGpu(),
+    GpuFilterExec(childExprs.head.convertToGpu(),
           childPlans.head.convertIfNeeded())()
-    }
   }
 }
 
