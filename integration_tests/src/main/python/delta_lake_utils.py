@@ -16,7 +16,7 @@ import json
 import os.path
 import re
 
-from spark_session import is_databricks122_or_later
+from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
