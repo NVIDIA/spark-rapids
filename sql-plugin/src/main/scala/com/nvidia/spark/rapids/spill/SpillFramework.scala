@@ -387,20 +387,24 @@ class SpillableHostBufferHandle private (
         }
         sizeInBytes
       } else {
-          0
+        0
       }
       spilled
     }
   }
 
-  private def doClose(): Unit = synchronized {
+  private def doClose(): Unit = {
     releaseHostResource()
-    disk.foreach(_.close())
-    disk = None
+    synchronized {
+      disk.foreach(_.close())
+      disk = None
+    }
   }
 
-  override def close(): Unit = synchronized {
-    closed = true
+  override def close(): Unit = {
+    synchronized {
+      closed = true
+    }
     if (toSpill.isEmpty) {
       doClose()
     }
@@ -505,13 +509,10 @@ class SpillableDeviceBufferHandle private (
   // closed while spilling
   private var toSpill: Option[DeviceMemoryBuffer] = None
 
-  // used to ensure the resource gets cleaned up properly after spilling and avoids
-  // double freeing
-  private var spilled: Option[DeviceMemoryBuffer] = None
   override def releaseDeviceResource(): Unit = {
     synchronized {
-      spilled.foreach(_.close())
-      spilled = None
+      toSpill.foreach(_.close())
+      toSpill = None
     }
     super.releaseDeviceResource()
   }
@@ -538,6 +539,7 @@ class SpillableDeviceBufferHandle private (
           var stagingHost: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(buf))
           synchronized {
+            dev = None
             if (closed) {
               stagingHost.foreach(_.close())
               stagingHost = None
@@ -545,9 +547,6 @@ class SpillableDeviceBufferHandle private (
             } else {
               host = stagingHost
             }
-            spilled = dev
-            dev = None
-            toSpill = None
           }
         }
         sizeInBytes
@@ -557,14 +556,18 @@ class SpillableDeviceBufferHandle private (
     }
   }
 
-  private def doClose(): Unit = synchronized {
+  private def doClose(): Unit = {
     releaseDeviceResource()
-    host.foreach(_.close())
-    host = None
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
   }
 
-  override def close(): Unit = synchronized {
-    closed = true
+  override def close(): Unit = {
+    synchronized {
+      closed = true
+    }
     if (toSpill.isEmpty) {
       doClose()
     }
@@ -628,14 +631,11 @@ class SpillableColumnarBatchHandle private (
   // closed while spilling
   private var toSpill: Option[ColumnarBatch] = None
 
-  // used to ensure the resource gets cleaned up properly after spilling and avoids
-  // double freeing
-  private var spilled: Option[ColumnarBatch] = None
   override def releaseDeviceResource(): Unit = {
+    super.releaseDeviceResource()
     synchronized {
-      super.releaseDeviceResource()
-      spilled.foreach(_.close())
-      spilled = None
+      toSpill.foreach(_.close())
+      toSpill = None
     }
   }
 
@@ -653,11 +653,12 @@ class SpillableColumnarBatchHandle private (
         }
       }
       if (thisThreadSpills) {
-        withChunkedPacker { chunkedPacker =>
+        withChunkedPacker(toSpill.get) { chunkedPacker =>
           meta = Some(chunkedPacker.getPackedMeta)
           var staging: Option[SpillableHostBufferHandle] =
             Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker))
           synchronized {
+            dev = None
             if (closed) {
               staging.foreach(_.close())
               staging = None
@@ -665,11 +666,6 @@ class SpillableColumnarBatchHandle private (
             } else {
               host = staging
             }
-            // set spilled to dev instead of toSpill so that if dev was already closed during spill,
-            // we won't re-close
-            spilled = dev
-            dev = None
-            toSpill = None
           }
         }
         // We return the size we were created with. This is not the actual size
@@ -682,14 +678,9 @@ class SpillableColumnarBatchHandle private (
     }
   }
 
-  private def withChunkedPacker[T](body: ChunkedPacker => T): T = {
-    val tbl = synchronized {
-      if (toSpill.isEmpty) {
-        throw new IllegalStateException("cannot get copier without a batch")
-      }
-      withResource(toSpill.get) { buf =>
-        GpuColumnVector.from(buf)
-      }
+  private def withChunkedPacker[T](batchToPack: ColumnarBatch)(body: ChunkedPacker => T): T = {
+    val tbl = withResource(batchToPack) { _ =>
+      GpuColumnVector.from(batchToPack)
     }
     withResource(tbl) { _ =>
       withResource(new ChunkedPacker(tbl, SpillFramework.chunkedPackBounceBufferPool)) { packer =>
@@ -698,14 +689,18 @@ class SpillableColumnarBatchHandle private (
     }
   }
 
-  private def doClose(): Unit = synchronized {
+  private def doClose(): Unit = {
     releaseDeviceResource()
-    host.foreach(_.close())
-    host = None
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
   }
 
-  override def close(): Unit = synchronized {
-    closed = true
+  override def close(): Unit = {
+    synchronized {
+      closed = true
+    }
     if (toSpill.isEmpty) {
       doClose()
     }
@@ -792,15 +787,14 @@ class SpillableColumnarBatchFromBufferHandle private (
   }
 
   override def releaseDeviceResource(): Unit = {
+    super.releaseDeviceResource()
     synchronized {
-      super.releaseDeviceResource()
-      spilled.foreach(_.close())
-      spilled = None
+      toSpill.foreach(_.close())
+      toSpill = None
     }
   }
 
   private var toSpill: Option[ColumnarBatch] = None
-  private var spilled: Option[ColumnarBatch] = None
   override def spill(): Long = {
     if (!spillable) {
       0
@@ -823,6 +817,7 @@ class SpillableColumnarBatchFromBufferHandle private (
               cvFromBuffer.getBuffer))
           // probably can pull out some duplicated code
           synchronized {
+            dev = None
             if (closed) {
               doClose()
               staging.foreach(_.close())
@@ -830,11 +825,6 @@ class SpillableColumnarBatchFromBufferHandle private (
             } else {
               host = staging
             }
-            // set spilled to dev instead of toSpill so that if dev was already closed during spill,
-            // we won't re-close
-            spilled = dev
-            dev = None
-            toSpill = None
           }
           sizeInBytes
         }
@@ -844,14 +834,18 @@ class SpillableColumnarBatchFromBufferHandle private (
     }
   }
 
-  private def doClose(): Unit = synchronized {
+  private def doClose(): Unit = {
     releaseDeviceResource()
-    host.foreach(_.close())
-    host = None
+    synchronized {
+      host.foreach(_.close())
+      host = None
+    }
   }
 
-  override def close(): Unit = synchronized {
-    closed = true
+  override def close(): Unit = {
+    synchronized {
+      closed = true
+    }
     if (toSpill.isEmpty) {
       doClose()
     }
@@ -916,13 +910,12 @@ class SpillableCompressedColumnarBatchHandle private (
   }
 
   private var toSpill: Option[ColumnarBatch] = None
-  private var spilled: Option[ColumnarBatch] = None
 
   override def releaseDeviceResource(): Unit = {
     synchronized {
       super.releaseDeviceResource()
-      spilled.foreach(_.close())
-      spilled = None
+      toSpill.foreach(_.close())
+      toSpill = None
     }
   }
 
@@ -947,17 +940,13 @@ class SpillableCompressedColumnarBatchHandle private (
             Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
               cvFromBuffer.getTableBuffer))
           synchronized {
+            dev = None
             if (closed) {
               doClose()
               staging = None
             } else {
               host = staging
             }
-            // set spilled to dev instead of toSpill so that if dev was already closed during spill,
-            // we won't re-close
-            spilled = dev
-            dev = None
-            toSpill = None
           }
           compressedSizeInBytes
         }
@@ -967,15 +956,19 @@ class SpillableCompressedColumnarBatchHandle private (
     }
   }
 
-  private def doClose(): Unit = synchronized {
+  private def doClose(): Unit = {
     releaseDeviceResource()
-    host.foreach(_.close())
-    host = None
-    meta = None
+    synchronized {
+      host.foreach(_.close())
+      host = None
+      meta = None
+    }
   }
 
-  override def close(): Unit = synchronized {
-    closed = true
+  override def close(): Unit = {
+    synchronized {
+      closed = true
+    }
     if (toSpill.isEmpty) {
       doClose()
     }
@@ -1070,25 +1063,29 @@ class SpillableHostColumnarBatchHandle private (
                 disk = staging
               }
             }
+            releaseHostResource()
             approxSizeInBytes
           }
         }
       } else {
         0L
       }
-      releaseHostResource()
       bytesSpilled
     }
   }
 
-  private def doClose(): Unit = synchronized {
+  private def doClose(): Unit = {
     releaseHostResource()
-    disk.foreach(_.close())
-    disk = None
+    synchronized {
+      disk.foreach(_.close())
+      disk = None
+    }
   }
 
-  override def close(): Unit = synchronized {
-    closed = true
+  override def close(): Unit = {
+    synchronized {
+      closed = true
+    }
     if (toSpill.isEmpty) {
       doClose()
     }
