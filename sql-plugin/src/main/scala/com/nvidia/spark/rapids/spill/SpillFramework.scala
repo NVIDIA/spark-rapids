@@ -164,6 +164,13 @@ trait StoreHandle extends AutoCloseable {
 
 trait SpillableHandle extends StoreHandle {
   /**
+   * used to gate when a spill is actively being done so that a second thread won't
+   * also begin spilling, and a handle won't release the underlying buffer if it's
+   * closed while spilling
+   */
+  private[spill] var spilling: Boolean = false
+
+  /**
    * Method called to spill this handle. It can be triggered from the spill store,
    * or directly against the handle.
    *
@@ -333,11 +340,6 @@ class SpillableHostBufferHandle private (
     materialized
   }
 
-  // used to gate when a spill is actively being done so that a second thread won't
-  // also begin spilling, and a handle won't release the underlying buffer if it's
-  // closed while spilling
-  private var spilling: Boolean = false
-
   override def spill(): Long = {
     if (!spillable) {
       0L
@@ -504,11 +506,6 @@ class SpillableDeviceBufferHandle private (
     materialized
   }
 
-  // used to gate when a spill is actively being done so that a second thread won't
-  // also begin spilling, and a handle won't release the underlying buffer if it's
-  // closed while spilling
-  private var spilling: Boolean = false
-
   override def spill(): Long = {
     if (!spillable) {
       0L
@@ -616,12 +613,6 @@ class SpillableColumnarBatchHandle private (
     }
     materialized
   }
-
-
-  // used to gate when a spill is actively being done so that a second thread won't
-  // also begin spilling, and a handle won't release the underlying buffer if it's
-  // closed while spilling
-  private var spilling: Boolean = false
 
   override def spill(): Long = {
     if (!spillable) {
@@ -770,11 +761,6 @@ class SpillableColumnarBatchFromBufferHandle private (
     materialized
   }
 
-  // used to gate when a spill is actively being done so that a second thread won't
-  // also begin spilling, and a handle won't release the underlying buffer if it's
-  // closed while spilling
-  private var spilling: Boolean = false
-
   override def spill(): Long = {
     if (!spillable) {
       0
@@ -888,11 +874,6 @@ class SpillableCompressedColumnarBatchHandle private (
     materialized
   }
 
-  // used to gate when a spill is actively being done so that a second thread won't
-  // also begin spilling, and a handle won't release the underlying buffer if it's
-  // closed while spilling
-  private var spilling: Boolean = false
-
   override def spill(): Long = {
     if (!spillable) {
       0L
@@ -1004,11 +985,6 @@ class SpillableHostColumnarBatchHandle private (
     }
     materialized
   }
-
-  // used to gate when a spill is actively being done so that a second thread won't
-  // also begin spilling, and a handle won't release the underlying buffer if it's
-  // closed while spilling
-  private var spilling: Boolean = false
 
   override def spill(): Long = {
     if (!spillable) {
