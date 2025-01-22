@@ -128,8 +128,6 @@ object HybridScanUtils {
       classOf[Reverse],
       classOf[Rint],
       classOf[Round],
-      classOf[RoundCeil],
-      classOf[RoundFloor],
       classOf[Second],
       classOf[Sha1],
       classOf[Sha2],
