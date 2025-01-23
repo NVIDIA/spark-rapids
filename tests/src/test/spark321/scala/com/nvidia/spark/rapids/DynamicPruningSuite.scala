@@ -90,11 +90,11 @@ class DynamicPruningSuite
       case BroadcastQueryStageExec(id, plan, _canonicalized) =>
         val newPlan = replaceSubquery(plan)
         BroadcastQueryStageExec(id, newPlan, _canonicalized)
-      case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, rps) =>
+      case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, isDelta, rps) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         val rc = g.rapidsConf
         GpuFileSourceScanExec(r, o, rs, newPartitionFilters,
-          obs, oncb, df, ti, dbs, quif, rps)(rc)
+          obs, oncb, df, ti, dbs, quif, isDelta, rps)(rc)
       case FileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         FileSourceScanExec(r, o, rs, newPartitionFilters, obs, oncb, df, ti, dbs)
