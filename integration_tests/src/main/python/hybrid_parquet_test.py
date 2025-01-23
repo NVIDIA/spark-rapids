@@ -174,7 +174,7 @@ def test_hybrid_parquet_filter_pushdown_cpu(spark_tmp_path):
         conf=rebase_write_corrected_conf)
     # filter conditions should be pushed down to the CPU, so the ascii will not fall back to CPU in the FilterExec
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '0') and ascii(a) = 72 and a < '1000'"),
+        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '1') == False and ascii(a) >= 50 and a < '1000'"),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
@@ -201,7 +201,7 @@ def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
     with_cpu_session(lambda spark: spark.udf.register("udf_fallback", udf_fallback))
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter("udf_fallback(a) = 'udf_100'"),
+        lambda spark: spark.read.parquet(data_path).filter("ascii(a) >= 50 and udf_fallback(a) = 'udf_100'"),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
