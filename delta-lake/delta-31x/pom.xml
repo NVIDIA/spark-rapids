@@ -29,7 +29,7 @@
     <artifactId>rapids-4-spark-delta-31x_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Delta Lake 3.1.x Support</name>
     <description>Delta Lake 3.1.x support for the RAPIDS Accelerator for Apache Spark</description>
-    <version>24.12.0-SNAPSHOT</version>
+    <version>25.02.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>../delta-lake/delta-31x</rapids.module>
