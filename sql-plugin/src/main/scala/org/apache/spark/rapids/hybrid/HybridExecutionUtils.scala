@@ -48,6 +48,7 @@ object HybridExecutionUtils extends PredicateHelper {
       classOf[Acos],
       classOf[Acosh],
       classOf[AddMonths],
+      classOf[Alias],
       classOf[And],
       classOf[ArrayAggregate],
       classOf[ArrayContains],
@@ -70,6 +71,7 @@ object HybridExecutionUtils extends PredicateHelper {
       classOf[Atan],
       classOf[Atan2],
       classOf[Atanh],
+      classOf[AttributeReference],
       classOf[BitLength],
       classOf[BitwiseAnd],
       classOf[BitwiseOr],
@@ -119,6 +121,7 @@ object HybridExecutionUtils extends PredicateHelper {
       classOf[LessThan],
       classOf[Levenshtein],
       classOf[Like],
+      classOf[Literal],
       classOf[Log],
       classOf[Log10],
       classOf[Log2],
@@ -215,6 +218,16 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
+  def recursivelySupportsHybridFilters(condition: Expression): Boolean = {
+    condition match {
+      case filter if HybridExecutionUtils.supportedByHybridFilters
+          .exists(_.isInstance(filter)) =>
+        val childrenSupported = filter.children.forall(recursivelySupportsHybridFilters)
+        childrenSupported
+      case _ => false
+    }
+  }
+
   /** 
    * Search the plan for FilterExec whose child is a FileSourceScanExec if Hybrid Scan is enabled
    * and decide whether to push down a filter to the GPU or not according to whether CPU/GPU
@@ -234,8 +247,7 @@ object HybridExecutionUtils extends PredicateHelper {
           }
           case (fsse: FileSourceScanExec, "CPU") => {
             val (supportedConditions, notSupportedConditions) = filters.partition {
-              case filter if HybridExecutionUtils.supportedByHybridFilters
-                  .exists(_.isInstance(filter)) =>
+              case filter if recursivelySupportsHybridFilters(filter) =>
                 true
               case _ => false
             }
