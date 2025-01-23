@@ -19,7 +19,7 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks_version_or_later, \
-    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session
+    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session, is_databricks143_or_later
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
@@ -110,8 +110,9 @@ def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), \
     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
+@pytest.mark.skipif(not is_databricks143_or_later(), reason="We only support reading Deletion Vectors on Databricks 14.3+")
 def test_delta_deletion_vector(spark_tmp_path):
-    data_path = spark_tmp_path + "/DELTA_DATA"
+    data_path = spark_tmp_path + "/DELTA_DATA/CPU"
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
                                 dest_table_func=lambda spark: unary_op_df(spark, int_gen),
@@ -124,9 +125,6 @@ def test_delta_deletion_vector(spark_tmp_path):
     
     def read_parquet_sql(data_path):
         return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
-
-    disable_conf = copy_and_update(delta_delete_enabled_conf,
-        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
 
     with_cpu_session(setup_tables)
     with_cpu_session(write_func(data_path))

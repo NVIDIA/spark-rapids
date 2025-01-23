@@ -23,6 +23,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, Expression}
@@ -142,6 +143,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
       GpuFileSourceScanExec.convertFileFormat(wrapped.relation),
       options)(sparkSession)
 
+    val isDeltaFormat = DeltaProvider().isSupportedFormat(wrapped.relation.fileFormat.getClass)
     GpuFileSourceScanExec(
       newRelation,
       wrapped.output,
@@ -153,6 +155,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
       dataFilters,
       wrapped.tableIdentifier,
       wrapped.disableBucketedScan,
-      queryUsesInputFile = false)(conf)
+      queryUsesInputFile = false,
+      isDelta = isDeltaFormat)(conf)
   }
 }

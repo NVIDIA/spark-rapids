@@ -659,16 +659,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("Part of the plan is not columnar " +
               s"${p.getClass}\n$p")
         }
-      case _ =>
-        if (!plan.supportsColumnar &&
-            // There are some python execs that are not columnar because of a little
-            // used feature. This prevents those from failing tests. This also allows
-            // the columnar to row transitions to not cause test issues because they too
-            // are not columnar (they output rows) but are instances of GpuExec.
-            !plan.isInstanceOf[GpuExec] &&
-            !isTestExempted(plan)) {
+      case other =>
+        if (!plan.isInstanceOf[GpuExec] &&
+          !isTestExempted(plan) &&
+          !conf.testingAllowedNonGpu.contains(
+            PlanUtils.getBaseNameFromClass(other.getClass.toString))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
-            s"${plan.getClass}\n$plan")
+            s"${plan.getClass}\n${plan}")
         }
         // Check child expressions if this is a GPU node
         plan match {

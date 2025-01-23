@@ -75,6 +75,7 @@ case class GpuFileSourceScanExec(
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
     queryUsesInputFile: Boolean = false,
+    isDelta: Boolean = false,
     requiredPartitionSchema: Option[StructType] = None)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
@@ -320,14 +321,20 @@ case class GpuFileSourceScanExec(
        |""".stripMargin
   }
 
+  // We override the Parquet reader type for delta lake meta queries on Databricks 14.3
+  private val databricks143DeltaReadOverride = (ShimLoader.getShimVersion match {
+    case DatabricksShimVersion(3, 5, 0, "14.3") => true
+    case _ => false
+  }) && isDelta
+
   /**
    * If the small file optimization is enabled then we read all the files before sending down
    * to the GPU. If it is disabled then we use the standard Spark logic of reading one file
    * at a time.
    */
   lazy val inputRDD: RDD[InternalRow] = {
-    val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
-      if (isPerFileReadEnabled) {
+    val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] = {
+      if (isPerFileReadEnabled || databricks143DeltaReadOverride) {
         val reader = gpuFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
           dataSchema = relation.dataSchema,
@@ -342,6 +349,7 @@ case class GpuFileSourceScanExec(
       } else {
         None
       }
+    }
 
     val readRDD = if (bucketedScan) {
       createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
@@ -569,7 +577,7 @@ case class GpuFileSourceScanExec(
       partition.copy(files = newFiles)
     }
 
-    if (isPerFileReadEnabled) {
+    if (isPerFileReadEnabled || databricks143DeltaReadOverride) {
       logInfo("Using the original per file reader")
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, locatedPartitions,
         requiredSchema, fileFormat = Some(relation.fileFormat))
