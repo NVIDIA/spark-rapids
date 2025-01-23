@@ -22,8 +22,8 @@ package com.nvidia.spark.rapids.shims
 import org.apache.spark.sql.execution.FileSourceScanExec
 
 object DeltaLakeUtils {
-  /* Allow skip_row on Databricks but block all other columns starting with _databricks_internal to avoid any
-  unforeseen circumstances*/
+  /* Allow skip_row on Databricks but block all other columns starting with _databricks_internal
+  to avoid any unforeseen circumstances*/
   def isDatabricksDeltaLakeScan(f: FileSourceScanExec): Boolean = {
     f.requiredSchema.fields.exists(f => f.name.startsWith("_databricks_internal") &&
       !f.name.startsWith("_databricks_internal_edge_computed_column_skip_row"))

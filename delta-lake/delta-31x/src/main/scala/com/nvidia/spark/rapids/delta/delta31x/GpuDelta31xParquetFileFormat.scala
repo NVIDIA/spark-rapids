@@ -96,8 +96,7 @@ case class GpuDelta31xParquetFileFormat(
       pushdownFilters,
       options,
       hadoopConf,
-      metrics,
-      alluxioPathReplacementMap)
+      metrics)
 
     val schemaWithIndices = requiredSchema.fields.zipWithIndex
     def findColumn(name: String): Option[ColumnMetadata] = {
