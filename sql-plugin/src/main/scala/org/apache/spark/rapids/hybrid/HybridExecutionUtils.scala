@@ -246,11 +246,8 @@ object HybridExecutionUtils extends PredicateHelper {
             updatedFilter
           }
           case (fsse: FileSourceScanExec, "CPU") => {
-            val (supportedConditions, notSupportedConditions) = filters.partition {
-              case filter if recursivelySupportsHybridFilters(filter) =>
-                true
-              case _ => false
-            }
+            val (supportedConditions, notSupportedConditions) = filters.partition(
+                recursivelySupportsHybridFilters)
             val updatedFsseChild = fsse.copy(dataFilters = supportedConditions)
             notSupportedConditions match {
               case Nil => updatedFsseChild
