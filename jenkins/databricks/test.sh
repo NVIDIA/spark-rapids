@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -77,6 +77,8 @@ IS_SPARK_321_OR_LATER=0
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
+
+export PYSP_TEST_spark_rapids_shims_spark350db143_enabled=${PYSP_TEST_spark_rapids_shims_spark350db143_enabled:-true}
 
 rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
