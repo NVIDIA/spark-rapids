@@ -20,10 +20,28 @@ import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.shims.HybridFileSourceScanExecMeta
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
 
-object HybridScanUtils {
+object HybridExecutionUtils extends PredicateHelper {
+  
+  private val HYBRID_JAR_PLUGIN_CLASS_NAME = "com.nvidia.spark.rapids.hybrid.HybridPluginWrapper"
+
+  /**
+   * Check if the Hybrid jar is in the classpath,
+   * report error if not
+   */
+  def checkHybridJarInClassPath(): Unit = {
+    try {
+      Class.forName(HYBRID_JAR_PLUGIN_CLASS_NAME)
+    } catch {
+      case e: ClassNotFoundException => throw new RuntimeException(
+        "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
+            "Please disable Hybrid feature by setting " +
+            "spark.rapids.sql.parquet.useHybridReader=false", e)
+    }
+  }
+
   val supportedByHybridFilters = {
     // Only fully supported functions are listed here
     val ansiOn = Seq(
@@ -194,6 +212,42 @@ object HybridScanUtils {
       case fsse: FileSourceScanExec if HybridFileSourceScanExecMeta.useHybridScan(conf, fsse) =>
         conf.pushDownFiltersToHybrid
       case _ => "OFF"
+    }
+  }
+
+  /** 
+   * Search the plan for FilterExec whose child is a FileSourceScanExec if Hybrid Scan is enabled
+   * and decide whether to push down a filter to the GPU or not according to whether CPU/GPU
+   * support it. After that we can remove the condition from one side to avoid duplicate execution
+   * or unnecessary fallback/crash.
+   */
+  def applyHybridScanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    plan.transformUp {
+      case filter: FilterExec => {
+        lazy val filters = splitConjunctivePredicates(filter.condition)
+        val canBePushed = HybridExecutionUtils.canBePushedToHybrid(filter.child, conf)
+        (filter.child, canBePushed) match {
+          case (fsse: FileSourceScanExec, "GPU") => {
+            val updatedFsseChild = fsse.copy(dataFilters = Seq.empty)
+            val updatedFilter = FilterExec(filters.reduceLeft(And), updatedFsseChild)
+            updatedFilter
+          }
+          case (fsse: FileSourceScanExec, "CPU") => {
+            val (supportedConditions, notSupportedConditions) = filters.partition {
+              case filter if HybridExecutionUtils.supportedByHybridFilters
+                  .exists(_.isInstance(filter)) =>
+                true
+              case _ => false
+            }
+            val updatedFsseChild = fsse.copy(dataFilters = supportedConditions)
+            notSupportedConditions match {
+              case Nil => updatedFsseChild
+              case _ => FilterExec(notSupportedConditions.reduceLeft(And), updatedFsseChild)
+            }
+          }
+          case _ => filter
+        }
+      }
     }
   }
 }
