@@ -15,17 +15,17 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
-{"spark": "341db"}
+{"spark": "350db143"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.FileSourceScanExec
 
 object DeltaLakeUtils {
-  /* Check for _databricks_internal when running on Databricks */
+  /* Allow skip_row on Databricks but block all other columns starting with _databricks_internal to avoid any
+  unforeseen circumstances*/
   def isDatabricksDeltaLakeScan(f: FileSourceScanExec): Boolean = {
-    f.requiredSchema.fields.exists(_.name.startsWith("_databricks_internal"))
+    f.requiredSchema.fields.exists(f => f.name.startsWith("_databricks_internal") &&
+      !f.name.startsWith("_databricks_internal_edge_computed_column_skip_row"))
   }
 }
