@@ -42,7 +42,7 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
-  val supportedByHybridFilters = {
+  def supportedByHybridFilters(whitelistExprsName: String): Seq[Class[_]] = {
     // scalastyle:off line.size.limit
     // from https://github.com/apache/incubator-gluten/blob/branch-1.2/docs/velox-backend-support-progress.md
     // Only fully supported functions are listed here
@@ -206,10 +206,18 @@ object HybridExecutionUtils extends PredicateHelper {
       classOf[Pmod]
     )
 
+    val whitelistExprs: Seq[Class[_]] = whitelistExprsName.split(",").map { exprName =>
+      try {
+        Some(Class.forName("org.apache.spark.sql.catalyst.expressions." + exprName))
+      } catch {
+        case _: ClassNotFoundException => None
+      }
+    }.collect { case Some(cls) => cls }
+
     if (SQLConf.get.ansiEnabled) {
-      ansiOn
+      ansiOn ++ whitelistExprs
     } else {
-      ansiOn ++ ansiOff
+      ansiOn ++ ansiOff ++ whitelistExprs
     }
   }
 
@@ -221,11 +229,12 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
-  def isExprSupportedByHybridScan(condition: Expression): Boolean = {
+  def isExprSupportedByHybridScan(condition: Expression, whitelistExprsName: String): Boolean = {
     condition match {
-      case filter if HybridExecutionUtils.supportedByHybridFilters
+      case filter if HybridExecutionUtils.supportedByHybridFilters(whitelistExprsName)
           .exists(_.isInstance(filter)) =>
-        val childrenSupported = filter.children.forall(isExprSupportedByHybridScan)
+        val childrenSupported = filter.children.forall(
+            isExprSupportedByHybridScan(_, whitelistExprsName))
         childrenSupported
       case _ => false
     }
@@ -237,7 +246,10 @@ object HybridExecutionUtils extends PredicateHelper {
    * support it. After that we can remove the condition from one side to avoid duplicate execution
    * or unnecessary fallback/crash.
    */
-  def applyHybridScanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+  def tryToApplyHybridScanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    if (!conf.useHybridParquetReader) {
+      return plan
+    }
     plan.transformUp {
       case filter: FilterExec => {
         lazy val filters = splitConjunctivePredicates(filter.condition)
@@ -250,7 +262,7 @@ object HybridExecutionUtils extends PredicateHelper {
           }
           case (fsse: FileSourceScanExec, "CPU") => {
             val (supportedConditions, notSupportedConditions) = filters.partition(
-                recursivelySupportsHybridFilters)
+                isExprSupportedByHybridScan(_, conf.hybridExprsWhitelist))
             val updatedFsseChild = fsse.copy(dataFilters = supportedConditions)
             notSupportedConditions match {
               case Nil => updatedFsseChild

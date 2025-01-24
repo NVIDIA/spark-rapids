@@ -4751,7 +4751,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
         var updatedPlan = updateForAdaptivePlan(plan, conf)
-        updatedPlan = HybridExecutionUtils.applyHybridScanRules(updatedPlan, conf)
+        updatedPlan = HybridExecutionUtils.tryToApplyHybridScanRules(updatedPlan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
         updatedPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
@@ -4764,7 +4764,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
       var updatedPlan = updateForAdaptivePlan(plan, conf)
-      updatedPlan = HybridExecutionUtils.applyHybridScanRules(updatedPlan, conf)
+      updatedPlan = HybridExecutionUtils.tryToApplyHybridScanRules(updatedPlan, conf)
       updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
       GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
       plan

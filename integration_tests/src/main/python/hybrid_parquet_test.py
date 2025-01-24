@@ -151,17 +151,19 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
 @hybrid_test
 def test_hybrid_parquet_filter_pushdown_gpu(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
+    def add(a, b):
+        return a + b
+    my_udf = f.pandas_udf(add, returnType=LongType())
     with_cpu_session(
-        lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
+        lambda spark: gen_df(spark, [('a', long_gen)]).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
     # filter conditions should remain on the GPU
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '0')"),
+        lambda spark: spark.read.parquet(data_path).filter(my_udf(f.col('a'), f.col('a')) > 0),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
-            'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU',
-            'spark.sql.adaptive.enabled': True
+            'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU'
         })
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
@@ -179,8 +181,9 @@ def test_hybrid_parquet_filter_pushdown_cpu(spark_tmp_path):
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
             'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
-            'spark.sql.adaptive.enabled': True,
-            'spark.rapids.sql.expression.Ascii': False
+            'spark.rapids.sql.expression.Ascii': False,
+            'spark.rapids.sql.expression.StartsWith': False,
+            'spark.rapids.sql.hybrid.whitelistExprs': 'StartsWith'
         })
 
 @allow_non_gpu('FilterExec', 'BatchEvalPythonExec', 'PythonUDF')
@@ -206,6 +209,5 @@ def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
             'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
-            'spark.sql.adaptive.enabled': True,
             'spark.rapids.sql.expression.Ascii': False
         })
