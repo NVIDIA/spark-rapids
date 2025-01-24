@@ -207,6 +207,35 @@ trait SpillableHandle extends StoreHandle {
    * @return true if currently spillable, false otherwise
    */
   private[spill] def spillable: Boolean = approxSizeInBytes > 0
+
+  /**
+   * Performs the actual closing of underlying buffers held by this handle, whereas
+   * close is used to simply mark the state of the handle as closed. doClose will be
+   * invoked within close if a thread is not currently spilling the handle, otherwise
+   * the spill thread will be responsible for calling this after finishing its operation
+   */
+  private[spill] def doClose(): Unit
+
+  /**
+   * Marks the handle as closed, and closes the underlying buffers if the handle is not currently
+   * spilling, otherwise the spill thread will do it.
+   */
+  override def close(): Unit = {
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
+    }
+    if (shouldClose) {
+      doClose()
+    }
+  }
+
 }
 
 /**
@@ -398,26 +427,10 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  private def doClose(): Unit = {
+  override def doClose(): Unit = {
     releaseHostResource()
     disk.foreach(_.close())
     disk = None
-  }
-
-  override def close(): Unit = {
-    val shouldClose = synchronized {
-      if (closed) {
-        // someone else already closed
-        false
-      } else {
-        closed = true
-        // if spilling, let the spilling thread doClose
-        !spilling
-      }
-    }
-    if (shouldClose) {
-      doClose()
-    }
   }
 
   private[spill] def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
@@ -556,26 +569,10 @@ class SpillableDeviceBufferHandle private (
     }
   }
 
-  private def doClose(): Unit = {
+  override def doClose(): Unit = {
     releaseDeviceResource()
     host.foreach(_.close())
     host = None
-  }
-
-  override def close(): Unit = {
-    val shouldClose = synchronized {
-      if (closed) {
-        // someone else already closed
-        false
-      } else {
-        closed = true
-        // if spilling, let the spilling thread doClose
-        !spilling
-      }
-    }
-    if (shouldClose) {
-      doClose()
-    }
   }
 }
 
@@ -683,26 +680,10 @@ class SpillableColumnarBatchHandle private (
     }
   }
 
-  private def doClose(): Unit = {
+  override def doClose(): Unit = {
     releaseDeviceResource()
     host.foreach(_.close())
     host = None
-  }
-
-  override def close(): Unit = {
-    val shouldClose = synchronized {
-      if (closed) {
-        // someone else already closed
-        false
-      } else {
-        closed = true
-        // if spilling, let the spilling thread doClose
-        !spilling
-      }
-    }
-    if (shouldClose) {
-      doClose()
-    }
   }
 }
 
@@ -826,26 +807,10 @@ class SpillableColumnarBatchFromBufferHandle private (
     }
   }
 
-  private def doClose(): Unit = {
+  override def doClose(): Unit = {
     releaseDeviceResource()
     host.foreach(_.close())
     host = None
-  }
-
-  override def close(): Unit = {
-    val shouldClose = synchronized {
-      if (closed) {
-        // someone else already closed
-        false
-      } else {
-        closed = true
-        // if spilling, let the spilling thread doClose
-        !spilling
-      }
-    }
-    if (shouldClose) {
-      doClose()
-    }
   }
 }
 
@@ -946,27 +911,11 @@ class SpillableCompressedColumnarBatchHandle private (
     }
   }
 
-  private def doClose(): Unit = {
+  override def doClose(): Unit = {
     releaseDeviceResource()
     host.foreach(_.close())
     host = None
     meta = None
-  }
-
-  override def close(): Unit = {
-    val shouldClose = synchronized {
-      if (closed) {
-        // someone else already closed
-        false
-      } else {
-        closed = true
-        // if spilling, let the spilling thread doClose
-        !spilling
-      }
-    }
-    if (shouldClose) {
-      doClose()
-    }
   }
 }
 
@@ -1072,26 +1021,10 @@ class SpillableHostColumnarBatchHandle private (
     }
   }
 
-  private def doClose(): Unit = {
+  override def doClose(): Unit = {
     releaseHostResource()
     disk.foreach(_.close())
     disk = None
-  }
-
-  override def close(): Unit = {
-    val shouldClose = synchronized {
-      if (closed) {
-        // someone else already closed
-        false
-      } else {
-        closed = true
-        // if spilling, let the spilling thread doClose
-        !spilling
-      }
-    }
-    if (shouldClose) {
-      doClose()
-    }
   }
 }
 
