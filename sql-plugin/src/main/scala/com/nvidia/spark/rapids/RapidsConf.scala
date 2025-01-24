@@ -1760,7 +1760,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     val CPU, GPU, OFF = Value
   }
 
-  val PUSH_DOWN_FILTERS_TO_HYBRID = conf("spark.rapids.sql.parquet.pushDownFiltersToHybrid")
+  val PUSH_DOWN_FILTERS_TO_HYBRID = conf("spark.rapids.sql.hybrid.parquet.filterPushDown")
     .doc("Push down all supported filters to CPU if set to CPU. " +
       "If set to GPU, no filters will be pushed down so all filters are on the GPU. " +
       "If set to OFF, filters will be both pushed down and keeped on the GPU. " +
