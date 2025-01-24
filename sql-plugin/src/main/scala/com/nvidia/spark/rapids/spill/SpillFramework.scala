@@ -353,11 +353,13 @@ class SpillableHostBufferHandle private (
       if (closed) {
         throw new IllegalStateException(
           "attempting to materialize a closed handle")
+      // after spilling, the host can get removed asynchronously, so let's
+      // use disk if it's defined even if host is still present
+      } else if (disk.isDefined) {
+        diskHandle = disk.get
       } else if (host.isDefined) {
         materialized = host.get
         materialized.incRefCount()
-      } else if (disk.isDefined) {
-        diskHandle = disk.get
       } else {
         throw new IllegalStateException(
           "open handle has no underlying buffer")
@@ -387,7 +389,7 @@ class SpillableHostBufferHandle private (
           false
         }
       }
-      val spilled = if (thisThreadSpills) {
+      if (thisThreadSpills) {
         withResource(host.get) { buf =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             val outputChannel = diskHandleBuilder.getChannel
@@ -415,15 +417,14 @@ class SpillableHostBufferHandle private (
               } else {
                 disk = staging
               }
-              releaseHostResource()
             }
+            releaseHostResource()
           }
         }
         sizeInBytes
       } else {
         0
       }
-      spilled
     }
   }
 
@@ -957,10 +958,12 @@ class SpillableHostColumnarBatchHandle private (
       if (closed) {
         throw new IllegalStateException(
           "attempting to materialize a closed handle")
-      } else if (host.isDefined) {
-        materialized = RapidsHostColumnVector.incRefCounts(host.get)
+      // after spilling, the host can get removed asynchronously, so let's
+      // use disk if it's defined even if host is still present
       } else if (disk.isDefined) {
         diskHandle = disk.get
+      } else if (host.isDefined) {
+        materialized = RapidsHostColumnVector.incRefCounts(host.get)
       } else {
         throw new IllegalStateException(
           "open handle has no underlying buffer")
@@ -991,7 +994,7 @@ class SpillableHostColumnarBatchHandle private (
           false
         }
       }
-      val bytesSpilled = if (thisThreadSpills) {
+      if (thisThreadSpills) {
         withResource(host.get) { cb =>
           withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
             GpuTaskMetrics.get.spillToDiskTime {
@@ -1017,7 +1020,6 @@ class SpillableHostColumnarBatchHandle private (
       } else {
         0L
       }
-      bytesSpilled
     }
   }
 
