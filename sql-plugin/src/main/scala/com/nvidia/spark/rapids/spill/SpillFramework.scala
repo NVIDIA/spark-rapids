@@ -321,14 +321,17 @@ class SpillableHostBufferHandle private (
     var materialized: HostMemoryBuffer = null
     var diskHandle: DiskHandle = null
     synchronized {
-      if (host.isDefined) {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      } else if (host.isDefined) {
         materialized = host.get
         materialized.incRefCount()
       } else if (disk.isDefined) {
         diskHandle = disk.get
       } else {
         throw new IllegalStateException(
-          "attempting to materialize a closed handle")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -345,7 +348,7 @@ class SpillableHostBufferHandle private (
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (disk.isEmpty && host.isDefined && !spilling) {
+        if (!closed && disk.isEmpty && host.isDefined && !spilling) {
           spilling = true
           // incRefCount here so that if close() is called
           // while we are spilling, we will prevent the buffer being freed
@@ -397,17 +400,22 @@ class SpillableHostBufferHandle private (
 
   private def doClose(): Unit = {
     releaseHostResource()
-    synchronized {
-      disk.foreach(_.close())
-      disk = None
-    }
+    disk.foreach(_.close())
+    disk = None
   }
 
   override def close(): Unit = {
-    synchronized {
-      closed = true
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
     }
-    if (!spilling) {
+    if (shouldClose) {
       doClose()
     }
   }
@@ -483,7 +491,10 @@ class SpillableDeviceBufferHandle private (
     var materialized: DeviceMemoryBuffer = null
     var hostHandle: SpillableHostBufferHandle = null
     synchronized {
-      if (host.isDefined) {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      } else if (host.isDefined) {
         // since we spilled, host must be set.
         hostHandle = host.get
       } else if (dev.isDefined) {
@@ -491,7 +502,7 @@ class SpillableDeviceBufferHandle private (
         materialized.incRefCount()
       } else {
         throw new IllegalStateException(
-          "attempting to materialize a closed handle")
+          "open handle has no underlying buffer")
       }
     }
     // if `materialized` is null, we spilled. This is a terminal
@@ -511,7 +522,7 @@ class SpillableDeviceBufferHandle private (
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && !spilling) {
+        if (!closed && host.isEmpty && dev.isDefined && !spilling) {
           spilling = true
           // incRefCount here so that if close() is called
           // while we are spilling, we will prevent the buffer being freed
@@ -547,17 +558,22 @@ class SpillableDeviceBufferHandle private (
 
   private def doClose(): Unit = {
     releaseDeviceResource()
-    synchronized {
-      host.foreach(_.close())
-      host = None
-    }
+    host.foreach(_.close())
+    host = None
   }
 
   override def close(): Unit = {
-    synchronized {
-      closed = true
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
     }
-    if (!spilling) {
+    if (shouldClose) {
       doClose()
     }
   }
@@ -590,13 +606,16 @@ class SpillableColumnarBatchHandle private (
     var materialized: ColumnarBatch = null
     var hostHandle: SpillableHostBufferHandle = null
     synchronized {
-      if (host.isDefined) {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      } else if (host.isDefined) {
         hostHandle = host.get
       } else if (dev.isDefined) {
         materialized = GpuColumnVector.incRefCounts(dev.get)
       } else {
         throw new IllegalStateException(
-          "attempting to materialize a closed handle")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -619,7 +638,7 @@ class SpillableColumnarBatchHandle private (
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && !spilling) {
+        if (!closed && host.isEmpty && dev.isDefined && !spilling) {
           spilling = true
           GpuColumnVector.incRefCounts(dev.get)
           true
@@ -666,17 +685,22 @@ class SpillableColumnarBatchHandle private (
 
   private def doClose(): Unit = {
     releaseDeviceResource()
-    synchronized {
-      host.foreach(_.close())
-      host = None
-    }
+    host.foreach(_.close())
+    host = None
   }
 
   override def close(): Unit = {
-    synchronized {
-      closed = true
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
     }
-    if (!spilling) {
+    if (shouldClose) {
       doClose()
     }
   }
@@ -737,13 +761,16 @@ class SpillableColumnarBatchFromBufferHandle private (
     var materialized: ColumnarBatch = null
     var hostHandle: SpillableHostBufferHandle = null
     synchronized {
-      if (host.isDefined) {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      } else if (host.isDefined) {
         hostHandle = host.get
       } else if (dev.isDefined) {
         materialized = GpuColumnVector.incRefCounts(dev.get)
       } else {
         throw new IllegalStateException(
-          "attempting to materialize a closed handle")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -766,7 +793,7 @@ class SpillableColumnarBatchFromBufferHandle private (
       0
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && !spilling) {
+        if (!closed && host.isEmpty && dev.isDefined && !spilling) {
           spilling = true
           GpuColumnVector.incRefCounts(dev.get)
           true
@@ -801,17 +828,22 @@ class SpillableColumnarBatchFromBufferHandle private (
 
   private def doClose(): Unit = {
     releaseDeviceResource()
-    synchronized {
-      host.foreach(_.close())
-      host = None
-    }
+    host.foreach(_.close())
+    host = None
   }
 
   override def close(): Unit = {
-    synchronized {
-      closed = true
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
     }
-    if (!spilling) {
+    if (shouldClose) {
       doClose()
     }
   }
@@ -853,13 +885,16 @@ class SpillableCompressedColumnarBatchHandle private (
     var materialized: ColumnarBatch = null
     var hostHandle: SpillableHostBufferHandle = null
     synchronized {
-      if (host.isDefined) {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      } else if (host.isDefined) {
         hostHandle = host.get
       } else if (dev.isDefined) {
         materialized = GpuCompressedColumnVector.incRefCounts(dev.get)
       } else {
         throw new IllegalStateException(
-          "attempting to materialize a closed handle")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -879,7 +914,7 @@ class SpillableCompressedColumnarBatchHandle private (
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (host.isEmpty && dev.isDefined && !spilling) {
+        if (!closed && host.isEmpty && dev.isDefined && !spilling) {
           spilling = true
           GpuCompressedColumnVector.incRefCounts(dev.get)
           true
@@ -913,18 +948,23 @@ class SpillableCompressedColumnarBatchHandle private (
 
   private def doClose(): Unit = {
     releaseDeviceResource()
-    synchronized {
-      host.foreach(_.close())
-      host = None
-      meta = None
-    }
+    host.foreach(_.close())
+    host = None
+    meta = None
   }
 
   override def close(): Unit = {
-    synchronized {
-      closed = true
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
     }
-    if (!spilling) {
+    if (shouldClose) {
       doClose()
     }
   }
@@ -965,13 +1005,16 @@ class SpillableHostColumnarBatchHandle private (
     var materialized: ColumnarBatch = null
     var diskHandle: DiskHandle = null
     synchronized {
-      if (host.isDefined) {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      } else if (host.isDefined) {
         materialized = RapidsHostColumnVector.incRefCounts(host.get)
       } else if (disk.isDefined) {
         diskHandle = disk.get
       } else {
         throw new IllegalStateException(
-          "attempting to materialize a closed handle")
+          "open handle has no underlying buffer")
       }
     }
     if (materialized == null) {
@@ -991,7 +1034,7 @@ class SpillableHostColumnarBatchHandle private (
       0L
     } else {
       val thisThreadSpills = synchronized {
-        if (disk.isEmpty && host.isDefined && !spilling) {
+        if (!closed && disk.isEmpty && host.isDefined && !spilling) {
           spilling = true
           RapidsHostColumnVector.incRefCounts(host.get)
           true
@@ -1031,17 +1074,22 @@ class SpillableHostColumnarBatchHandle private (
 
   private def doClose(): Unit = {
     releaseHostResource()
-    synchronized {
-      disk.foreach(_.close())
-      disk = None
-    }
+    disk.foreach(_.close())
+    disk = None
   }
 
   override def close(): Unit = {
-    synchronized {
-      closed = true
+    val shouldClose = synchronized {
+      if (closed) {
+        // someone else already closed
+        false
+      } else {
+        closed = true
+        // if spilling, let the spilling thread doClose
+        !spilling
+      }
     }
-    if (!spilling) {
+    if (shouldClose) {
       doClose()
     }
   }
