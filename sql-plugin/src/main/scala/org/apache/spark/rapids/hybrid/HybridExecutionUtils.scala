@@ -43,7 +43,10 @@ object HybridExecutionUtils extends PredicateHelper {
   }
 
   val supportedByHybridFilters = {
+    // scalastyle:off line.size.limit
+    // from https://github.com/apache/incubator-gluten/blob/branch-1.2/docs/velox-backend-support-progress.md
     // Only fully supported functions are listed here
+    // scalastyle:on
     val ansiOn = Seq(
       classOf[Acos],
       classOf[Acosh],
@@ -218,11 +221,11 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
-  def recursivelySupportsHybridFilters(condition: Expression): Boolean = {
+  def isExprSupportedByHybridScan(condition: Expression): Boolean = {
     condition match {
       case filter if HybridExecutionUtils.supportedByHybridFilters
           .exists(_.isInstance(filter)) =>
-        val childrenSupported = filter.children.forall(recursivelySupportsHybridFilters)
+        val childrenSupported = filter.children.forall(isExprSupportedByHybridScan)
         childrenSupported
       case _ => false
     }
