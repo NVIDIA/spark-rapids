@@ -203,8 +203,8 @@ class GpuOptimisticTransaction
         val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
         val basicWriteJobStatsTracker = new BasicColumnarWriteJobStatsTracker(
           serializableHadoopConf,
-          BasicWriteJobStatsTracker.metrics)
-        registerSQLMetrics(spark, basicWriteJobStatsTracker.driverSideMetrics)
+          GpuMetric.wrap(BasicWriteJobStatsTracker.metrics))
+        registerSQLMetrics(spark, GpuMetric.unwrap(basicWriteJobStatsTracker.driverSideMetrics))
         statsTrackers.append(basicWriteJobStatsTracker)
         gpuRapidsWrite.foreach { grw =>
           val tracker = new GpuWriteJobStatsTracker(serializableHadoopConf,
@@ -232,6 +232,7 @@ class GpuOptimisticTransaction
       }
 
       try {
+
         GpuFileFormatWriter.write(
           sparkSession = spark,
           plan = physicalPlan,
@@ -243,8 +244,9 @@ class GpuOptimisticTransaction
           bucketSpec = None,
           statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers,
           options = options,
-          rapidsConf.stableSort,
-          rapidsConf.concurrentWriterPartitionFlushSize)
+          useStableSort = rapidsConf.stableSort,
+          concurrentWriterPartitionFlushSize = rapidsConf.concurrentWriterPartitionFlushSize,
+          baseDebugOutputPath = rapidsConf.outputDebugDumpPrefix)
       } catch {
         case s: SparkException =>
           // Pull an InvariantViolationException up to the top level if it was the root cause.

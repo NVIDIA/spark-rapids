@@ -82,8 +82,7 @@ case class GpuDelta31xParquetFileFormat(
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric],
-      alluxioPathReplacementMap: Option[Map[String, String]])
+      metrics: Map[String, GpuMetric])
   : PartitionedFile => Iterator[InternalRow] = {
 
     val pushdownFilters = if (disablePushDowns) Seq.empty else filters
