@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1100,6 +1100,88 @@ class SpillFrameworkSuite
 
   test("shared spill files are not deleted when a buffer is deleted") {
     testBufferFileDeletion(canShareDiskPaths = true)
+  }
+
+  def testCloseWhileSpilling[T <: SpillableHandle](handle: T, store: SpillableStore[T],
+                                                   sleepBeforeCloseNanos: Long): Unit = {
+    assert(handle.spillable)
+    assertResult(1)(store.numHandles)
+    val t1 = new Thread (() => {
+      // cannot assert how much is spills because it depends on whether the handle
+      // is already closed or not and we're trying to force both conditions
+      // in this test to show that it handles potential races correctly
+      store.spill(handle.approxSizeInBytes)
+    })
+    t1.start()
+
+    // we observed that the race will typically trigger if sleeping between 0.1 and 1 millis
+    Thread.sleep(sleepBeforeCloseNanos / 1000000L, (sleepBeforeCloseNanos % 1000000L).toInt)
+    handle.close()
+    t1.join()
+    assertResult(0)(store.numHandles)
+  }
+
+  // This is a small monte carlo simulation where we test overlaying
+  // closing buffers and spilling at difference delay points to tease out possible
+  // race conditions. There's only one param/variable in the simulation, but it could
+  // be extended to N params if needed
+  def monteCarlo(oneIteration: Long => Unit): Unit = {
+    for (i <- 1L to 10L) {
+      val nanos: Long = i * 100 * 1000
+      oneIteration(nanos)
+    }
+  }
+
+  test("a non-contiguous table close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val (tbl, dataTypes) = buildTable()
+      val handle = SpillableColumnarBatchHandle(tbl, dataTypes)
+      testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
+    }
+  }
+
+  test("a device buffer close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val (ct, _) = buildContiguousTable()
+      // the contract for spillable handles is that they take ownership
+      // incRefCount to follow that pattern
+      val buff = ct.getBuffer
+      buff.incRefCount()
+      val handle = SpillableDeviceBufferHandle(buff)
+      ct.close()
+      testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
+    }
+  }
+
+  test("host columnar batch close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val (hostCb, _) = buildHostBatch()
+      val handle = SpillableHostColumnarBatchHandle(hostCb)
+      testCloseWhileSpilling(handle, SpillFramework.stores.hostStore, sleepBeforeCloseNanos)
+    }
+  }
+
+  test("host memory buffer close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val handle = SpillableHostBufferHandle(HostMemoryBuffer.allocate(1024))
+      testCloseWhileSpilling(handle, SpillFramework.stores.hostStore, sleepBeforeCloseNanos)
+    }
+  }
+
+  test("cb from buffer handle close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val (ct, dataTypes) = buildContiguousTable()
+      val handle = SpillableColumnarBatchFromBufferHandle(ct, dataTypes)
+      testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
+    }
+  }
+
+  test("compressed cb handle close while spilling") {
+    monteCarlo { sleepBeforeCloseNanos =>
+      val ct = buildCompressedBatch(0, 1000)
+      val handle = SpillableCompressedColumnarBatchHandle(ct)
+      testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
+    }
   }
 
 }
