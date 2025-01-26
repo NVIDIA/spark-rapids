@@ -17,7 +17,6 @@
 package org.apache.spark.rapids.hybrid
 
 import ai.rapids.cudf.DType
-
 import com.nvidia.spark.rapids.{RapidsConf, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions._
