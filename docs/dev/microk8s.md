@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Setting up a Microk8s Environment
-nav_order: 6
+nav_order: 8
 parent: Developer Overview
 ---
 

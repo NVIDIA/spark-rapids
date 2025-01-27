@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Shim Development
-nav_order: 4
+nav_order: 6
 parent: Developer Overview
 ---
 
