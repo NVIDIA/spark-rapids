@@ -9,11 +9,16 @@ sealed class NvtxId private(val name: String, val doc: String) {
 }
 
 object NvtxId {
-  def apply(name: String, doc: String): NvtxId = {
+  private def apply(name: String, doc: String): NvtxId = {
     val ret = new NvtxId(name, doc)
     NvtxRangeDocs.register(ret)
     ret
   }
+
+  val ACQUIRE_GPU: NvtxId = NvtxId(name = "Acquire GPU", doc = "Time waiting for GPU semaphore " +
+    "to be acquired")
+
+  val RELEASE_GPU: NvtxId = NvtxId(name = "Release GPU", doc = "releasing the GPU semaphore")
 }
 
 object NvtxRangeDocs {
@@ -53,11 +58,6 @@ object NvtxRangeDocs {
   }
 
   def register(nvtxId: NvtxId): Unit = registeredRanges += nvtxId
-
-  val ACQUIRE_GPU: NvtxId = NvtxId(name = "Acquire GPU", doc = "Time waiting for GPU semaphore " +
-      "to be acquired")
-
-  val RELEASE_GPU: NvtxId = NvtxId(name = "Release GPU", doc = "releasing the GPU semaphore")
 }
 
 class NvtxRangeWithDoc(val id: NvtxId, color: NvtxColor) extends AutoCloseable {

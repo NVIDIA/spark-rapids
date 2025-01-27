@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{NvtxId, NvtxRangeDocs, NvtxRangeWithDoc}
+import com.nvidia.spark.rapids.{NvtxId, NvtxRangeWithDoc}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -308,7 +308,7 @@ class GpuTaskMetrics extends Serializable {
 
   def getSemWaitTime(): Long = semWaitTimeNs.value.value
 
-  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, NvtxRangeDocs.ACQUIRE_GPU,
+  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, NvtxId.ACQUIRE_GPU,
       NvtxColor.RED, f)
 
   def spillToHostTime[A](f: => A): A = {
