@@ -21,6 +21,7 @@ from data_gen import *
 from marks import *
 from parquet_test import rebase_write_corrected_conf
 from spark_session import *
+import pyspark.sql.functions as f
 
 """
 Hybrid Scan unsupported types:
@@ -196,12 +197,13 @@ def test_hybrid_parquet_filter_pushdown_cpu(spark_tmp_path):
         lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
     # filter conditions should be pushed down to the CPU, so the ascii will not fall back to CPU in the FilterExec
+    # use f.startWith because sql function startswith is from spark 3.5.0
     plan = with_gpu_session(
-        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '1') == False and ascii(a) >= 50 and a < '1000'")._jdf.queryExecution().executedPlan(),
+        lambda spark: spark.read.parquet(data_path).filter(f.col("a").startswith('1') & (f.ascii(f.col("a")) >= 50) & (f.col("a") < '1000'))._jdf.queryExecution().executedPlan(),
         conf=filter_split_conf)
     check_filter_pushdown(plan, pushed_exprs=['ascii', 'StartsWith', 'isnotnull'], not_pushed_exprs=[])
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter("startswith(a, '1') == False and ascii(a) >= 50 and a < '1000'"),
+        lambda spark: spark.read.parquet(data_path).filter(f.col("a").startswith('1') & (f.ascii(f.col("a")) >= 50) & (f.col("a") < '1000')),
         conf=filter_split_conf)
 
 @allow_non_gpu('FilterExec', 'BatchEvalPythonExec', 'PythonUDF')
