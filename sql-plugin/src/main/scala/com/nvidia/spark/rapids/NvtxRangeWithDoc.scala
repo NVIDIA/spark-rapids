@@ -54,7 +54,10 @@ object NvtxRangeDocs {
 
   def register(nvtxId: NvtxId): Unit = registeredRanges += nvtxId
 
-  val MY_RANGE: NvtxId = NvtxId(name = "my range", doc = "this is an nvtx range")
+  val ACQUIRE_GPU: NvtxId = NvtxId(name = "Acquire GPU", doc = "Time waiting for GPU semaphore " +
+      "to be acquired")
+
+  val RELEASE_GPU: NvtxId = NvtxId(name = "Release GPU", doc = "releasing the GPU semaphore")
 }
 
 class NvtxRangeWithDoc(val id: NvtxId, color: NvtxColor) extends AutoCloseable {
