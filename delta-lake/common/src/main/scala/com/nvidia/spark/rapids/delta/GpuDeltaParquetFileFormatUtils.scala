@@ -127,10 +127,10 @@ object GpuDeltaParquetFileFormatUtils {
               }
             }
 
-            withResource(table) { _ =>
-              GpuColumnVector.from(table.getColumn(0).incRefCount(),
-                METADATA_ROW_DEL_FIELD.dataType)
-            }
+              withResource(table) { _ =>
+                GpuColumnVector.from(table.getColumn(0).incRefCount(),
+                  METADATA_ROW_DEL_FIELD.dataType)
+              }
         }
       }
 
