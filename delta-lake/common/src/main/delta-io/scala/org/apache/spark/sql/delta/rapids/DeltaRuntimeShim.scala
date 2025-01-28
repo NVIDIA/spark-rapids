@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,10 +60,8 @@ object DeltaRuntimeShim {
         }.getOrElse("org.apache.spark.sql.delta.rapids.delta23x.Delta23xRuntimeShim")
     } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
-    } else if (VersionUtils.cmpSparkVersion(3, 5, 0) == 0) {
-      "org.apache.spark.sql.delta.rapids.delta31x.Delta31xRuntimeShim"
     } else {
-      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.5.0")
+      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.4.x")
     }
   }
 
