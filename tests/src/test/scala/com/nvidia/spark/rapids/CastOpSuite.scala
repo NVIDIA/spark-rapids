@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1017,6 +1017,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
 
