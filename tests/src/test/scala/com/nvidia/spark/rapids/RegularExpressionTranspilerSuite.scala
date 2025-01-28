@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids
 
 import java.nio.charset.Charset
 import java.util.EnumSet
-import java.util.regex.Pattern
+import java.util.regex.{Pattern, PatternSyntaxException}
 
 import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
@@ -181,12 +181,17 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   test("cuDF does not support quantifier syntax when not quantifying anything") {
     // note that we could choose to transpile and escape the '{' and '}' characters
-    val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
+    val patterns = Seq("{1,2}", "{1,}", "{1}")
     patterns.foreach(pattern => {
       assertUnsupported(pattern, RegexFindMode,
         "Token preceding '{' is not quantifiable near index 0")
         }
     )
+
+    val e = intercept[PatternSyntaxException] {
+      parse("{2,1}")
+    }
+    assert(e.getMessage.contains("Illegal"))
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
