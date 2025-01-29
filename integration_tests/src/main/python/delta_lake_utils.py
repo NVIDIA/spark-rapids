@@ -157,9 +157,9 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
     dest_df = dest_table_func(spark)
     writer = dest_df.write.format("delta")
     ddl = schema_to_ddl(spark, dest_df.schema)
-    table_properties = {
-        'delta.enableChangeDataFeed': str(use_cdf).lower(),
-    }
+    table_properties = {}
+    if use_cdf:
+        table_properties['delta.enableChangeDataFeed'] = 'true'
     if supports_delta_lake_deletion_vectors():
         table_properties['delta.enableDeletionVectors'] = str(enable_deletion_vectors).lower()
 
