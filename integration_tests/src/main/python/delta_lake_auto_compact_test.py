@@ -176,7 +176,9 @@ def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
 
 
 @delta_lake
-@allow_non_gpu(*delta_meta_allow)
+# Added 'RapidsDeltaWriteExec', 'CoalesceExec', 'ColumnarToRowExec' to allow_non_gpu
+# look at https://github.com/NVIDIA/spark-rapids/issues/12042 for details
+@allow_non_gpu('RapidsDeltaWriteExec', 'CoalesceExec', 'ColumnarToRowExec', *delta_meta_allow)
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
