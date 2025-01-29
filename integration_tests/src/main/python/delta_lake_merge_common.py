@@ -31,8 +31,8 @@ def make_df(spark, gen, num_slices):
 
 
 def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                         src_table_func, dest_table_func, merge_sql, check_func,
-                         partition_columns=None):
+                         src_table_func, dest_table_func, merge_sql, check_func, 
+                         partition_columns=None, conf=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
 
@@ -44,7 +44,10 @@ def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
         dest_table = spark_tmp_table_factory.get()
         read_delta_path(spark, path).createOrReplaceTempView(dest_table)
         return spark.sql(merge_sql.format(src_table=src_table, dest_table=dest_table)).collect()
-    with_cpu_session(setup_tables)
+    if conf == None :
+        with_cpu_session(setup_tables)
+    else: 
+        with_cpu_session(setup_tables, conf=conf)
     check_func(data_path, do_merge)
 
 
@@ -72,9 +75,9 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
         # Using partition columns involves sorting, and there's no guarantees on the task
         # partitioning due to random sampling.
         if compare_logs and not partition_columns:
-            with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+            with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path), conf)
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                         src_table_func, dest_table_func, merge_sql, checker, partition_columns)
+                         src_table_func, dest_table_func, merge_sql, checker, partition_columns, conf)
 
 
 def do_test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,

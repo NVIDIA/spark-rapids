@@ -14,9 +14,10 @@
 
 import json
 import os.path
+import pytest
 import re
 
-from spark_session import is_databricks122_or_later
+from spark_session import is_databricks122_or_later, is_databricks143_or_later
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -30,6 +31,10 @@ delta_meta_allow = [
     "SerializeFromObjectExec",
     "SortExec"
 ]
+
+# Disable Deletion Vectors except for Databricks 14.3
+deletion_vector_conf = list(filter(None, ({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'false'}, 
+    pytest.param({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/12042')) if is_databricks143_or_later() else None))) 
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
