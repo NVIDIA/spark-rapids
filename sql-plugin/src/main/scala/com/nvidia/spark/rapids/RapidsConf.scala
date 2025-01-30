@@ -1756,6 +1756,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  object HybridFilterPushdownType extends Enumeration {
+    val CPU, GPU, OFF = Value
+  }
+
+  val PUSH_DOWN_FILTERS_TO_HYBRID = conf("spark.rapids.sql.hybrid.parquet.filterPushDown")
+    .doc("Push down all supported filters to CPU if set to CPU. " +
+      "If set to GPU, no filters will be pushed down so all filters are on the GPU. " +
+      "If set to OFF, filters will be both pushed down and keeped on the GPU. " +
+      "OFF is to make the behavior same as before.")
+    .internal()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(HybridFilterPushdownType.values.map(_.toString))
+    .createWithDefault(HybridFilterPushdownType.CPU.toString)
+
+  val HYBRID_EXPRS_WHITELIST = conf("spark.rapids.sql.hybrid.whitelistExprs")
+    .doc("White list of expressions that can be pushed down to CPU. " +
+      "The expressions are separated by comma.")
+    .internal()
+    .stringConf
+    .createWithDefault("")
+
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
       "\"all\" (try to replace all aggregates, default), " +
@@ -2865,6 +2887,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val useHybridParquetReader: Boolean = get(HYBRID_PARQUET_READER)
 
   lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
+
+  lazy val pushDownFiltersToHybrid: String = get(PUSH_DOWN_FILTERS_TO_HYBRID)
+
+  lazy val hybridExprsWhitelist: String = get(HYBRID_EXPRS_WHITELIST)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
