@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.DeltaOptions
-import com.databricks.sql.transaction.tahoe.commands.WriteIntoDelta
+import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaCatalog, GpuDeltaLog, GpuDeltaV1Write, GpuWriteIntoDelta}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
@@ -30,7 +30,8 @@ import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectE
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.sources.InsertableRelation
 
-object DeltaSpark330DBProvider extends DatabricksDeltaProviderBase {
+object DeltaSpark350DB143Provider extends DatabricksDeltaProviderBase {
+
   override protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
      rapidsConf: RapidsConf): V1Write = new GpuDeltaV1Write {
@@ -41,7 +42,7 @@ object DeltaSpark330DBProvider extends DatabricksDeltaProviderBase {
           val deltaLog = writeConfig.deltaLog
 
           // TODO: Get the config from WriteIntoDelta's txn.
-          val cpuWrite = WriteIntoDelta(
+          val cpuWrite = WriteIntoDeltaEdge(
             deltaLog,
             if (writeConfig.forceOverwrite) SaveMode.Overwrite else SaveMode.Append,
             new DeltaOptions(writeConfig.options.toMap, session.sessionState.conf),
@@ -69,8 +70,7 @@ object DeltaSpark330DBProvider extends DatabricksDeltaProviderBase {
       new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
       cpuExec.ident,
       cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.query,
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.ifNotExists)
@@ -84,8 +84,7 @@ object DeltaSpark330DBProvider extends DatabricksDeltaProviderBase {
       new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
       cpuExec.ident,
       cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.query,
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.orCreate,

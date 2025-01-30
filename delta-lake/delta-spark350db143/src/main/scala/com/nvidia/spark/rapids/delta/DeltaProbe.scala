@@ -21,5 +21,5 @@ package com.nvidia.spark.rapids.delta
  */
 class DeltaProbeImpl extends DeltaProbe {
   // Delta Lake is built-in for Databricks instances, so no probing is necessary.
-  override def getDeltaProvider: DeltaProvider = DeltaSpark350DBProvider
+  override def getDeltaProvider: DeltaProvider = DeltaSpark350DB143Provider
 }
