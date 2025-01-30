@@ -33,8 +33,12 @@ delta_meta_allow = [
 ]
 
 # Disable Deletion Vectors except for Databricks 14.3
-deletion_vector_conf = list(filter(None, ({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'false'}, 
-    pytest.param({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/12042')) if is_databricks143_or_later() else None))) 
+def deletion_vector_conf_with_reason(reason='https://github.com/NVIDIA/spark-rapids/issues/12042'):
+    return list(filter(None, ({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'false'},
+                              pytest.param({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'true'},
+                                           marks=pytest.mark.xfail(
+                                               reason=reason)) if is_databricks143_or_later() else None)))
+deletion_vector_conf = deletion_vector_conf_with_reason()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 

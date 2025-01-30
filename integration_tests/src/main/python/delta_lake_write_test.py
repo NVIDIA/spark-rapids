@@ -90,15 +90,16 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_write_round_trip_unmanaged(spark_tmp_path):
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+def test_delta_write_round_trip_unmanaged(spark_tmp_path, deletion_vector_conf):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf, deletion_vector_conf))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path), deletion_vector_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -136,10 +137,10 @@ def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
 
-def do_update_round_trip_managed(spark_tmp_path, mode):
+def do_update_round_trip_managed(spark_tmp_path, mode, deletion_vector_conf):
     gen_list = [("x", int_gen), ("y", binary_gen), ("z", string_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
+    confs = copy_and_update(writer_confs, delta_writes_enabled_conf, deletion_vector_conf)
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
@@ -160,20 +161,22 @@ def do_update_round_trip_managed(spark_tmp_path, mode):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path):
-    do_update_round_trip_managed(spark_tmp_path, "overwrite")
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path, deletion_vector_conf):
+    do_update_round_trip_managed(spark_tmp_path, "overwrite", deletion_vector_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_append_round_trip_unmanaged(spark_tmp_path):
-    do_update_round_trip_managed(spark_tmp_path, "append")
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+def test_delta_append_round_trip_unmanaged(spark_tmp_path, deletion_vector_conf):
+    do_update_round_trip_managed(spark_tmp_path, "append", deletion_vector_conf)
 
-def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite):
+def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite, conf):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
+    confs = copy_and_update(writer_confs, delta_writes_enabled_conf, conf)
     path_to_table = {}
     def do_write(spark, path):
         table = spark_tmp_table_factory.get()
@@ -188,19 +191,21 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
         data_path,
         conf=confs)
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path):
-    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
+def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path, deletion_vector_conf):
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False, conf=deletion_vector_conf)
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path):
-    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
+def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, deletion_vector_conf):
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True, conf=deletion_vector_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -267,7 +272,8 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_340() and not is_databricks_runtime(), reason="Schema evolution fixed in later releases")
-def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path):
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf, ids=idfn)
+def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path, deletion_vector_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_path = data_path + "/SRC"
     def setup_tables(spark):
@@ -278,8 +284,8 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path):
         spark.sql(f"INSERT INTO delta.`{src_path}` VALUES (1, '2022-11-01', " +
                   "array(struct(1, struct('s1', DATE'2022-11-01'), struct('s1'))))")
         _create_cpu_gpu_tables(spark, data_path, dst_schema)
-    with_cpu_session(setup_tables, conf=writer_confs)
-    confs = copy_and_update(_delta_confs, {"spark.databricks.delta.schema.autoMerge.enabled": "true"})
+    with_cpu_session(setup_tables, conf=copy_and_update(writer_confs, deletion_vector_conf))
+    confs = copy_and_update(_delta_confs, {"spark.databricks.delta.schema.autoMerge.enabled": "true"}, deletion_vector_conf)
     _assert_sql(data_path, confs,
                 "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02', array(struct(2, struct('s2'))))")
     _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}` " +
@@ -288,7 +294,7 @@ def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path):
                "array(struct(2, struct('s2', DATE'2022-11-02'), struct('s2'))))")
     _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (3, DATE'2022-11-03', " +
                "array(struct(3, struct('s3', NULL), struct(NULL))))")
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path), deletion_vector_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -344,10 +350,11 @@ def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, m
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(is_databricks_runtime() and is_before_spark_330(),
                     reason="Databricks 10.4 does not properly handle options passed during DataFrame API write")
-def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path):
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path, deletion_vector_conf):
     gen_list = [("ints", int_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
+    confs = copy_and_update(writer_confs, delta_writes_enabled_conf, deletion_vector_conf)
     # drop the _commit_timestamp column when comparing since it will always be different
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
@@ -371,7 +378,7 @@ def test_delta_write_round_trip_cdf_write_opt(spark_tmp_path):
             .drop("_commit_timestamp"),
         data_path,
         conf=confs)
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path), deletion_vector_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -813,9 +820,10 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_write_aqe_join(spark_tmp_path):
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf_with_reason("https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+def test_delta_write_aqe_join(spark_tmp_path, deletion_vector_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"})
+    confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"}, deletion_vector_conf)
     def do_join(spark, path):
         df = unary_op_df(spark, int_gen)
         df.join(df, ["a"], "inner").write.format("delta").save(path)
@@ -824,7 +832,7 @@ def test_delta_write_aqe_join(spark_tmp_path):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=confs)
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path), deletion_vector_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -1077,13 +1085,14 @@ if is_databricks_runtime():
 @allow_non_gpu(compaction_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
-def test_delta_compaction(spark_tmp_path):
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf, ids=idfn)
+def test_delta_compaction(spark_tmp_path, deletion_vector_conf):
     from delta.tables import DeltaTable
     def do_write(spark,  path):
         spark.range(1000).write.mode("append").format("delta").save(path)
         DeltaTable.forPath(spark, path).optimize().executeCompaction()
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs = _delta_confs
+    confs = copy_and_update(_delta_confs, deletion_vector_conf)
     with_cpu_session(
         lambda spark: _create_cpu_gpu_tables(spark, data_path, "id bigint"), conf=confs)
     assert_gpu_and_cpu_writes_are_equal_collect(
