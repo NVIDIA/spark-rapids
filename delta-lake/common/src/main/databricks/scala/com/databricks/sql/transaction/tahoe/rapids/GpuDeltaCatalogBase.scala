@@ -183,7 +183,8 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
     val withDb = verifyTableAndSolidify(tableDesc, None)
 
     val schemaInCatalog = if (newSchema != schema) Some(newSchema) else None
-    val writer = getWriter(sourceQuery, new Path(loc), commentOpt, schemaInCatalog, operation.mode, withDb)
+    val writer = getWriter(sourceQuery, new Path(loc), commentOpt, schemaInCatalog, 
+      operation.mode, withDb)
 
     val gpuCreateTableCommand = buildGpuCreateDeltaTableCommand(
       rapidsConf,
