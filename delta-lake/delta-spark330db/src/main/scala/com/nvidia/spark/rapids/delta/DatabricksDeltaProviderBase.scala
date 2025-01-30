@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,7 +108,8 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
   }
 
   override def getReadFileFormat(format: FileFormat): FileFormat = {
-    GpuDeltaParquetFileFormat.convertToGpu(format.asInstanceOf[DeltaParquetFileFormat])
+    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
+    GpuDeltaParquetFileFormat.convertToGpu(cpuFormat)
   }
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {
