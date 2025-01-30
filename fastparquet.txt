@@ -1,2 +1,0 @@
-fastparquet==0.8.3;python_version=='3.8'
-fastparquet==2024.5.0;python_version>='3.9'
