@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
+from delta_lake_utils import deletion_vector_conf
 from marks import allow_non_gpu, ignore_order, delta_lake
 from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks113_or_later
 
@@ -113,11 +114,13 @@ _statements = [
 # This test is very similar to `test_dpp_reuse_broadcast_exchange` but it tests joining using a Z-ordered
 # column
 @delta_lake
+@allow_non_gpu('CollectLimitExec')
 @ignore_order(local=True)
 @pytest.mark.skipif(not is_databricks104_or_later(), reason="Dynamic File Pruning is only supported in Databricks 10.4+")
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'])
-def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aqe_enabled):
+@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf, ids=idfn)
+def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aqe_enabled, deletion_vector_conf):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
 
     def build_and_optimize_tables(spark):
@@ -152,7 +155,7 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
             .saveAsTable(dim_table)
         return df.select('filter').first()[0]
 
-    filter_val = with_cpu_session(build_and_optimize_tables)
+    filter_val = with_cpu_session(build_and_optimize_tables, deletion_vector_conf)
 
     statement = _statements[s_index].format(fact_table, dim_table, filter_val)
 
@@ -167,8 +170,8 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
         # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
         exist_classes,
         # Ensure Dynamic File Pruning kicks in by setting thresholds to 0
-        conf=dict(_exchange_reuse_conf + [
+        conf=copy_and_update(dict(_exchange_reuse_conf + [
             ('spark.databricks.optimizer.dynamicFilePruning', 'true'),
             ('spark.databricks.optimizer.deltaTableSizeThreshold', '0'),
             ('spark.databricks.optimizer.deltaTableFilesThreshold', '0'),
-            ('spark.sql.adaptive.enabled', aqe_enabled)]))
+            ('spark.sql.adaptive.enabled', aqe_enabled)]), deletion_vector_conf))
