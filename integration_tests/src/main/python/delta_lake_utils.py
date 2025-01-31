@@ -33,12 +33,22 @@ delta_meta_allow = [
 ]
 
 # Disable Deletion Vectors except for Databricks 14.3
-def deletion_vector_conf_with_reason(reason='https://github.com/NVIDIA/spark-rapids/issues/12042'):
-    return list(filter(None, ({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'false'},
-                              pytest.param({'spark.databricks.delta.properties.defaults.enableDeletionVectors': 'true'},
-                                           marks=pytest.mark.xfail(
-                                               reason=reason)) if is_databricks143_or_later() else None)))
-deletion_vector_conf = deletion_vector_conf_with_reason()
+def deletion_vector_values_with_reasons(true_xfail_reason=None, false_xfail_reason=None):
+    if false_xfail_reason is None:
+        enable_deletion_vector = [False]
+    else:
+        enable_deletion_vector = [pytest.param(False, marks=pytest.mark.xfail(reason=false_xfail_reason))]
+
+    if is_databricks143_or_later():
+        if true_xfail_reason is None:
+            enable_deletion_vector.append(True)
+        else:
+            enable_deletion_vector.append(pytest.param(True, marks=pytest.mark.xfail(reason=true_xfail_reason)))
+
+    return enable_deletion_vector
+
+deletion_vector_values_with_xfailing_scans_for_350DB143 = deletion_vector_values_with_reasons(true_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042')
+deletion_vector_values = deletion_vector_values_with_reasons()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
@@ -169,8 +179,13 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
     table_properties = {}
     if use_cdf:
         table_properties['delta.enableChangeDataFeed'] = 'true'
+    else:
+        table_properties['delta.enableChangeDataFeed'] = 'false'
+
     if enable_deletion_vectors:
         table_properties['delta.enableDeletionVectors'] = 'true'
+    else:
+        table_properties['delta.enableDeletionVectors'] = 'false'
     if len(table_properties) > 0:
         # if any table properties are specified then we need to use SQL to define the table
         sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
@@ -181,11 +196,10 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
         spark.sql(sql_text)
     elif partition_columns:
         writer = writer.partitionBy(*partition_columns)
-    if use_cdf or enable_deletion_vectors:
-        writer = writer.mode("append")
+    writer = writer.mode("append")
     writer.save(path)
 
-def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
+def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_deletion_vectors, partition_columns=None):
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)

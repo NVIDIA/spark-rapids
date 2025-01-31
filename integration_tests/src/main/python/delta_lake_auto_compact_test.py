@@ -14,8 +14,8 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
-from data_gen import copy_and_update
-from delta_lake_utils import delta_meta_allow
+from data_gen import copy_and_update, idfn
+from delta_lake_utils import *
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
 from spark_session import is_databricks104_or_later
@@ -24,7 +24,7 @@ _conf = {'spark.rapids.sql.explain': 'ALL',
          'spark.databricks.delta.autoCompact.minNumFiles': 3}  # Num files before compaction.
 
 
-def write_to_delta(num_rows=30, is_partitioned=False, num_writes=3):
+def write_to_delta(enable_deletion_vectors, num_rows=30, is_partitioned=False, num_writes=3):
     """
     Returns bound function that writes to a delta table.
     """
@@ -33,7 +33,7 @@ def write_to_delta(num_rows=30, is_partitioned=False, num_writes=3):
         input_data = spark.range(num_rows)
         input_data = input_data.withColumn("part", expr("id % 3")) if is_partitioned \
             else input_data.repartition(1)
-        writer = input_data.write.format("delta").mode("append")
+        writer = input_data.write.format("delta").mode("append").option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
         for _ in range(num_writes):
             writer.save(table_path)
 
@@ -48,7 +48,8 @@ def write_to_delta(num_rows=30, is_partitioned=False, num_writes=3):
 @pytest.mark.parametrize("auto_compact_conf",
                          ["spark.databricks.delta.autoCompact.enabled",
                           "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact"])
-def test_auto_compact_basic(spark_tmp_path, auto_compact_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+def test_auto_compact_basic(spark_tmp_path, auto_compact_conf, enable_deletion_vectors):
     """
     This test checks whether the results of auto compactions on an un-partitioned table
     match, when written via CPU and GPU.
@@ -62,7 +63,7 @@ def test_auto_compact_basic(spark_tmp_path, auto_compact_conf):
         return spark.read.format("delta").load(table_path)
 
     assert_gpu_and_cpu_writes_are_equal_collect(
-        write_func=write_to_delta(is_partitioned=False),
+        write_func=write_to_delta(enable_deletion_vectors, is_partitioned=False),
         read_func=read_data,
         base_path=data_path,
         conf=_conf)
@@ -95,7 +96,8 @@ def test_auto_compact_basic(spark_tmp_path, auto_compact_conf):
 @pytest.mark.parametrize("auto_compact_conf",
                          ["spark.databricks.delta.autoCompact.enabled",
                           "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact"])
-def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf, enable_deletion_vectors):
     """
     This test checks whether the results of auto compaction on a partitioned table
     match, when written via CPU and GPU.
@@ -110,7 +112,7 @@ def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf):
         return spark.read.format("delta").load(table_path).orderBy("id", "part")
 
     assert_gpu_and_cpu_writes_are_equal_collect(
-        write_func=write_to_delta(is_partitioned=True),
+        write_func=write_to_delta(enable_deletion_vectors, is_partitioned=True),
         read_func=read_data,
         base_path=data_path,
         conf=_conf)
@@ -147,7 +149,8 @@ def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf):
 @pytest.mark.parametrize("auto_compact_conf",
                          ["spark.databricks.delta.autoCompact.enabled",
                           "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact"])
-def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf, enable_deletion_vectors):
     """
     This test verifies that auto-compaction does not run if disabled.
     """
@@ -156,7 +159,7 @@ def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
 
     disable_auto_compaction = copy_and_update(_conf, {auto_compact_conf: 'false'})
 
-    writer = write_to_delta(num_writes=10)
+    writer = write_to_delta(enable_deletion_vectors, num_writes=10)
     with_gpu_session(func=lambda spark: writer(spark, data_path),
                      conf=disable_auto_compaction)
 
@@ -178,11 +181,12 @@ def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
 @delta_lake
 # Added 'RapidsDeltaWriteExec', 'CoalesceExec', 'ColumnarToRowExec' to allow_non_gpu
 # look at https://github.com/NVIDIA/spark-rapids/issues/12042 for details
-@allow_non_gpu('RapidsDeltaWriteExec', 'CoalesceExec', 'ColumnarToRowExec', *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
-def test_auto_compact_min_num_files(spark_tmp_path):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12042"), ids=idfn)
+def test_auto_compact_min_num_files(spark_tmp_path, enable_deletion_vectors):
     """
     This test verifies that auto-compaction honours the minNumFiles setting.
     """
@@ -195,7 +199,7 @@ def test_auto_compact_min_num_files(spark_tmp_path):
 
     # Minimum number of input files == 5.
     # If 4 files are written, there should be no OPTIMIZE.
-    writer = write_to_delta(num_writes=4)
+    writer = write_to_delta(enable_deletion_vectors, num_writes=4)
     with_gpu_session(func=lambda spark: writer(spark, data_path),
                      conf=enable_auto_compaction_on_5)
 
@@ -211,7 +215,7 @@ def test_auto_compact_min_num_files(spark_tmp_path):
     with_cpu_session(verify_table_history_before_limit, {})
 
     # On the 5th file write, auto-OPTIMIZE should kick in.
-    with_gpu_session(func=lambda spark: write_to_delta(num_writes=1)(spark, data_path),
+    with_gpu_session(func=lambda spark: write_to_delta(enable_deletion_vectors, num_writes=1)(spark, data_path),
                      conf=enable_auto_compaction_on_5)
 
     def verify_table_history_after_limit(spark):
