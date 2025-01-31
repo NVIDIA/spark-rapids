@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import json
 import os.path
 import re
 
-from spark_session import is_databricks122_or_later
+from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -33,7 +33,7 @@ delta_meta_allow = [
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
-delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec,DeltaInvariantCheckerExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 
 delta_optimized_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,DeltaOptimizedWriterExec,WriteFilesExec" if is_databricks122_or_later() else "ExecutedCommandExec"
@@ -155,25 +155,21 @@ def schema_to_ddl(spark, schema):
 
 def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
     dest_df = dest_table_func(spark)
-    writer = dest_df.write.format("delta")
+    # append to SQL-created table
+    writer = dest_df.write.format("delta").mode("append")
     ddl = schema_to_ddl(spark, dest_df.schema)
     table_properties = {}
-    if use_cdf:
-        table_properties['delta.enableChangeDataFeed'] = 'true'
-    if enable_deletion_vectors:
-        table_properties['delta.enableDeletionVectors'] = 'true'
-    if len(table_properties) > 0:
-        # if any table properties are specified then we need to use SQL to define the table
-        sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
-        if partition_columns:
-            sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
-        properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
-        sql_text += " TBLPROPERTIES ({})".format(properties)
-        spark.sql(sql_text)
-    elif partition_columns:
+    table_properties['delta.enableChangeDataFeed'] = str(use_cdf).lower()
+    if supports_delta_lake_deletion_vectors():
+        table_properties['delta.enableDeletionVectors'] = str(enable_deletion_vectors).lower()
+    # if any table properties are specified then we need to use SQL to define the table
+    sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
+    if partition_columns:
+        sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
         writer = writer.partitionBy(*partition_columns)
-    if use_cdf or enable_deletion_vectors:
-        writer = writer.mode("append")
+    properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
+    sql_text += " TBLPROPERTIES ({})".format(properties)
+    spark.sql(sql_text)
     writer.save(path)
 
 def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
