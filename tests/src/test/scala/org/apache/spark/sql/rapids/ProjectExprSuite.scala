@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -226,6 +226,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val fun = (df: DataFrame) => df.withColumn("dec", df("decimals")).select("dec")
       val conf = new SparkConf()
           .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+          .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
       val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
       compareResults(false, 0.0, fromCpu, fromGpu)
     } finally {
