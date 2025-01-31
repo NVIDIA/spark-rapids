@@ -74,12 +74,13 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
                            delta_writes_enabled_conf  # Test disabled by default
                            ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf, enable_deletion_vectors):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_tables(spark, data_path,
                                 dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                                use_cdf=False, enable_deletion_vectors=False)
+                                use_cdf=False, enable_deletion_vectors=enable_deletion_vectors)
     def write_func(spark, path):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
@@ -160,7 +161,7 @@ def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns, ena
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
                                         enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041",
                                         disabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12047"), ids=idfn)
 def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
@@ -182,7 +183,7 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns, enable_de
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041",
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041",
                                                                                         disabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12047"), ids=idfn)
 def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
     from delta.tables import DeltaTable

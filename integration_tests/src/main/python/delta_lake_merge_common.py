@@ -32,7 +32,7 @@ def make_df(spark, gen, num_slices):
 
 def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                          src_table_func, dest_table_func, merge_sql, check_func,
-                         partition_columns=None, conf={}):
+                         partition_columns=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
 
@@ -44,7 +44,7 @@ def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf, enabl
         dest_table = spark_tmp_table_factory.get()
         read_delta_path(spark, path).createOrReplaceTempView(dest_table)
         return spark.sql(merge_sql.format(src_table=src_table, dest_table=dest_table)).collect()
-    with_cpu_session(setup_tables, conf=conf)
+    with_cpu_session(setup_tables)
     check_func(data_path, do_merge)
 
 
