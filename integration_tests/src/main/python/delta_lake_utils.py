@@ -33,21 +33,21 @@ delta_meta_allow = [
 ]
 
 # Disable Deletion Vectors except for Databricks 14.3
-def deletion_vector_values_with_reasons(true_xfail_reason=None, false_xfail_reason=None):
-    if false_xfail_reason is None:
+def deletion_vector_values_with_reasons(enabled_xfail_reason=None, disabled_xfail_reason=None):
+    if disabled_xfail_reason is None:
         enable_deletion_vector = [False]
     else:
-        enable_deletion_vector = [pytest.param(False, marks=pytest.mark.xfail(reason=false_xfail_reason))]
+        enable_deletion_vector = [pytest.param(False, marks=pytest.mark.xfail(reason=disabled_xfail_reason))]
 
     if is_databricks143_or_later():
-        if true_xfail_reason is None:
+        if enabled_xfail_reason is None:
             enable_deletion_vector.append(True)
         else:
-            enable_deletion_vector.append(pytest.param(True, marks=pytest.mark.xfail(reason=true_xfail_reason)))
+            enable_deletion_vector.append(pytest.param(True, marks=pytest.mark.xfail(reason=enabled_xfail_reason)))
 
     return enable_deletion_vector
 
-deletion_vector_values_with_xfailing_scans_for_350DB143 = deletion_vector_values_with_reasons(true_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042')
+deletion_vector_values_with_xfailing_scans_for_350DB143 = deletion_vector_values_with_reasons(enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042')
 deletion_vector_values = deletion_vector_values_with_reasons()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}

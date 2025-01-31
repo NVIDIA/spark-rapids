@@ -97,7 +97,7 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
 def test_delta_write_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -175,7 +175,7 @@ def do_update_round_trip_managed(spark_tmp_path, mode, enable_deletion_vectors):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
 def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     do_update_round_trip_managed(spark_tmp_path, "overwrite", enable_deletion_vectors)
 
@@ -183,7 +183,7 @@ def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path, enable_deletion_ve
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
 def test_delta_append_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     do_update_round_trip_managed(spark_tmp_path, "append", enable_deletion_vectors)
 
@@ -209,7 +209,7 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False, enable_deletion_vectors=enable_deletion_vectors)
 
@@ -217,7 +217,7 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True, enable_deletion_vectors=enable_deletion_vectors)
 

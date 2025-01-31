@@ -185,7 +185,7 @@ def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf, enable_deletio
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(true_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12042"), ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_reasons(enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12042"), ids=idfn)
 def test_auto_compact_min_num_files(spark_tmp_path, enable_deletion_vectors):
     """
     This test verifies that auto-compaction honours the minNumFiles setting.
