@@ -18,7 +18,7 @@ import pytest
 from delta_lake_merge_common import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_databricks133, spark_version
+from spark_session import is_databricks133, spark_version, is_databricks143_or_later
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
@@ -30,7 +30,7 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
@@ -62,7 +62,7 @@ def test_delta_low_shuffle_merge_when_gpu_file_scan_override_failed(spark_tmp_pa
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
@@ -84,7 +84,7 @@ def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_facto
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
@@ -106,7 +106,7 @@ def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, 
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
@@ -121,7 +121,7 @@ def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, us
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
@@ -148,7 +148,7 @@ def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_facto
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
@@ -167,7 +167,7 @@ def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spa
 @delta_lake
 @ignore_order
 # Low shuffle merge needs to implemented for Databricks 14.3
-# https://github.com/NVIDIA/spark-rapids/issues/11079
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11079")
 @pytest.mark.skipif(not ((is_databricks_runtime() and is_databricks133()) or
                          (not is_databricks_runtime() and spark_version().startswith("3.4"))),
                     reason="Delta Lake Low Shuffle Merge only supports Databricks 13.3 or OSS "
