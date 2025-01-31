@@ -1,6 +1,12 @@
 /*
  * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
+ * Some portion of this class has been taken from DeltaTableV2 class 
+ * in the Delta Lake project at https://github.com/delta-io/delta.
+ *
+ * Copyright (2021) The Delta Lake Project Authors.
+ *
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
