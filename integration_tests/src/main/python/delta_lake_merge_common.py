@@ -121,7 +121,7 @@ def do_test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_fa
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
-                                   src_table_func, dest_table_func, merge_sql, compare_logs,
+                                   src_table_func, dest_table_func, merge_sql, compare_logs, 
                                    conf=conf)
 
 
