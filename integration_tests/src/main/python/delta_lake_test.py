@@ -16,7 +16,7 @@ import pytest
 from pyspark.sql import Row
 from asserts import assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, deletion_vector_conf
+from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, deletion_vector_values_with_350DB143_xfail_reasons
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
@@ -100,8 +100,9 @@ if is_spark_340_or_later() or is_databricks_runtime():
 @ignore_order(local=True)
 @pytest.mark.parametrize("reader_confs", reader_opt_confs_no_native, ids=idfn)
 @pytest.mark.parametrize("mapping", column_mappings, ids=idfn)
-@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf, ids=idfn)
-def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, deletion_vector_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
+                            enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
+def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable_deletion_vectors):
     data_path = spark_tmp_path + "/DELTA_DATA"
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
@@ -113,9 +114,10 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, deleti
         "spark.databricks.delta.properties.defaults.minReaderVersion": "2",
         "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
         "spark.sql.parquet.fieldId.read.enabled": "true"
-    }, deletion_vector_conf)
+    })
     with_cpu_session(
         lambda spark: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
+            .option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower()) \
             .partitionBy("b", "d") \
             .save(data_path),
         conf=confs)
@@ -127,8 +129,9 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, deleti
 @ignore_order(local=True)
 @pytest.mark.skipif(not (is_databricks_runtime() or is_spark_340_or_later()), \
                     reason="ParquetToSparkSchemaConverter changes not compatible with Delta Lake")
-@pytest.mark.parametrize("deletion_vector_conf", deletion_vector_conf, ids=idfn)
-def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, deletion_vector_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
+                            enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
+def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_vectors):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_parquet_table(spark):
         spark.range(10).coalesce(1).write.parquet(data_path)
@@ -137,8 +140,8 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, deletion_vector_
         spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
             "('delta.minReaderVersion' = '2', " +
             "'delta.minWriterVersion' = '5', " +
+            "'delta.enableDeletionVectors' = {}, ".format(str(enable_deletion_vectors).lower()) +
             "'delta.columnMapping.mode' = 'name')")
-    conf = copy_and_update({"spark.sql.parquet.fieldId.write.enabled": "false"}, deletion_vector_conf)
-    with_cpu_session(setup_parquet_table, conf)
-    with_cpu_session(convert_and_setup_name_mapping, conf)
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path), conf)
+    with_cpu_session(setup_parquet_table, {"spark.sql.parquet.fieldId.write.enabled": "false"})
+    with_cpu_session(convert_and_setup_name_mapping)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path))
