@@ -26,6 +26,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
@@ -43,12 +44,12 @@ object ScanExecShims {
         TypeSig.all),
       (fsse, conf, p, r) => {
         // TODO: HybridScan supports DataSourceV2
-        if (HybridFileSourceScanExecMeta.useHybridScan(conf, fsse)) {
+        if (HybridExecutionUtils.useHybridScan(conf, fsse)) {
           // Check if runtimes are satisfied: Spark is not Databricks or CDH; Java version is 1.8;
           // Scala version is 2.12; Hybrid jar is in the classpath; parquet v1 datasource
           val sqlConf = fsse.relation.sparkSession.sessionState.conf
           val v1SourceList = sqlConf.getConfString("spark.sql.sources.useV1SourceList", "")
-          HybridFileSourceScanExecMeta.checkRuntimes(v1SourceList)
+          HybridExecutionUtils.checkRuntimes(v1SourceList)
           new HybridFileSourceScanExecMeta(fsse, conf, p, r)
         } else {
           new FileSourceScanExecMeta(fsse, conf, p, r)
