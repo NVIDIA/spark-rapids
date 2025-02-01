@@ -140,8 +140,7 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
         spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
             "('delta.minReaderVersion' = '2', " +
             "'delta.minWriterVersion' = '5', " +
-            "'delta.enableDeletionVectors' = {}, ".format(str(enable_deletion_vectors).lower()) +
             "'delta.columnMapping.mode' = 'name')")
-    with_cpu_session(setup_parquet_table, {"spark.sql.parquet.fieldId.write.enabled": "false"})
-    with_cpu_session(convert_and_setup_name_mapping)
+    with_cpu_session(setup_parquet_table, {"spark.sql.parquet.fieldId.write.enabled": str(enable_deletion_vectors).lower()})
+    with_cpu_session(convert_and_setup_name_mapping, conf={"spark.databricks.delta.properties.defaults.enableDeletionVectors": "false"})
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path))
