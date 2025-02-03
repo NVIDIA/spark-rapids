@@ -52,6 +52,24 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
                          merge_sql=merge_sql,
                          check_func=checker)
 
+@allow_non_gpu('ColumnarToRowExec', 'BroadcastExchangeExec','BroadcastHashJoinExec', delta_write_fallback_allow, *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_merge_fallback_with_deletion_vectors(spark_tmp_path, spark_tmp_table_factory):
+    def checker(data_path, do_merge):
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
+                                  delta_write_fallback_check,
+                                  conf=copy_and_update(delta_merge_enabled_conf, {"spark.rapids.sql.format.delta.write.enabled": "false"})
+    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
+                " WHEN NOT MATCHED THEN INSERT *"
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
+                         use_cdf=False, enable_deletion_vectors=True,
+                         src_table_func=lambda spark: unary_op_df(spark, SetValuesGen(IntegerType(), range(100))),
+                         dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                         merge_sql=merge_sql,
+                         check_func=checker)
+
 @allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
