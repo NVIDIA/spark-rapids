@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1616,7 +1616,7 @@ object GpuCast {
     }
   }
 
-  private def castDecimalToDecimal(
+  def castDecimalToDecimal(
       input: ColumnView,
       from: DecimalType,
       to: DecimalType,
