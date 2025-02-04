@@ -690,18 +690,18 @@ private case class GpuParquetFileFilterHandler(
           case ParquetFooterReaderType.NATIVE =>
             val serialized = withResource(readAndFilterFooter(file, conf,
               readDataSchema, filePath)) { tableFooter =>
-               if (tableFooter.getNumColumns <= 0) {
-                 // Special case because java parquet reader does not like having 0 columns.
-                 val numRows = tableFooter.getNumRows
-                 val block = new BlockMetaData()
-                 block.setRowCount(numRows)
-                 val schema = new MessageType("root")
-                 return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
-                   schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
-                   hasInt96Timestamps = false)
-               }
+                if (tableFooter.getNumColumns <= 0) {
+                  // Special case because java parquet reader does not like having 0 columns.
+                  val numRows = tableFooter.getNumRows
+                  val block = new BlockMetaData()
+                  block.setRowCount(numRows)
+                  val schema = new MessageType("root")
+                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                    schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
+                    hasInt96Timestamps = false)
+                }
 
-               tableFooter.serializeThriftFile()
+                tableFooter.serializeThriftFile()
             }
             withResource(serialized) { serialized =>
               withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
@@ -1032,8 +1032,8 @@ private case class GpuParquetFileFilterHandler(
   @scala.annotation.nowarn("msg=method getDecimalMetadata in class PrimitiveType is deprecated")
   private def canReadAsDecimal(pt: PrimitiveType, dt: DataType): Boolean = {
     (DecimalType.is32BitDecimalType(dt)
-        || DecimalType.is64BitDecimalType(dt)
-        || DecimalType.isByteArrayDecimalType(dt)) && isValidDecimalType(pt.getDecimalMetadata)
+      || DecimalType.is64BitDecimalType(dt)
+      || DecimalType.isByteArrayDecimalType(dt)) && isValidDecimalType(pt.getDecimalMetadata)
   }
 
   // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
