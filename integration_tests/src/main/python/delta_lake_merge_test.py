@@ -60,7 +60,7 @@ def test_delta_merge_fallback_with_deletion_vectors(spark_tmp_path, spark_tmp_ta
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
                                   delta_write_fallback_check,
-                                  conf=copy_and_update(delta_merge_enabled_conf, {"spark.rapids.sql.format.delta.write.enabled": "false"})
+                                  conf=copy_and_update(delta_merge_enabled_conf, {"spark.rapids.sql.format.delta.write.enabled": "false"}))
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN NOT MATCHED THEN INSERT *"
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
