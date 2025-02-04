@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -88,7 +88,7 @@ reader_opt_confs = __reader_opt_confs_no_chunked + __reader_opt_confs_chunked
 # The Count result can not be sorted, so local sort can not be used.
 reader_opt_confs_for_count = __reader_opt_confs_common + [__multithreaded_orc_file_reader_combine_unordered_conf_no_chunked]
 
-non_utc_allow_orc_file_source_scan=['ColumnarToRowExec', 'FileSourceScanExec'] if is_not_utc() else []
+non_utc_allow_orc_file_source_scan=['ColumnarToRowExec', 'FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
 
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])

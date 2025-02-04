@@ -39,6 +39,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -134,11 +135,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.02.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.04.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-25.02.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-25.02.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.04.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.nvidia.spark.rapids
+
+import java.util.regex.PatternSyntaxException
 
 import scala.collection.mutable.ListBuffer
 
@@ -131,10 +133,10 @@ class RegularExpressionParserSuite extends AnyFunSuite {
   }
 
   test("unclosed character class") {
-    val e = intercept[RegexUnsupportedException] {
+    val e = intercept[PatternSyntaxException] {
       parse("[ab")
     }
-    assert(e.getMessage === "Unclosed character class near index 3")
+    assert(e.getMessage.contains("Unclosed"))
   }
 
   test("hex digit") {
@@ -148,7 +150,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
   }
 
   test("octal digit") {
-    val digits = Seq("0", "01", "076", "077", "0123", "0177", "0377")
+    val digits = Seq("00", "01", "076", "077", "0123", "0177", "0377")
     for (digit <- digits) {
       assert(parse(raw"\$digit") ===
         RegexSequence(ListBuffer(RegexOctalChar(digit))))

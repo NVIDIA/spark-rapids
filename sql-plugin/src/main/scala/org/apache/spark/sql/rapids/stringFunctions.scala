@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1439,8 +1439,8 @@ class GpuRegExpExtractMeta(
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
-          val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
+          val javaRegexpPattern = str.toString
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
               javaRegexpPattern, groupIdx, None)

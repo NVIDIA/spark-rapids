@@ -1763,6 +1763,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  object HybridFilterPushdownType extends Enumeration {
+    val CPU, GPU, OFF = Value
+  }
+
+  val PUSH_DOWN_FILTERS_TO_HYBRID = conf("spark.rapids.sql.hybrid.parquet.filterPushDown")
+    .doc("Push down all supported filters to CPU if set to CPU. " +
+      "If set to GPU, no filters will be pushed down so all filters are on the GPU. " +
+      "If set to OFF, filters will be both pushed down and keeped on the GPU. " +
+      "OFF is to make the behavior same as before.")
+    .internal()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(HybridFilterPushdownType.values.map(_.toString))
+    .createWithDefault(HybridFilterPushdownType.CPU.toString)
+
+  val HYBRID_EXPRS_WHITELIST = conf("spark.rapids.sql.hybrid.whitelistExprs")
+    .doc("White list of expressions that can be pushed down to CPU. " +
+      "The expressions are separated by comma.")
+    .internal()
+    .stringConf
+    .createWithDefault("")
+
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
       "\"all\" (try to replace all aggregates, default), " +
@@ -2276,23 +2298,40 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .createWithDefault(10L*1024*1024)
 
   val CHUNKED_PACK_BOUNCE_BUFFER_SIZE = conf("spark.rapids.sql.chunkedPack.bounceBufferSize")
-      .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
+      .doc("Amount of GPU memory (in bytes) to set aside at startup per chunked pack " +
           "bounce buffer, needed during spill from GPU to host memory. ")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .checkValue(v => v >= 1L*1024*1024,
         "The chunked pack bounce buffer must be at least 1MB in size")
-      .createWithDefault(128L * 1024 * 1024)
+      .createWithDefault(32L * 1024 * 1024)
+
+  val CHUNKED_PACK_BOUNCE_BUFFER_COUNT = conf("spark.rapids.sql.chunkedPack.bounceBuffers")
+    .doc("Number of chunked pack bounce buffers, needed during spill from GPU to host memory. ")
+    .internal()
+    .longConf
+    .checkValue(v => v >= 1,
+      "The chunked pack bounce buffer count must be at least 1")
+    .createWithDefault(4)
 
   val SPILL_TO_DISK_BOUNCE_BUFFER_SIZE =
     conf("spark.rapids.memory.host.spillToDiskBounceBufferSize")
       .doc("Amount of host memory (in bytes) to set aside at startup for the " +
-          "bounce buffer used for gpu to disk spill that bypasses the host store.")
+        "bounce buffer used for gpu to disk spill that bypasses the host store.")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .checkValue(v => v >= 1,
         "The gpu to disk spill bounce buffer must have a positive size")
-      .createWithDefault(128L * 1024 * 1024)
+      .createWithDefault(32L * 1024 * 1024)
+
+  val SPILL_TO_DISK_BOUNCE_BUFFER_COUNT =
+    conf("spark.rapids.memory.host.spillToDiskBounceBuffers")
+      .doc("Number of bounce buffers used for gpu to disk spill that bypasses the host store.")
+      .internal()
+      .longConf
+      .checkValue(v => v >= 1,
+        "The gpu to disk spill bounce buffer count must be positive")
+      .createWithDefault(4)
 
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
@@ -2457,7 +2496,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2858,6 +2897,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
 
+  lazy val pushDownFiltersToHybrid: String = get(PUSH_DOWN_FILTERS_TO_HYBRID)
+
+  lazy val hybridExprsWhitelist: String = get(HYBRID_EXPRS_WHITELIST)
+
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
@@ -3239,7 +3282,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
 
+  lazy val chunkedPackBounceBufferCount: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_COUNT)
+
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
+
+  lazy val spillToDiskBounceBufferCount: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_COUNT)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
