@@ -66,6 +66,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, enable_deletion_vec
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors aren't supported")
 def test_delta_update_fallback_with_deletion_vectors(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
