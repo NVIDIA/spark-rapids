@@ -134,11 +134,10 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
             ('value', int_gen),
         ], 10000)
 
-        df.write.format("delta") \
-            .mode("overwrite")
+        writer = df.write.format("delta").mode("overwrite")
         if supports_delta_lake_deletion_vectors():
-            df.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
-        df.partitionBy("key", "skey") \
+            writer.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
+        writer.partitionBy("key", "skey") \
             .saveAsTable(fact_table)
         spark.sql("OPTIMIZE {} ZORDER BY (ex_key, ex_skey)".format(fact_table)).show()
 
