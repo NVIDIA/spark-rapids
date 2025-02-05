@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1500,10 +1500,17 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
     (DecimalGen(7, 4), DecimalGen(5, 2)),
     (DecimalGen(10, 7), DecimalGen(5, 2)),
     (DecimalGen(20, 17), DecimalGen(5, 2)),
+    # Narrowing precision
+    (DecimalGen(20, 0), DecimalGen(10, 0)),
     # Increasing precision and decreasing scale
     (DecimalGen(5, 4), DecimalGen(7, 2)),
     (DecimalGen(10, 6), DecimalGen(12, 4)),
     (DecimalGen(20, 7), DecimalGen(22, 5)),
+    # Increasing the precision and keeping the scale same (increasing the whole number part)
+    (DecimalGen(10, 2), DecimalGen(22, 2)),
+    # Decreasing the scale and keeping the precision same (decreasing the whole number part)
+    (DecimalGen(10, 5), DecimalGen(10, 2)),
+    (DecimalGen(20, 10), DecimalGen(20, 5)),
     # Increasing precision by a smaller amount than scale
     (DecimalGen(5, 2), DecimalGen(6, 4)),
     (DecimalGen(10, 4), DecimalGen(12, 7))
@@ -1524,13 +1531,6 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
         StructField("a", to_decimal_gen.data_type)
     ])
 
-    # Determine if we expect an error based on precision and scale changes
-    expect_error = (
-            to_decimal_gen.scale < from_decimal_gen.scale or
-            (to_decimal_gen.precision - to_decimal_gen.scale) <
-            (from_decimal_gen.precision - from_decimal_gen.scale)
-    )
-
     spark_conf = {}
     if is_before_spark_400():
         # In Spark versions earlier than 4.0, the vectorized Parquet reader throws an exception
@@ -1539,17 +1539,8 @@ def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen
         # is ignored by the plugin.
         spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
 
-    if expect_error:
-        assert_gpu_and_cpu_error(
-            lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-            conf={},
-            error_message="Parquet column cannot be converted"
-        )
-    else:
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.read.schema(read_schema).parquet(data_path),
-            conf=spark_conf
-        )
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path), conf=spark_conf)
 
 
 @pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
