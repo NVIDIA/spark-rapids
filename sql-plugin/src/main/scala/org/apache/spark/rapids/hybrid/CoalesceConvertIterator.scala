@@ -47,6 +47,20 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
   private val converterMetrics = Map(
     "C2COutputSize" -> GpuMetric.unwrap(metrics("C2COutputSize")))
 
+  private def upstreamHasNext(): Boolean = {
+    val startTime = System.nanoTime()
+    val hasNext = cpuScanIter.hasNext
+    metrics("HybridScanTime") += System.nanoTime() - startTime
+    hasNext
+  }
+
+  private def upstreamNext(): ColumnarBatch = {
+    val startTime = System.nanoTime()
+    val batch = cpuScanIter.next()
+    metrics("HybridScanTime") += System.nanoTime() - startTime
+    batch
+  }
+
   override def hasNext(): Boolean = {
     // isDeckFilled means if there is unconverted source data remained on the deck.
     // hasProceedingBuilders means if there exists working target vectors not being flushed yet.
@@ -55,7 +69,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     }
     // Check the srcExhausted at first, so as to minimize the potential cost of unnecessary call of
     // prev.hasNext
-    lazy val upstreamHoldData = !srcExhausted && cpuScanIter.hasNext
+    lazy val upstreamHoldData = !srcExhausted && upstreamHasNext()
     // Either converter holds data or upstreaming iterator holds data.
     if (selfHoldData || upstreamHoldData) {
       return true
@@ -84,7 +98,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     // Initialize the nativeConverter with the first input batch
     if (converterImpl == null) {
       converterImpl = NativeConverter(
-        cpuScanIter.next(),
+        upstreamNext(),
         targetBatchSizeInBytes,
         schema,
         converterMetrics
@@ -94,7 +108,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     // Keeps consuming input batches of cpuScanIter until targetVectors reaches `targetBatchSize`
     // or cpuScanIter being exhausted.
     while (true) {
-      val needFlush = if (cpuScanIter.hasNext) {
+      val needFlush = if (upstreamHasNext()) {
         metrics("CpuReaderBatches") += 1
         // The only condition leading to a nonEmpty deck is targetVectors are unset after
         // the previous flushing
@@ -104,7 +118,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
         // tryAppendBatch, if failed which indicates the remaining space of targetVectors is NOT
         // enough the current input batch, then the batch will be placed on the deck and trigger
         // the flush of working targetVectors
-        !converterImpl.tryAppendBatch(cpuScanIter.next())
+        !converterImpl.tryAppendBatch(upstreamNext())
       } else {
         // If cpuScanIter is exhausted, then flushes targetVectors as the last output item.
         srcExhausted = true

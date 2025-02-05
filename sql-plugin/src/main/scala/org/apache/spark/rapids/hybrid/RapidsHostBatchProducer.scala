@@ -181,7 +181,7 @@ class PrefetchHostBatchProducer(
         }
         isInit = true
         isProducing = true
-        producerThread = new Thread(produceFn)
+        producerThread = new Thread(produceFn, s"HybridPrefetch_TID_$taskAttId")
         producerThread.start()
         return true
       }
@@ -221,14 +221,13 @@ class PrefetchHostBatchProducer(
         logError(s"[$taskAttId] PreloadedIterator: AsyncProducer failed with exceptions")
         throw new RuntimeException(s"[$taskAttId] PreloadedIterator", ex)
       case Right(ret: Array[RapidsHostColumn]) =>
-        logInfo(s"[$taskAttId] PreloadedIterator consumed $readIndex batches, " +
-          s"currently preloaded batchNum: ${writeIndex - readIndex}"
-        )
         // Update the readIndex and try to awake the producer thread
         fullLock.synchronized {
           readIndex += 1
           fullLock.notify()
         }
+        logInfo(s"[$taskAttId] PreloadedIterator consumed $readIndex batches, " +
+          s"currently preloaded batchNum: ${writeIndex - readIndex}")
         ret
     }
   }
