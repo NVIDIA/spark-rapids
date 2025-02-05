@@ -103,6 +103,8 @@ class PrefetchHostBatchProducer(
   // monotonously. And the actual index of ring buffer is `index % capacity`.
   @volatile private var readIndex: Int = 0
   @volatile private var writeIndex: Int = 0
+  // Record the total batches. Also serve as the end mask of both producer and consumer.
+  @volatile private var totalBatches: Int = 0
 
   // This lock guarantees that the status change of isProducing and the check of isProducing
   // can NOT be executed currently.
@@ -150,7 +152,7 @@ class PrefetchHostBatchProducer(
 
           isInProgressLock.lock()
           isProducing = false
-          logInfo(s"[$taskAttId] PreloadedIterator produced $writeIndex batches, " +
+          logInfo(s"[$taskAttId] PrefetchIterator produced $writeIndex batches, " +
             s"currently preloaded batchNum: ${writeIndex - readIndex}"
           )
         }
@@ -167,6 +169,8 @@ class PrefetchHostBatchProducer(
           }
           throw new RuntimeException(ex)
       } finally {
+        totalBatches = writeIndex
+        logInfo(s"[$taskAttId] PrefetchIterator finished all jobs($totalBatches batches)")
         TrampolineUtil.unsetTaskContext()
       }
     }
@@ -218,16 +222,19 @@ class PrefetchHostBatchProducer(
 
     buffer(readIndex % capacity) match {
       case Left(ex: Throwable) =>
-        logError(s"[$taskAttId] PreloadedIterator: AsyncProducer failed with exceptions")
-        throw new RuntimeException(s"[$taskAttId] PreloadedIterator", ex)
+        logError(s"[$taskAttId] PrefetchIterator: AsyncProducer failed with exceptions")
+        throw new RuntimeException(s"[$taskAttId] PrefetchIterator", ex)
       case Right(ret: Array[RapidsHostColumn]) =>
         // Update the readIndex and try to awake the producer thread
         fullLock.synchronized {
           readIndex += 1
           fullLock.notify()
         }
-        logInfo(s"[$taskAttId] PreloadedIterator consumed $readIndex batches, " +
+        logInfo(s"[$taskAttId] PrefetchIterator consumed $readIndex batches, " +
           s"currently preloaded batchNum: ${writeIndex - readIndex}")
+        if (totalBatches == readIndex) {
+          logInfo(s"[$taskAttId] PrefetchIterator exited")
+        }
         ret
     }
   }
