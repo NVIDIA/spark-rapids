@@ -115,12 +115,13 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
         "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
         "spark.sql.parquet.fieldId.read.enabled": "true"
     })
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
-            .option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower()) \
-            .partitionBy("b", "d") \
-            .save(data_path),
-        conf=confs)
+    def create_delta(spark):
+        def df = gen_df(spark, gen_list).coalesce(1).write.format("delta")
+        if supports_delta_lake_deletion_vectors():
+            df.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
+        df.partitionBy("b", "d") \
+        .save(data_path)
+    with_cpu_session(create_delta, conf=confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
                                          conf=confs)
 

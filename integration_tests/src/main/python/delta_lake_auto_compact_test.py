@@ -18,7 +18,7 @@ from data_gen import copy_and_update, idfn
 from delta_lake_utils import *
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
-from spark_session import is_databricks104_or_later
+from spark_session import is_databricks104_or_later, supports_delta_lake_deletion_vectors
 
 _conf = {'spark.rapids.sql.explain': 'ALL',
          'spark.databricks.delta.autoCompact.minNumFiles': 3}  # Num files before compaction.
@@ -33,7 +33,9 @@ def write_to_delta(enable_deletion_vectors, num_rows=30, is_partitioned=False, n
         input_data = spark.range(num_rows)
         input_data = input_data.withColumn("part", expr("id % 3")) if is_partitioned \
             else input_data.repartition(1)
-        writer = input_data.write.format("delta").mode("append").option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
+        writer = input_data.write.format("delta").mode("append")
+        if supports_delta_lake_deletion_vectors():
+           writer.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
         for _ in range(num_writes):
             writer.save(table_path)
 
