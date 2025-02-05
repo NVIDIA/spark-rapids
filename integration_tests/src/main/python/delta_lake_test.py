@@ -116,7 +116,7 @@ def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping, enable
         "spark.sql.parquet.fieldId.read.enabled": "true"
     })
     def create_delta(spark):
-        def df = gen_df(spark, gen_list).coalesce(1).write.format("delta")
+        df = gen_df(spark, gen_list).coalesce(1).write.format("delta")
         if supports_delta_lake_deletion_vectors():
             df.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
         df.partitionBy("b", "d") \
