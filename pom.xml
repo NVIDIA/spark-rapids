@@ -974,8 +974,8 @@
         <jdk17.buildvers>
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
-            330,
-            400
+            330
+            <!-- 400 -->
         </jdk17.scala213.buildvers>
         <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>
