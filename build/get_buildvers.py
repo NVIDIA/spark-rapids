@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ def _get_buildvers(buildvers, pom_file, logger=None):
 
     for release in releases:
         spark_version = pom.find(".//pom:spark{}.version".format(release), ns)
+        if spark_version is None:
+            continue
         if spark_version.text.endswith("SNAPSHOT"):
             snapshots.append(release)
         else:
