@@ -151,11 +151,11 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
                 IntegerGen(nullable=False, min_val=0, max_val=2000, special_cases=[]),
                 length=2000 // 20))
         ], 2000)
-        df.write.format("delta") \
+        writer = df.write.format("delta") \
             .mode("overwrite")
         if supports_delta_lake_deletion_vectors():
-            df.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
-        df.saveAsTable(dim_table)
+            writer.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
+        writer.saveAsTable(dim_table)
         return df.select('filter').first()[0]
 
     filter_val = with_cpu_session(build_and_optimize_tables)
