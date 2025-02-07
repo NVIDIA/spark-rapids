@@ -172,7 +172,7 @@ abstract class GpuShuffleExchangeExecBase(
   import GpuMetric._
 
   private lazy val useKudo = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf)
-  private lazy val kudoMeasureBufferCopy = RapidsConf
+  private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
     .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
     .get(child.conf)
 
@@ -226,7 +226,7 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    allMetrics, sparkTypes, useKudo, kudoMeasureBufferCopy)
+    allMetrics, sparkTypes, useKudo, kudoBufferCopyMeasurementEnabled)
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
