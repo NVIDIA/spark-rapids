@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimizeWriteExchange.scala
  * in the Delta Lake project at https://github.com/delta-io/delta
@@ -90,7 +90,8 @@ case class GpuOptimizeWriteExchangeExec(
   private lazy val serializer: Serializer =
     new GpuColumnarBatchSerializer(allMetrics,
       child.output.map(_.dataType).toArray,
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf))
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf),
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED.get(child.conf))
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
