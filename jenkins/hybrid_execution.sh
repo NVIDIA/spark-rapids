@@ -32,11 +32,14 @@ hybrid_prepare(){
     fi
 
     echo "Downloading hybrid execution dependency jars..."
+    # This script may run outside the project root path, so we use mvn -f $WORKSPACE to target the project's pom.xml
+    RAPIDS_HYBRID_VER=${RAPIDS_HYBRID_VER:-$(mvn -f $WORKSPACE -B -q help:evaluate -Dexpression=spark-rapids-hybrid.version -DforceStdout)}
+    RAPIDS_HYBRID_URL=${RAPIDS_HYBRID_URL:-$URM_URL}
     GLUTEN_BUNDLE_JAR="gluten-velox-bundle-${GLUTEN_VERSION}-spark${spark_prefix}_${SCALA_BINARY_VER}-${os_version}_${cup_arch}.jar"
-    HYBRID_JAR="rapids-4-spark-hybrid_${SCALA_BINARY_VER}-${PROJECT_VER}.jar"
+    HYBRID_JAR="rapids-4-spark-hybrid_${SCALA_BINARY_VER}-${RAPIDS_HYBRID_VER}.jar"
     GLUTEN_THIRDPARTY_JAR="gluten-thirdparty-lib-${GLUTEN_VERSION}-${os_version}-${cup_arch}.jar"
     wget -q -O /tmp/$GLUTEN_BUNDLE_JAR $URM_URL/com/nvidia/gluten-velox-bundle/$GLUTEN_VERSION/$GLUTEN_BUNDLE_JAR
-    wget -q -O /tmp/$HYBRID_JAR $URM_URL/com/nvidia/rapids-4-spark-hybrid_${SCALA_BINARY_VER}/$PROJECT_VER/$HYBRID_JAR
+    wget -q -O /tmp/$HYBRID_JAR $RAPIDS_HYBRID_URL/com/nvidia/rapids-4-spark-hybrid_${SCALA_BINARY_VER}/$RAPIDS_HYBRID_VER/$HYBRID_JAR
     wget -q -O /tmp/$GLUTEN_THIRDPARTY_JAR  $URM_URL/com/nvidia/gluten-thirdparty-lib/$GLUTEN_VERSION/$GLUTEN_THIRDPARTY_JAR
     HYBRID_BACKEND_JARS=/tmp/${HYBRID_JAR},/tmp/${GLUTEN_BUNDLE_JAR},/tmp/${GLUTEN_THIRDPARTY_JAR}
 }

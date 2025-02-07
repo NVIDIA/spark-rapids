@@ -1033,21 +1033,13 @@ private case class GpuParquetFileFilterHandler(
   private def canReadAsDecimal(pt: PrimitiveType, dt: DataType): Boolean = {
     (DecimalType.is32BitDecimalType(dt)
       || DecimalType.is64BitDecimalType(dt)
-      || DecimalType.isByteArrayDecimalType(dt)) && isDecimalTypeMatched(pt.getDecimalMetadata, dt)
+      || DecimalType.isByteArrayDecimalType(dt)) && isValidDecimalType(pt.getDecimalMetadata)
   }
 
   // TODO: After we deprecate Spark 3.1, fetch decimal meta with DecimalLogicalTypeAnnotation
   @scala.annotation.nowarn("msg=class DecimalMetadata in package schema is deprecated")
-  private def isDecimalTypeMatched(metadata: DecimalMetadata,
-                                   sparkType: DataType): Boolean = {
-    if (metadata == null) {
-      false
-    } else {
-      val dt = sparkType.asInstanceOf[DecimalType]
-      val scaleIncrease = dt.scale - metadata.getScale
-      val precisionIncrease = dt.precision - metadata.getPrecision
-      scaleIncrease >= 0 && precisionIncrease >= scaleIncrease
-    }
+  private def isValidDecimalType(metadata: DecimalMetadata): Boolean = {
+    metadata != null
   }
 }
 
