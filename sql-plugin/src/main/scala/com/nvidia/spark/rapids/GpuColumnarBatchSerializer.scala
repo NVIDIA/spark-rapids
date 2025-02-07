@@ -405,6 +405,7 @@ private class KudoSerializerInstance(
             dataSize += writeMetric.getWrittenBytes
             serCalcHeaderTime += writeMetric.getCalcHeaderTime
             if (measureBufferCopyTime) {
+              // These metrics will not show up in the UI if it's not modified
               serCopyHeaderTime += writeMetric.getCopyHeaderTime
               serCopyBufferTime += writeMetric.getCopyBufferTime
             }
