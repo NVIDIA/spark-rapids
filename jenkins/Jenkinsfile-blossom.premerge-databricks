@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ pipeline {
             description: 'Merged commit of specific PR')
         string(name: 'GITHUB_DATA', defaultValue: '',
             description: 'Json-formatted github data from upstream blossom-ci')
-        choice(name: 'TEST_MODE', choices: ['CI_PART1', 'CI_PART2'],
+        choice(name: 'TEST_MODE', choices: ['CI_PART1', 'CI_PART2', 'DEFAULT'],
             description: 'Separate integration tests into 2 parts, and run each part in parallell')
         string(name: 'PLUGIN_BUILT_DIR', defaultValue: 'dbfs:/cicd',
             description: 'CI_PART1 uploads spark-rapids built tgz for CI_PART2')
