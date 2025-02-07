@@ -289,7 +289,9 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                 parameters: [
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'TEST_MODE', value: 'CI_PART1'),
+                                        // string(name: 'TEST_MODE', value: 'CI_PART1'),
+                                        // re-enable when aws databricks instance is back to normal
+                                        string(name: 'TEST_MODE', value: 'DEFAULT'),
                                         string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
@@ -302,30 +304,31 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     }
                 } // end of Databricks IT part1
 
-                stage('Databricks IT part2') {
-                    when {
-                        expression { db_build }
-                    }
-                    steps {
-                        script {
-                            githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
-                            def DBJob = build(job: 'rapids-databricks_premerge-github',
-                                propagate: false, wait: true,
-                                parameters: [
-                                        string(name: 'REF', value: params.REF),
-                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
-                                        string(name: 'TEST_MODE', value: 'CI_PART2'),
-                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
-                                ])
-                            if ( DBJob.result != 'SUCCESS' ) {
-                                // Output Databricks failure logs to uploaded onto the pre-merge PR
-                                print(DBJob.getRawBuild().getLog())
-                                // Fail the pipeline
-                                error "Databricks part2 result : " + DBJob.result
-                            }
-                        }
-                    }
-                } // end of Databricks IT part2
+// re-enable when aws databricks instance is back to normal
+//                stage('Databricks IT part2') {
+//                    when {
+//                        expression { db_build }
+//                    }
+//                    steps {
+//                        script {
+//                            githubHelper.updateCommitStatus("", "Running - includes databricks", GitHubCommitState.PENDING)
+//                            def DBJob = build(job: 'rapids-databricks_premerge-github',
+//                                propagate: false, wait: true,
+//                                parameters: [
+//                                        string(name: 'REF', value: params.REF),
+//                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
+//                                        string(name: 'TEST_MODE', value: 'CI_PART2'),
+//                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
+//                                ])
+//                            if ( DBJob.result != 'SUCCESS' ) {
+//                                // Output Databricks failure logs to uploaded onto the pre-merge PR
+//                                print(DBJob.getRawBuild().getLog())
+//                                // Fail the pipeline
+//                                error "Databricks part2 result : " + DBJob.result
+//                            }
+//                        }
+//                    }
+//                } // end of Databricks IT part2
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
