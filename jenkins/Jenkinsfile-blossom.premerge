@@ -290,7 +290,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         string(name: 'REF', value: params.REF),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
                                         // string(name: 'TEST_MODE', value: 'CI_PART1'),
-                                        // re-enable when aws databricks instance is back to normal
+                                        // re-enable when https://github.com/NVIDIA/spark-rapids/issues/12079 is fixed
                                         string(name: 'TEST_MODE', value: 'DEFAULT'),
                                         string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
@@ -304,7 +304,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     }
                 } // end of Databricks IT part1
 
-// re-enable when aws databricks instance is back to normal
+// re-enable when https://github.com/NVIDIA/spark-rapids/issues/12079 is fixed
 //                stage('Databricks IT part2') {
 //                    when {
 //                        expression { db_build }
