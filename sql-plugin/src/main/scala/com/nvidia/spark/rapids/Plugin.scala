@@ -353,7 +353,7 @@ object RapidsPluginUtils extends Logging {
     val resourceName = "spark-rapids-extra-plugins"
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
     val resourceUrls = classLoader.getResources(resourceName)
-    val resourceUrlArray = resourceUrls.asScala.toArray
+    val resourceUrlArray = resourceUrls.asScala.toArray.distinct
 
     if (resourceUrlArray.isEmpty) {
       logDebug(s"Could not find file $resourceName in the classpath, not loading extra plugins")
