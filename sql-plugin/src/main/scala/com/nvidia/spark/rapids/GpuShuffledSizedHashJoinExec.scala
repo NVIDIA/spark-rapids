@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -886,7 +886,7 @@ object GpuShuffledAsymmetricHashJoinExec {
           exprs.buildSideNeedsNullFilter, metrics)
         JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
       } else {
-        val buildBatch = getSingleBuildBatch(baseBuildIter, exprs, metrics)
+        val buildBatch = getAsSingleBuildBatch(baseBuildIter, exprs, metrics)
         val buildIter = new SingleGpuColumnarBatchIterator(buildBatch)
         val buildStats = JoinBuildSideStats.fromBatch(buildBatch, exprs.boundBuildKeys)
         if (buildStats.streamMagnificationFactor < magnificationThreshold) {
@@ -1023,15 +1023,26 @@ object GpuShuffledAsymmetricHashJoinExec {
       }
     }
 
-    private def getSingleBuildBatch(
+    private def getAsSingleBuildBatch(
         baseIter: Iterator[ColumnarBatch],
         exprs: BoundJoinExprs,
         metrics: Map[String, GpuMetric]): ColumnarBatch = {
       val iter = addNullFilterIfNecessary(baseIter, exprs.boundBuildKeys,
         exprs.buildSideNeedsNullFilter, metrics)
-      closeOnExcept(iter.next()) { batch =>
-        assert(!iter.hasNext)
-        batch
+      // Multiple small batches may exist when split-retry happens in the previous op.
+      // So need to concat them into a single one
+      val spBatches = mutable.Queue.empty[SpillableColumnarBatch]
+      closeOnExcept(spBatches) { _ =>
+        while(iter.hasNext) {
+          spBatches.enqueue(
+            SpillableColumnarBatch(iter.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+        }
+      }
+      assert(spBatches.nonEmpty, "At least one batch is expected")
+      val cbTypes = spBatches.head.dataTypes
+      withRetryNoSplit(spBatches) { _ =>
+        ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(
+          spBatches.safeMap(_.getColumnarBatch()).toArray, cbTypes)
       }
     }
   }
