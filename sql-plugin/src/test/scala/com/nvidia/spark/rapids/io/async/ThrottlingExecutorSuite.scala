@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.io.async
 
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Executors, Future, RejectedExecutionException, TimeUnit}
+import java.util.concurrent.atomic.AtomicLong
 
 import com.nvidia.spark.rapids.{GpuMetric, RapidsConf}
 import org.apache.hadoop.conf.Configuration
