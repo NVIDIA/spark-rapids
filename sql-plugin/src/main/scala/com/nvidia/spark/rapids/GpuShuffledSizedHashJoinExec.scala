@@ -1040,9 +1040,9 @@ object GpuShuffledAsymmetricHashJoinExec {
       }
       assert(spBatches.nonEmpty, "At least one batch is expected")
       val cbTypes = spBatches.head.dataTypes
-      withRetryNoSplit(spBatches) { _ =>
+      withRetryNoSplit(spBatches.toSeq) { _ =>
         ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(
-          spBatches.safeMap(_.getColumnarBatch()).toArray, cbTypes)
+          spBatches.toArray.safeMap(_.getColumnarBatch()), cbTypes)
       }
     }
   }
