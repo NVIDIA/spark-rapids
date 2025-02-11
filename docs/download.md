@@ -49,7 +49,7 @@ The plugin is tested on the following architectures:
 		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
 		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
 		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
-        Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
 	
 	Supported Dataproc versions (Debian/Ubuntu/Rocky):
 		GCP Dataproc 2.1
