@@ -27,14 +27,11 @@ import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader}
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader, WriteInput}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE,
-  METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_CALC_HEADER_TIME,
-  METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_COPY_HEADER_TIME,
-  METRIC_SHUFFLE_SER_STREAM_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE, METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_CALC_HEADER_TIME, METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_COPY_HEADER_TIME, METRIC_SHUFFLE_SER_STREAM_TIME}
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -394,13 +391,21 @@ private class KudoSerializerInstance(
           }
 
           withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
+            val writeInput = WriteInput.builder
+              .setColumns(columns)
+              .setOutputStream(dOut)
+              .setNumRows(numRows)
+              .setRowOffset(startRow)
+              .setMeasureCopyBufferTime(measureBufferCopyTime)
+              .build
             val writeMetric = kudo
               .getOrElse(throw new IllegalStateException("Kudo serializer not initialized."))
-              .writeToStreamWithMetrics(columns, dOut, startRow, numRows)
+              .writeToStreamWithMetrics(writeInput)
 
             dataSize += writeMetric.getWrittenBytes
             serCalcHeaderTime += writeMetric.getCalcHeaderTime
             if (measureBufferCopyTime) {
+              // These metrics will not show up in the UI if it's not modified
               serCopyHeaderTime += writeMetric.getCopyHeaderTime
               serCopyBufferTime += writeMetric.getCopyBufferTime
             }
