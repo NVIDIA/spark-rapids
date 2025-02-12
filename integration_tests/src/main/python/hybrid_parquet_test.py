@@ -70,6 +70,7 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", simple_string_to_string_map_gen]])],
     [StructGen([["c0", ArrayGen(simple_string_to_string_map_gen)]])],
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
+    [],
 ]
 
 
@@ -132,21 +133,29 @@ def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
 @pytest.mark.parametrize('parquet_gens', parquet_gens_fallback_lists, ids=idfn)
 @hybrid_test
 def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list, length=512).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-
+    # check the fallback over empty schema(`SELECT COUNT(1)`) within the same case
+    if len(parquet_gens) == 0:
+        with_cpu_session(
+            lambda spark: gen_df(spark, [('a', int_gen)], length=512).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+        read_fn = lambda spark: spark.read.parquet(data_path).selectExpr('count(1)')
+    else:
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+        with_cpu_session(
+            lambda spark: gen_df(spark, gen_list, length=512).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+        read_fn = lambda spark: spark.read.parquet(data_path)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: spark.read.parquet(data_path),
+        read_fn,
         exist_classes='GpuFileSourceScanExec',
         non_exist_classes='HybridFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.parquet.useHybridReader': 'true',
         })
-    
+
+
 filter_split_conf = {
     'spark.sql.sources.useV1SourceList': 'parquet',
     'spark.rapids.sql.parquet.useHybridReader': 'true',
