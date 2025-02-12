@@ -159,8 +159,8 @@ filter_split_conf = {
 def check_filter_pushdown(plan, pushed_exprs, not_pushed_exprs):
     plan = str(plan)
     filter_part, scan_part = plan.split("Scan parquet")
-    # for expr in pushed_exprs:
-    #     assert expr in scan_part
+    for expr in pushed_exprs:
+        assert expr in scan_part
     for expr in not_pushed_exprs:
         assert expr in filter_part
 
