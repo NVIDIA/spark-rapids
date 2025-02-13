@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,12 +29,14 @@ def _get_buildvers(buildvers, pom_file, logger=None):
 
     for release in releases:
         spark_version = pom.find(".//pom:spark{}.version".format(release), ns)
+        if spark_version is None:
+            continue
         if spark_version.text.endswith("SNAPSHOT"):
             snapshots.append(release)
         else:
             no_snapshots.append(release)
     excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
-    if excluded_shims is not None:
+    if excluded_shims is not None and excluded_shims.text:
         for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
             if removed_shim in snapshots:
                 snapshots.remove(removed_shim)

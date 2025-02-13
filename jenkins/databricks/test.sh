@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,6 +38,22 @@
 
 set -ex
 
+## 'foo=abc,bar=123,...' to 'export foo=abc bar=123 ...'
+[[ -n "$EXTRA_ENVS" ]] && export ${EXTRA_ENVS//','/' '}
+# TEST_MODE
+# - DEFAULT: all tests except cudf_udf tests
+# - DELTA_LAKE_ONLY: delta_lake tests only
+# - MULTITHREADED_SHUFFLE: shuffle tests only
+# - PYARROW_ONLY: pyarrow tests only
+# - CI_PART1 or CI_PART2 : part1 or part2 of the tests run in parallel from CI
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
+
+# CI_PART2 untars the spark-rapids tgz built by C1_PART1 instead of rebuilding it
+PLUGIN_BUILT_TGZ=${PLUGIN_BUILT_TGZ:-"$1"}
+if [[ "$TEST_MODE" == "CI_PART2"  && -z "$LOCAL_JAR_PATH" && -f "$PLUGIN_BUILT_TGZ" ]]; then
+    tar -zxf $PLUGIN_BUILT_TGZ
+fi
+
 SOURCE_PATH="/home/ubuntu/spark-rapids"
 [[ -d "$LOCAL_JAR_PATH" ]] && cd $LOCAL_JAR_PATH || cd $SOURCE_PATH
 
@@ -54,22 +70,11 @@ WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 IS_SPARK_321_OR_LATER=0
 [[ "$(printf '%s\n' "3.2.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.2.1" ]] && IS_SPARK_321_OR_LATER=1
 
-
-# TEST_MODE
-# - DEFAULT: all tests except cudf_udf tests
-# - DELTA_LAKE_ONLY: delta_lake tests only
-# - MULTITHREADED_SHUFFLE: shuffle tests only
-# - PYARROW_ONLY: pyarrow tests only
-# - CI_PART1 or CI_PART2 : part1 or part2 of the tests run in parallel from CI
-TEST_MODE=${TEST_MODE:-'DEFAULT'}
-
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
 # https://github.com/NVIDIA/spark-rapids/pull/5646
 
-# Enable event log for qualification & profiling tools testing
-export PYSP_TEST_spark_eventLog_enabled=true
-mkdir -p /tmp/spark-events
+export PYSP_TEST_spark_rapids_shims_spark350db143_enabled=${PYSP_TEST_spark_rapids_shims_spark350db143_enabled:-true}
 
 rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."

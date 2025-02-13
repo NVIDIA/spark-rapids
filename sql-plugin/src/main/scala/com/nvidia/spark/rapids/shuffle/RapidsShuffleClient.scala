@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ trait RapidsShuffleFetchHandler {
    * @return a boolean that lets the caller know the batch was accepted (true), or
    *         rejected (false), in which case the caller should dispose of the batch.
    */
-  def batchReceived(handle: RapidsBufferHandle): Boolean
+  def batchReceived(handle: RapidsShuffleHandle): Boolean
 
   /**
    * Called when the transport layer is not able to handle a fetch error for metadata
@@ -390,7 +390,7 @@ class RapidsShuffleClient(
               buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
                 val handle = track(consumed.contigBuffer, consumed.meta)
                 if (!consumed.handler.batchReceived(handle)) {
-                  catalog.removeBuffer(handle)
+                  handle.close()
                   numBatchesRejected += 1
                 }
                 transport.doneBytesInFlight(consumed.contigBuffer.getLength)
@@ -431,25 +431,19 @@ class RapidsShuffleClient(
    * used to look up the buffer from the catalog going (e.g. from the iterator)
    * @param buffer contiguous [[DeviceMemoryBuffer]] with the tables' data
    * @param meta [[TableMeta]] describing [[buffer]]
-   * @return the [[RapidsBufferId]] to be used to look up the buffer from catalog
+   * @return a [[RapidsShuffleHandle]] with a spillable and metadata
    */
   private[shuffle] def track(
-      buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferHandle = {
+      buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsShuffleHandle = {
     if (buffer != null) {
       // add the buffer to the catalog so it is available for spill
       catalog.addBuffer(
         buffer,
         meta,
-        SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY,
-        // set needsSync to false because we already have stream synchronized after
-        // consuming the bounce buffer, so we know these buffers are synchronized
-        // w.r.t. the CPU
-        needsSync = false)
+        SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
     } else {
       // no device data, just tracking metadata
-      catalog.addDegenerateRapidsBuffer(
-        meta)
-
+      catalog.addDegenerateBatch(meta)
     }
   }
 

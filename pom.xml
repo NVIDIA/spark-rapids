@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>24.12.1</version>
+    <version>25.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -54,15 +54,6 @@
             <id>tgravescs</id>
             <name>Thomas Graves</name>
             <email>tgraves@nvidia.com</email>
-            <roles>
-                <role>Committer</role>
-            </roles>
-            <timezone>-6</timezone>
-        </developer>
-        <developer>
-            <id>jlowe</id>
-            <name>Jason Lowe</name>
-            <email>jlowe@nvidia.com</email>
             <roles>
                 <role>Committer</role>
             </roles>
@@ -694,6 +685,27 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release354</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>354</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>354</buildver>
+                <spark.version>${spark354.version}</spark.version>
+                <spark.test.version>${spark354.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 --><!--
         <profile>
             <id>release400</id>
@@ -813,8 +825,7 @@
 
     <properties>
         <!-- start dyn.shim properties -->
-        <!-- TODO: will package 350db143 shim into the dist jar in branch-25.02, followed by https://github.com/NVIDIA/spark-rapids/issues/11749 -->
-	<dyn.shim.excluded.releases>350db143</dyn.shim.excluded.releases>
+	<dyn.shim.excluded.releases></dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
         <rapids.module>.</rapids.module>
@@ -829,10 +840,10 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>24.12.1</spark-rapids-jni.version>
-        <spark-rapids-private.version>24.12.0</spark-rapids-private.version>
+        <spark-rapids-jni.version>25.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>25.02.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>25.02.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
-        <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
         <!--
@@ -903,7 +914,8 @@
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
         <spark353.version>3.5.3</spark353.version>
-        <spark400.version>4.0.0-SNAPSHOT</spark400.version>
+        <spark354.version>3.5.4</spark354.version>
+        <!-- spark400.version>4.0.0-SNAPSHOT</spark400.version -->
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.9.1</scala.plugin.version>
@@ -937,13 +949,14 @@
           Build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
           Base shim version (320 currently) should be covered in default mvn verify command of premerge script,
           so base shim version is removed from the premergeUT list.
-          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+          Separate the versions to two parts: premergeUT1(2 shims' UT + 1/3 of the integration tests)
+          and premergeUT2(1 shim's UT + 2/3 of the integration tests), for balancing the duration
         -->
         <premergeUT1.buildvers>
-            320
+            320,
+            330
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
-            330,
             340
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
@@ -961,8 +974,8 @@
         <jdk17.buildvers>
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
-            330,
-            400
+            330
+            <!-- 400 -->
         </jdk17.scala213.buildvers>
         <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>
@@ -1077,13 +1090,6 @@
               <groupId>org.rogach</groupId>
               <artifactId>scallop_${scala.binary.version}</artifactId>
               <version>3.5.1</version>
-            </dependency>
-            <dependency>
-                <!-- Used for Alluxio mounting -->
-                <groupId>org.alluxio</groupId>
-                <artifactId>alluxio-shaded-client</artifactId>
-                <version>${alluxio.client.version}</version>
-                <scope>provided</scope>
             </dependency>
             <dependency>
                 <!-- For shade, spark 3.2 and earlier uses an older version(0.9.0), which doesn't
@@ -1645,6 +1651,7 @@ This will force full Scala code rebuild in downstream modules.
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
+                        <exclude>**/cudf_log.txt</exclude>
                         <exclude>thirdparty/parquet-testing/**</exclude>
                     </excludes>
                 </configuration>

@@ -23,6 +23,9 @@ from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order, datagen_overrides
 from spark_session import *
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
+
 TEXT_INPUT_EXEC='FileSourceScanExec'
 
 # allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
@@ -1009,7 +1012,6 @@ def test_from_json_struct_of_list_with_mismatched_schema():
                                     'struct<student:array<struct<name:string,class:string>>>',
                                     'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
 @allow_non_gpu(*non_utc_allow)
-@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/17349')
 def test_from_json_struct_of_list_with_mixed_nested_types_input(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
@@ -1396,7 +1398,6 @@ def test_spark_from_json_empty_table(data):
         conf =_enable_all_types_conf)
 
 # SPARK-20549: from_json bad UTF-8
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/10483')
 @allow_non_gpu(*non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
 def test_spark_from_json_bad_json():
     schema = StructType([StructField("a", IntegerType())])

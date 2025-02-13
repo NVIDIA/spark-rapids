@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,11 +37,10 @@
 {"spark": "343"}
 {"spark": "344"}
 {"spark": "350"}
-{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
-{"spark": "400"}
+{"spark": "354"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.$_spark.version.classifier_
 

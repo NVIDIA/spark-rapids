@@ -53,16 +53,20 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.12)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ env.dailyCacheKey }}
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
+        timeout-minutes: 30
+        continue-on-error: true
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           SCALA_VER: '2.12'
@@ -117,6 +121,7 @@ jobs:
           java-version: 8
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -165,16 +170,20 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          cacheKey="${{ runner.os }}-maven-scala213-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.13)
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ env.scala213dailyCacheKey }}
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
+        timeout-minutes: 30
+        continue-on-error: true
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           SCALA_VER: '2.13'
@@ -221,6 +230,7 @@ jobs:
           java-version: 17
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -276,6 +286,7 @@ jobs:
           java-version: 17
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -330,6 +341,7 @@ jobs:
           java-version: ${{ matrix.java-version }}
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -377,6 +389,7 @@ jobs:
           java-version: 11
 
       - name: Cache local Maven repository
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ~/.m2

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
+{"spark": "354"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
@@ -80,7 +81,8 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
       overwrite = wrapped.overwrite,
       ifPartitionNotExists = wrapped.ifPartitionNotExists,
       outputColumnNames = wrapped.outputColumnNames,
-      tmpLocation = cmd.hiveTmpPath.externalTempPath
+      tmpLocation = cmd.hiveTmpPath.externalTempPath,
+      baseOutputDebugPath = conf.outputDebugDumpPrefix
     )
   }
 
@@ -95,7 +97,8 @@ case class GpuInsertIntoHiveTable(
     overwrite: Boolean,
     ifPartitionNotExists: Boolean,
     outputColumnNames: Seq[String],
-    tmpLocation: Path) extends GpuSaveAsHiveFile {
+    tmpLocation: Path,
+    baseOutputDebugPath: Option[String]) extends GpuSaveAsHiveFile {
 
   /**
    * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
@@ -206,7 +209,6 @@ case class GpuInsertIntoHiveTable(
     val forceHiveHashForBucketing =
       RapidsConf.FORCE_HIVE_HASH_FOR_BUCKETED_WRITE.get(sparkSession.sessionState.conf)
 
-
     val writtenParts = gpuSaveAsHiveFile(
       sparkSession = sparkSession,
       plan = child,
@@ -216,7 +218,8 @@ case class GpuInsertIntoHiveTable(
       forceHiveHashForBucketing = forceHiveHashForBucketing,
       partitionAttributes = partitionAttributes,
       bucketSpec = table.bucketSpec,
-      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec))
+      options = BucketingUtilsShim.getOptionsWithHiveBucketWrite(table.bucketSpec),
+      baseDebugOutputPath = baseOutputDebugPath)
 
     if (partition.nonEmpty) {
       if (numDynamicPartitions > 0) {

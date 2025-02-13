@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ class GpuMultiFileReaderSuite extends AnyFunSuite {
     val conf = new Configuration(false)
     val membuffers =
       Array(SingleHMBAndMeta(
-        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty))
+        Array(HostMemoryBuffer.allocate(0)), 0L, 0, Seq.empty))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
@@ -58,7 +58,6 @@ class GpuMultiFileReaderSuite extends AnyFunSuite {
       override def getBatchRunner(
           tc: TaskContext,
           file: PartitionedFile,
-          origFile: Option[PartitionedFile],
           conf: Configuration,
           filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
         () => null

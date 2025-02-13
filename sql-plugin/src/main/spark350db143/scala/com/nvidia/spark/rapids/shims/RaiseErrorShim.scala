@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,24 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.ExprRule
+import com.nvidia.spark.rapids.{ExprRule, GpuOverrides}
+import com.nvidia.spark.rapids.{ExprChecks, TypeEnum, TypeSig}
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, RaiseError}
+import org.apache.spark.sql.rapids.shims.RaiseErrorMeta
 
 object RaiseErrorShim {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    Seq(GpuOverrides.expr[RaiseError](
+      "Throw an exception",
+      ExprChecks.binaryProject(
+        TypeSig.NULL, TypeSig.NULL,
+        // In Databricks 14.3 and Spark 4.0, RaiseError forwards the lhs expression
+        // (i.e. the error-class) as a scalar value.  A vector/column here would be surprising.
+        ("errorClass", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+        ("errorParams", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING)),
+      ),
+      (a, conf, p, r) => new RaiseErrorMeta(a, conf, p, r)
+    )).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  }
 }

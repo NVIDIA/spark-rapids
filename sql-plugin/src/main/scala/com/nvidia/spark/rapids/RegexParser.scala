@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 package com.nvidia.spark.rapids
 
 import java.sql.SQLException
+import java.util.regex.{Pattern, PatternSyntaxException}
 
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
 import com.nvidia.spark.rapids.RegexParser.toReadableString
+
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Regular expression parser based on a Pratt Parser design.
@@ -51,6 +54,9 @@ class RegexParser(pattern: String) {
   private var pos = 0
 
   def parse(): RegexAST = {
+    // Validate if the pattern is compatible with Java, as this would throw an error otherwise
+    Pattern.compile(pattern)
+
     val ast = parseUntil(() => eof())
     if (!eof()) {
       throw new RegexUnsupportedException("Failed to parse full regex. Last character parsed was",
@@ -642,7 +648,7 @@ object RegexParser {
       val ast = parser.parse()
       isRegExpString(ast)
     } catch {
-      case _: RegexUnsupportedException =>
+      case _: RegexUnsupportedException | _: PatternSyntaxException =>
         // if we cannot parse it then assume that it might be valid regexp
         true
     }
@@ -723,6 +729,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       regex: RegexAST,
       extractIndex: Option[Int],
       repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
+
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
@@ -1988,7 +1995,7 @@ object RegexOptimizationType {
   case class Contains(literal: String) extends RegexOptimizationType
   case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
     extends RegexOptimizationType
-  case class MultipleContains(literals: Seq[String]) extends RegexOptimizationType
+  case class MultipleContains(literals: Seq[UTF8String]) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
 }
 
@@ -2057,16 +2064,17 @@ object RegexRewrite {
     }
   }
 
-  private def getMultipleContainsLiterals(ast: RegexAST): Seq[String] = {
+  private def getMultipleContainsLiterals(ast: RegexAST): Seq[UTF8String] = {
     ast match {
       case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
       case RegexChoice(RegexSequence(parts), ls) if isLiteralString(parts) => {
         getMultipleContainsLiterals(ls) match {
           case Seq() => Seq.empty
-          case literals => RegexCharsToString(parts) +: literals
+          case literals => UTF8String.fromString(RegexCharsToString(parts)) +: literals
         }
       }
-      case RegexSequence(parts) if (isLiteralString(parts)) => Seq(RegexCharsToString(parts))
+      case RegexSequence(parts) if (isLiteralString(parts)) => 
+          Seq(UTF8String.fromString(RegexCharsToString(parts)))
       case _ => Seq.empty
     }
   }

@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1012,14 +1012,16 @@ def test_regexp_replace_simple(regexp_enabled):
             'REGEXP_REPLACE(a, "ab", "PROD")',
             'REGEXP_REPLACE(a, "ae", "PROD")',
             'REGEXP_REPLACE(a, "bc", "PROD")',
-            'REGEXP_REPLACE(a, "fa", "PROD")'
+            'REGEXP_REPLACE(a, "fa", "PROD")',
+            'REGEXP_REPLACE(a, "a\n", "PROD")',
+            'REGEXP_REPLACE(a, "\n", "PROD")'
         ),
         conf=conf
     )
 
 @pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
 def test_regexp_replace_multi_optimization(regexp_enabled):
-    gen = mk_str_gen('[abcdef]{0,2}')
+    gen = mk_str_gen('[abcdef\t\n\a]{0,3}')
 
     conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
 
@@ -1032,7 +1034,9 @@ def test_regexp_replace_multi_optimization(regexp_enabled):
             'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
             'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
-            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")',
+            'REGEXP_REPLACE(a, "a\n|b\a|c\t", "PROD")',
+            'REGEXP_REPLACE(a, "a\ta|b\nb", "PROD")'
         ),
         conf=conf
     )
@@ -1097,6 +1101,17 @@ def test_regexp_memory_ok():
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
     )
+
+def test_illegal_regexp_exception():
+        gen = mk_str_gen('[abcdef]{0,5}')
+        assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'REGEXP_REPLACE(a, "a{", "bb")',
+                'REGEXP_REPLACE(a, "\\}\\,\\{", "}>>{")'
+            ).collect(),
+            conf=_regexp_conf,
+            error_message="Illegal"
+        )
 
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9731')
 def test_re_replace_all():
