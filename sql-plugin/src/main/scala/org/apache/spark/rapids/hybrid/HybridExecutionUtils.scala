@@ -320,8 +320,13 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
+  def isTimestampCondition(expr: Expression): Boolean = {
+    expr.references.exists(attr => attr.dataType == TimestampType)
+  }
+
   def isExprSupportedByHybridScan(condition: Expression, whitelistExprsName: String): Boolean = {
     condition match {
+      case filter if isTimestampCondition(filter) => false // Timestamp is not fully supported in Hybrid Filter
       case filter if HybridExecutionUtils.supportedByHybridFilters(whitelistExprsName)
           .exists(_.isInstance(filter)) =>
         val childrenSupported = filter.children.forall(
