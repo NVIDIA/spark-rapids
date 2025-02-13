@@ -228,6 +228,9 @@ def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
         lambda spark: spark.read.parquet(data_path).filter("ascii(a) >= 50 and udf_fallback(a) = 'udf_100'"),
         conf=filter_split_conf)
 
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
 @allow_non_gpu(*non_utc_allow)
 def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
