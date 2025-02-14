@@ -25,6 +25,7 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DataTypeUtils.hasOffset
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.PreProjectSplitIterator.KEY_NUM_PRE_SPLIT
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
@@ -301,6 +302,8 @@ abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
 }
 
 object PreProjectSplitIterator {
+
+  val KEY_NUM_PRE_SPLIT = "NUM_PRE_SPLITS"
 
   def getSplitUntilSize: Long = GpuDeviceManager.getSplitUntilSize
 
@@ -664,17 +667,15 @@ case class GpuProjectExec(
     super.outputBatching
   }
 
-  private val NUM_PRE_SPLIT = "NUM_PRE_SPLITS"
-
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    NUM_PRE_SPLIT -> createMetric(DEBUG_LEVEL, "num pre-splits"),
+    KEY_NUM_PRE_SPLIT -> createMetric(DEBUG_LEVEL, "num pre-splits"),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
-    val numPreSplit = gpuLongMetric(NUM_PRE_SPLIT)
+    val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
       conf)
     val localEnablePreSplit = enablePreSplit
