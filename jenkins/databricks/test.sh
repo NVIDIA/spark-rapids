@@ -63,8 +63,6 @@ source jenkins/databricks/setup.sh
 source jenkins/databricks/common_vars.sh
 
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
-SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${BASE_SPARK_VERSION//./}db}
-SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM//\-SNAPSHOT/}
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 
 IS_SPARK_321_OR_LATER=0
@@ -84,7 +82,7 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SPARK_SHIM_VER.RapidsShuffleManager \
     SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
     bash integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
