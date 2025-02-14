@@ -99,6 +99,7 @@ The output of signature verify:
 * Refine filter push down to avoid double evaluation
 * Grab the GPU Semaphore when reading cached batch data with the GPU to avoid a GPU OOM case
 * Add an option to disable measuring buffer copy to improve large shuffle large partition serialization
+* Support group-limit optimization for ROW_NUMBER
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
 
 Note: There is a known issue in the 25.02.0 release when decompressing gzip files on H100 GPUs.
