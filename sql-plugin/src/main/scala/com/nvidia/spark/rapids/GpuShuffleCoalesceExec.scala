@@ -232,10 +232,8 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
   override def close(): Unit = {}
 }
 
-class KudoTableOperator(
-    kudo: Option[KudoSerializer] ,
-    kudoMergeHeaderTime: GpuMetric,
-    kudoMergeBufferTime: GpuMetric) extends SerializedTableOperator[KudoSerializedTableColumn] {
+class KudoTableOperator(kudo: Option[KudoSerializer])
+  extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
   private val kudoTables = new util.ArrayList[KudoTable]()
 
@@ -259,8 +257,6 @@ class KudoTableOperator(
       }
 
       val result = kudo.get.mergeOnHost(kudoTables)
-      kudoMergeHeaderTime += result.getRight.getCalcHeaderTime
-      kudoMergeBufferTime += result.getRight.getMergeIntoHostBufferTime
 
       KudoHostMergeResultWrapper(result.getLeft)
     }
@@ -390,7 +386,7 @@ class KudoHostShuffleCoalesceIterator(
     } else {
       None
     }
-    new KudoTableOperator(kudoSer, metricsMap(CONCAT_HEADER_TIME), metricsMap(CONCAT_BUFFER_TIME))
+    new KudoTableOperator(kudoSer)
   }
 }
 

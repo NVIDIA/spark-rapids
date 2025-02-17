@@ -350,8 +350,6 @@ private class KudoSerializerInstance(
 ) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
-  private val serCalcHeaderTime = metrics(METRIC_SHUFFLE_SER_CALC_HEADER_TIME)
-  private val serCopyHeaderTime = metrics(METRIC_SHUFFLE_SER_COPY_HEADER_TIME)
   private val serCopyBufferTime = metrics(METRIC_SHUFFLE_SER_COPY_BUFFER_TIME)
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
@@ -403,10 +401,8 @@ private class KudoSerializerInstance(
               .writeToStreamWithMetrics(writeInput)
 
             dataSize += writeMetric.getWrittenBytes
-            serCalcHeaderTime += writeMetric.getCalcHeaderTime
             if (measureBufferCopyTime) {
               // These metrics will not show up in the UI if it's not modified
-              serCopyHeaderTime += writeMetric.getCopyHeaderTime
               serCopyBufferTime += writeMetric.getCopyBufferTime
             }
           }
