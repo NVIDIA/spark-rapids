@@ -103,6 +103,7 @@ The output of signature verify:
 * Falling back to the CPU for ORC boolean writes by the GPU due to a bug in cudf's ORC writer
 * Fix a device memory leak in timestamp operator in `incompatibleDateFormats` case
 * Fix a host memory leak in GpuBroadcastNestedLoopJoinExecBase when `spillableBuiltBatch` is 0
+* Resolves a [race condition](https://github.com/NVIDIA/spark-rapids/issues/11835) in aggregations 
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
 
 Note: There is a known issue in the 24.12.2 release when decompressing gzip files on H100 GPUs.
