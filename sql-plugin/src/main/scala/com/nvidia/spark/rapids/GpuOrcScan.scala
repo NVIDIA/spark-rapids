@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2105,12 +2105,12 @@ class MultiFileCloudOrcPartitionReader(
                 val (hostBuf, bufSize) = readPartFile(ctx, blocksToRead)
                 val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum
                 val metas = blocksToRead.map(b => OrcDataStripe(OrcStripeWithMeta(b, ctx)))
-                hostBuffers += SingleHMBAndMeta(hostBuf, bufSize, numRows, metas)
+                hostBuffers += SingleHMBAndMeta(Array(hostBuf), bufSize, numRows, metas)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.foreach(_.hmb.safeClose())
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 logDebug("Reader is closed, return empty buffer for the current read for " +
                   s"file: ${partFile.filePath.toString}")
                 HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
@@ -2123,7 +2123,7 @@ class MultiFileCloudOrcPartitionReader(
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.foreach(_.hmb.safeClose())
+          hostBuffers.flatMap(_.hmbs).safeClose(e)
           throw e
       }
       val bufferTime = System.nanoTime() - bufferTimeStart
@@ -2150,7 +2150,6 @@ class MultiFileCloudOrcPartitionReader(
   override def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
-      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
     new ReadBatchRunner(tc, file, conf, filters)
@@ -2223,9 +2222,10 @@ class MultiFileCloudOrcPartitionReader(
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val hmbInfo = memBuffersAndSize.head
-        val batchIter = readBufferToBatches(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
-          buffer.requestedMapping, filterHandler.isCaseSensitive, buffer.partitionedFile,
-          buffer.allPartValues)
+        require(hmbInfo.hmbs.length == 1)
+        val batchIter = readBufferToBatches(hmbInfo.hmbs.head, hmbInfo.bytes,
+          buffer.updatedReadSchema, buffer.requestedMapping, filterHandler.isCaseSensitive,
+          buffer.partitionedFile, buffer.allPartValues)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
@@ -2315,9 +2315,10 @@ class MultiFileCloudOrcPartitionReader(
         toCombine.foreach { hmbWithMeta =>
           hmbWithMeta.memBuffersAndSizes.foreach { buf =>
             val dataCopyAmount = buf.blockMeta.map(_.getBlockSize).sum
-            if (dataCopyAmount > 0 && buf.hmb != null) {
+            if (dataCopyAmount > 0 && buf.hmbs.nonEmpty) {
+              require(buf.hmbs.length == 1)
               combinedBuf.copyFromHostBuffer(
-                offset, buf.hmb, OrcTools.ORC_MAGIC.length, dataCopyAmount)
+                offset, buf.hmbs.head, OrcTools.ORC_MAGIC.length, dataCopyAmount)
             }
             // update the offset for each stripe
             var stripeOffset = offset
@@ -2326,9 +2327,7 @@ class MultiFileCloudOrcPartitionReader(
               stripeOffset += block.getBlockSize
             }
             offset += dataCopyAmount
-            if (buf.hmb != null) {
-              buf.hmb.close()
-            }
+            buf.hmbs.safeClose()
             allOutputStripes ++= buf.blockMeta.map(_.stripe)
           }
         }
@@ -2365,7 +2364,8 @@ class MultiFileCloudOrcPartitionReader(
 
           // e: Create the new meta for the combined buffer
           val numRows = combinedMeta.allPartValues.map(_._1).sum
-          val combinedRet = SingleHMBAndMeta(maybeNewBuf, outStream.getPos, numRows, blockMetas)
+          val combinedRet = SingleHMBAndMeta(Array(maybeNewBuf), outStream.getPos, numRows,
+            blockMetas)
           val newHmbWithMeta = metaToUse.copy(
             memBuffersAndSizes = Array(combinedRet),
             allPartValues = Some(combinedMeta.allPartValues))

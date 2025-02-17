@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ _orig_conf_keys = _orig_conf.keys()
 # Many of these are redundant with default settings for the configs but are set here explicitly
 # to ensure any cluster settings do not interfere with tests that assume the defaults.
 _default_conf = {
+    'spark.rapids.sql.test.retryContextCheck.enabled': 'true',
     'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
     'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
@@ -327,3 +328,6 @@ def is_hive_available():
     if is_at_least_precommit_run():
         return True
     return _spark.conf.get("spark.sql.catalogImplementation") == "hive"
+
+def is_hybrid_backend_loaded():
+    return _spark.conf.get("spark.rapids.sql.hybrid.loadBackend", "false") == "true"

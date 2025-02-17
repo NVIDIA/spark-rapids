@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@ set -ex
 
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd "$SCRIPTPATH"
+
+# No failure message truncation in the test summary by default
+# https://github.com/NVIDIA/spark-rapids/issues/12043
+export CI=${CI:-true}
 
 if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
 then
@@ -363,6 +367,22 @@ EOF
                 "for new GPU memory requirements ####"
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
+
+    # Turns on $LOAD_HYBRID_BACKEND and setup the filepath of hybrid backend jars, to activate the
+    # hybrid backend while running subsequent integration tests.
+    if [[ "$LOAD_HYBRID_BACKEND" -eq 1 ]]; then
+      if [ -z "${HYBRID_BACKEND_JARS}" ]; then
+        echo "Error: Environment HYBRID_BACKEND_JARS is not set."
+        exit 1
+      fi
+      export PYSP_TEST_spark_jars="${PYSP_TEST_spark_jars},${HYBRID_BACKEND_JARS//:/,}"
+      export PYSP_TEST_spark_rapids_sql_parquet_useHybridReader=true
+      export PYSP_TEST_spark_rapids_sql_hybrid_loadBackend=true
+      export PYSP_TEST_spark_memory_offHeap_enabled=true
+      export PYSP_TEST_spark_memory_offHeap_size=512M
+      export PYSP_TEST_spark_rapids_sql_hybrid_load=true
+      export PYSP_TEST_spark_gluten_loadLibFromJar=true
+    fi
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then

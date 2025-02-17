@@ -133,6 +133,30 @@ def test_write_round_trip_corner(spark_tmp_path, orc_gen, orc_impl):
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
+@pytest.mark.parametrize('gen', [ByteGen(nullable=False),
+    ShortGen(nullable=False),
+    IntegerGen(nullable=False),
+    LongGen(nullable=False),
+    FloatGen(nullable=False),
+    DoubleGen(nullable=False),
+    BooleanGen(nullable=False),
+    StringGen(nullable=False),
+    StructGen([('b', LongGen(nullable=False))], nullable=False)], ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_allow)
+def test_write_round_trip_nullable_struct(spark_tmp_path, gen, orc_impl):
+    gen_for_struct = StructGen([('c', gen)], nullable=True)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, gen_for_struct, num_slices=1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl,
+                'spark.rapids.sql.format.orc.write.enabled': True,
+                # https://github.com/NVIDIA/spark-rapids/issues/11736, so verify that we still do it correctly
+                # once this is fixed
+                'spark.rapids.sql.format.orc.write.boolType.enabled' : True})
+
 orc_part_write_gens = [
         # Add back boolean_gen when  https://github.com/rapidsai/cudf/issues/6763 is fixed
         byte_gen, short_gen, int_gen, long_gen,
@@ -334,6 +358,23 @@ def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf={'spark.rapids.sql.format.orc.write.enabled': True})
+
+
+hold_gpu_configs = [True, False]
+@pytest.mark.parametrize('hold_gpu', hold_gpu_configs, ids=idfn)
+def test_async_writer(spark_tmp_path, hold_gpu):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    num_rows = 2048
+    num_cols = 10
+    orc_gen = [int_gen for _ in range(num_cols)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gen)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list, length=num_rows).write.orc(path),
+        lambda spark, path: spark.read.orc(path).orderBy([('_c' + str(i)) for i in range(num_cols)]),
+        data_path,
+        conf={"spark.rapids.sql.asyncWrite.queryOutput.enabled": "true",
+              "spark.rapids.sql.batchSizeBytes": 4 * num_cols * 100,  # 100 rows per batch
+              "spark.rapids.sql.queryOutput.holdGpuInTask": hold_gpu})
 
 
 @ignore_order

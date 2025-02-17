@@ -19,7 +19,12 @@ package com.nvidia.spark.rapids
 import java.util.PriorityQueue
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
-class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) {
+import scala.collection.JavaConverters.asScalaIteratorConverter
+
+import org.apache.spark.sql.rapids.GpuTaskMetrics
+
+class PrioritySemaphore[T](val maxPermits: Int, val priorityForNonStarted: T)
+  (implicit ordering: Ordering[T]) {
   // This lock is used to generate condition variables, which affords us the flexibility to notify
   // specific threads at a time. If we use the regular synchronized pattern, we have to either
   // notify randomly, or if we try creating condition variables not tied to a shared lock, they
@@ -69,6 +74,11 @@ class PrioritySemaphore[T](val maxPermits: Int)(implicit ordering: Ordering[T]) 
         val info = ThreadInfo(priority, condition, numPermits, taskAttemptId)
         try {
           waitingQueue.add(info)
+          // only count tasks that had held semaphore before,
+          // so they're very likely to have remaining data on GPU
+          GpuTaskMetrics.get.recordOnGpuTasksWaitingNumber(
+            waitingQueue.iterator().asScala.count(_.priority != priorityForNonStarted))
+
           while (!info.signaled) {
             info.condition.await()
           }

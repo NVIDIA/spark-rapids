@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,8 +63,7 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       pushedFilters,
       fileScan.rapidsConf,
       fileScan.allMetrics,
-      fileScan.queryUsesInputFile,
-      fileScan.alluxioPathsMap)
+      fileScan.queryUsesInputFile)
   }
 
   override def buildReaderWithPartitionValuesAndMetrics(
@@ -75,8 +74,7 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric],
-      alluxioPathReplacementMap: Option[Map[String, String]])
+      metrics: Map[String, GpuMetric])
   : PartitionedFile => Iterator[InternalRow] = {
     super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
@@ -86,8 +84,7 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       filters,
       options,
       hadoopConf,
-      metrics,
-      alluxioPathReplacementMap)
+      metrics)
   }
 
   override def supportFieldName(name: String): Boolean = {

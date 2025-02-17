@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
+{"spark": "354"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources
@@ -75,7 +76,8 @@ class GpuWriteFilesMeta(
       writeFilesExec.partitionColumns,
       writeFilesExec.bucketSpec,
       writeFilesExec.options,
-      writeFilesExec.staticPartitions
+      writeFilesExec.staticPartitions,
+      conf.outputDebugDumpPrefix
     )
   }
 }
@@ -89,7 +91,8 @@ case class GpuWriteFilesExec(
     partitionColumns: Seq[Attribute],
     bucketSpec: Option[BucketSpec],
     options: Map[String, String],
-    staticPartitions: TablePartitionSpec) extends ShimUnaryExecNode with GpuExec {
+    staticPartitions: TablePartitionSpec,
+    baseOutputDebugPath: Option[String]) extends ShimUnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = Seq.empty
 
@@ -133,6 +136,8 @@ case class GpuWriteFilesExec(
     val description = writeFilesSpec.description
     val committer = writeFilesSpec.committer
     val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
+    val localBaseOutputDebugPath = baseOutputDebugPath
+
     rddWithNonEmptyPartitions.mapPartitionsInternal { iterator =>
       val sparkStageId = TaskContext.get().stageId()
       val sparkPartitionId = TaskContext.get().partitionId()
@@ -145,7 +150,8 @@ case class GpuWriteFilesExec(
         sparkAttemptNumber,
         committer,
         iterator,
-        concurrentOutputWriterSpec
+        concurrentOutputWriterSpec,
+        localBaseOutputDebugPath
       )
 
       Iterator(ret)

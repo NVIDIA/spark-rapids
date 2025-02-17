@@ -27,10 +27,10 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ExprMeta
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.{DateTimeUtils, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimBinaryExpression, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, ToUTCTimestamp}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, ToUTCTimestamp, TruncDate, TruncTimestamp}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -417,12 +417,11 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
 }
 
 trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
-  
   override def dataType: DataType = TimestampType
   override def outputTypeOverride: DType = DType.TIMESTAMP_MICROSECONDS
 
   /**
-   * Test whether if input * multiplier will cause Long-overflow. In Math.multiplyExact, 
+   * Test whether if input * multiplier will cause Long-overflow. In Math.multiplyExact,
    * if there is an integer-overflow, then it will throw an ArithmeticException "long overflow"
    */
   def checkLongMultiplicationOverflow(input: ColumnVector, multiplier: Long): Unit = {
@@ -439,7 +438,7 @@ trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
   }
 
   protected val convertTo : GpuColumnVector => ColumnVector
-  
+
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     convertTo(input)
   }
@@ -543,14 +542,14 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
           longs.asTimestampSeconds()
         }
     case _ =>
-      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " + 
+      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " +
           s"for SecondsToTimestamp ")
   }
 }
 
 case class GpuMillisToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
   protected lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
-    case LongType => 
+    case LongType =>
       (input: GpuColumnVector) => {
         checkLongMultiplicationOverflow(input.getBase, DateTimeConstants.MICROS_PER_MILLIS)
         input.getBase.asTimestampMilliseconds()
@@ -563,7 +562,7 @@ case class GpuMillisToTimestamp(child: Expression) extends GpuNumberToTimestampU
         }
       }
     case _ =>
-      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " + 
+      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " +
           s"for MillisToTimestamp ")
   }
 }
@@ -581,7 +580,7 @@ case class GpuMicrosToTimestamp(child: Expression) extends GpuNumberToTimestampU
         }
       }
     case _ =>
-      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " + 
+      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " +
           s"for MicrosToTimestamp ")
   }
 }
@@ -1110,7 +1109,7 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
     rule: DataFromReplacementRule)
   extends BinaryExprMeta[INPUT](expr, conf, parent, rule) {
 
-  protected[this] var timezoneId: ZoneId = null  
+  protected[this] var timezoneId: ZoneId = null
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
@@ -1526,4 +1525,142 @@ case class GpuLastDay(startDate: Expression)
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector =
     input.getBase.lastDayOfMonth()
+}
+
+abstract class GpuTruncDateTime(fmtStr: Option[String]) extends GpuBinaryExpression
+  with ImplicitCastInputTypes with Serializable {
+  override def nullable: Boolean = true
+
+  protected def truncate(datetimeCol: GpuColumnVector, fmtCol: GpuColumnVector): ColumnVector = {
+    DateTimeUtils.truncate(datetimeCol.getBase, fmtCol.getBase)
+  }
+
+  protected def truncate(datetimeVal: GpuScalar, fmtCol: GpuColumnVector): ColumnVector = {
+    withResource(ColumnVector.fromScalar(datetimeVal.getBase, 1)) { datetimeCol =>
+      DateTimeUtils.truncate(datetimeCol, fmtCol.getBase)
+    }
+  }
+
+  protected def truncate(datetimeCol: GpuColumnVector, fmtVal: GpuScalar): ColumnVector = {
+    // fmtVal is unused, as it was extracted to `fmtStr` before.
+    fmtStr match {
+      case Some(fmt) => DateTimeUtils.truncate(datetimeCol.getBase, fmt)
+      case None => throw new IllegalArgumentException("Invalid format string.")
+    }
+  }
+
+  protected def truncate(numRows: Int, datetimeVal: GpuScalar, fmtVal: GpuScalar): ColumnVector = {
+    // fmtVal is unused, as it was extracted to `fmtStr` before.
+    fmtStr match {
+      case Some(fmt) =>
+        withResource(ColumnVector.fromScalar(datetimeVal.getBase, 1)) { datetimeCol =>
+          val truncated = DateTimeUtils.truncate(datetimeCol, fmt)
+          if (numRows == 1) {
+            truncated
+          } else {
+            withResource(truncated) { _ =>
+              withResource(truncated.getScalarElement(0)) { truncatedScalar =>
+                ColumnVector.fromScalar(truncatedScalar, numRows)
+              }
+            }
+          }
+        }
+      case None => throw new IllegalArgumentException("Invalid format string.")
+    }
+  }
+}
+
+case class GpuTruncDate(date: Expression, fmt: Expression, fmtStr: Option[String])
+  extends GpuTruncDateTime(fmtStr) {
+  override def left: Expression = date
+
+  override def right: Expression = fmt
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType, StringType)
+
+  override def dataType: DataType = DateType
+
+  override def prettyName: String = "trunc"
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    truncate(lhs, rhs)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    truncate(lhs, rhs)
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    truncate(lhs, rhs)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    truncate(numRows, lhs, rhs)
+  }
+}
+
+case class GpuTruncTimestamp(fmt: Expression, timestamp: Expression, timeZoneId: Option[String],
+                             fmtStr: Option[String])
+  extends GpuTruncDateTime(fmtStr) with TimeZoneAwareExpression {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  override def left: Expression = fmt
+
+  override def right: Expression = timestamp
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, TimestampType)
+
+  override def dataType: DataType = TimestampType
+
+  override def prettyName: String = "date_trunc"
+
+  // Since the input order of this class is opposite compared to the `GpuTruncDate` class,
+  // we need to switch `lhs` and `rhs` in the `doColumnar` methods below.
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    truncate(rhs, lhs)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    truncate(rhs, lhs)
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    truncate(rhs, lhs)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    truncate(numRows, rhs, lhs)
+  }
+}
+
+class TruncDateExprMeta(expr: TruncDate,
+                        override val conf: RapidsConf,
+                        override val parent: Option[RapidsMeta[_, _, _]],
+                        rule: DataFromReplacementRule)
+  extends BinaryExprMeta[TruncDate](expr, conf, parent, rule) {
+
+  // Store the format string as we need to process it on the CPU later on.
+  private val fmtStr = extractStringLit(expr.format)
+
+  override def convertToGpu(date: Expression, format: Expression): GpuExpression = {
+    GpuTruncDate(date, format, fmtStr)
+  }
+}
+
+class TruncTimestampExprMeta(expr: TruncTimestamp,
+                             override val conf: RapidsConf,
+                             override val parent: Option[RapidsMeta[_, _, _]],
+                             rule: DataFromReplacementRule)
+  extends BinaryExprMeta[TruncTimestamp](expr, conf, parent, rule) {
+
+  // Store the format string as we need to process it on the CPU later on.
+  private val fmtStr = extractStringLit(expr.format)
+
+  override def convertToGpu(format: Expression, timestamp: Expression): GpuExpression = {
+    GpuTruncTimestamp(format, timestamp, expr.timeZoneId, fmtStr)
+  }
 }

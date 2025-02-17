@@ -167,7 +167,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
    * This will populate `data` before any task has had a chance to call `.batch` on this class.
    *
    * If `batchInternal` is defined we are in the executor, and there is no work to be done.
-   * This broadcast has been materialized on the GPU/RapidsBufferCatalog, and it is completely
+   * This broadcast has been materialized on the GPU/spill store, and it is completely
    * managed by the plugin.
    *
    * Public for unit tests.

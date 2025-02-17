@@ -24,6 +24,9 @@ import pyspark.sql.functions as f
 from spark_session import is_before_spark_320, is_databricks113_or_later, is_databricks133_or_later, is_spark_350_or_later, spark_version, with_cpu_session
 import warnings
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
+
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', IntegerGen()),
@@ -2104,7 +2107,9 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
                             'DENSE_RANK() OVER (PARTITION BY a ORDER BY b, c) ',
                             'RANK() OVER (ORDER BY a,b,c) ',
                             'DENSE_RANK() OVER (ORDER BY a,b,c) ',
-                        ])
+                            # ROW_NUMBER() on an un-partitioned window does not invoke WindowGroupLimit optimization.
+                            'ROW_NUMBER() OVER (PARTITION BY a ORDER BY b,c) ',
+])
 def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_clause):
     """
     This test verifies that window group limits are applied for queries with ranking-function based
@@ -2127,39 +2132,6 @@ def test_window_group_limits_for_ranking_functions(data_gen, batch_size, rank_cl
         lambda spark: gen_df(spark, data_gen, length=4096),
         "window_agg_table",
         query,
-        conf=conf)
-
-
-@allow_non_gpu('WindowGroupLimitExec')
-@pytest.mark.skipif(condition=not (is_spark_350_or_later() or is_databricks133_or_later()),
-                    reason="WindowGroupLimit not available for spark.version < 3.5 "
-                           " and Databricks version < 13.3")
-@ignore_order(local=True)
-@approximate_float
-def test_window_group_limits_fallback_for_row_number():
-    """
-    This test verifies that window group limits are applied for queries with ranking-function based
-    row filters.
-    This test covers RANK() and DENSE_RANK(), for window function with and without `PARTITIONED BY`
-    clauses.
-    """
-    conf = {'spark.rapids.sql.batchSizeBytes': '1g',
-            'spark.rapids.sql.castFloatToDecimal.enabled': True}
-
-    data_gen = _grpkey_longs_with_no_nulls
-    query = """
-        SELECT * FROM (
-          SELECT *, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b, c) AS rnk
-          FROM window_agg_table
-        )
-        WHERE rnk < 3
-     """
-
-    assert_gpu_sql_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=512),
-        cpu_fallback_class_name="WindowGroupLimitExec",
-        table_name="window_agg_table",
-        sql=query,
         conf=conf)
 
 

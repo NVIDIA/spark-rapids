@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatches}
+import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatchesWithRetry}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -134,7 +134,7 @@ object AggregateUtils extends Logging {
    * @param batches batches to concatenate and merge aggregate
    * @return lazy spillable batch which has NOT been marked spillable
    */
-  def concatenateAndMerge(
+  def concatenateAndMergeWithRetry(
       batches: mutable.ArrayBuffer[SpillableColumnarBatch],
       metrics: GpuHashAggregateMetrics,
       concatAndMergeHelper: AggHelper): SpillableColumnarBatch = {
@@ -142,10 +142,8 @@ object AggregateUtils extends Logging {
     //   of batches for the partial aggregate case. This would be done in case
     //   a retry failed a certain number of times.
     val concatBatch = withResource(batches) { _ =>
-      val concatSpillable = concatenateBatches(metrics, batches.toSeq)
-      withResource(concatSpillable) {
-        _.getColumnarBatch()
-      }
+      val concatSpillable = concatenateBatchesWithRetry(metrics, batches.toSeq)
+      withRetryNoSplit(concatSpillable)(_.getColumnarBatch())
     }
     computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
   }
@@ -178,7 +176,7 @@ object AggregateUtils extends Logging {
                 aggregatedBatches.next
                 return nextBatch
               }
-              val merged = concatenateAndMerge(stagingBatches, metrics, helper)
+              val merged = concatenateAndMergeWithRetry(stagingBatches, metrics, helper)
               stagingBatches.clear
               currentSize = 0L
               if (merged.sizeInBytes < configuredTargetBatchSize * 0.5) {
@@ -197,7 +195,7 @@ object AggregateUtils extends Logging {
           if (stagingBatches.size == 1) {
             return stagingBatches.head
           }
-          concatenateAndMerge(stagingBatches, metrics, helper)
+          concatenateAndMergeWithRetry(stagingBatches, metrics, helper)
         }
         }
       }
@@ -214,10 +212,12 @@ object AggregateUtils extends Logging {
       helper: AggHelper,
       hashKeys: Seq[GpuExpression],
       hashBucketNum: Int,
-      hashSeed: Int,
+      baseHashSeed: Int,
+      recursiveDepth: Int,
+      maxRecursiveDepth: Int,
       batchesByBucket: ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]
   ): Boolean = {
-
+    val hashSeed = baseHashSeed + recursiveDepth * 7
     var repartitionHappened = false
 
     def repartitionAndClose(batch: SpillableColumnarBatch): Unit = {
@@ -235,11 +235,7 @@ object AggregateUtils extends Logging {
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
 
         withResource(new GpuBatchSubPartitioner(
-          Seq(batch).map(batch => {
-            withResource(batch) { _ =>
-              batch.getColumnarBatch()
-            }
-          }).iterator,
+          Iterator(withRetryNoSplit(batch)(_.getColumnarBatch())),
           hashKeys, hashBucketNum, hashSeed, "aggRepartition")) {
           partitioner => {
             (0 until partitioner.partitionsCount).foreach { id =>
@@ -277,12 +273,19 @@ object AggregateUtils extends Logging {
 
       val newBuckets = batchesByBucket.flatMap(bucket => {
         if (needRepartitionAgain(bucket)) {
-          if (hashSeed + 7 > 200) {
-            log.warn("Too many times of repartition, may hit a bug? Size for each batch in " +
-              "current bucket: " + bucket.map(_.sizeInBytes).mkString(", ") + " rows: " +
-              bucket.map(_.numRows()).mkString(", ") + " targetMergeBatchSize: "
-              + targetMergeBatchSize)
-            ArrayBuffer.apply(bucket)
+          if (recursiveDepth >= maxRecursiveDepth) {
+            // Normally this should not happen, because we are repartitioning data that has
+            // already gone through first round of aggregation, so there shouldn't be too many
+            // duplicated rows (the duplication only happens in different batches) to prevent
+            // repartitioning out (considering we're changing seed each time we repartition).
+            // However, for some test cases with really small batch size, this can happen. So
+            // we're just logging some warnings here.
+            log.warn(s"The bucket is still too large after $recursiveDepth repartitions. " +
+              s"See https://github.com/NVIDIA/spark-rapids/issues/11834. " +
+              s"Sizes for each batch in current bucket: ${bucket.map(_.sizeInBytes).mkString(", ")}"
+              + s" rows: ${bucket.map(_.numRows()).mkString(", ")}" +
+              s" targetMergeBatchSize: $targetMergeBatchSize")
+            ArrayBuffer(bucket)
           } else {
             val nextLayerBuckets =
               ArrayBuffer.fill(hashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
@@ -290,12 +293,12 @@ object AggregateUtils extends Logging {
             repartitionHappened =
               iterateAndRepartition(
                 new CloseableBufferedIterator(bucket.iterator), metrics, targetMergeBatchSize,
-                helper, hashKeys, hashBucketNum, hashSeed + 7,
-                nextLayerBuckets) || repartitionHappened
+                helper, hashKeys, hashBucketNum, baseHashSeed, recursiveDepth + 1,
+                maxRecursiveDepth, nextLayerBuckets) || repartitionHappened
             nextLayerBuckets
           }
         } else {
-          ArrayBuffer.apply(bucket)
+          ArrayBuffer(bucket)
         }
       })
       batchesByBucket.clear()
@@ -516,7 +519,7 @@ class AggHelper(
     // We need to merge the aggregated batches into 1 before calling post process,
     // if the aggregate code had to split on a retry
     if (aggregatedSeq.size > 1) {
-      val concatted = concatenateBatches(metrics, aggregatedSeq)
+      val concatted = concatenateBatchesWithRetry(metrics, aggregatedSeq)
       withRetryNoSplit(concatted) { attempt =>
         withResource(attempt.getColumnarBatch()) { cb =>
           SpillableColumnarBatch(
@@ -698,7 +701,7 @@ object GpuAggregateIterator extends Logging {
    * @param toConcat spillable batches to concatenate
    * @return concatenated batch result
    */
-  def concatenateBatches(
+  def concatenateBatchesWithRetry(
       metrics: GpuHashAggregateMetrics,
       toConcat: Seq[SpillableColumnarBatch]): SpillableColumnarBatch = {
     if (toConcat.size == 1) {
@@ -716,7 +719,7 @@ object GpuAggregateIterator extends Logging {
             val dataTypes = (0 until numCols).map {
               c => batchesToConcat.head.column(c).dataType
             }.toArray
-            withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
+            withResource(batchesToConcat.safeMap(GpuColumnVector.from)) { tbl =>
               withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
                 val cb = GpuColumnVector.from(concatenated, dataTypes)
                 SpillableColumnarBatch(cb,
@@ -816,13 +819,13 @@ object GpuAggFinalPassIterator {
       boundResultReferences)
   }
 
-  private[this] def reorderFinalBatch(finalBatch: ColumnarBatch,
+  private[this] def reorderFinalBatch(finalBatch: SpillableColumnarBatch,
       boundExpressions: BoundExpressionsModeAggregates,
       metrics: GpuHashAggregateMetrics): ColumnarBatch = {
     // Perform the last project to get the correct shape that Spark expects. Note this may
     // add things like literals that were not part of the aggregate into the batch.
-    closeOnExcept(GpuProjectExec.projectAndClose(finalBatch,
-      boundExpressions.boundResultReferences, NoopMetric)) { ret =>
+    closeOnExcept(GpuProjectExec.projectAndCloseWithRetrySingleBatch(finalBatch,
+      boundExpressions.boundResultReferences)) { ret =>
       metrics.numOutputRows += ret.numRows()
       metrics.numOutputBatches += 1
       ret
@@ -838,9 +841,12 @@ object GpuAggFinalPassIterator {
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
         val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
-          GpuProjectExec.projectAndClose(batch, exprs, NoopMetric)
+          GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+            SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY), exprs)
         }.getOrElse(batch)
-        reorderFinalBatch(finalBatch, boundExpressions, metrics)
+        val finalSCB =
+          SpillableColumnarBatch(finalBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        reorderFinalBatch(finalSCB, boundExpressions, metrics)
       }
     }
   }
@@ -854,12 +860,10 @@ object GpuAggFinalPassIterator {
       withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
         opTime)) { _ =>
         val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
-          GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs)
-        }.getOrElse {
-          withRetryNoSplit(sb) { _ =>
-            sb.getColumnarBatch()
-          }
-        }
+          SpillableColumnarBatch(
+            GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs),
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        }.getOrElse(sb)
         reorderFinalBatch(finalBatch, boundExpressions, metrics)
       }
     }
@@ -920,7 +924,8 @@ class GpuMergeAggregateIterator(
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
 
   private[this] val defaultHashBucketNum = 16
-  private[this] val defaultHashSeed = 107
+  private[this] val maxLevelsOfRepartition = 10 // this is the max level for recursive repartition
+  private[this] val baseHashSeed = 107 // this is the seed used for first level for repartition
   private[this] var batchesByBucket =
     ArrayBuffer.fill(defaultHashBucketNum)(new AutoClosableArrayBuffer[SpillableColumnarBatch]())
 
@@ -952,7 +957,7 @@ class GpuMergeAggregateIterator(
 
       // Handle reduction-only aggregation
       if (isReductionOnly) {
-        val batches = ArrayBuffer.apply[SpillableColumnarBatch]()
+        val batches = ArrayBuffer[SpillableColumnarBatch]()
         while (firstPassIter.hasNext) {
           batches += firstPassIter.next()
         }
@@ -962,10 +967,9 @@ class GpuMergeAggregateIterator(
           return generateEmptyReductionBatch()
         } else {
           hasReductionOnlyBatch = false
-          val concat = AggregateUtils.concatenateAndMerge(batches, metrics, concatAndMergeHelper)
-          return withResource(concat) { cb =>
-            cb.getColumnarBatch()
-          }
+          val concat =
+            AggregateUtils.concatenateAndMergeWithRetry(batches, metrics, concatAndMergeHelper)
+          return withRetryNoSplit(concat)(_.getColumnarBatch())
         }
       }
 
@@ -984,7 +988,7 @@ class GpuMergeAggregateIterator(
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
 
-          realIter = Some(ConcatIterator.apply(firstPassIter, configuredTargetBatchSize))
+          realIter = Some(ConcatIterator(firstPassIter, configuredTargetBatchSize))
           metrics.numTasksSkippedAgg += 1
           return realIter.get.next()
         } else {
@@ -1009,12 +1013,12 @@ class GpuMergeAggregateIterator(
           configuredTargetBatchSize,
           concatAndMergeHelper)
         , metrics, targetMergeBatchSize, concatAndMergeHelper,
-        hashKeys, defaultHashBucketNum, defaultHashSeed, batchesByBucket)
+        hashKeys, defaultHashBucketNum, baseHashSeed, 0, maxLevelsOfRepartition, batchesByBucket)
       if (repartitionHappened) {
         metrics.numTasksRepartitioned += 1
       }
 
-      realIter = Some(ConcatIterator.apply(
+      realIter = Some(ConcatIterator(
         new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
       realIter.get.next()
     }
@@ -1047,17 +1051,19 @@ class GpuMergeAggregateIterator(
       val spillCbs = ArrayBuffer[SpillableColumnarBatch]()
       var totalBytes = 0L
       closeOnExcept(spillCbs) { _ =>
-        while (input.hasNext && (spillCbs.isEmpty ||
-          (totalBytes + input.head.sizeInBytes) < targetSize)) {
+        while (input.hasNext && (
+          // for some test cases targetSize is too small to fit any SpillableColumnarBatch,
+          // in this case we put the first SpillableColumnarBatch into spillCbs anyway
+          // refer to https://github.com/NVIDIA/spark-rapids/issues/11790 for examples
+          spillCbs.isEmpty ||
+            (totalBytes + input.head.sizeInBytes) <= targetSize)) {
           val tmp = input.next
           totalBytes += tmp.sizeInBytes
           spillCbs += tmp
         }
 
-        val concat = GpuAggregateIterator.concatenateBatches(metrics, spillCbs.toSeq)
-        withResource(concat) { _ =>
-          concat.getColumnarBatch()
-        }
+        val concat = concatenateBatchesWithRetry(metrics, spillCbs.toSeq)
+        withRetryNoSplit(concat)(_.getColumnarBatch())
       }
     }
   }
@@ -1080,14 +1086,16 @@ class GpuMergeAggregateIterator(
           closeOnExcept(new ArrayBuffer[AutoClosableArrayBuffer[SpillableColumnarBatch]]) {
             toAggregateBuckets =>
               var currentSize = 0L
-              while (batchesByBucket.nonEmpty && (toAggregateBuckets.isEmpty ||
-                batchesByBucket.last.size() + currentSize < targetMergeBatchSize)) {
-                val bucket = batchesByBucket.remove(batchesByBucket.size - 1)
-                currentSize += bucket.map(_.sizeInBytes).sum
-                toAggregateBuckets += bucket
+              var keepGoing = true
+              while (batchesByBucket.nonEmpty && keepGoing) {
+                currentSize += batchesByBucket.last.map(_.sizeInBytes).sum
+                keepGoing = currentSize <= targetMergeBatchSize || toAggregateBuckets.isEmpty
+                if (keepGoing) {
+                  toAggregateBuckets += batchesByBucket.remove(batchesByBucket.size - 1)
+                }
               }
 
-              AggregateUtils.concatenateAndMerge(
+              AggregateUtils.concatenateAndMergeWithRetry(
                 toAggregateBuckets.flatMap(_.data), metrics, concatAndMergeHelper)
           }
         }

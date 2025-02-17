@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,34 +78,35 @@ object GpuFileFormatDataWriter {
    * The input batch is closed in case of error or in case we have to split it.
    * It is not closed if it wasn't split.
    *
-   * @param batch ColumnarBatch to split (and close)
+   * @param scb Spillable ColumnarBatch to split (and close)
    * @param maxRecordsPerFile max rowcount per file
    * @param recordsInFile row count in the file so far
    * @return array of SpillableColumnarBatch splits
    */
-  def splitToFitMaxRecordsAndClose(
-      batch: ColumnarBatch,
+  def splitToFitMaxRecordsAndCloseWithRetry(
+      scb: SpillableColumnarBatch,
       maxRecordsPerFile: Long,
       recordsInFile: Long): Array[SpillableColumnarBatch] = {
-    val (types, splitIndexes) = closeOnExcept(batch) { _ =>
-      val splitIndexes = getSplitIndexes(maxRecordsPerFile, recordsInFile, batch.numRows())
-      (GpuColumnVector.extractTypes(batch), splitIndexes)
+    val splitIndexes = closeOnExcept(scb) { _ =>
+      getSplitIndexes(maxRecordsPerFile, recordsInFile, scb.numRows())
     }
     if (splitIndexes.isEmpty) {
-      // this should never happen, as `splitToFitMaxRecordsAndClose` is called when
+      // this should never happen, as `splitToFitMaxRecordsAndCloseWithRetry` is called when
       // splits should already happen, but making it more efficient in that case
-      Array(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      Array(scb)
     } else {
       // actually split it
-      val tbl = withResource(batch) { _ =>
-        GpuColumnVector.from(batch)
-      }
-      val cts = withResource(tbl) { _ =>
-        tbl.contiguousSplit(splitIndexes: _*)
-      }
-      withResource(cts) { _ =>
-        cts.safeMap(ct =>
-          SpillableColumnarBatch(ct, types, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      withRetryNoSplit(scb) { _ =>
+        val tbl = withResource(scb.getColumnarBatch()) { batch =>
+          GpuColumnVector.from(batch)
+        }
+        val cts = withResource(tbl) { _ =>
+          tbl.contiguousSplit(splitIndexes: _*)
+        }
+        withResource(cts) { _ =>
+          cts.safeMap(ct =>
+            SpillableColumnarBatch(ct, scb.dataTypes, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        }
       }
     }
   }
@@ -164,7 +165,7 @@ abstract class GpuFileFormatDataWriter(
 
   protected final def writeUpdateMetricsAndClose(scb: SpillableColumnarBatch,
       writerStatus: WriterAndStatus): Unit = {
-    writerStatus.recordsInFile += writerStatus.writer.writeSpillableAndClose(scb, statsTrackers)
+    writerStatus.recordsInFile += writerStatus.writer.writeSpillableAndClose(scb)
   }
 
   /** Release all resources. Public for testing */
@@ -227,7 +228,8 @@ class GpuEmptyDirectoryDataWriter(
 class GpuSingleDirectoryDataWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
-    committer: FileCommitProtocol)
+    committer: FileCommitProtocol,
+    debugOutputBasePath: Option[String])
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
   // Initialize currentWriter and statsTrackers
   newOutputWriter()
@@ -246,10 +248,17 @@ class GpuSingleDirectoryDataWriter(
       None,
       f"-c$fileCounter%03d" + ext)
 
+    val debugOutputPath = debugOutputBasePath.map { base =>
+      base + s"/DEBUG_${taskAttemptContext.getTaskAttemptID}" +
+        f"_c$fileCounter%03d_${System.nanoTime()}.debug"
+    }
+
     currentWriterStatus.writer = description.outputWriterFactory.newInstance(
       path = currentPath,
       dataSchema = description.dataColumns.toStructType,
-      context = taskAttemptContext)
+      context = taskAttemptContext,
+      statsTrackers = statsTrackers,
+      debugOutputPath = debugOutputPath)
 
     statsTrackers.foreach(_.newFile(currentPath))
   }
@@ -257,14 +266,13 @@ class GpuSingleDirectoryDataWriter(
   override def write(batch: ColumnarBatch): Unit = {
     val maxRecordsPerFile = description.maxRecordsPerFile
     val recordsInFile = currentWriterStatus.recordsInFile
+    val scb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     if (!shouldSplitToFitMaxRecordsPerFile(
-        maxRecordsPerFile, recordsInFile, batch.numRows())) {
-      writeUpdateMetricsAndClose(
-        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
-        currentWriterStatus)
+        maxRecordsPerFile, recordsInFile, scb.numRows())) {
+      writeUpdateMetricsAndClose(scb, currentWriterStatus)
     } else {
-      val partBatches = splitToFitMaxRecordsAndClose(
-        batch, maxRecordsPerFile, recordsInFile)
+      val partBatches = splitToFitMaxRecordsAndCloseWithRetry(scb, maxRecordsPerFile,
+        recordsInFile)
       val needNewWriterForFirstPart = recordsInFile >= maxRecordsPerFile
       closeOnExcept(partBatches) { _ =>
         partBatches.zipWithIndex.foreach { case (partBatch, partIx) =>
@@ -293,7 +301,8 @@ class GpuSingleDirectoryDataWriter(
 class GpuDynamicPartitionDataSingleWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
-    committer: FileCommitProtocol)
+    committer: FileCommitProtocol,
+    debugOutputBasePath: Option[String])
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
   /** Wrapper class to index a unique concurrent output writer. */
   protected class WriterIndex(
@@ -576,10 +585,23 @@ class GpuDynamicPartitionDataSingleWriter(
       committer.newTaskTempFile(taskAttemptContext, partDir, ext)
     }
 
+    val debugOutputPath = debugOutputBasePath.map { base =>
+      if (customPath.isDefined) {
+        val hash = customPath.get.hashCode
+        base + s"/DEBUG_CUSTOM_${hash}_${taskAttemptContext.getTaskAttemptID}" +
+          f"_c$fileCounter%03d_${System.nanoTime()}.debug"
+      }  else {
+        base + s"/${partDir.mkString("/")}/DEBUG_${taskAttemptContext.getTaskAttemptID}" +
+          f"_c$fileCounter%03d_${System.nanoTime()}.debug"
+      }
+    }
+
     val outWriter = description.outputWriterFactory.newInstance(
       path = currentPath,
       dataSchema = description.dataColumns.toStructType,
-      context = taskAttemptContext)
+      context = taskAttemptContext,
+      statsTrackers = statsTrackers,
+      debugOutputPath = debugOutputPath)
 
     statsTrackers.foreach(_.newFile(currentPath))
     outWriter
@@ -593,10 +615,7 @@ class GpuDynamicPartitionDataSingleWriter(
     if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile, recordsInFile, scb.numRows())) {
       writeUpdateMetricsAndClose(scb, writerStatus)
     } else {
-      val batch = withRetryNoSplit(scb) { scb =>
-        scb.getColumnarBatch()
-      }
-      val splits = splitToFitMaxRecordsAndClose(batch, maxRecordsPerFile, recordsInFile)
+      val splits = splitToFitMaxRecordsAndCloseWithRetry(scb, maxRecordsPerFile, recordsInFile)
       withResource(splits) { _ =>
         val needNewWriterForFirstPart = recordsInFile >= maxRecordsPerFile
         splits.zipWithIndex.foreach { case (part, partIx) =>
@@ -668,8 +687,10 @@ class GpuDynamicPartitionDataConcurrentWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol,
-    spec: GpuConcurrentOutputWriterSpec)
-  extends GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
+    spec: GpuConcurrentOutputWriterSpec,
+    debugOutputBasePath: Option[String])
+  extends GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext,
+    committer, debugOutputBasePath)
   with Logging {
 
   /** Wrapper class for status and caches of a unique concurrent output writer. */

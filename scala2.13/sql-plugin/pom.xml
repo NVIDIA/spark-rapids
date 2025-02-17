@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
-        <version>24.12.1</version>
+        <version>25.02.0</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-sql_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>24.12.1</version>
+    <version>25.02.0</version>
 
     <properties>
         <rapids.module>sql-plugin</rapids.module>
@@ -93,14 +93,16 @@
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <!-- Used for Alluxio mounting -->
-            <groupId>org.alluxio</groupId>
-            <artifactId>alluxio-shaded-client</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-hybrid_${scala.binary.version}</artifactId>
+            <version>${spark-rapids-hybrid.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
     <!-- #if scala-2.13 -->
