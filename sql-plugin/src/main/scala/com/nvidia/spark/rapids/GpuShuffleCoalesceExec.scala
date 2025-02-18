@@ -253,9 +253,10 @@ class KudoTableOperator(kudo: Option[KudoSerializer])
         kudoTables.add(column.kudoTable)
       }
 
-      val result = kudo.get.mergeOnHost(kudoTables)
+      val result =
+        kudo.get.mergeOnHost(kudoTables.toArray(Array.ofDim[KudoTable](kudoTables.size())))
 
-      KudoHostMergeResultWrapper(result.getLeft)
+      KudoHostMergeResultWrapper(result)
     }
   }
 }
