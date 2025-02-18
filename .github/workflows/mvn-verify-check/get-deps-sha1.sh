@@ -20,9 +20,11 @@ scala_ver=${1:-"2.12"}
 base_URL="https://oss.sonatype.org/service/local/artifact/maven/resolve"
 project_jni="spark-rapids-jni"
 project_private="rapids-4-spark-private_${scala_ver}"
+project_hybrid="rapids-4-spark-hybrid_${scala_ver}"
 
 jni_ver=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-jni.version -DforceStdout)
 private_ver=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
+hybrid_ver=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-hybrid.version -DforceStdout)
 
 if [[ $jni_ver == *SNAPSHOT* ]]; then
   jni_sha1=$(curl -s -H "Accept: application/json" \
@@ -40,6 +42,14 @@ else
   private_sha1=$private_ver
 fi
 
-sha1md5=$(echo -n "${jni_sha1}_${private_sha1}" | md5sum | awk '{print $1}')
+if [[ $hybrid_ver == *SNAPSHOT* ]]; then
+  hybrid_sha1=$(curl -s -H "Accept: application/json" \
+    "${base_URL}?r=snapshots&g=com.nvidia&a=${project_hybrid}&v=${hybrid_ver}&c=&e=jar&wt=json" \
+    | jq .data.sha1) || $(date +'%Y-%m-%d')
+else
+  hybrid_sha1=$hybrid_ver
+fi
+
+sha1md5=$(echo -n "${jni_sha1}_${private_sha1}_${hybrid_sha1}" | md5sum | awk '{print $1}')
 
 echo $sha1md5
