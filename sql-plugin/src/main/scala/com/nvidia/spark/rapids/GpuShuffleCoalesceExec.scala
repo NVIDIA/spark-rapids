@@ -232,7 +232,6 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
 class KudoTableOperator(kudo: Option[KudoSerializer])
   extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
-  private val kudoTables = new util.ArrayList[KudoTable]()
 
   override def getDataLen(column: KudoSerializedTableColumn): Long = column.kudoTable.getHeader
     .getTotalDataLen
@@ -247,15 +246,11 @@ class KudoTableOperator(kudo: Option[KudoSerializer])
       val totalRowsNum = columns.map(getNumRows).sum
       RowCountOnlyMergeResult(totalRowsNum)
     } else {
-      kudoTables.clear()
-      kudoTables.ensureCapacity(columns.length)
-      columns.foreach { column =>
-        kudoTables.add(column.kudoTable)
-      }
 
+      val kudoTables = columns.map(_.kudoTable)
       val result = kudo.get.mergeOnHost(kudoTables)
 
-      KudoHostMergeResultWrapper(result.getLeft)
+      KudoHostMergeResultWrapper(result)
     }
   }
 }
