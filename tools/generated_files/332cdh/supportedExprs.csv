@@ -494,6 +494,7 @@ RoundCeil,S, ,None,project,result,NA,S,S,S,S,S,S,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA
 RoundFloor,S, ,None,project,value,NA,S,S,S,S,PS,PS,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA
 RoundFloor,S, ,None,project,scale,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 RoundFloor,S, ,None,project,result,NA,S,S,S,S,S,S,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA
+RowNumber,S,`row_number`,None,window,ordering,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NS,NS,NS,NS,NS
 RowNumber,S,`row_number`,None,window,result,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 ScalaUDF,S, ,None,project,param,S,S,S,S,S,S,S,S,PS,S,S,S,S,S,PS,PS,PS,NS,NS,NS
 ScalaUDF,S, ,None,project,result,S,S,S,S,S,S,S,S,PS,S,S,S,S,S,PS,PS,PS,NS,NS,NS
