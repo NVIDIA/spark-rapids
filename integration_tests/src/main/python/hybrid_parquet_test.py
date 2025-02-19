@@ -87,7 +87,7 @@ def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
         lambda spark: spark.read.parquet(data_path),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
         })
 
 
@@ -116,7 +116,7 @@ def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
         lambda spark: spark.read.parquet(data_path),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
             'spark.gluten.sql.columnar.maxBatchSize': reader_batch_size,
             'spark.rapids.sql.batchSizeBytes': coalesced_batch_size,
         })
@@ -140,7 +140,7 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
         non_exist_classes='HybridFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
         })
 
 
@@ -164,7 +164,7 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
         lambda spark: spark.read.parquet(data_path),
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
-            'spark.rapids.sql.hybrid.parquet.enableReader': 'true',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
             'spark.gluten.sql.columnar.maxBatchSize': 16,
             'spark.rapids.sql.batchSizeBytes': coalesced_batch_size,
             'spark.rapids.sql.hybrid.parquet.numPreloadedBatches': preloaded_batches,
@@ -172,7 +172,7 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
     
 filter_split_conf = {
     'spark.sql.sources.useV1SourceList': 'parquet',
-    'spark.rapids.sql.parquet.useHybridReader': 'true',
+    'spark.rapids.sql.hybrid.parquet.enabled': 'true',
     'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
     'spark.rapids.sql.expression.Ascii': False,
     'spark.rapids.sql.expression.StartsWith': False,

@@ -100,4 +100,3 @@ class HybridFileSourceScanExecMeta(plan: FileSourceScanExec,
     HybridFileSourceScanExec(fixedExec)(conf)
   }
 }
-
