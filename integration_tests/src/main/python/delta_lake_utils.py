@@ -14,9 +14,10 @@
 
 import json
 import os.path
+import pytest
 import re
 
-from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors
+from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -30,6 +31,27 @@ delta_meta_allow = [
     "SerializeFromObjectExec",
     "SortExec"
 ]
+
+# Disable Deletion Vectors except for Databricks 14.3
+def deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason=None, disabled_xfail_reason=None):
+    # We will always set the deletion vectors to False
+    # in case of DB 14.3, if there is no reason provided it's False otherwise False with xfail reason
+    if not is_databricks143_or_later() or disabled_xfail_reason is None:
+        enable_deletion_vector = [False]
+    elif disabled_xfail_reason is not None: 
+        enable_deletion_vector = [pytest.param(False, marks=pytest.mark.xfail(reason=disabled_xfail_reason))]
+
+    # We only set the deletion vectors to true for DB 14.3
+    # If there is an xfail reason provided then that is included as part of the parameter.
+    if is_databricks143_or_later():
+        if enabled_xfail_reason is None:
+            enable_deletion_vector.append(True)
+        else:
+            enable_deletion_vector.append(pytest.param(True, marks=pytest.mark.xfail(reason=enabled_xfail_reason)))
+
+    return enable_deletion_vector
+
+deletion_vector_values = deletion_vector_values_with_350DB143_xfail_reasons()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
@@ -172,7 +194,7 @@ def setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_colu
     spark.sql(sql_text)
     writer.save(path)
 
-def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
+def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_deletion_vectors, partition_columns=None):
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)

@@ -32,7 +32,8 @@ hybrid_prepare(){
     fi
 
     echo "Downloading hybrid execution dependency jars..."
-    RAPIDS_HYBRID_VER=${RAPIDS_HYBRID_VER:-$(mvn -B -q help:evaluate -Dexpression=spark-rapids-hybrid.version -DforceStdout)}
+    # This script may run outside the project root path, so we use mvn -f $WORKSPACE to target the project's pom.xml
+    RAPIDS_HYBRID_VER=${RAPIDS_HYBRID_VER:-$(mvn -f $WORKSPACE -B -q help:evaluate -Dexpression=spark-rapids-hybrid.version -DforceStdout)}
     RAPIDS_HYBRID_URL=${RAPIDS_HYBRID_URL:-$URM_URL}
     GLUTEN_BUNDLE_JAR="gluten-velox-bundle-${GLUTEN_VERSION}-spark${spark_prefix}_${SCALA_BINARY_VER}-${os_version}_${cup_arch}.jar"
     HYBRID_JAR="rapids-4-spark-hybrid_${SCALA_BINARY_VER}-${RAPIDS_HYBRID_VER}.jar"

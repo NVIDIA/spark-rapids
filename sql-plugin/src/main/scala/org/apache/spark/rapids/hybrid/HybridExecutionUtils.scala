@@ -55,7 +55,9 @@ object HybridExecutionUtils extends PredicateHelper {
       false
     }
     // Currently, only support reading Parquet
-    lazy val isParquet = fsse.relation.fileFormat.getClass == classOf[ParquetFileFormat]
+    val isParquet = fsse.relation.fileFormat.getClass == classOf[ParquetFileFormat]
+    // Fallback to GpuScan over the `select count(1)` cases
+    val nonEmptySchema = fsse.output.nonEmpty && fsse.requiredSchema.nonEmpty
     // Check if data types of all fields are supported by HybridParquetReader
     lazy val allSupportedTypes = !fsse.requiredSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, {
@@ -78,7 +80,7 @@ object HybridExecutionUtils extends PredicateHelper {
     // TODO: supports BucketedScan
     lazy val noBucketedScan = !fsse.bucketedScan
 
-    isEnabled && isParquet && allSupportedTypes && noBucketedScan
+    isEnabled && isParquet && nonEmptySchema && allSupportedTypes && noBucketedScan
   }
 
   /**
@@ -318,8 +320,13 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
+  def isTimestampCondition(expr: Expression): Boolean = {
+    expr.references.exists(attr => attr.dataType == TimestampType)
+  }
+
   def isExprSupportedByHybridScan(condition: Expression, whitelistExprsName: String): Boolean = {
     condition match {
+      case filter if isTimestampCondition(filter) => false // Timestamp is not fully supported in Hybrid Filter
       case filter if HybridExecutionUtils.supportedByHybridFilters(whitelistExprsName)
           .exists(_.isInstance(filter)) =>
         val childrenSupported = filter.children.forall(

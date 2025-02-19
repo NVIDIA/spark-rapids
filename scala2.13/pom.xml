@@ -853,7 +853,7 @@
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
-        <ucx.baseVersion>1.16.0</ucx.baseVersion>
+        <ucx.baseVersion>1.18.0</ucx.baseVersion>
         <roaringbitmap.version>1.0.6</roaringbitmap.version>
         <!-- ucx x86 is just the base version (implied), arm is specified under arm64 profile. -->
         <ucx.version>${ucx.baseVersion}</ucx.version>
@@ -915,7 +915,7 @@
         <spark352.version>3.5.2</spark352.version>
         <spark353.version>3.5.3</spark353.version>
         <spark354.version>3.5.4</spark354.version>
-        <spark400.version>4.0.0-SNAPSHOT</spark400.version>
+        <!-- spark400.version>4.0.0-SNAPSHOT</spark400.version -->
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
         <scala.plugin.version>4.9.1</scala.plugin.version>
@@ -974,8 +974,8 @@
         <jdk17.buildvers>
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
-            330,
-            400
+            330
+            <!-- 400 -->
         </jdk17.scala213.buildvers>
         <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>

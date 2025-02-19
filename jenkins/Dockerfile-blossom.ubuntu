@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 # Arguments:
 #       CUDA_VER=[11.X.Y,12.X.Y]
 #       UBUNTU_VER=[20.04,22.0.4]
-#       UCX_VER=1.16.0
+#       UCX_VER=1.18.0
 #       TARGETPLATFORM=[linux/amd64,linux/arm64]
 #       ARCH=[amd64,arm64]
 #       UCX_ARCH=[x86_64,aarch64]
@@ -29,7 +29,7 @@
 
 ARG CUDA_VER=11.8.0
 ARG UBUNTU_VER=20.04
-ARG UCX_VER=1.16.0
+ARG UCX_VER=1.18.0
 ARG TARGETPLATFORM=linux/amd64
 # multi-platform build with: docker buildx build --platform linux/arm64,linux/amd64 <ARGS> on either amd64 or arm64 host
 # check available official arm-based docker images at https://hub.docker.com/r/nvidia/cuda/tags (OS/ARCH)

@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,23 +19,24 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
-    with_cpu_session, with_gpu_session
+    with_cpu_session, with_gpu_session, is_databricks143_or_later
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
                                              "spark.rapids.sql.command.DeleteCommandEdge": "true"})
 
 def delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql,
-                          check_func, partition_columns=None):
+                          check_func, enable_deletion_vectors, partition_columns=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
+        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_deletion_vectors, partition_columns)
     def do_delete(spark, path):
         return spark.sql(delete_sql.format(path=path))
     with_cpu_session(setup_tables)
     check_func(data_path, do_delete)
 
 def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, delete_sql,
+                                    enable_deletion_vectors,
                                     partition_columns=None,
                                     conf=delta_delete_enabled_conf,
                                     skip_sql_result_check=False):
@@ -59,7 +60,7 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
         # partitioning due to random sampling.
         if not partition_columns:
             with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
-    delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql, checker,
+    delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql, checker, enable_deletion_vectors,
                           partition_columns)
 
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
@@ -73,12 +74,13 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
                            delta_writes_enabled_conf  # Test disabled by default
                            ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf, enable_deletion_vectors):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_delta_dest_tables(spark, data_path,
                                 dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                                use_cdf=False)
+                                use_cdf=False, enable_deletion_vectors=enable_deletion_vectors)
     def write_func(spark, path):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
@@ -113,8 +115,9 @@ def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
 @ignore_order
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_delete_entire_table(spark_tmp_path, use_cdf, partition_columns):
+def test_delta_delete_entire_table(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
     def generate_dest_data(spark):
         return three_col_df(spark,
                             SetValuesGen(IntegerType(), range(5)),
@@ -126,7 +129,7 @@ def test_delta_delete_entire_table(spark_tmp_path, use_cdf, partition_columns):
     # https://github.com/NVIDIA/spark-rapids/issues/8123
     skip_sql_result = is_databricks_runtime()
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
-                                    delete_sql, partition_columns,
+                                    delete_sql, enable_deletion_vectors, partition_columns,
                                     skip_sql_result_check=skip_sql_result)
 
 @allow_non_gpu(*delta_meta_allow)
@@ -134,8 +137,9 @@ def test_delta_delete_entire_table(spark_tmp_path, use_cdf, partition_columns):
 @ignore_order
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [["a"], ["a", "b"]], ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns):
+def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
     def generate_dest_data(spark):
         return three_col_df(spark,
                             SetValuesGen(IntegerType(), range(5)),
@@ -147,7 +151,7 @@ def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns):
     # https://github.com/NVIDIA/spark-rapids/issues/8123
     skip_sql_result = is_databricks_runtime()
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
-                                    delete_sql, partition_columns,
+                                    delete_sql, enable_deletion_vectors, partition_columns,
                                     skip_sql_result_check=skip_sql_result)
 
 @allow_non_gpu(*delta_meta_allow)
@@ -157,7 +161,10 @@ def test_delta_delete_partitions(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
-def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
+                                        enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041",
+                                        disabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12047"), ids=idfn)
+def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
     # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
     num_slices_to_test = 1 if is_databricks_runtime() else 10
     def generate_dest_data(spark):
@@ -167,7 +174,7 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns):
                             string_gen, num_slices=num_slices_to_test)
     delete_sql = "DELETE FROM delta.`{path}` WHERE b < 'd'"
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
-                                    delete_sql, partition_columns)
+                                    delete_sql, enable_deletion_vectors, partition_columns)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -176,7 +183,10 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @datagen_overrides(seed=0, permanent=True, reason='https://github.com/NVIDIA/spark-rapids/issues/9884')
-def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
+                                        enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041",
+                                        disabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12047"), ids=idfn)
+def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"
     # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
@@ -186,7 +196,7 @@ def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
                             SetValuesGen(IntegerType(), range(5)),
                             SetValuesGen(StringType(), "abcdefg"),
                             string_gen, num_slices=num_slices_to_test)
-    with_cpu_session(lambda spark: setup_delta_dest_tables(spark, data_path, generate_dest_data, use_cdf, partition_columns))
+    with_cpu_session(lambda spark: setup_delta_dest_tables(spark, data_path, generate_dest_data, use_cdf, enable_deletion_vectors, partition_columns))
     def do_delete(spark, path):
         dest_table = DeltaTable.forPath(spark, path)
         dest_table.delete("b > 'c'")

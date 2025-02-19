@@ -68,6 +68,7 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", simple_string_to_string_map_gen]])],
     [StructGen([["c0", ArrayGen(simple_string_to_string_map_gen)]])],
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
+    [],
 ]
 
 
@@ -128,14 +129,21 @@ def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
 @pytest.mark.parametrize('parquet_gens', parquet_gens_fallback_lists, ids=idfn)
 @hybrid_test
 def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list, length=512).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-
+    # check the fallback over empty schema(`SELECT COUNT(1)`) within the same case
+    if len(parquet_gens) == 0:
+        with_cpu_session(
+            lambda spark: gen_df(spark, [('a', int_gen)], length=512).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+        read_fn = lambda spark: spark.read.parquet(data_path).selectExpr('count(1)')
+    else:
+        gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+        with_cpu_session(
+            lambda spark: gen_df(spark, gen_list, length=512).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+        read_fn = lambda spark: spark.read.parquet(data_path)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: spark.read.parquet(data_path),
+        read_fn,
         exist_classes='GpuFileSourceScanExec',
         non_exist_classes='HybridFileSourceScanExec',
         conf={
@@ -169,7 +177,8 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
             'spark.rapids.sql.batchSizeBytes': coalesced_batch_size,
             'spark.rapids.sql.hybrid.parquet.numPreloadedBatches': preloaded_batches,
         })
-    
+
+
 filter_split_conf = {
     'spark.sql.sources.useV1SourceList': 'parquet',
     'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -249,4 +258,23 @@ def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
     check_filter_pushdown(plan, pushed_exprs=['ascii', 'isnotnull'], not_pushed_exprs=['udf_fallback'])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter("ascii(a) >= 50 and udf_fallback(a) = 'udf_100'"),
+        conf=filter_split_conf)
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+@allow_non_gpu(*non_utc_allow)
+def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)))]).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    # Timestamp is not fully supported in Hybrid Filter, so it should remain on the GPU
+    plan = with_gpu_session(
+        lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc)))._jdf.queryExecution().executedPlan(),
+        conf=filter_split_conf)
+    check_filter_pushdown(plan, pushed_exprs=[], not_pushed_exprs=['isnotnull', '>'])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
         conf=filter_split_conf)

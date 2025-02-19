@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,14 +27,11 @@ import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader}
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader, WriteInput}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE,
-  METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_CALC_HEADER_TIME,
-  METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_COPY_HEADER_TIME,
-  METRIC_SHUFFLE_SER_STREAM_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_SIZE, METRIC_SHUFFLE_DESER_STREAM_TIME, METRIC_SHUFFLE_SER_COPY_BUFFER_TIME, METRIC_SHUFFLE_SER_STREAM_TIME}
 import org.apache.spark.sql.types.{DataType, NullType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -130,7 +127,7 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
  * @note The RAPIDS shuffle does not use this code.
  */
 class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Array[DataType],
-    useKudo: Boolean)
+    useKudo: Boolean, kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
   private lazy val kudo = {
@@ -143,7 +140,7 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
 
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
-      new KudoSerializerInstance(metrics, dataTypes, kudo)
+      new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
     }
@@ -348,12 +345,11 @@ object SerializedTableColumn {
 private class KudoSerializerInstance(
     val metrics: Map[String, GpuMetric],
     val dataTypes: Array[DataType],
-    val kudo: Option[KudoSerializer]
+    val kudo: Option[KudoSerializer],
+    val measureBufferCopyTime: Boolean,
 ) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
-  private val serCalcHeaderTime = metrics(METRIC_SHUFFLE_SER_CALC_HEADER_TIME)
-  private val serCopyHeaderTime = metrics(METRIC_SHUFFLE_SER_COPY_HEADER_TIME)
   private val serCopyBufferTime = metrics(METRIC_SHUFFLE_SER_COPY_BUFFER_TIME)
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
@@ -393,14 +389,22 @@ private class KudoSerializerInstance(
           }
 
           withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
+            val writeInput = WriteInput.builder
+              .setColumns(columns)
+              .setOutputStream(dOut)
+              .setNumRows(numRows)
+              .setRowOffset(startRow)
+              .setMeasureCopyBufferTime(measureBufferCopyTime)
+              .build
             val writeMetric = kudo
               .getOrElse(throw new IllegalStateException("Kudo serializer not initialized."))
-              .writeToStreamWithMetrics(columns, dOut, startRow, numRows)
+              .writeToStreamWithMetrics(writeInput)
 
             dataSize += writeMetric.getWrittenBytes
-            serCalcHeaderTime += writeMetric.getCalcHeaderTime
-            serCopyHeaderTime += writeMetric.getCopyHeaderTime
-            serCopyBufferTime += writeMetric.getCopyBufferTime
+            if (measureBufferCopyTime) {
+              // These metrics will not show up in the UI if it's not modified
+              serCopyBufferTime += writeMetric.getCopyBufferTime
+            }
           }
         } else {
           withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>

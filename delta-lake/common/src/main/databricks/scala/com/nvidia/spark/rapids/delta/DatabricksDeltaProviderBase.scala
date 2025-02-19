@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,25 +22,24 @@ import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 
 import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
-import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
-import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge, WriteIntoDelta}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuDeltaSupportsWrite, GpuDeltaV1Write, GpuWriteIntoDelta}
+import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaSupportsWrite, GpuDeltaV1Write}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
-import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
+import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 /**
@@ -161,7 +160,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
       getWriteOptions(cpuExec.writeOptions), cpuExec.session)
   }
 
-  private case class DeltaWriteV1Config(
+  protected case class DeltaWriteV1Config(
       deltaLog: DeltaLog,
       forceOverwrite: Boolean,
       options: mutable.HashMap[String, String])
@@ -286,35 +285,9 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
     GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
-  private def toGpuWrite(
-      writeConfig: DeltaWriteV1Config,
-      rapidsConf: RapidsConf): V1Write = new GpuDeltaV1Write {
-    override def toInsertableRelation(): InsertableRelation = {
-      new InsertableRelation {
-        override def insert(data: DataFrame, overwrite: Boolean): Unit = {
-          val session = data.sparkSession
-          val deltaLog = writeConfig.deltaLog
-
-          // TODO: Get the config from WriteIntoDelta's txn.
-          val cpuWrite = WriteIntoDelta(
-            deltaLog,
-            if (writeConfig.forceOverwrite) SaveMode.Overwrite else SaveMode.Append,
-            new DeltaOptions(writeConfig.options.toMap, session.sessionState.conf),
-            Nil,
-            DeltaLogShim.getMetadata(deltaLog).configuration,
-            data)
-          val gpuWrite = GpuWriteIntoDelta(new GpuDeltaLog(deltaLog, rapidsConf), cpuWrite)
-          gpuWrite.run(session)
-
-          // TODO: Push this to Apache Spark
-          // Re-cache all cached plans(including this relation itself, if it's cached) that refer
-          // to this data source relation. This is the behavior for InsertInto
-          session.sharedState.cacheManager.recacheByPlan(
-            session, LogicalRelation(deltaLog.createRelation()))
-        }
-      }
-    }
-  }
+  protected def toGpuWrite(
+     writeConfig: DeltaWriteV1Config,
+     rapidsConf: RapidsConf): V1Write
 }
 
 class DeltaCreatableRelationProviderMeta(
