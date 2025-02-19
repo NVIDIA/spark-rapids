@@ -52,7 +52,7 @@ class KudoTableMerger implements SimpleSchemaVisitor {
   private final long[] validityOffsets;
   private final long[] offsetOffsets;
   private final long[] dataOffsets;
-  private final Deque<SliceInfo>[] sliceInfos;
+  private final ArrayList<Deque<SliceInfo>> sliceInfos;
 
   private final SliceInfo[] sliceInfoBuf;
   // A temp buffer for computing
@@ -86,11 +86,11 @@ class KudoTableMerger implements SimpleSchemaVisitor {
       dataOffsets[i] = kudoTables[i].getHeader().startOffsetOf(BufferType.DATA);
     }
 
-    sliceInfos = new Deque[kudoTables.length];
-    for (int i = 0; i < sliceInfos.length; i++) {
-      sliceInfos[i] = new ArrayDeque<>(8);
+    sliceInfos = new ArrayList<>();
+    for (int i = 0; i < kudoTables.length; i++) {
+      sliceInfos.add(new ArrayDeque<>(8));
       KudoTableHeader header = kudoTables[i].getHeader();
-      sliceInfos[i].addLast(new SliceInfo(header.getOffset(), header.getNumRows()));
+      sliceInfos.get(i).addLast(new SliceInfo(header.getOffset(), header.getNumRows()));
     }
 
     sliceInfoBuf = new SliceInfo[kudoTables.length];
@@ -139,7 +139,7 @@ class KudoTableMerger implements SimpleSchemaVisitor {
       if (sliceInfo.getRowCount() > 0) {
         offsetOffsets[i] += padForHostAlignment((sliceInfo.getRowCount() + 1) * Integer.BYTES);
       }
-      sliceInfos[i].addLast(sliceInfoBuf[i]);
+      sliceInfos.get(i).addLast(sliceInfoBuf[i]);
     }
     curColIdx++;
   }
@@ -147,7 +147,7 @@ class KudoTableMerger implements SimpleSchemaVisitor {
   @Override
   public void visitList(Schema listType) {
     for (int i = 0; i < kudoTables.length; i++) {
-      sliceInfos[i].removeLast();
+      sliceInfos.get(i).removeLast();
     }
   }
 
@@ -291,7 +291,7 @@ class KudoTableMerger implements SimpleSchemaVisitor {
   }
 
   private SliceInfo sliceInfoOf(int tableIdx) {
-    return sliceInfos[tableIdx].getLast();
+    return sliceInfos.get(tableIdx).getLast();
   }
 
   private int offsetOf(int tableIdx, long rowIdx) {
