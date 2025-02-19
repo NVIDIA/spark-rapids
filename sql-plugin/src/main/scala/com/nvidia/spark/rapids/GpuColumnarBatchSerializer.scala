@@ -354,8 +354,6 @@ private class KudoSerializerInstance(
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
-    private[this] val dOut: DataOutputStream =
-      new DataOutputStream(new BufferedOutputStream(out))
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
@@ -391,7 +389,7 @@ private class KudoSerializerInstance(
           withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
             val writeInput = WriteInput.builder
               .setColumns(columns)
-              .setOutputStream(dOut)
+              .setOutputStream(out)
               .setNumRows(numRows)
               .setRowOffset(startRow)
               .setMeasureCopyBufferTime(measureBufferCopyTime)
@@ -408,7 +406,7 @@ private class KudoSerializerInstance(
           }
         } else {
           withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>
-            dataSize += KudoSerializer.writeRowCountToStream(dOut, numRows)
+            dataSize += KudoSerializer.writeRowCountToStream(out, numRows)
           }
         }
         this
@@ -433,11 +431,11 @@ private class KudoSerializerInstance(
     }
 
     override def flush(): Unit = {
-      dOut.flush()
+      out.flush()
     }
 
     override def close(): Unit = {
-      dOut.close()
+      out.close()
     }
   }
 
