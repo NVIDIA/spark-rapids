@@ -65,17 +65,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>spark-rapids-jni</artifactId>
-            <scope>test</scope>
-            <classifier>tests</classifier>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.scalatestplus</groupId>
             <artifactId>mockito-4-11_${scala.binary.version}</artifactId>
             <scope>test</scope>

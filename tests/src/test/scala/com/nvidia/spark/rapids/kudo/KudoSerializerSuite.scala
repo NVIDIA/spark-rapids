@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+package com.nvidia.spark.rapids.kudo
+
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 import java.util.concurrent.ThreadLocalRandom
 
@@ -21,11 +24,11 @@ import scala.collection.mutable
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.kudo.{ByteArrayOutputStreamWriter, KudoSerializer, KudoTable, KudoTableHeader, OpenByteArrayOutputStream}
+import com.nvidia.spark.rapids.TestUtils
 import com.nvidia.spark.rapids.kudo.KudoSerializerUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
-class KudoSerializerTest extends AnyFunSuite {
+class KudoSerializerSuite extends AnyFunSuite {
 
   test("Serialize and Deserialize Table") {
     try {
@@ -233,7 +236,7 @@ class KudoSerializerTest extends AnyFunSuite {
       2 until 512 foreach { i => col1.+=(i) }
 
       val table1 = new Table.TestBuilder()
-        .column(col1 : _*)
+        .column(col1: _*)
         .build()
       tables.+=(table1)
 
@@ -304,7 +307,7 @@ class KudoSerializerTest extends AnyFunSuite {
           val merged = serializer.mergeToTable(kudoTables.toArray)
           try {
             assert(expected.getRowCount === merged.getRowCount)
-            AssertUtils.assertTablesAreEqual(expected, merged)
+            TestUtils.compareTables(expected, merged)
           } finally {
             merged.close()
           }
