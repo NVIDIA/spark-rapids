@@ -189,7 +189,7 @@ public class KudoSerializer {
    * @param numRows   number of rows to write
    * @return number of bytes written
    */
-  WriteMetrics writeToStreamWithMetrics(Table table, OutputStream out, int rowOffset, int numRows) {
+  public WriteMetrics writeToStreamWithMetrics(Table table, OutputStream out, int rowOffset, int numRows) {
     HostColumnVector[] columns = null;
     try {
       columns = IntStream.range(0, table.getNumberOfColumns())
