@@ -1101,13 +1101,6 @@
                 <scope>compile</scope>
             </dependency>
             <dependency>
-                <groupId>com.nvidia</groupId>
-                <artifactId>spark-rapids-jni</artifactId>
-                <version>${spark-rapids-jni.version}</version>
-                <scope>test</scope>
-                <classifier>tests</classifier>
-            </dependency>
-            <dependency>
               <groupId>org.scalatest</groupId>
               <artifactId>scalatest_${scala.binary.version}</artifactId>
               <version>3.2.16</version>
