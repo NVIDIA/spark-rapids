@@ -25,7 +25,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.CodecType
-import org.mockito.Mockito.when
+import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterAll
 import org.scalatestplus.mockito.MockitoSugar
 
@@ -1182,6 +1182,93 @@ class SpillFrameworkSuite
       val handle = SpillableCompressedColumnarBatchHandle(ct)
       testCloseWhileSpilling(handle, SpillFramework.stores.deviceStore, sleepBeforeCloseNanos)
     }
+  }
+
+  test("normal unspill on SpillableHostBuffer") {
+    val buffer = HostMemoryBuffer.allocate(1024)
+
+    withResource(SpillableHostBuffer(buffer, 1000, 0))(shb => {
+      withResource(shb.getHostBuffer())(ret =>
+        assert(ret eq buffer)
+      )
+
+      SpillFramework.stores.hostStore.spill(1000)
+
+      // unspill = false, by default
+      var b1: HostMemoryBuffer = null
+      withResource(shb.getHostBuffer())(ret => {
+        b1 = ret
+        assert(ret ne buffer)
+      })
+      withResource(shb.getHostBuffer())(ret => {
+        assert(ret ne b1)
+      })
+
+      // unspill = true, so the buffer is unspilled from disk
+      var b2: HostMemoryBuffer = null
+      withResource(shb.getHostBuffer(unspill = true))(ret => {
+        b2 = ret
+      })
+      withResource(shb.getHostBuffer())(ret => {
+        assert(ret eq b2)
+      })
+      withResource(shb.getHostBuffer(unspill = true))(ret => {
+        assert(ret eq b2)
+      })
+    })
+  }
+
+  test("unspill on SpillableHostBuffer interrupting a spill") {
+    val buffer = HostMemoryBuffer.allocate(1024)
+    withResource(SpillableHostBuffer(buffer, 1000, 0)) ( shb => {
+
+      val builder = spy(DiskHandleStore.makeBuilder)
+      // We enhance a DiskHandleBuilder so that the spilling thread (current thread)
+      // will wait for the buffer to be unspilled after spilling is triggered
+      // but before the spilling result is committed
+      doAnswer { invocation =>
+        val thread = new Thread(() => {
+          withResource(shb.getHostBuffer(unspill = true))(ret => {
+            assert(ret eq buffer)
+          })
+        })
+        thread.start()
+        thread.join()
+        invocation.callRealMethod()
+      }.when(builder).close()
+
+
+      // The reason why using a workaround in Java mock util is that scala version will meet a
+      // wield compile error: when() requires an argument which has to be 'a method call on a mock':
+      // val mockedStatic = mockStatic(classOf[DiskHandleStore])
+      // mockedStatic.when(
+      //  () => DiskHandleStore.makeBuilder()
+      // ).thenReturn(builder)
+
+      println("builder blockid:" + builder.blockId)
+      withResource(DiskHandleBuilderMockUtil.mock(builder)) { _ =>
+
+        DiskHandleBuilderMockUtil.foo()
+
+        val x= DiskHandleStore.makeBuilder
+        println(x.blockId)
+
+        SpillFramework.stores.hostStore.spill(1000)
+
+        verify(builder, times(1)).close()
+        verify(builder, times(1)).getChannel
+
+        // The spill is interrupted, so if we try to get the buffer again,
+        // it's still the original one
+        withResource(shb.getHostBuffer())(ret => {
+          assert(ret eq buffer)
+        })
+        //      mockedStatic.close()
+      }
+
+    }
+    )
+
   }
 
 }
