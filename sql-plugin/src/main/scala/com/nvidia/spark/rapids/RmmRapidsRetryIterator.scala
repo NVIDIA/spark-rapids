@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -622,7 +622,7 @@ object RmmRapidsRetryIterator extends Logging {
         }
         firstAttempt = false
         if (doSplit) {
-          if (BOOKEEP_MEMORY) {
+          if (BOOKKEEP_MEMORY) {
             logMemoryBookkeeping()
           }
           attemptIter.split(isFromGpuOom)
@@ -789,10 +789,10 @@ object RmmRapidsRetryIterator extends Logging {
    * Log memory footprint when GPU OOM or CPU OOM happens.
    */
 
-  val BOOKEEP_MEMORY: Boolean =
+  val BOOKKEEP_MEMORY: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
   // track the callstack for each memory allocation, don't enable it unless really needed
-  val BOOKEEP_MEMORY_CALLSTACK: Boolean =
+  val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
 
   private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat

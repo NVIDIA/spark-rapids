@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
 import com.nvidia.spark.rapids.HostAlloc.bookkeepHostMemoryFree
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{BOOKEEP_MEMORY, BOOKEEP_MEMORY_CALLSTACK}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{BOOKKEEP_MEMORY, BOOKKEEP_MEMORY_CALLSTACK}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 import com.nvidia.spark.rapids.spill.SpillFramework
 
@@ -212,7 +212,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       if (ret.isDefined) {
         val metrics = GpuTaskMetrics.get
         metrics.incHostBytesAllocated(amount)
-        if (BOOKEEP_MEMORY) {
+        if (BOOKKEEP_MEMORY) {
           val threadId = Thread.currentThread().getId
           HostAlloc.bookkeepHostMemoryAlloc(ret.get.getAddress, threadId, amount)
         }
@@ -415,7 +415,7 @@ object HostAlloc extends Logging {
 
   private def bookkeepHostMemoryAlloc(addr: Long, threadId: Long, amount: Long): Unit = {
     HostAlloc.addr2threadId.put(addr, threadId)
-    if (BOOKEEP_MEMORY_CALLSTACK) {
+    if (BOOKKEEP_MEMORY_CALLSTACK) {
       val mu = muPerThreads.computeIfAbsent(threadId, _ => new PerThreadMemoryUsageInDetails)
       val callstack = Thread.currentThread().getStackTrace.mkString(" at ")
       mu.add(addr, amount, callstack)
@@ -426,7 +426,7 @@ object HostAlloc extends Logging {
   }
 
   private def bookkeepHostMemoryFree(ptr: Long, amount: Long) = {
-    if (BOOKEEP_MEMORY) {
+    if (BOOKKEEP_MEMORY) {
       val threadId = HostAlloc.addr2threadId.get(ptr)
       if (threadId != null) {
         val mu = HostAlloc.muPerThreads.get(threadId)
@@ -444,7 +444,7 @@ object HostAlloc extends Logging {
   }
 
   def getHostAllocBookkeepSummary(): String = {
-    if (BOOKEEP_MEMORY) {
+    if (BOOKKEEP_MEMORY) {
       val sb = new StringBuilder
       sb.append("<<Host Memory Bookkeeping>>\n")
       muPerThreads.forEach((threadId, mu) => {
