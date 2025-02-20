@@ -40,13 +40,14 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuHashPartitioningBase
+import com.nvidia.spark.rapids.{GpuHashPartitioningBase, HashMode, Murmur3Mode}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, StatefulOpClusteredDistribution}
 
-case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
-  extends GpuHashPartitioningBase(expressions, numPartitions) {
+case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int,
+    hashMode: HashMode = Murmur3Mode)
+  extends GpuHashPartitioningBase(expressions, numPartitions, hashMode) {
 
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {

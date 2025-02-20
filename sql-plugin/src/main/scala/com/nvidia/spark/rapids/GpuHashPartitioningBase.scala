@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,22 +20,55 @@ import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, PartitionedTable}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuPmod}
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.expressions.{Expression, HiveHash, Murmur3Hash}
+import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
+import org.apache.spark.sql.rapids.{GpuHashExpression, GpuHiveHash, GpuMurmur3Hash, GpuPmod}
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitions: Int)
-  extends GpuExpression with ShimExpression with GpuPartitioning with Serializable {
+/**
+ * Trait requiring a hash function to provide the partitioning functionality for its children.
+ */
+trait GpuHashPartitioner extends Serializable {
+  protected def hashFunc: GpuHashExpression
+
+  protected final def hashPartitionAndClose(batch: ColumnarBatch, numPartitions: Int,
+      nvtxName: String): PartitionedTable = {
+    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
+          withResource(hashFunc.columnarEval(cb)) { hash =>
+            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+              hash.getBase.pmod(partsLit, DType.INT32)
+            }
+          }
+        }
+        withResource(parts) { parts =>
+          withResource(GpuColumnVector.from(cb)) { table =>
+            table.partition(parts, numPartitions)
+          }
+        }
+      }
+    }
+  }
+}
+
+abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitions: Int,
+    hashMode: HashMode)
+  extends GpuExpression with ShimExpression with GpuPartitioning with GpuHashPartitioner {
 
   override def children: Seq[Expression] = expressions
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
+  override lazy val hashFunc: GpuHashExpression =
+    GpuHashPartitioningBase.toHashExpr(hashMode, expressions)
+
   def partitionInternalAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val types = GpuColumnVector.extractTypes(batch)
-    val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(batch, expressions,
-      numPartitions, "Calculate part")
+    val partedTable = hashPartitionAndClose(batch, numPartitions, "Calculate part")
     withResource(partedTable) { partedTable =>
       val parts = partedTable.getPartitions
       val tp = partedTable.getTable
@@ -60,34 +93,48 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
     }
   }
 
-  def partitionIdExpression: GpuExpression = GpuPmod(
-    GpuMurmur3Hash(expressions, GpuHashPartitioningBase.DEFAULT_HASH_SEED),
-    GpuLiteral(numPartitions))
+  def partitionIdExpression: GpuExpression = GpuPmod(hashFunc, GpuLiteral(numPartitions))
 }
 
-object GpuHashPartitioningBase {
+object GpuHashPartitioningBase extends Logging {
 
   val DEFAULT_HASH_SEED: Int = 42
 
-  def hashPartitionAndClose(batch: ColumnarBatch, keys: Seq[Expression], numPartitions: Int,
-      nvtxName: String, seed: Int = DEFAULT_HASH_SEED): PartitionedTable = {
-    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-    RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
-      withResource(sb.getColumnarBatch()) { cb =>
-        val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
-          withResource(GpuMurmur3Hash.compute(cb, keys, seed)) { hash =>
-            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
-              hash.pmod(partsLit, DType.INT32)
-            }
-          }
-        }
-        withResource(parts) { parts =>
-          withResource(GpuColumnVector.from(cb)) { table =>
-            table.partition(parts, numPartitions)
-          }
-        }
-      }
-    }
+  private[rapids] def toHashExpr(hashMode: HashMode, keys: Seq[Expression],
+      seed: Int = DEFAULT_HASH_SEED): GpuHashExpression = hashMode match {
+    case Murmur3Mode => GpuMurmur3Hash(keys, seed)
+    case HiveMode => GpuHiveHash(keys)
+    case _ => throw new UnsupportedOperationException(s"Unsupported hash mode: $hashMode")
   }
 
+  private[rapids] def hashModeFromCpu(cpuHp: HashPartitioning, conf: RapidsConf): HashMode = {
+    var hashMode: HashMode = Murmur3Mode // default to murmur3
+    if (conf.isHashFuncPartitioningEnabled && conf.isIncompatEnabled) {
+      // One Spark distribution introduces a new field to define the hash function
+      // used by HashPartitioning. Since there is no shim for it, so here leverages
+      // Java reflection to access it.
+      try {
+        val hashModeMethod = cpuHp.getClass.getMethod("hashingFunctionClass")
+        hashMode = hashModeMethod.invoke(cpuHp) match {
+          case m if m == classOf[Murmur3Hash] => Murmur3Mode
+          case h if h == classOf[HiveHash] => HiveMode
+          case o => UnsupportedMode(o.asInstanceOf[Class[_]].getSimpleName)
+        }
+        logInfo(s"Found hash function '$hashMode' from cpu hash partitioning.")
+      } catch {
+        case _: NoSuchMethodException => // not the customized spark distributions, noop
+          logInfo("No hash function field is found in cpu hash partitioning.")
+      }
+    }
+    hashMode
+  }
+
+}
+
+sealed trait HashMode extends Serializable
+
+case object Murmur3Mode extends HashMode
+case object HiveMode extends HashMode
+case class UnsupportedMode(modeName: String) extends HashMode {
+  override def toString: String = modeName
 }

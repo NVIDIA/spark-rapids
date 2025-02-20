@@ -4077,21 +4077,30 @@ object GpuOverrides extends Logging {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
 
+        private lazy val hashMode = GpuHashPartitioningBase.hashModeFromCpu(hp, conf)
+
         override def tagPartForGpu(): Unit = {
-          val arrayWithStructsHashing = hp.expressions.exists(e =>
-            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-              {
-                case ArrayType(_: StructType, _) => true
-                case _ => false
-              })
-          )
-          if (arrayWithStructsHashing) {
-            willNotWorkOnGpu("hashing arrays with structs is not supported")
+          val cpuHashFunc: Option[Expression] = this.hashMode match {
+            case HiveMode => Some(HiveHash(hp.expressions))
+            case Murmur3Mode =>
+              Some(Murmur3Hash(hp.expressions, GpuHashPartitioningBase.DEFAULT_HASH_SEED))
+            case _ =>
+              willNotWorkOnGpu(s"Hash function $hashMode is not supported on GPU")
+              None
+          }
+          cpuHashFunc.foreach { chf =>
+            val hfMeta = GpuOverrides.wrapExpr(chf, conf, None)
+            hfMeta.tagForGpu()
+            if (!hfMeta.canThisBeReplaced) {
+              willNotWorkOnGpu(s"the hash function: ${chf.getClass.getSimpleName}" +
+                s" can not run on GPU. Details: ${hfMeta.explain(all = false)}")
+            }
           }
         }
 
         override def convertToGpu(): GpuPartitioning =
-          GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
+          GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions,
+            this.hashMode)
       }),
     part[RangePartitioning](
       "Range partitioning",
