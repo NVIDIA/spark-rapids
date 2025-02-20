@@ -82,10 +82,12 @@ abstract class GpuShuffleMetaBase(
   override val availableRuntimeDataTransition: Boolean =
     childPlans.head.availableRuntimeDataTransition
 
+  // For customized Spark, the subclass MUST override and return true.
+  // For vanilla Spark, use the default value false
+  def incompatShuffleOrigin: Boolean = false
+
   override def tagPlanForGpu(): Unit = {
-    if (conf.isIncompatEnabled && conf.incompatShuffleOrigin) {
-      // For customized Spark version, it has specific origin, skip the checking
-    } else {
+    if (!incompatShuffleOrigin) {
       // For vanilla Spark
       if (!ShuffleOriginUtil.isSupported(shuffle.shuffleOrigin)) {
         willNotWorkOnGpu(s"${shuffle.shuffleOrigin} not supported on GPU")

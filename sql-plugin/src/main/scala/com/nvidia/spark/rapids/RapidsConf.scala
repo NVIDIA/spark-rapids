@@ -849,12 +849,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(false)
 
-  val INCOMPATIBLE_SHUFFLE_SKIP_CHECK_ORIGIN =
-    conf("spark.rapids.sql.incompatibleOps.shuffle.skipCheckOrigin")
-        .doc("Skip checking the shuffle origin to adapt specific Spark version")
-        .booleanConf
-        .createWithDefault(false)
-
   val IMPROVED_FLOAT_OPS = conf("spark.rapids.sql.improvedFloatOps.enabled")
     .doc("For some floating point operations spark uses one way to compute the value " +
       "and the underlying cudf implementation can use an improved algorithm. " +
@@ -2707,8 +2701,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
   lazy val incompatDateFormats: Boolean = get(INCOMPATIBLE_DATE_FORMATS)
-
-  lazy val incompatShuffleOrigin: Boolean = get(INCOMPATIBLE_SHUFFLE_SKIP_CHECK_ORIGIN)
 
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
