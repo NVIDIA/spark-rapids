@@ -3274,7 +3274,7 @@ object GpuOverrides extends Logging {
             x: Expression,
             start: Expression,
             length: Expression): GpuExpression =
-          GpuListSlice(x, start, length)
+          GpuSlice(x, start, length)
       }),
     expr[ArrayJoin](
       "Concatenates the elements of the given array using the delimiter and an optional " +
