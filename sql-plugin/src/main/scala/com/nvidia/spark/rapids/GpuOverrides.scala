@@ -3256,6 +3256,26 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
+    expr[Slice](
+      "Subsets array x starting from index start (array indices start at 1, " +
+        "or starting from the end if start is negative) with the specified length.",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("x",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.BINARY + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("start", TypeSig.INT, TypeSig.INT),
+          ParamCheck("length", TypeSig.INT, TypeSig.INT))),
+      (in, conf, p, r) => new TernaryExprMeta[Slice](in, conf, p, r) {
+        override def convertToGpu(
+            x: Expression,
+            start: Expression,
+            length: Expression): GpuExpression =
+          GpuListSlice(x, start, length)
+      }),
     expr[ArrayJoin](
       "Concatenates the elements of the given array using the delimiter and an optional " +
         "string to replace nulls. If no value is set for nullReplacement, any null value " +
