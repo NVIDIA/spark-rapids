@@ -423,11 +423,6 @@ class KudoConcatValiditySuite extends AnyFunSuite {
 
       ret.name = name
       ret
-
     }
-
-
   }
-
-
 }
