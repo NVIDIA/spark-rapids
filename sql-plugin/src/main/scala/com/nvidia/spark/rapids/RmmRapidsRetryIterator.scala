@@ -802,7 +802,7 @@ object RmmRapidsRetryIterator extends Logging {
 
     // print device memory bookkeeping
     // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
-    // logError(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
 
     // print stack trace
     val sb = new StringBuilder("<<Jstack Details>>\n\n")
