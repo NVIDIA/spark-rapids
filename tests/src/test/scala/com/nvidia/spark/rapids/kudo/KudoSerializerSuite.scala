@@ -39,7 +39,7 @@ class KudoSerializerSuite extends AnyFunSuite {
         for (startRow <- 0 until rowCount by sliceSize) {
           tableSlices += TableSlice(startRow, Math.min(sliceSize, rowCount - startRow), expected)
         }
-        checkMergeTable(expected, tableSlices)
+        checkMergeTable(expected, tableSlices.toSeq)
       }
     } catch {
       case e: Exception => throw new RuntimeException(e)
@@ -236,7 +236,7 @@ class KudoSerializerSuite extends AnyFunSuite {
       2 until 512 foreach { i => col1.+=(i) }
 
       val table1 = new Table.TestBuilder()
-        .column(col1: _*)
+        .column(col1.toSeq: _*)
         .build()
       tables.+=(table1)
 
