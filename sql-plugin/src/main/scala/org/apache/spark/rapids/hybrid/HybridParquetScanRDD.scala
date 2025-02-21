@@ -29,6 +29,7 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
                            outputAttr: Seq[Attribute],
                            outputSchema: StructType,
                            coalesceGoal: CoalesceSizeGoal,
+                           preloadedCapacity: Int,
                            metrics: Map[String, GpuMetric],
                          ) extends RDD[InternalRow](scanRDD.sparkContext, Nil) {
 
@@ -37,17 +38,27 @@ class HybridParquetScanRDD(scanRDD: RDD[ColumnarBatch],
   override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] = {
     // the wrapping Iterator for the underlying HybridNativeScan task
     val hybridScanIter = scanRDD.compute(split, context)
-
+    // wraps the iterator which converts (small) VeloxBatches into (large) RapidsBatches
     val schema = StructType(outputAttr.map { ar =>
       StructField(ar.name, ar.dataType, ar.nullable)
     })
-    val hostResultIter = new CoalesceConvertIterator(
-      hybridScanIter,
-      coalesceGoal.targetSizeBytes,
-      schema,
-      metrics
-    )
-    val deviceIter = CoalesceConvertIterator.hostToDevice(hostResultIter, outputAttr, metrics)
+    val coalesceConverter = new CoalesceConvertIterator(
+      hybridScanIter, coalesceGoal.targetSizeBytes.toInt, schema, metrics)
+
+    val hostProducer: RapidsHostBatchProducer = if (preloadedCapacity > 0) {
+      // prefetches the result of ParquetScan via an asynchronous producer
+      require(metrics.contains("preloadWaitTime"),
+        "the specific metric for preloadWaitTime has not been setup")
+      new PrefetchHostBatchProducer(context.taskAttemptId(),
+        coalesceConverter,
+        preloadedCapacity,
+        metrics("preloadWaitTime"))
+    } else {
+      // bypasses via a synchronous producer which changes nothing
+      new SyncHostBatchProducer(coalesceConverter)
+    }
+
+    val deviceIter = CoalesceConvertIterator.hostToDevice(hostProducer, outputAttr, metrics)
 
     // TODO: SPARK-25083 remove the type erasure hack in data source scan
     new InterruptibleIterator(context, deviceIter.asInstanceOf[Iterator[InternalRow]])
