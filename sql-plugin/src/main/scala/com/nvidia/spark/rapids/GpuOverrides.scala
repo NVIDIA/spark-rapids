@@ -4077,7 +4077,7 @@ object GpuOverrides extends Logging {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
 
-        private lazy val hashMode = GpuHashPartitioningBase.hashModeFromCpu(hp, conf)
+        private lazy val hashMode = GpuHashPartitioningBase.hashModeFromCpu(hp, this.conf)
 
         override def tagPartForGpu(): Unit = {
           val cpuHashFunc: Option[Expression] = this.hashMode match {
@@ -4089,7 +4089,7 @@ object GpuOverrides extends Logging {
               None
           }
           cpuHashFunc.foreach { chf =>
-            val hfMeta = GpuOverrides.wrapExpr(chf, conf, None)
+            val hfMeta = GpuOverrides.wrapExpr(chf, this.conf, None)
             hfMeta.tagForGpu()
             if (!hfMeta.canThisBeReplaced) {
               willNotWorkOnGpu(s"the hash function: ${chf.getClass.getSimpleName}" +
