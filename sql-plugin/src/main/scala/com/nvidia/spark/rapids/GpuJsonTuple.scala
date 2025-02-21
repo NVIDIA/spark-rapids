@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -32,6 +33,10 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
   with ShimExpression {
   override def nullable: Boolean = false // a row is always returned
   @transient private lazy val fieldExpressions: Seq[Expression] = children.tail
+  val conf = SQLConf.get
+  val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+  val tmp = conf.getConfString("spark.sql.test.multiget.parallel", null)
+  val parallel = Option(tmp).map(_.toInt)
 
   override def elementSchema: StructType = StructType(fieldExpressions.zipWithIndex.map {
     case (_, idx) => StructField(s"c$idx", StringType, nullable = true)
@@ -78,7 +83,7 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
         var validPathsIndex = 0
         withResource(new Array[ColumnVector](fieldInstructions.length)) { validPathColumns =>
           withResource(JSONUtils.getJsonObjectMultiplePaths(
-              json, validPaths, -1, -1)) { chunkedResult =>
+              json, validPaths, 4 * targetBatchSize, parallel.getOrElse(-1))) { chunkedResult =>
               chunkedResult.foreach { cr =>
                 validPathColumns(validPathsIndex) = cr.incRefCount()
                 validPathsIndex += 1
