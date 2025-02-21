@@ -1044,7 +1044,11 @@ object GpuOverrides extends Logging {
         }),
     expr[RowNumber](
       "Window function that returns the index for the row within the aggregation window",
-      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT),
+      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
+            TypeSig.all))),
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuRowNumber
       }),
