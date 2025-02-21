@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,7 +112,11 @@ object TestUtils extends Assertions {
           case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
           case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
           case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
-          case dt if dt.isDecimalType && dt.isBackedByLong =>
+          case DType.TIMESTAMP_DAYS => assertResult(e.getInt(i))(a.getInt(i))
+          case DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS |
+               DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS
+            => assertResult(e.getLong(i))(a.getLong(i))
+          case dt if dt.isDecimalType =>
             assertResult(e.getBigDecimal(i))(a.getBigDecimal(i))
           case DType.LIST | DType.STRUCT =>
             (0 until e.getNumChildren).foreach { childIdx =>
