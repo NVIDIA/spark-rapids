@@ -4083,7 +4083,7 @@ object GpuOverrides extends Logging {
       .map(r => r.wrap(part, conf, parent, r).asInstanceOf[PartMeta[INPUT]])
       .getOrElse(new RuleNotFoundPartMeta(part, conf, parent))
 
-  val parts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Seq(
+  private val commonParts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Seq(
     part[HashPartitioning](
       "Hash based partitioning",
       // This needs to match what murmur3 supports.
@@ -4147,6 +4147,9 @@ object GpuOverrides extends Logging {
         override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
+
+  val parts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] =
+    commonParts ++ SparkShimImpl.getPartitionings
 
   def wrapDataWriteCmds[INPUT <: DataWritingCommand](
       writeCmd: INPUT,

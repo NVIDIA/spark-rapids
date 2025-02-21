@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,8 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{CONCAT_BUFFER_TIME, CONCAT_HEADER_TIME}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer, KudoTable}
+import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -56,8 +55,6 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
-    CONCAT_HEADER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_HEADER_TIME),
-    CONCAT_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_BUFFER_TIME),
   )
 
   override protected val outputBatchesLevel = MODERATE_LEVEL
@@ -232,12 +229,9 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
   override def close(): Unit = {}
 }
 
-class KudoTableOperator(
-    kudo: Option[KudoSerializer] ,
-    kudoMergeHeaderTime: GpuMetric,
-    kudoMergeBufferTime: GpuMetric) extends SerializedTableOperator[KudoSerializedTableColumn] {
+class KudoTableOperator(kudo: Option[KudoSerializer])
+  extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
-  private val kudoTables = new util.ArrayList[KudoTable]()
 
   override def getDataLen(column: KudoSerializedTableColumn): Long = column.kudoTable.getHeader
     .getTotalDataLen
@@ -252,17 +246,11 @@ class KudoTableOperator(
       val totalRowsNum = columns.map(getNumRows).sum
       RowCountOnlyMergeResult(totalRowsNum)
     } else {
-      kudoTables.clear()
-      kudoTables.ensureCapacity(columns.length)
-      columns.foreach { column =>
-        kudoTables.add(column.kudoTable)
-      }
 
+      val kudoTables = columns.map(_.kudoTable)
       val result = kudo.get.mergeOnHost(kudoTables)
-      kudoMergeHeaderTime += result.getRight.getCalcHeaderTime
-      kudoMergeBufferTime += result.getRight.getMergeIntoHostBufferTime
 
-      KudoHostMergeResultWrapper(result.getLeft)
+      KudoHostMergeResultWrapper(result)
     }
   }
 }
@@ -390,7 +378,7 @@ class KudoHostShuffleCoalesceIterator(
     } else {
       None
     }
-    new KudoTableOperator(kudoSer, metricsMap(CONCAT_HEADER_TIME), metricsMap(CONCAT_BUFFER_TIME))
+    new KudoTableOperator(kudoSer)
   }
 }
 
