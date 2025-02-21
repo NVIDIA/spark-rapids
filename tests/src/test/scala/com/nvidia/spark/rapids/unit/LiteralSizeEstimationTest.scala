@@ -32,7 +32,8 @@ class LiteralSizeEstimationTest extends GpuUnitTests {
   private def testLiteralSizeEstimate(lit: Any, litType: DataType): Unit = {
     val col = withResource(GpuScalar.from(lit, litType))(ColumnVector.fromScalar(_, numRows))
     val actualSize = withResource(col)(_.getDeviceMemorySize)
-    val estimatedSize = PreProjectSplitIterator.calcSizeForLiteral(lit, litType, numRows)
+    val estimatedSize = PreProjectSplitIterator.calcSizeForLiteral(lit, litType, numRows,
+      lit == null, Some(1))
     assertResult(actualSize)(estimatedSize)
   }
 
