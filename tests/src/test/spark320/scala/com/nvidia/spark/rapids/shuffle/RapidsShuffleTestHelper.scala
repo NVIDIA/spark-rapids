@@ -42,10 +42,11 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsConf, RapidsShuffleHandle, RmmSparkRetrySuiteBase, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.MoreMockitoSugar
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
-import org.mockito.Mockito.{spy, when}
+import org.mockito.Mockito.when
 import org.scalatest.BeforeAndAfterEach
 import org.scalatestplus.mockito.MockitoSugar
 
@@ -72,7 +73,7 @@ class TestShuffleMetricsUpdater extends ShuffleMetricsUpdater {
 abstract class RapidsShuffleTestHelper
     extends RmmSparkRetrySuiteBase
       with BeforeAndAfterEach
-      with MockitoSugar {
+      with MockitoSugar with MoreMockitoSugar {
   var mockTransaction: Transaction = _
   var mockConnection: MockClientConnection = _
   var mockTransport: RapidsShuffleTransport = _
@@ -176,7 +177,7 @@ abstract class RapidsShuffleTestHelper
   }
 }
 
-object RapidsShuffleTestHelper extends MockitoSugar {
+object RapidsShuffleTestHelper extends MockitoSugar with MoreMockitoSugar {
   def buildMockTableMeta(tableId: Int, contigTable: ContiguousTable): TableMeta = {
     MetaUtils.buildTableMeta(tableId, contigTable)
   }

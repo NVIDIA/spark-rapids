@@ -40,6 +40,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
+import com.nvidia.spark.rapids.MoreMockitoSugar
 import org.mockito.{Mock, MockitoAnnotations}
 import org.mockito.Answers.RETURNS_SMART_NULLS
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
@@ -152,7 +153,7 @@ class TestIndexShuffleBlockResolver(
 class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
-    with MockitoSugar
+    with MockitoSugar with MoreMockitoSugar
     with ShuffleChecksumTestHelper
     with Logging {
   @scala.annotation.nowarn("msg=consider using immutable val")

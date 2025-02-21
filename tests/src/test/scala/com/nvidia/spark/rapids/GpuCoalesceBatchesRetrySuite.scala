@@ -29,7 +29,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesRetrySuite
   extends RmmSparkRetrySuiteBase
-    with MockitoSugar {
+    with MockitoSugar with MoreMockitoSugar {
 
   private def buildBatchesToCoalesce(): Seq[ColumnarBatch] = {
     (0 until 10).map { _ =>

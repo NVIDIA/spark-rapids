@@ -20,7 +20,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
+import com.nvidia.spark.rapids.{MetaUtils, MoreMockitoSugar, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
@@ -49,7 +49,7 @@ class MockRapidsShuffleRequestHandler(mockBuffers: Seq[RapidsShuffleHandle])
   }
 }
 
-class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
+class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with MoreMockitoSugar {
 
   def setupMocks(deviceBuffers: Seq[DeviceMemoryBuffer]): MockRapidsShuffleRequestHandler = {
     val mockBuffers = deviceBuffers.map { deviceBuffer =>

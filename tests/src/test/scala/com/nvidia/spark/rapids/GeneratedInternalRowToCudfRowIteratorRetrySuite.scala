@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 import com.nvidia.spark.rapids.spill.{SpillableColumnarBatchHandle, SpillableDeviceStore, SpillFramework}
 import org.mockito.ArgumentMatchers.any
-import org.mockito.Mockito.{doAnswer, spy}
+import org.mockito.Mockito.doAnswer
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import org.scalatestplus.mockito.MockitoSugar
@@ -32,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GeneratedInternalRowToCudfRowIteratorRetrySuite
     extends RmmSparkRetrySuiteBase
-        with MockitoSugar {
+        with MockitoSugar with MoreMockitoSugar {
   private def buildBatch(): ColumnarBatch = {
     val reductionTable = new Table.TestBuilder()
         .column(5L, null.asInstanceOf[java.lang.Long], 3L, 1L)

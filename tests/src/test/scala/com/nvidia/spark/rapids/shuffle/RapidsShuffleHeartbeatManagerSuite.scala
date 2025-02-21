@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import com.nvidia.spark.rapids.{RapidsConf, RapidsExecutorUpdateMsg, RapidsShuffleHeartbeatEndpoint, RapidsShuffleHeartbeatHandler, RapidsShuffleHeartbeatManager}
+import com.nvidia.spark.rapids.{MoreMockitoSugar, RapidsConf, RapidsExecutorUpdateMsg, RapidsShuffleHeartbeatEndpoint, RapidsShuffleHeartbeatHandler, RapidsShuffleHeartbeatManager}
 import org.mockito.Mockito._
 
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-class RapidsShuffleHeartbeatManagerSuite extends RapidsShuffleTestHelper {
+class RapidsShuffleHeartbeatManagerSuite extends RapidsShuffleTestHelper with MoreMockitoSugar {
   test("adding an executor") {
     val hbMgr = new RapidsShuffleHeartbeatManager(1000, 2000)
     val updateMsg = hbMgr.registerExecutor(

@@ -147,7 +147,7 @@ import org.apache.spark.storage.BlockId
 /**
  * Common interface for all handles in the spill framework.
  */
-trait StoreHandle extends AutoCloseable {
+trait StoreHandle extends AutoCloseable with Logging {
   /**
    * Approximate size of this handle, used in three scenarios:
    * - Used by callers when accumulating up to a batch size for size goals.
@@ -331,8 +331,10 @@ object SpillableHostBufferHandle extends Logging {
 class SpillableHostBufferHandle private (
     val sizeInBytes: Long,
     private[spill] override var host: Option[HostMemoryBuffer] = None,
-    private[spill] var disk: Option[DiskHandle] = None)
-  extends HostSpillableHandle[HostMemoryBuffer] {
+    private[spill] var disk: Option[DiskHandle] = None,
+    private[spill] var spillingInterrupted: Boolean = false
+)
+  extends HostSpillableHandle[HostMemoryBuffer] with Logging {
 
   override val approxSizeInBytes: Long = sizeInBytes
 
@@ -347,7 +349,7 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  def materialize(): HostMemoryBuffer = {
+  def materialize(unspill: Boolean = false): HostMemoryBuffer = {
     var materialized: HostMemoryBuffer = null
     var diskHandle: DiskHandle = null
     synchronized {
@@ -361,6 +363,10 @@ class SpillableHostBufferHandle private (
       } else if (host.isDefined) {
         materialized = host.get
         materialized.incRefCount()
+
+        if (unspill && spilling) {
+          spillingInterrupted = true
+        }
       } else {
         throw new IllegalStateException(
           "open handle has no underlying buffer")
@@ -371,61 +377,94 @@ class SpillableHostBufferHandle private (
         diskHandle.materializeToHostMemoryBuffer(hmb)
         hmb
       }
+      val hostStr = if (host.isDefined) host.get.getAddress else "un_defined"
+
+
+      logError(s"materialized host memory buffer ${materialized.getAddress} " +
+        s"for ${System.identityHashCode(this)} , disk defined: ${disk.isDefined}, " +
+        s"host defined: ${hostStr}, size: $sizeInBytes")
+
+      //      if(duplicateMap.putIfAbsent(
+      //        (materialized.getAddress, System.identityHashCode(this)), "") != null) {
+      //        throw new Error(
+      //          s"attempting to materialize an existing handle")
+      //      }
     }
+
+    if (unspill) {
+      synchronized {
+        if (!closed && disk.isDefined) {
+          disk = None
+          host = Some(materialized)
+          materialized.incRefCount()
+          SpillFramework.stores.hostStore.trackNoSpill(this)
+          logError(s"unspilled host memory buffer ${materialized.getAddress} " +
+            s"for ${System.identityHashCode(this)}")
+        }
+      }
+    }
+
     materialized
   }
 
   override def spill(): Long = {
-    if (!spillable) {
-      0L
-    } else {
-      val thisThreadSpills = synchronized {
-        if (!closed && disk.isEmpty && host.isDefined && !spilling) {
-          spilling = true
-          // incRefCount here so that if close() is called
-          // while we are spilling, we will prevent the buffer being freed
-          host.get.incRefCount()
-          true
-        } else {
-          false
-        }
+    val thisThreadSpills = synchronized {
+      if (!spillable) {
+        return 0
       }
-      if (thisThreadSpills) {
-        withResource(host.get) { buf =>
-          withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
-            val outputChannel = diskHandleBuilder.getChannel
-            // the spill IO is non-blocking as it won't impact dev or host directly
-            // instead we "atomically" swap the buffers below once they are ready
-            GpuTaskMetrics.get.spillToDiskTime {
-              val iter = new HostByteBufferIterator(buf)
-              iter.foreach { bb =>
-                try {
-                  while (bb.hasRemaining) {
-                    outputChannel.write(bb)
-                  }
-                } finally {
-                  RapidsStorageUtils.dispose(bb)
+      if (!closed && disk.isEmpty && host.isDefined && !spilling) {
+        logError(s"spilling host memory buffer ${host.get.getAddress} for " +
+          s"${System.identityHashCode(this)}")
+        spilling = true
+        // incRefCount here so that if close() is called
+        // while we are spilling, we will prevent the buffer being freed
+        host.get.incRefCount()
+        true
+      } else {
+        false
+      }
+    }
+    if (thisThreadSpills) {
+      withResource(host.get) { buf =>
+        withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+          val outputChannel = diskHandleBuilder.getChannel
+          // the spill IO is non-blocking as it won't impact dev or host directly
+          // instead we "atomically" swap the buffers below once they are ready
+          GpuTaskMetrics.get.spillToDiskTime {
+            val iter = new HostByteBufferIterator(buf)
+            iter.foreach { bb =>
+              try {
+                while (bb.hasRemaining) {
+                  outputChannel.write(bb)
                 }
+              } finally {
+                RapidsStorageUtils.dispose(bb)
               }
             }
-            var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
-            synchronized {
-              spilling = false
+          }
+          val staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
+          synchronized {
+            spilling = false
+
+            if (!spillingInterrupted) {
               if (closed) {
                 staging.foreach(_.close())
-                staging = None
                 doClose()
               } else {
                 disk = staging
               }
+              releaseHostResource()
+              sizeInBytes
+            } else {
+              staging.foreach(_.close())
+              spillingInterrupted = false
+              0
             }
-            releaseHostResource()
           }
         }
-        sizeInBytes
-      } else {
-        0
       }
+    } else {
+      0
     }
   }
 
@@ -1214,6 +1253,8 @@ trait SpillableStore[T <: SpillableHandle]
         plan.add(handle)
       }
     }
+    logError(s"makeSpillPlan for $spillNeeded, handles: ${handles.size()}, " +
+      s"amountToSpill: $amountToSpill")
     plan
   }
 
@@ -1670,7 +1711,7 @@ object SpillFramework extends Logging {
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
   var storesInternal: SpillableStores = _
-  
+
   def stores: SpillableStores = {
     if (storesInternal == null) {
       throw new IllegalStateException(

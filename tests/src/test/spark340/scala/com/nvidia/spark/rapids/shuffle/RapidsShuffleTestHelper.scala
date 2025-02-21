@@ -43,7 +43,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
-import org.mockito.Mockito.{spy, when}
+import org.mockito.Mockito.when
 import org.scalatest.BeforeAndAfterEach
 import org.scalatestplus.mockito.MockitoSugar
 
@@ -70,7 +70,7 @@ class TestShuffleMetricsUpdater extends ShuffleMetricsUpdater {
 abstract class RapidsShuffleTestHelper
     extends RmmSparkRetrySuiteBase
       with BeforeAndAfterEach
-      with MockitoSugar {
+      with MockitoSugar with MoreMockitoSugar {
   var mockTransaction: Transaction = _
   var mockConnection: MockClientConnection = _
   var mockTransport: RapidsShuffleTransport = _
