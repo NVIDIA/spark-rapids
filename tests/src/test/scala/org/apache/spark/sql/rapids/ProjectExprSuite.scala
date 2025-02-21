@@ -23,7 +23,7 @@ import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
-import org.mockito.Mockito.{mock, spy, when}
+import org.mockito.Mockito.{mock, when}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -35,7 +35,7 @@ import org.apache.spark.sql.tests.datagen.DataGenExprShims
 import org.apache.spark.sql.types._
 
 
-class ProjectExprSuite extends SparkQueryCompareTestSuite {
+class ProjectExprSuite extends SparkQueryCompareTestSuite with MoreMockitoSugar {
   def forceHostColumnarToGpu(): SparkConf = {
     // turns off BatchScanExec, so we get a CPU BatchScanExec together with a HostColumnarToGpu
     new SparkConf().set("spark.rapids.sql.exec.BatchScanExec", "false")

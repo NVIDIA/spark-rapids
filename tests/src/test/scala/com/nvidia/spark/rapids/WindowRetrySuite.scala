@@ -29,7 +29,7 @@ import org.apache.spark.sql.types.{DataType, DataTypes, IntegerType, LongType}
 
 class WindowRetrySuite
     extends RmmSparkRetrySuiteBase
-        with MockitoSugar {
+        with MockitoSugar with MoreMockitoSugar {
   private def buildInputBatch() = {
     val windowTable = new Table.TestBuilder()
       .column(1.asInstanceOf[java.lang.Integer], 1, 1, 1)

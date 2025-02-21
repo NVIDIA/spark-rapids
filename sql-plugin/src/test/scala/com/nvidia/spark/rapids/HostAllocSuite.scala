@@ -40,7 +40,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   private val timeoutMs = 10000
 
   def setMockContext(taskAttemptId: Long): Unit = {
-    val context = mock[TaskContext]
+    val context = mock(classOf[TaskContext])
     when(context.taskAttemptId()).thenReturn(taskAttemptId)
     TrampolineUtil.setTaskContext(context)
   }

@@ -33,7 +33,7 @@ import org.apache.spark.sql.types.{DataType, LongType}
 
 class WithRetrySuite
     extends AnyFunSuite
-        with BeforeAndAfterEach with MockitoSugar {
+        with BeforeAndAfterEach with MockitoSugar with MoreMockitoSugar {
 
   private def buildBatch: SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()

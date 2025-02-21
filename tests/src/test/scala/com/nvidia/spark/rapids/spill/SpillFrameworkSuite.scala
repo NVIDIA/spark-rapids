@@ -36,8 +36,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class SpillFrameworkSuite
   extends FunSuiteWithTempDir
-    with MockitoSugar
-    with BeforeAndAfterAll {
+    with BeforeAndAfterAll with MockitoSugar with MoreMockitoSugar {
 
   override def beforeEach(): Unit = {
     super.beforeEach()

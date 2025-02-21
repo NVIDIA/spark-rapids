@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, TableWriter}
-import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, RapidsConf, ScalableTaskCompletion}
+import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuColumnVector, GpuLiteral, MoreMockitoSugar, RapidsConf, ScalableTaskCompletion}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM}
 import com.nvidia.spark.rapids.spill.SpillFramework
@@ -38,7 +38,8 @@ import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriter
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
+class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach
+  with MoreMockitoSugar {
   private var mockJobDescription: GpuWriteJobDescription = _
   private var mockTaskAttemptContext: TaskAttemptContext = _
   private var mockCommitter: FileCommitProtocol = _

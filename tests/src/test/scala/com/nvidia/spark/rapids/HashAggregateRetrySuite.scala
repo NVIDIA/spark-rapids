@@ -30,7 +30,7 @@ import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
 class HashAggregateRetrySuite
     extends RmmSparkRetrySuiteBase
-        with MockitoSugar {
+        with MockitoSugar with MoreMockitoSugar {
   private def buildReductionBatch(): SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()
       .column(5L, null.asInstanceOf[java.lang.Long], 3L, 1L)
