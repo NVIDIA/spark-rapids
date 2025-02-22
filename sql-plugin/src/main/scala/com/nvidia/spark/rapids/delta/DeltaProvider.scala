@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, ConnectShims, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
 
-import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -32,7 +31,7 @@ trait DeltaProbe {
 }
 
 /** Interfaces to avoid accessing the optional Delta Lake jars directly in common code. */
-trait DeltaProvider {
+trait DeltaProvider extends ConnectShims {
   def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]]
 

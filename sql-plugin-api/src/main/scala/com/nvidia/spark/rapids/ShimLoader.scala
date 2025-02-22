@@ -27,7 +27,6 @@ import org.apache.commons.lang3.reflect.MethodUtils
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
-import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
@@ -56,7 +55,7 @@ import org.apache.spark.util.MutableURLClassLoader
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
-object ShimLoader {
+object ShimLoader extends ConnectShims {
   val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
   log.debug(s"ShimLoader object instance: $this loaded by ${getClass.getClassLoader}")
   private val shimRootURL = {
