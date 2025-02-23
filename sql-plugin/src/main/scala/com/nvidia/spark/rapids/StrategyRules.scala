@@ -27,6 +27,8 @@ import org.apache.spark.sql.execution.SparkPlan
  * @note This is instantiated via reflection from ShimLoader.
  */
 class StrategyRules extends ConnectShims {
+  // Self-type to SparkStrategy via ConnectShims type alias
+  self: ConnectShims#Strategy =>
 
   private lazy val strategies: Seq[Strategy] = {
     // Currently we only have custom plan nodes that originate from
