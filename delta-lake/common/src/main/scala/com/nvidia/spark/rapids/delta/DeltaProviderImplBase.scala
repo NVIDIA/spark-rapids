@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
 
-import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.execution.SparkPlan
 
 abstract class DeltaProviderImplBase extends DeltaProvider {
