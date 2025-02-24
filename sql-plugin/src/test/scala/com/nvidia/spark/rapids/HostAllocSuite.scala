@@ -23,10 +23,9 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState}
 import com.nvidia.spark.rapids.spill._
 import org.mockito.Mockito.when
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Ignore}
 import org.scalatest.concurrent.{Signaler, TimeLimits}
 import org.scalatest.funsuite.AnyFunSuite
-import org.scalatest.Ignore
 import org.scalatest.time._
 import org.scalatestplus.mockito.MockitoSugar.mock
 
@@ -35,7 +34,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-@Ignore("https://github.com/NVIDIA/spark-rapids/issues/12194")
+// Waiting for the fix of https://github.com/NVIDIA/spark-rapids/issues/12194
+@Ignore
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
