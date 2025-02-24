@@ -1450,7 +1450,7 @@ This will force full Scala code rebuild in downstream modules.
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argLine>
+                        <argLine>${argLine} -ea -Xmx6g -Xss4m ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
