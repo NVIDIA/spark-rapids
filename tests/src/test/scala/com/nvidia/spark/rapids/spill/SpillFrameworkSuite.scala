@@ -18,8 +18,11 @@ package com.nvidia.spark.rapids.spill
 
 import java.io.File
 import java.math.RoundingMode
+import java.util.concurrent.Executors
 
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration.Duration
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
@@ -1217,57 +1220,79 @@ class SpillFrameworkSuite
     })
   }
 
-  test("unspill on SpillableHostBuffer interrupting a spill") {
+  test("unspill on SpillableHostBuffer successfully interrupting a spill") {
     val buffer = HostMemoryBuffer.allocate(1024)
-    withResource(SpillableHostBuffer(buffer, 1000, 0)) ( shb => {
+    val handle = new SpillableHostBufferHandle(buffer.getLength, host = Some(buffer))
+    val spiedHandle = spy(handle)
+    SpillFramework.stores.hostStore.trackNoSpill(spiedHandle)
 
-      val builder = spy(DiskHandleStore.makeBuilder)
-      // We enhance a DiskHandleBuilder so that the spilling thread (current thread)
-      // will wait for the buffer to be unspilled after spilling is triggered
-      // but before the spilling result is committed
-      doAnswer { invocation =>
-        val thread = new Thread(() => {
-          withResource(shb.getHostBuffer(unspill = true))(ret => {
-            assert(ret eq buffer)
-          })
-        })
-        thread.start()
-        thread.join()
-        invocation.callRealMethod()
-      }.when(builder).close()
+    val builder = spy(DiskHandleStore.makeBuilder)
+    when(spiedHandle.makeDiskHandleBuilder()).thenReturn(builder)
 
+    val shb = new SpillableHostBuffer(spiedHandle, 1024)
+    // We enhance a DiskHandleBuilder so that the spilling thread (current thread)
+    // will wait for the unspill thread, at the exact timing after spilling is triggered,
+    // but before the spilling result is committed
+    doAnswer { invocation =>
+      implicit val ec = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-      // The reason why using a workaround in Java mock util is that scala version will meet a
-      // wield compile error: when() requires an argument which has to be 'a method call on a mock':
-      // val mockedStatic = mockStatic(classOf[DiskHandleStore])
-      // mockedStatic.when(
-      //  () => DiskHandleStore.makeBuilder()
-      // ).thenReturn(builder)
-
-      println("builder blockid:" + builder.blockId)
-      withResource(DiskHandleBuilderMockUtil.mock(builder)) { _ =>
-
-        DiskHandleBuilderMockUtil.foo()
-
-        val x= DiskHandleStore.makeBuilder
-        println(x.blockId)
-
-        SpillFramework.stores.hostStore.spill(1000)
-
-        verify(builder, times(1)).close()
-        verify(builder, times(1)).getChannel
-
-        // The spill is interrupted, so if we try to get the buffer again,
-        // it's still the original one
-        withResource(shb.getHostBuffer())(ret => {
+      val future = Future {
+        withResource(shb.getHostBuffer(unspill = true))(ret => {
           assert(ret eq buffer)
         })
-        //      mockedStatic.close()
       }
+      Await.result(future, Duration.Inf)
+      invocation.callRealMethod()
+    }.when(builder).getChannel
 
-    }
-    )
+    SpillFramework.stores.hostStore.spill(1000)
 
+    verify(builder, times(1)).close()
+    verify(builder, times(1)).getChannel
+
+    // The spill is interrupted, so if we try to get the buffer again,
+    // it's still the original one
+    withResource(shb.getHostBuffer())(ret => {
+      assert(ret eq buffer)
+    })
+  }
+
+  test("unspill on SpillableHostBuffer fail to interrupt a spill") {
+    val buffer = HostMemoryBuffer.allocate(1024)
+    val handle = new SpillableHostBufferHandle(buffer.getLength, host = Some(buffer))
+    val spiedHandle = spy(handle)
+    SpillFramework.stores.hostStore.trackNoSpill(spiedHandle)
+
+    val builder = spy(DiskHandleStore.makeBuilder)
+    when(spiedHandle.makeDiskHandleBuilder()).thenReturn(builder)
+
+    val shb = new SpillableHostBuffer(spiedHandle, 1024)
+    // We enhance a DiskHandleBuilder so that the spilling thread (current thread)
+    // will wait for the unspill thread, at the exact timing after spilling is triggered,
+    // but before the spilling result is committed
+    doAnswer { invocation =>
+      implicit val ec = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
+
+      val future = Future {
+        withResource(shb.getHostBuffer(unspill = true))(ret => {
+          assert(ret ne buffer)
+        })
+      }
+      Await.result(future, Duration.Inf)
+
+      invocation.callRealMethod()
+    }.when(builder).close() // By the time calling close, the spill thread is already done
+
+    SpillFramework.stores.hostStore.spill(1000)
+
+    verify(builder, times(1)).close()
+    verify(builder, times(1)).getChannel
+
+    // The spill is interrupted, so if we try to get the buffer again,
+    // it's still the original one
+    withResource(shb.getHostBuffer())(ret => {
+      assert(ret ne buffer)
+    })
   }
 
 }

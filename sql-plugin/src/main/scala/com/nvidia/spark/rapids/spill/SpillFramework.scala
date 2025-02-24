@@ -328,7 +328,7 @@ object SpillableHostBufferHandle extends Logging {
   }
 }
 
-class SpillableHostBufferHandle private (
+class SpillableHostBufferHandle(
     val sizeInBytes: Long,
     private[spill] override var host: Option[HostMemoryBuffer] = None,
     private[spill] var disk: Option[DiskHandle] = None,
@@ -407,6 +407,10 @@ class SpillableHostBufferHandle private (
     materialized
   }
 
+  def makeDiskHandleBuilder(): DiskHandleStore.DiskHandleBuilder = {
+    DiskHandleStore.makeBuilder
+  }
+
   override def spill(): Long = {
     val thisThreadSpills = synchronized {
       if (!spillable) {
@@ -426,7 +430,7 @@ class SpillableHostBufferHandle private (
     }
     if (thisThreadSpills) {
       withResource(host.get) { buf =>
-        withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
+        withResource(makeDiskHandleBuilder()) { diskHandleBuilder =>
           val outputChannel = diskHandleBuilder.getChannel
           // the spill IO is non-blocking as it won't impact dev or host directly
           // instead we "atomically" swap the buffers below once they are ready
@@ -1634,7 +1638,7 @@ object DiskHandleStore {
       }
     }
 
-    def getDataOutputStream: DataOutputStream = {
+    def getDataOutputStream(): DataOutputStream = {
       require(!closed, "Cannot write to closed DiskWriter")
       require(outputStream == null,
         "either channel or data output stream supported, but not both")
