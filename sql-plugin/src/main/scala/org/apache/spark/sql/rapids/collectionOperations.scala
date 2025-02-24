@@ -24,8 +24,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
-import com.nvidia.spark.rapids.jni.GpuListSliceUtils
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.GpuListSliceUtils
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}

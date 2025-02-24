@@ -345,6 +345,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Sin"></a>spark.rapids.sql.expression.Sin|`sin`|Sine|true|None|
 <a name="sql.expression.Sinh"></a>spark.rapids.sql.expression.Sinh|`sinh`|Hyperbolic sine|true|None|
 <a name="sql.expression.Size"></a>spark.rapids.sql.expression.Size|`cardinality`, `size`|The size of an array or a map|true|None|
+<a name="sql.expression.Slice"></a>spark.rapids.sql.expression.Slice|`slice`|Subsets array x starting from index start (array indices start at 1, or starting from the end if start is negative) with the specified length.|true|None|
 <a name="sql.expression.SortArray"></a>spark.rapids.sql.expression.SortArray|`sort_array`|Returns a sorted array with the input array and the ascending / descending order|true|None|
 <a name="sql.expression.SortOrder"></a>spark.rapids.sql.expression.SortOrder| |Sort order|true|None|
 <a name="sql.expression.SparkPartitionID"></a>spark.rapids.sql.expression.SparkPartitionID|`spark_partition_id`|Returns the current partition id|true|None|
