@@ -34,6 +34,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
+@Ignore("https://github.com/NVIDIA/spark-rapids/issues/12194")
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
