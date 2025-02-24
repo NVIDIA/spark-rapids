@@ -120,10 +120,10 @@ object GpuHashPartitioningBase extends Logging {
           case h if h == classOf[HiveHash] => HiveMode
           case o => UnsupportedMode(o.asInstanceOf[Class[_]].getSimpleName)
         }
-        logInfo(s"Found hash function '$hashMode' from cpu hash partitioning.")
+        logInfo(s"Found hash function '$hashMode' from CPU hash partitioning.")
       } catch {
         case _: NoSuchMethodException => // not the customized spark distributions, noop
-          logInfo("No hash function field is found in cpu hash partitioning.")
+          logInfo("Use murmur3 for GPU hash partitioning.")
       }
     }
     hashMode
