@@ -4080,21 +4080,28 @@ object GpuOverrides extends Logging {
         private lazy val hashMode = GpuHashPartitioningBase.hashModeFromCpu(hp, this.conf)
 
         override def tagPartForGpu(): Unit = {
-          val cpuHashFunc: Option[Expression] = this.hashMode match {
-            case HiveMode => Some(HiveHash(hp.expressions))
+          this.hashMode match {
+            case HiveMode =>
+              val hh = HiveHash(hp.expressions)
+              val hfMeta = GpuOverrides.wrapExpr(hh, this.conf, None)
+              hfMeta.tagForGpu()
+              if (!hfMeta.canThisBeReplaced) {
+                willNotWorkOnGpu(s"the hash function: ${hh.getClass.getSimpleName}" +
+                  s" can not run on GPU. Details: ${hfMeta.explain(all = false)}")
+              }
             case Murmur3Mode =>
-              Some(Murmur3Hash(hp.expressions, GpuHashPartitioningBase.DEFAULT_HASH_SEED))
+              val arrayWithStructsHashing = hp.expressions.exists(e =>
+                TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+                  {
+                    case ArrayType(_: StructType, _) => true
+                    case _ => false
+                  })
+              )
+              if (arrayWithStructsHashing) {
+                willNotWorkOnGpu("hashing arrays with structs is not supported")
+              }
             case _ =>
               willNotWorkOnGpu(s"Hash function $hashMode is not supported on GPU")
-              None
-          }
-          cpuHashFunc.foreach { chf =>
-            val hfMeta = GpuOverrides.wrapExpr(chf, this.conf, None)
-            hfMeta.tagForGpu()
-            if (!hfMeta.canThisBeReplaced) {
-              willNotWorkOnGpu(s"the hash function: ${chf.getClass.getSimpleName}" +
-                s" can not run on GPU. Details: ${hfMeta.explain(all = false)}")
-            }
           }
         }
 
