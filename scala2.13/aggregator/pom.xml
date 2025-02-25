@@ -93,6 +93,12 @@
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
         </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-iceberg_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

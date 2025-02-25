@@ -97,8 +97,6 @@
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark32x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark32x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -120,8 +118,6 @@
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark32x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark32x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -149,8 +145,6 @@
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
                 <!-- #if scala-2.12 --><!--
                 <scala.plugin.version>4.3.0</scala.plugin.version>
-                <iceberg.artifact.suffix>${spark32x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark32x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
@@ -173,8 +167,6 @@
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark32x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark32x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -196,8 +188,6 @@
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark32x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark32x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -219,8 +209,6 @@
                 <spark.test.version>${spark324.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark32x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark32x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -253,6 +241,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -278,6 +267,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -303,6 +293,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -328,6 +319,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -353,6 +345,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -375,6 +368,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -397,6 +391,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -419,6 +414,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -441,6 +437,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -463,6 +460,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -481,8 +479,6 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-21x</rapids.delta.artifactId1>
                 <rapids.delta.artifactId2>rapids-4-spark-delta-22x</rapids.delta.artifactId2>
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
-                <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
                 <!-- Keeping the scala plugin version 4.3.0 for details
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
@@ -511,8 +507,6 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-21x</rapids.delta.artifactId1>
                 <rapids.delta.artifactId2>rapids-4-spark-delta-22x</rapids.delta.artifactId2>
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
-                <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
                 <!-- Keeping the scala plugin version 4.3.0 for details
                 check https://github.com/NVIDIA/spark-rapids/issues/11112 -->
@@ -543,8 +537,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
@@ -569,8 +561,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
@@ -594,8 +584,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark34x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark34x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
@@ -622,6 +610,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -643,8 +632,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
@@ -671,6 +658,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -693,6 +681,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -715,6 +704,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <profile>
@@ -737,6 +727,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg</module>
             </modules>
         </profile>
         <!-- #if scala-2.13 -->
@@ -754,8 +745,6 @@
                 <spark.test.version>${spark400.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
-                <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
-                <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
