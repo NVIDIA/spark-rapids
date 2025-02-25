@@ -1380,8 +1380,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       val estimatedInputSize = gpuChild.output.map { attr =>
         GpuBatchUtils.estimateGpuMemory(attr.dataType, attr.nullable, numRowsForEstimate)
       }.sum
-      val estimatedOutputSize = preProcessAggHelper.preStepBound.outputTypes.map { dt =>
-        GpuBatchUtils.estimateGpuMemory(dt, true, numRowsForEstimate)
+      val estimatedOutputSize = preProcessAggHelper.preStepBound.outputExprs.map { e =>
+        GpuBatchUtils.estimateGpuMemory(e.dataType, true, numRowsForEstimate)
       }.sum
       if (estimatedInputSize == 0 && estimatedOutputSize == 0) {
         1.0
@@ -2079,7 +2079,7 @@ class DynamicGpuPartialAggregateIterator(
     skipAggPassReductionRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
-  private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
+  private[this] val isReductionOnly = boundGroupExprs.outputExprs.isEmpty
 
   // When doing a reduction we don't have the aggIter setup for the very first time
   // so we have to match what happens for the normal reduction operations.
@@ -2134,8 +2134,7 @@ class DynamicGpuPartialAggregateIterator(
     // After sorting we want to split the input for the project so that
     // we don't get ourselves in trouble.
     val sortedSplitIter = new PreProjectSplitIterator(sortedIter,
-      inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
-      metrics.opTime, metrics.numPreSplits)
+      preProcessAggHelper.preStepBound, metrics.opTime, metrics.numPreSplits)
 
     val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper,
       metrics)
@@ -2153,8 +2152,7 @@ class DynamicGpuPartialAggregateIterator(
     // We still want to split the input, because the heuristic may not be perfect and
     //  this is relatively light weight
     val splitInputIter = new PreProjectSplitIterator(inputIter,
-      inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
-      metrics.opTime, metrics.numPreSplits)
+      preProcessAggHelper.preStepBound, metrics.opTime, metrics.numPreSplits)
 
     val localInputRowsMetrics = new LocalGpuMetric
 
