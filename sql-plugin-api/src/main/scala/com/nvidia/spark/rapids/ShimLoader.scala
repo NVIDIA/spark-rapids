@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-
 import java.net.URL
 
 import scala.collection.JavaConverters.enumerationAsScalaIteratorConverter
 import scala.util.Try
 
+import com.nvidia.spark.rapids.ConnectShims._
 import org.apache.commons.lang3.reflect.MethodUtils
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
@@ -55,7 +55,7 @@ import org.apache.spark.util.MutableURLClassLoader
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
-object ShimLoader extends ConnectShims {
+object ShimLoader {
   val log = org.slf4j.LoggerFactory.getLogger(getClass().getName().stripSuffix("$"))
   log.debug(s"ShimLoader object instance: $this loaded by ${getClass.getClassLoader}")
   private val shimRootURL = {

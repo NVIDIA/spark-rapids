@@ -16,6 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-trait ConnectShims {
+object ConnectShims {
   type Strategy = org.apache.spark.sql.execution.SparkStrategy
 }
