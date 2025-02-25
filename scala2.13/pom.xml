@@ -236,6 +236,7 @@
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
                 <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -262,6 +263,7 @@
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
                 <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -288,6 +290,7 @@
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
                 <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -314,6 +317,7 @@
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
                 <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -340,6 +344,7 @@
                 <rapids.delta.artifactId3>rapids-4-spark-delta-23x</rapids.delta.artifactId3>
                 <iceberg.artifact.suffix>${spark33x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark33x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -364,6 +369,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark34x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark34x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
@@ -387,6 +393,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark34x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark34x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
@@ -410,6 +417,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark34x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark34x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
@@ -433,6 +441,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark34x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark34x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
@@ -456,6 +465,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark34x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark34x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
@@ -606,6 +616,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -654,6 +665,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -700,6 +712,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -723,6 +736,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>${spark35x.iceberg.version}</iceberg.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -956,8 +970,13 @@
         <maven.scaladoc.skip>false</maven.scaladoc.skip>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
-        <spark32x.iceberg.artifact.suffix>3.2</spark32x.iceberg.artifact.suffix>
-        <spark32x.iceberg.version>1.4.3</spark32x.iceberg.version>
+        <!--
+        This property is used to in aggregator module to determine the artifactId of iceberg
+        integration. We use rapids-4-spark-sql as default, which is a hack way since we don't
+        support all spark versions. In spark versions that we don't support, the aggregator
+        includes rapids-4-spark-sql, otherwise it includes actual iceberg integration artifact.
+        -->
+        <rapids.iceberg.artifactId>rapids-4-spark-sql</rapids.iceberg.artifactId>
         <spark33x.iceberg.artifact.suffix>3.3</spark33x.iceberg.artifact.suffix>
         <spark33x.iceberg.version>1.6.1</spark33x.iceberg.version>
         <spark34x.iceberg.artifact.suffix>3.4</spark34x.iceberg.artifact.suffix>
