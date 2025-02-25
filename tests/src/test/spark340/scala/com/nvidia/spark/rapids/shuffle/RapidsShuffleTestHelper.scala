@@ -175,7 +175,7 @@ abstract class RapidsShuffleTestHelper
   }
 }
 
-object RapidsShuffleTestHelper extends MockitoSugar {
+object RapidsShuffleTestHelper extends MockitoSugar with MoreMockitoSugar {
   def buildMockTableMeta(tableId: Int, contigTable: ContiguousTable): TableMeta = {
     MetaUtils.buildTableMeta(tableId, contigTable)
   }
