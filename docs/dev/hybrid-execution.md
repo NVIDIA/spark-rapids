@@ -53,5 +53,5 @@ the Rapids hybrid jar) in the classpath by specifying:
 ## Limitations
 - Only supports V1 Parquet data source.
 - Only supports Scala 2.12, do not support Scala 2.13.
-- Support Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 like [Gluten supports](https://github.com/apache/incubator-gluten/releases/tag/v1.2.0),
-other Spark versions 32x, 33x, 34x, 35x also work, but are not fully tested.
+- Support Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1, matching [Gluten](https://github.com/apache/incubator-gluten/releases/tag/v1.2.0).
+Other Spark versions 32x, 33x, 34x, 35x may work, but are not fully tested.
