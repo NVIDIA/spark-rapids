@@ -2302,7 +2302,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
   val CHUNKED_PACK_BOUNCE_BUFFER_COUNT = conf("spark.rapids.sql.chunkedPack.bounceBuffers")
     .doc("Number of chunked pack bounce buffers, needed during spill from GPU to host memory. ")
     .internal()
-    .longConf
+    .integerConf
     .checkValue(v => v >= 1,
       "The chunked pack bounce buffer count must be at least 1")
     .createWithDefault(4)
@@ -2321,7 +2321,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     conf("spark.rapids.memory.host.spillToDiskBounceBuffers")
       .doc("Number of bounce buffers used for gpu to disk spill that bypasses the host store.")
       .internal()
-      .longConf
+      .integerConf
       .checkValue(v => v >= 1,
         "The gpu to disk spill bounce buffer count must be positive")
       .createWithDefault(4)
@@ -3273,11 +3273,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
 
-  lazy val chunkedPackBounceBufferCount: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_COUNT)
+  lazy val chunkedPackBounceBufferCount: Int = get(CHUNKED_PACK_BOUNCE_BUFFER_COUNT)
 
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
-  lazy val spillToDiskBounceBufferCount: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_COUNT)
+  lazy val spillToDiskBounceBufferCount: Int = get(SPILL_TO_DISK_BOUNCE_BUFFER_COUNT)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
