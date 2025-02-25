@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
+import com.nvidia.spark.rapids.ConnectShims._
 
 import org.apache.spark.sql.execution.SparkPlan
 
