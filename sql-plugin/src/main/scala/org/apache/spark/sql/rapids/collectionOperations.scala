@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.GpuListSliceUtils
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -106,6 +107,110 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
         }
       }
     }
+}
+
+case class GpuSlice(x: Expression, start: Expression, length: Expression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+
+  override def dataType: DataType = x.dataType
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, IntegerType, IntegerType)
+
+  override def first: Expression = x
+  override def second: Expression = start
+  override def third: Expression = length
+
+  override def doColumnar(numRows: Int, listS: GpuScalar, startS: GpuScalar,
+      lengthS: GpuScalar): ColumnVector = {
+    // When either start or length is null, return all nulls like the CPU does.
+    if (!startS.isValid || !lengthS.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, dataType)
+    } else {
+      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+        doColumnar(listCol, startS, lengthS)
+      }
+    }
+  }
+
+  override def doColumnar(listS: GpuScalar, startS: GpuScalar,
+      lengthCol: GpuColumnVector): ColumnVector = {
+    val numRows = lengthCol.getRowCount.toInt
+    // When start is null, return all nulls like the CPU does.
+    if (!startS.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, dataType)
+    } else {
+      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+        doColumnar(listCol, startS, lengthCol)
+      }
+    }
+  }
+
+  override def doColumnar(listS: GpuScalar, startCol: GpuColumnVector,
+      lengthS: GpuScalar): ColumnVector = {
+    val numRows = startCol.getRowCount.toInt
+    // When length is null, return all nulls like the CPU does.
+    if (!lengthS.isValid) {
+      GpuColumnVector.columnVectorFromNull(numRows, dataType)
+    } else {
+      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+        doColumnar(listCol, startCol, lengthS)
+      }
+    }
+  }
+
+  override def doColumnar(listS: GpuScalar, startCol: GpuColumnVector,
+      lengthCol: GpuColumnVector): ColumnVector = {
+    val numRows = startCol.getRowCount.toInt
+    withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+      doColumnar(listCol, startCol, lengthCol)
+    }
+  }
+
+  override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
+      lengthS: GpuScalar): ColumnVector = {
+    // When either start or length is null, return all nulls like the CPU does.
+    if (!startS.isValid || !lengthS.isValid) {
+      GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
+    } else {
+      val list = listCol.getBase
+      val start = startS.getValue.asInstanceOf[Int]
+      val length = lengthS.getValue.asInstanceOf[Int]
+      GpuListSliceUtils.listSlice(list, start, length)
+    }
+  }
+
+  override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
+      lengthCol: GpuColumnVector): ColumnVector = {
+    // When start is null, return all nulls like the CPU does.
+    if (!startS.isValid) {
+      GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
+    } else {
+      val list = listCol.getBase
+      val start = startS.getValue.asInstanceOf[Int]
+      val length = lengthCol.getBase
+      GpuListSliceUtils.listSlice(list, start, length)
+    }
+  }
+
+  override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
+      lengthS: GpuScalar): ColumnVector = {
+    // When length is null, return all nulls like the CPU does.
+    if (!lengthS.isValid) {
+      GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
+    } else {
+      val list = listCol.getBase
+      val start = startCol.getBase
+      val length = lengthS.getValue.asInstanceOf[Int]
+      GpuListSliceUtils.listSlice(list, start, length)
+    }
+  }
+
+  override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
+      lengthCol: GpuColumnVector): ColumnVector = {
+    val list = listCol.getBase
+    val start = startCol.getBase
+    val length = lengthCol.getBase
+    GpuListSliceUtils.listSlice(list, start, length)
+  }
 }
 
 case class GpuArrayJoin(override val children : Seq[Expression])

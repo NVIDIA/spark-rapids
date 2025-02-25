@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -249,6 +249,47 @@ def test_array_contains_for_nans(data_gen):
         lambda spark: two_col_df(spark, ArrayGen(data_gen), data_gen).select(
             array_contains(col('a'), col('b')),
             array_contains(col('a'), lit(float('nan')).cast(data_gen.data_type))))
+
+
+@pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+def test_array_slice(data_gen):
+    length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, length_gen).selectExpr(
+            'slice(a, 1, 0)',
+            'slice(a, 1, 5)',
+            'slice(a, 1, NULL)',
+            'slice(a, NULL, 0)',
+            'slice(a, NULL, NULL)',
+            'slice(a, 5, 2147483647)',
+            'slice(a, 100, 5)',
+            'slice(a, -5, 0)',
+            'slice(a, -5, 5)',
+            'slice(a, -5, NULL)',
+            'slice(a, -5, 2147483647)',
+            'slice(a, -100, 5)',
+            'slice(a, b, c)',
+            'slice(a, b, 0)',
+            'slice(a, b, 5)',
+            'slice(a, b, 100)',
+            'slice(a, b, NULL)',
+            'slice(a, 5, c)',
+            'slice(a, -5, c)',
+            'slice(a, 100, c)',
+            'slice(a, -100, c)',
+            'slice(a, NULL, c)',
+            'slice(a, NULL, NULL)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, 0)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, 5)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, 100)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, NULL)',
+            'slice(array(array(1, null, 2), array(1), array(null)), 5, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), -5, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), 100, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), -100, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), NULL, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), NULL, NULL)'))
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
