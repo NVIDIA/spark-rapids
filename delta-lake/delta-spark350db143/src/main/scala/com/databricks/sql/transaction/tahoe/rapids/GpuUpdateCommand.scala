@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * This file was derived from UpdateCommand.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -21,9 +21,8 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
-import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOperations, DeltaTableUtils, DeltaUDF, OptimisticTransaction}
+import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOperations, DeltaTableUtils, DeltaUDF, OptimisticTransaction, RowTracking}
 import com.databricks.sql.transaction.tahoe.DeltaCommitTag._
-import com.databricks.sql.transaction.tahoe.RowTracking
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, DMLUtils, UpdateCommand, UpdateMetric}
 import com.databricks.sql.transaction.tahoe.files.{TahoeBatchFileIndex, TahoeFileIndex}
@@ -109,7 +108,8 @@ case class GpuUpdateCommand(
     val (metadataPredicates, dataPredicates) =
       DeltaTableUtils.splitMetadataAndDataPredicates(
         updateCondition, txn.metadata.partitionColumns, sparkSession)
-    val candidateFiles = txn.filterFiles(metadataPredicates ++ dataPredicates)
+    val candidateFiles = txn.filterFiles(metadataPredicates ++ dataPredicates,
+      keepNumRecords = true /* Keep numRecords regardless of the state of deletion vectors in DB */)
     val nameToAddFile = generateCandidateFileMap(deltaLog.dataPath, candidateFiles)
 
     scanTimeMs = (System.nanoTime() - startTime) / 1000 / 1000
