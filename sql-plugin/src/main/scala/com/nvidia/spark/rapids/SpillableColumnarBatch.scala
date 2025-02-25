@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.spill.{SpillableColumnarBatchFromBufferHandle, SpillableColumnarBatchHandle, SpillableCompressedColumnarBatchHandle, SpillableDeviceBufferHandle, SpillableHostBufferHandle, SpillableHostColumnarBatchHandle}
 
 import org.apache.spark.TaskContext
@@ -519,5 +520,11 @@ object SpillableHostBuffer {
           s"greater than the backing host buffer length ${buffer.getLength} B")
     }
     new SpillableHostBuffer(SpillableHostBufferHandle(buffer), length)
+  }
+
+  def sliceWithRetry(shb: SpillableHostBuffer, start: Long, len: Long): HostMemoryBuffer = {
+    withRetryNoSplit[HostMemoryBuffer] {
+      withResource(shb.getHostBuffer())(_.slice(start, len))
+    }
   }
 }
