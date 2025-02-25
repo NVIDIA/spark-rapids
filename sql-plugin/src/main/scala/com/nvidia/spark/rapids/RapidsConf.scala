@@ -65,7 +65,7 @@ object ConfHelper {
       s.trim.toDouble
     } catch {
       case _: IllegalArgumentException =>
-        throw new IllegalArgumentException(s"$key should be integer, but was $s")
+        throw new IllegalArgumentException(s"$key should be double, but was $s")
     }
   }
 
@@ -1275,6 +1275,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val ORC_STRIPE_SIZE_ROWS = conf("spark.rapids.sql.format.orc.write.stripeSizeRows")
+    .doc("When set to a valid value(no less than 512, as specified in cudf), " +
+      "the ORC writer will use this value as the maximum number of rows per stripe. " +
+      "Additionally, the ORC writer rounds the number of elements in each stripe " +
+      "(except the last) to a multiple of 8 to efficiently encode the validity masks. " +
+      "If not set, the ORC writer will use the default value 1,000,000.")
+    .internal()
+    .integerConf
+    .createOptional
 
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +

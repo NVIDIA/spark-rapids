@@ -185,6 +185,7 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
     // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
     val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
       .getOrElse(asyncOutputWriteEnabled)
+    val orcStripeSizeRows = RapidsConf.ORC_STRIPE_SIZE_ROWS.get(sqlConf)
 
     new ColumnarOutputWriterFactory {
       override def newInstance(path: String,
@@ -193,7 +194,7 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
           statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
                                debugOutputPath: Option[String]): ColumnarOutputWriter = {
         new GpuOrcWriter(path, dataSchema, context, statsTrackers, debugOutputPath,
-          holdGpuBetweenBatches, asyncOutputWriteEnabled)
+          holdGpuBetweenBatches, orcStripeSizeRows, asyncOutputWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -219,6 +220,7 @@ class GpuOrcWriter(
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugOutputPath: Option[String],
     holdGpuBetweenBatches: Boolean,
+    orcStripeSizeRows: Option[Integer],
     useAsyncWrite: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "ORC", true, statsTrackers, debugOutputPath,
     holdGpuBetweenBatches, useAsyncWrite) {
@@ -227,6 +229,9 @@ class GpuOrcWriter(
     val builder = SchemaUtils
       .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema, nullable = false)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
+    orcStripeSizeRows.foreach { orcStripeSizeRows =>
+      builder.withStripeSizeRows(orcStripeSizeRows)
+    }
     Table.writeORCChunked(builder.build(), this)
   }
 }
