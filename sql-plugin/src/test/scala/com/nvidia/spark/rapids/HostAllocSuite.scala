@@ -22,11 +22,12 @@ import ai.rapids.cudf.{HostMemoryBuffer, PinnedMemoryPool, Rmm, RmmAllocationMod
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState}
 import com.nvidia.spark.rapids.spill._
-import org.mockito.Mockito.{mock, when}
+import org.mockito.Mockito.when
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 import org.scalatest.concurrent.{Signaler, TimeLimits}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.time._
+import org.scalatestplus.mockito.MockitoSugar.mock
 
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.sql.SparkSession
@@ -40,7 +41,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   private val timeoutMs = 10000
 
   def setMockContext(taskAttemptId: Long): Unit = {
-    val context = mock(classOf[TaskContext])
+    val context = mock[TaskContext]
     when(context.taskAttemptId()).thenReturn(taskAttemptId)
     TrampolineUtil.setTaskContext(context)
   }

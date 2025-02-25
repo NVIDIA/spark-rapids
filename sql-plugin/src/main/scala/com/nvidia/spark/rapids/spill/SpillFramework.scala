@@ -147,7 +147,7 @@ import org.apache.spark.storage.BlockId
 /**
  * Common interface for all handles in the spill framework.
  */
-trait StoreHandle extends AutoCloseable with Logging {
+trait StoreHandle extends AutoCloseable {
   /**
    * Approximate size of this handle, used in three scenarios:
    * - Used by callers when accumulating up to a batch size for size goals.
@@ -328,7 +328,7 @@ object SpillableHostBufferHandle extends Logging {
   }
 }
 
-class SpillableHostBufferHandle(
+class SpillableHostBufferHandle private[spill] (
     val sizeInBytes: Long,
     private[spill] override var host: Option[HostMemoryBuffer] = None,
     private[spill] var disk: Option[DiskHandle] = None,
@@ -377,18 +377,6 @@ class SpillableHostBufferHandle(
         diskHandle.materializeToHostMemoryBuffer(hmb)
         hmb
       }
-      val hostStr = if (host.isDefined) host.get.getAddress else "un_defined"
-
-
-      logError(s"materialized host memory buffer ${materialized.getAddress} " +
-        s"for ${System.identityHashCode(this)} , disk defined: ${disk.isDefined}, " +
-        s"host defined: ${hostStr}, size: $sizeInBytes")
-
-      //      if(duplicateMap.putIfAbsent(
-      //        (materialized.getAddress, System.identityHashCode(this)), "") != null) {
-      //        throw new Error(
-      //          s"attempting to materialize an existing handle")
-      //      }
     }
 
     if (unspill) {
@@ -398,8 +386,6 @@ class SpillableHostBufferHandle(
           host = Some(materialized)
           materialized.incRefCount()
           SpillFramework.stores.hostStore.trackNoSpill(this)
-          logError(s"unspilled host memory buffer ${materialized.getAddress} " +
-            s"for ${System.identityHashCode(this)}")
         }
       }
     }
@@ -414,11 +400,9 @@ class SpillableHostBufferHandle(
   override def spill(): Long = {
     val thisThreadSpills = synchronized {
       if (!spillable) {
-        return 0
+        return 0L
       }
       if (!closed && disk.isEmpty && host.isDefined && !spilling) {
-        logError(s"spilling host memory buffer ${host.get.getAddress} for " +
-          s"${System.identityHashCode(this)}")
         spilling = true
         // incRefCount here so that if close() is called
         // while we are spilling, we will prevent the buffer being freed
@@ -1257,8 +1241,6 @@ trait SpillableStore[T <: SpillableHandle]
         plan.add(handle)
       }
     }
-    logError(s"makeSpillPlan for $spillNeeded, handles: ${handles.size()}, " +
-      s"amountToSpill: $amountToSpill")
     plan
   }
 
@@ -1638,7 +1620,7 @@ object DiskHandleStore {
       }
     }
 
-    def getDataOutputStream(): DataOutputStream = {
+    def getDataOutputStream: DataOutputStream = {
       require(!closed, "Cannot write to closed DiskWriter")
       require(outputStream == null,
         "either channel or data output stream supported, but not both")
