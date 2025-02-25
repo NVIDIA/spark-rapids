@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,28 +42,15 @@
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
+
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
-import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, DayTimeIntervalType, IntegerType, TimestampNTZType, TimestampType, YearMonthIntervalType}
+import org.apache.spark.sql.SparkSession
 
-object Spark32XShimsUtils {
+object TrampolineConnectShims {
 
-  def leafNodeDefaultParallelism(ss: SparkSession): Int = {
-    ss.leafNodeDefaultParallelism
-  }
+  type SparkSession = org.apache.spark.sql.SparkSession
 
-  def isValidRangeFrameType(orderSpecType: DataType, ft: DataType): Boolean = {
-    (orderSpecType, ft) match {
-      case (DateType, IntegerType) => true
-      case (DateType, _: YearMonthIntervalType) => true
-      case (TimestampType | TimestampNTZType, CalendarIntervalType) => true
-      case (TimestampType | TimestampNTZType, _: YearMonthIntervalType) => true
-      case (TimestampType | TimestampNTZType, _: DayTimeIntervalType) => true
-      case (a, b) => a == b
-    }
-  }
-
+  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 }

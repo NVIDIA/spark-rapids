@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,14 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.hive.rapids.shims
 
-import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.execution.command.CommandUtils
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
+package org.apache.spark.sql.rapids.shims
 
-object CommandUtilsShim {
+import org.apache.spark.sql.classic.SparkSession
 
-  // Shim for CommandUtils.uncacheTableOrView, whose signature changed in Apache Spark 4.0.
-  def uncacheTableOrView(sparkSession: SparkSession, tableId: TableIdentifier): Unit = {
-    CommandUtils.uncacheTableOrView(sparkSession, tableId)
-  }
+object TrampolineConnectShims {
 
+  type SparkSession = org.apache.spark.sql.classic.SparkSession
+
+  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 }
