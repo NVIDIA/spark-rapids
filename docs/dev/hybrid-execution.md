@@ -15,7 +15,7 @@ The Hybrid execution provides a way to offload Parquet scan onto CPU by leveragi
 To enable Hybrid Execution, please set the following configurations:
 ```
 "spark.sql.sources.useV1SourceList": "parquet"
-"spark.rapids.sql.parquet.useHybridReader": "true"
+"spark.rapids.sql.hybrid.parquet.enabled": "true"
 "spark.rapids.sql.hybrid.loadBackend": "true"
 ```
 

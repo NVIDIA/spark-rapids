@@ -1739,13 +1739,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
+  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.hybrid.parquet.enabled")
     .doc("Use HybridScan to read Parquet data using CPUs. The underlying implementation " +
-        "leverages both Gluten and Velox. Supports Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 " +
-        "as Gluten does, also supports other versions but not fully tested.")
+      "leverages both Gluten and Velox. Supports Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 " +
+      "as Gluten does, also supports other versions but not fully tested.")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val HYBRID_PARQUET_PRELOAD_CAP = conf("spark.rapids.sql.hybrid.parquet.numPreloadedBatches")
+    .doc("Preloading capacity of HybridParquetScan. If > 0, will enable preloading" +
+      " the result of HybridParquetScan asynchronously in a separate thread")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
 
   // This config name is the same as HybridPluginWrapper in Hybrid jar,
   // can not refer to Hybrid jar because of the jar is optional.
@@ -2894,6 +2901,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
 
   lazy val useHybridParquetReader: Boolean = get(HYBRID_PARQUET_READER)
+
+  lazy val hybridParquetPreloadBatches: Int = get(HYBRID_PARQUET_PRELOAD_CAP)
 
   lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
 
