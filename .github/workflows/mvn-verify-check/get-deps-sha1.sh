@@ -29,7 +29,7 @@ hybrid_ver=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-hybrid.vers
 if [[ $jni_ver == *SNAPSHOT* ]]; then
   jni_sha1=$(curl -s -H "Accept: application/json" \
     "${base_URL}?r=snapshots&g=com.nvidia&a=${project_jni}&v=${jni_ver}&c=&e=jar&wt=json" \
-    | jq -r .data.sha1 | cut -c1-8) || $(date +'%Y-%m-%d')
+    | jq .data.sha1) || $(date +'%Y-%m-%d')
 else
   jni_sha1=$jni_ver
 fi
@@ -37,7 +37,7 @@ fi
 if [[ $private_ver == *SNAPSHOT* ]]; then
   private_sha1=$(curl -s -H "Accept: application/json" \
     "${base_URL}?r=snapshots&g=com.nvidia&a=${project_private}&v=${private_ver}&c=&e=jar&wt=json" \
-    | jq -r .data.sha1 | cut -c1-8) || $(date +'%Y-%m-%d')
+    | jq .data.sha1) || $(date +'%Y-%m-%d')
 else
   private_sha1=$private_ver
 fi
@@ -45,11 +45,11 @@ fi
 if [[ $hybrid_ver == *SNAPSHOT* ]]; then
   hybrid_sha1=$(curl -s -H "Accept: application/json" \
     "${base_URL}?r=snapshots&g=com.nvidia&a=${project_hybrid}&v=${hybrid_ver}&c=&e=jar&wt=json" \
-    | jq -r .data.sha1 | cut -c1-8) || $(date +'%Y-%m-%d')
+    | jq .data.sha1) || $(date +'%Y-%m-%d')
 else
   hybrid_sha1=$hybrid_ver
 fi
 
-sha1md5=$(echo -n "${jni_sha1}_${private_sha1}_${hybrid_sha1}" | md5sum | awk '{print $1}')
+sha1md5=$(echo -n "${jni_sha1}_${private_sha1}_${hybrid_sha1}" | md5sum | awk '{print $1}' | cut -c1-8)
 
 echo $sha1md5
