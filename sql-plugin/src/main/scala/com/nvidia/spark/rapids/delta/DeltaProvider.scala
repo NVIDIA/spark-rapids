@@ -17,10 +17,9 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
-import com.nvidia.spark.rapids.ConnectShims._
 
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
@@ -41,7 +40,7 @@ trait DeltaProvider {
   def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]]
 
-  def getStrategyRules: Seq[Strategy]
+  def getStrategyRules: Seq[SparkStrategy]
 
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
@@ -97,7 +96,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
 
-  override def getStrategyRules: Seq[Strategy] = Nil
+  override def getStrategyRules: Seq[SparkStrategy] = Nil
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = false
 

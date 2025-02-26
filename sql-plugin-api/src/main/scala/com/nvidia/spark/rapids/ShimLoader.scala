@@ -21,7 +21,6 @@ import java.net.URL
 import scala.collection.JavaConverters.enumerationAsScalaIteratorConverter
 import scala.util.Try
 
-import com.nvidia.spark.rapids.ConnectShims._
 import org.apache.commons.lang3.reflect.MethodUtils
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
@@ -29,7 +28,7 @@ import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
+import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.util.MutableURLClassLoader
 
@@ -350,7 +349,7 @@ object ShimLoader {
     ShimReflectionUtils.newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
 
-  def newStrategyRules(): Strategy = {
+  def newStrategyRules(): SparkStrategy = {
     ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.StrategyRules")
   }
 

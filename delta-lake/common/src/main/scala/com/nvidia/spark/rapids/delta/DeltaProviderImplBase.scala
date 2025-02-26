@@ -17,9 +17,8 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
-import com.nvidia.spark.rapids.ConnectShims._
 
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
 
 abstract class DeltaProviderImplBase extends DeltaProvider {
 
@@ -37,7 +36,7 @@ abstract class DeltaProviderImplBase extends DeltaProvider {
     ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
   }
 
-  override def getStrategyRules: Seq[Strategy] = Seq(
+  override def getStrategyRules: Seq[SparkStrategy] = Seq(
     RapidsProcessDeltaMergeJoinStrategy,
     RapidsDeltaWriteStrategy)
 }
