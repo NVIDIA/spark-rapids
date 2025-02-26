@@ -23,8 +23,9 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer}
+import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer, KudoTable}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -139,12 +140,14 @@ object GpuShuffleCoalesceUtils {
   /** Get the buffer size of a serialized batch just returned by the Shuffle deserializer */
   def getSerializedBufferSize(cb: ColumnarBatch): Long = {
     assert(cb.numCols() == 1)
-    val hmb = cb.column(0) match {
-      case col: KudoSerializedTableColumn => col.kudoTable.getBuffer
-      case serCol: SerializedTableColumn => serCol.hostBuffer
+    cb.column(0) match {
+      case col: KudoSerializedTableColumn => col.spillableKudoTable.getLength
+      case serCol: SerializedTableColumn => {
+        val hmb = serCol.hostBuffer
+        if (hmb != null) hmb.getLength else 0L
+      }
       case o => throw new IllegalStateException(s"unsupported type: ${o.getClass}")
     }
-    if (hmb != null) hmb.getLength else 0L
   }
 }
 
@@ -233,24 +236,33 @@ class KudoTableOperator(kudo: Option[KudoSerializer])
   extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
 
-  override def getDataLen(column: KudoSerializedTableColumn): Long = column.kudoTable.getHeader
+  override def getDataLen(column: KudoSerializedTableColumn): Long =
+    column.spillableKudoTable.getHeader
     .getTotalDataLen
 
-  override def getNumRows(column: KudoSerializedTableColumn): Int = column.kudoTable.getHeader
+  override def getNumRows(column: KudoSerializedTableColumn): Int =
+    column.spillableKudoTable.getHeader
     .getNumRows
 
   override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
     require(columns.nonEmpty, "no tables to be concatenated")
-    val numCols = columns.head.kudoTable.getHeader.getNumColumns
+    val numCols = columns.head.spillableKudoTable.getHeader.getNumColumns
     if (numCols == 0) {
       val totalRowsNum = columns.map(getNumRows).sum
       RowCountOnlyMergeResult(totalRowsNum)
     } else {
-
-      val kudoTables = columns.map(_.kudoTable)
-      val result = kudo.get.mergeOnHost(kudoTables)
-
-      KudoHostMergeResultWrapper(result)
+      try {
+        for (skt <- columns.map(_.spillableKudoTable)) {
+          skt.getBuffer // load the buffer to host
+        }
+        val kudoTables = columns.map(_.spillableKudoTable.asInstanceOf[KudoTable])
+        val result = kudo.get.mergeOnHost(kudoTables)
+        KudoHostMergeResultWrapper(result)
+      } finally {
+        for (skt <- columns.map(_.spillableKudoTable)) {
+          skt.guaranteeSpillable()
+        }
+      }
     }
   }
 }
@@ -289,9 +301,10 @@ abstract class HostCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
 
   private def concatenateTablesInHost(): CoalescedHostResult = {
     val result = withResource(new MetricRange(concatTimeMetric)) { _ =>
-      withResource(new Array[T](numTablesInBatch)) { tables =>
-        tables.indices.foreach(i => tables(i) = serializedTables.removeFirst())
-        tableOperator.concatOnHost(tables)
+      val input = for (_ <- 0 until numTablesInBatch) yield serializedTables.removeFirst()
+
+      withRetryNoSplit(input) { tables =>
+        tableOperator.concatOnHost(tables.toArray)
       }
     }
 

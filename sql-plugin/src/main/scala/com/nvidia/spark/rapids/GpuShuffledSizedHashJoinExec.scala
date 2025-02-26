@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.GpuShuffledSizedHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoTable, KudoTableHeader}
+import com.nvidia.spark.rapids.jni.kudo.KudoTableHeader
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 import org.apache.spark.rdd.RDD
@@ -1108,13 +1108,13 @@ sealed trait SpillableHostConcatResult extends AutoCloseable {
   def getNumRows: Long
   def getDataLen: Long
 
-  protected var buffer = {
+  protected var spillableBuffer = {
     SpillableHostBuffer(hmb, hmb.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
-  override def close(): Unit = if (buffer != null) {
-    buffer.close()
-    buffer = null
+  override def close(): Unit = if (spillableBuffer != null) {
+    spillableBuffer.close()
+    spillableBuffer = null
   }
 }
 
@@ -1123,7 +1123,7 @@ class CudfSpillableHostConcatResult(
     val hmb: HostMemoryBuffer) extends SpillableHostConcatResult {
 
   override def toBatch: ColumnarBatch = {
-    closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+    closeOnExcept(spillableBuffer.getHostBuffer()) { hostBuf =>
       SerializedTableColumn.from(header, hostBuf)
     }
   }
@@ -1138,14 +1138,17 @@ class KudoSpillableHostConcatResult(kudoTableHeader: KudoTableHeader,
 ) extends SpillableHostConcatResult  {
   require(kudoTableHeader != null, "KudoTableHeader cannot be null")
   require(hmb != null, "HostMemoryBuffer cannot be null")
+  val bufferLength: Long = hmb.getLength
 
-  override def toBatch: ColumnarBatch = closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
-    KudoSerializedTableColumn.from(new KudoTable(kudoTableHeader, hostBuf))
+  override def toBatch: ColumnarBatch = closeOnExcept(spillableBuffer.getHostBuffer()) { hostBuf =>
+    KudoSerializedTableColumn.from(new SpillableKudoTable(kudoTableHeader, hostBuf))
   }
 
   override def getNumRows: Long = kudoTableHeader.getNumRows
 
-  override def getDataLen: Long = hmb.getLength
+  // Should not reference hmb after its ownership is transferred to spillableBuffer,
+  // so we just cache the length at the time of construction
+  override def getDataLen: Long = bufferLength
 }
 
 object SpillableHostConcatResult {
@@ -1154,8 +1157,8 @@ object SpillableHostConcatResult {
     batch.column(0) match {
       case col: KudoSerializedTableColumn => {
         // This will be closed
-        val oldKudoTable = col.kudoTable
-        val buffer = col.kudoTable.getBuffer
+        val oldKudoTable = col.spillableKudoTable
+        val buffer = col.spillableKudoTable.getBuffer
         if (buffer != null) {
           buffer.incRefCount()
         }
