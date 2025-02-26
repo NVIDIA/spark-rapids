@@ -172,7 +172,8 @@ jobs:
         run: |
           set -x
           depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.13)
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
+          hashfile=$(echo ${{ hashFiles('**/pom.xml') }} | cut -c1-8)
+          cacheKey="${{ runner.os }}-maven-${hashfile}-${{ github.event.pull_request.base.ref }}-${depsSHA1}"
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
