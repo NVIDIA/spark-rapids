@@ -633,6 +633,8 @@ object GpuToTimestamp {
   val LEGACY_COMPATIBLE_FORMATS = Map(
     "yyyy-MM-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
+    "yyyy-mm-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
+      raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
     "yyyy/MM/dd" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{4}/\d{1,2}/\d{1,2}(\D|\s|\Z)"),
     "dd-MM-yyyy" -> ParseFormatMeta(Option('-'), isTimestamp = false,
