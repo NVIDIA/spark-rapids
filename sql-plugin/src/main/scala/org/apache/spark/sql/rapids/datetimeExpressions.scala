@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -632,6 +632,8 @@ object GpuToTimestamp {
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Map(
     "yyyy-MM-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
+      raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
+    "yyyy-mm-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
     "yyyy/MM/dd" -> ParseFormatMeta(Option('/'), isTimestamp = false,
       raw"\A\d{4}/\d{1,2}/\d{1,2}(\D|\s|\Z)"),
