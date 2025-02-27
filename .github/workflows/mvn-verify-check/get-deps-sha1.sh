@@ -50,6 +50,4 @@ else
   hybrid_sha1=$hybrid_ver
 fi
 
-sha1md5=$(echo -n "${jni_sha1}_${private_sha1}_${hybrid_sha1}" | md5sum | awk '{print $1}' | cut -c1-8)
-
 echo -n "${jni_sha1}_${private_sha1}_${hybrid_sha1}"
