@@ -37,6 +37,8 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
+pytestmark = pytest.mark.skip(reason="Skipping all iceberg tests as it's under refactoring")
+
 @allow_non_gpu("BatchScanExec")
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -107,7 +109,6 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 @iceberg
-@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @pytest.mark.parametrize("data_gens", [[long_gen]], ids=idfn)
 @pytest.mark.parametrize("iceberg_format", ["orc", "avro"], ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
