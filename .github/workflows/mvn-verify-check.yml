@@ -55,7 +55,7 @@ jobs:
           set -x
           depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.12)
           hashfile=$(echo ${{ hashFiles('**/pom.xml') }})
-          md5sum=$(echo -n "$depsSHA1-$hashfile" | md5sum | awk '{print $1}' | cut -c1-8)
+          md5sum=$(echo -n "$depsSHA1-$hashfile" | md5sum | awk '{print $1}')
           cacheKey="${{ runner.os }}-maven-${{ github.event.pull_request.base.ref }}-${md5sum}"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
@@ -174,7 +174,7 @@ jobs:
           set -x
           depsSHA1=$(. .github/workflows/mvn-verify-check/get-deps-sha1.sh 2.13)
           hashfile=$(echo ${{ hashFiles('**/pom.xml') }})
-          md5sum=$(echo -n "$depsSHA1-$hashfile" | md5sum | awk '{print $1}' | cut -c1-8)
+          md5sum=$(echo -n "$depsSHA1-$hashfile" | md5sum | awk '{print $1}')
           cacheKey="${{ runner.os }}-maven-${{ github.event.pull_request.base.ref }}-${md5sum}"
           echo "scala213dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
