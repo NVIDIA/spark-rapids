@@ -24,9 +24,8 @@ import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
 import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.util.DeltaFileOperations.absolutePath
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsConf, RapidsHostColumnBuilder, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, HostColumnarToGpu, RapidsHostColumnBuilder, SparkPlanMeta}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.addMetadataColumnToIterator
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import scala.collection.mutable.ArrayBuffer
@@ -145,36 +144,9 @@ case class GpuDeltaParquetFileFormat(
     val broadcastConfiguration =
       Option(spark.sparkContext.broadcast(new SerializableConfiguration(hadoopConf)))
 
-    val delVecs = broadcastDvMap
-    val maxDelVecScatterBatchSize = RapidsConf
-      .DELTA_LOW_SHUFFLE_MERGE_SCATTER_DEL_VECTOR_BATCH_SIZE
-      .get(sparkSession.sessionState.conf)
-
-    val delVecScatterTimeMetric = metrics(GpuMetric.DELETION_VECTOR_SCATTER_TIME)
-    val delVecSizeMetric = metrics(GpuMetric.DELETION_VECTOR_SIZE)
-
     (file: PartitionedFile) => {
-      val input = dataReader(file)
-      val inlinedDv = delVecs.flatMap(_.value.get(new URI(file.filePath.toString())))
-        .map { dv =>
-          if (dv.descriptor.inlineData != null) {
-            delVecSizeMetric += dv.descriptor.inlineData.length
-            RoaringBitmapWrapper.deserializeFromBytes(dv.descriptor.inlineData).inner
-          } else {
-            null
-          }
-        }
+      val iter = dataReader(file)
       try {
-        val iter = if (inlinedDv.isDefined) {
-           addMetadataColumnToIterator(prepareSchema(requiredSchema),
-            inlinedDv,
-            input.asInstanceOf[Iterator[ColumnarBatch]],
-            maxDelVecScatterBatchSize,
-            delVecScatterTimeMetric
-          ).asInstanceOf[Iterator[InternalRow]]
-        } else {
-          input
-        }
         iteratorWithAdditionalMetadataColumns(tahoeTablePath, file, iter, isRowDeletedColumn,
           rowIndexColumn, broadcastFilePathToDVMap, broadcastConfiguration)
           .asInstanceOf[Iterator[InternalRow]]
