@@ -327,7 +327,7 @@ object SerializedTableColumn {
         case serializedTableColumn: SerializedTableColumn =>
           sum += Option(serializedTableColumn.hostBuffer).map(_.getLength).getOrElse(0L)
         case kudo: KudoSerializedTableColumn =>
-          sum += Option(kudo.spillableKudoTable).map(_.getLength).getOrElse(0L)
+          sum += Option(kudo.spillableKudoTable).map(_.length).getOrElse(0L)
         case _ =>
           throw new IllegalStateException(s"Unexpected column type: ${cv.getClass}" )
       }
@@ -515,7 +515,7 @@ object KudoSerializedTableColumn {
    */
   def from(kudoTable: SpillableKudoTable): ColumnarBatch = {
     val column = new KudoSerializedTableColumn(kudoTable)
-    new ColumnarBatch(Array(column), kudoTable.getHeader.getNumRows)
+    new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
 }
 
@@ -569,11 +569,11 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
 
         closeOnExcept(buffer) { _ =>
           buffer.copyFromStream(0, dIn, header.getTotalDataLen)
-          val kudoTable = new SpillableKudoTable(header, buffer)
+          val kudoTable = SpillableKudoTable(header, buffer)
           KudoSerializedTableColumn.from(kudoTable)
         }
       } else {
-        KudoSerializedTableColumn.from(new SpillableKudoTable(header, null))
+        KudoSerializedTableColumn.from(SpillableKudoTable(header, null))
       }
     }
   }

@@ -23,9 +23,10 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer, KudoTable}
+import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -141,7 +142,7 @@ object GpuShuffleCoalesceUtils {
   def getSerializedBufferSize(cb: ColumnarBatch): Long = {
     assert(cb.numCols() == 1)
     cb.column(0) match {
-      case col: KudoSerializedTableColumn => col.spillableKudoTable.getLength
+      case col: KudoSerializedTableColumn => col.spillableKudoTable.length
       case serCol: SerializedTableColumn => {
         val hmb = serCol.hostBuffer
         if (hmb != null) hmb.getLength else 0L
@@ -237,31 +238,24 @@ class KudoTableOperator(kudo: Option[KudoSerializer])
   require(kudo != null, "kudo serializer should not be null")
 
   override def getDataLen(column: KudoSerializedTableColumn): Long =
-    column.spillableKudoTable.getHeader
+    column.spillableKudoTable.header
     .getTotalDataLen
 
   override def getNumRows(column: KudoSerializedTableColumn): Int =
-    column.spillableKudoTable.getHeader
+    column.spillableKudoTable.header
     .getNumRows
 
   override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
     require(columns.nonEmpty, "no tables to be concatenated")
-    val numCols = columns.head.spillableKudoTable.getHeader.getNumColumns
+    val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
       val totalRowsNum = columns.map(getNumRows).sum
       RowCountOnlyMergeResult(totalRowsNum)
     } else {
-      try {
-        for (skt <- columns.map(_.spillableKudoTable)) {
-          skt.getBuffer // load the buffer to host
-        }
-        val kudoTables = columns.map(_.spillableKudoTable.asInstanceOf[KudoTable])
+      // "lock" all input tables in memory before merge
+      withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
         val result = kudo.get.mergeOnHost(kudoTables)
         KudoHostMergeResultWrapper(result)
-      } finally {
-        for (skt <- columns.map(_.spillableKudoTable)) {
-          skt.guaranteeSpillable()
-        }
       }
     }
   }
