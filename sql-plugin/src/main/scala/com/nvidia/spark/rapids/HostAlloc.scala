@@ -47,7 +47,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
         releaseNonPinned(ptr, amount)
-        bookkeepHostMemoryFree(ptr, amount)
+        if (BOOKKEEP_MEMORY) {
+          bookkeepHostMemoryFree(ptr, amount)
+        }
       }
     }
   }
@@ -59,7 +61,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
         releasePinned(ptr, amount)
-        bookkeepHostMemoryFree(ptr, amount)
+        if (BOOKKEEP_MEMORY) {
+          bookkeepHostMemoryFree(ptr, amount)
+        }
       }
     }
   }
@@ -213,8 +217,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
         val metrics = GpuTaskMetrics.get
         metrics.incHostBytesAllocated(amount)
         if (BOOKKEEP_MEMORY) {
-          val threadId = Thread.currentThread().getId
-          HostAlloc.bookkeepHostMemoryAlloc(ret.get.getAddress, threadId, amount)
+          HostAlloc.bookkeepHostMemoryAlloc(ret.get.getAddress, amount)
         }
         logTrace(getHostAllocMetricsLogStr(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
@@ -413,7 +416,8 @@ object HostAlloc extends Logging {
   private val muPerThreads = new ConcurrentHashMap[Long, PerThreadMemoryUsage]()
   private val addr2threadId = new ConcurrentHashMap[Long, java.lang.Long]()
 
-  private def bookkeepHostMemoryAlloc(addr: Long, threadId: Long, amount: Long): Unit = {
+  private def bookkeepHostMemoryAlloc(addr: Long, amount: Long): Unit = {
+    val threadId = Thread.currentThread().getId
     HostAlloc.addr2threadId.put(addr, threadId)
     if (BOOKKEEP_MEMORY_CALLSTACK) {
       val mu = muPerThreads.computeIfAbsent(threadId, _ => new PerThreadMemoryUsageInDetails)
@@ -426,33 +430,27 @@ object HostAlloc extends Logging {
   }
 
   private def bookkeepHostMemoryFree(ptr: Long, amount: Long) = {
-    if (BOOKKEEP_MEMORY) {
-      val threadId = HostAlloc.addr2threadId.get(ptr)
-      if (threadId != null) {
-        val mu = HostAlloc.muPerThreads.get(threadId)
-        if (mu != null) {
-          mu.remove(ptr, amount)
-        } else {
-          logWarning(s"Could not find MemoryUsage for thread $threadId from address $ptr, " +
-            s"bytes: $amount")
-        }
-        HostAlloc.addr2threadId.remove(ptr)
+    val threadId = HostAlloc.addr2threadId.get(ptr)
+    if (threadId != null) {
+      val mu = HostAlloc.muPerThreads.get(threadId)
+      if (mu != null) {
+        mu.remove(ptr, amount)
       } else {
-        logWarning(s"Could not find thread id for address $ptr, bytes: $amount")
+        logWarning(s"Could not find MemoryUsage for thread $threadId from address $ptr, " +
+          s"bytes: $amount")
       }
+      HostAlloc.addr2threadId.remove(ptr)
+    } else {
+      logWarning(s"Could not find thread id for address $ptr, bytes: $amount")
     }
   }
 
   def getHostAllocBookkeepSummary(): String = {
-    if (BOOKKEEP_MEMORY) {
-      val sb = new StringBuilder
-      sb.append("<<Host Memory Bookkeeping>>\n")
-      muPerThreads.forEach((threadId, mu) => {
-        sb.append(s"Thread with ID $threadId memory usage: ${mu.toString}\n\n")
-      })
-      sb.toString()
-    } else {
-      "Host memory bookkeeping is disabled"
-    }
+    val sb = new StringBuilder
+    sb.append("<<Host Memory Bookkeeping>>\n")
+    muPerThreads.forEach((threadId, mu) => {
+      sb.append(s"Thread with ID $threadId memory usage: ${mu.toString}\n\n")
+    })
+    sb.toString()
   }
 }
