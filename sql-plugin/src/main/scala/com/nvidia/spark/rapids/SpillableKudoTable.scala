@@ -26,7 +26,13 @@ class SpillableKudoTable(val header: KudoTableHeader,
     shb: SpillableHostBuffer)
   extends AutoCloseable {
 
-  def makeKudoTable: KudoTable = new KudoTable(header, shb.getHostBuffer())
+  def makeKudoTable: KudoTable = {
+    if (shb == null) {
+      new KudoTable(header, null)
+    } else {
+      new KudoTable(header, shb.getHostBuffer())
+    }
+  }
 
   override def toString: String =
     "SpillableKudoTable{header=" + this.header + ", shb=" + this.shb + '}'
@@ -38,13 +44,17 @@ class SpillableKudoTable(val header: KudoTableHeader,
 
 object SpillableKudoTable {
   def apply(header: KudoTableHeader, buffer: HostMemoryBuffer): SpillableKudoTable = {
-    new SpillableKudoTable(
-      header,
-      buffer.getLength,
-      SpillableHostBuffer.apply(
-        buffer,
+    if (buffer == null) {
+      new SpillableKudoTable(header, 0, null)
+    } else {
+      new SpillableKudoTable(
+        header,
         buffer.getLength,
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    )
+        SpillableHostBuffer.apply(
+          buffer,
+          buffer.getLength,
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      )
+    }
   }
 }
