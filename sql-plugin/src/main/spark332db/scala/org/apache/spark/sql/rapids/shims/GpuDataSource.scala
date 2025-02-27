@@ -35,13 +35,14 @@ package org.apache.spark.sql.rapids
 import com.nvidia.spark.rapids.shims.LogicalPlanShims
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql._
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
 

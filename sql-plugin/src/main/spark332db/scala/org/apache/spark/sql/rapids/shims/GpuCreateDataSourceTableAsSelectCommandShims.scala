@@ -37,12 +37,13 @@ import java.net.URI
 import com.nvidia.spark.rapids.GpuDataWritingCommand
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql._
+import org.apache.spark.sql.{AnalysisException, Row, SaveMode}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.{CommandUtils, LeafRunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.sources.BaseRelation
 
 case class GpuCreateDataSourceTableAsSelectCommand(
