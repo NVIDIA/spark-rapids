@@ -1077,9 +1077,8 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
       closeOnExcept(hostBuffer) { hmb =>
         withResource(new HostMemoryOutputStream(hmb)) { out =>
           writeOrcOutputFile(ctx, out, stripes)
-          val shb = SpillableHostBuffer(hmb, hmb.getLength,
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          (shb, out.getPos)
+          (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+            out.getPos)
         }
       }
     }
@@ -1237,7 +1236,7 @@ class GpuOrcPartitionReader(
               ctx.requestedMapping, readDataSchema)
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
               // MakeOrcTableProducer will try to close the dataBuf
-              val dataBuf = dataBuffer.getHostBuffer()
+              val dataBuf = dataBuffer.getDataHostBuffer()
               // Duplicate request is ok and start to use the GPU just after the host
               // buffer is ready to not block CPU things.
               GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -2257,7 +2256,7 @@ class MultiFileCloudOrcPartitionReader(
 
     RmmRapidsRetryIterator.withRetryNoSplit(hostBuffer) { _ =>
       // The MakeOrcTableProducer will close the input buffer
-      val dataBuf = hostBuffer.getHostBuffer()
+      val dataBuf = hostBuffer.getDataHostBuffer()
       // Duplicate request is ok, and start to use the GPU just after the host
       // buffer is ready to not block CPU things.
       GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -2321,7 +2320,7 @@ class MultiFileCloudOrcPartitionReader(
             if (dataCopyAmount > 0 && buf.hmbs.nonEmpty) {
               require(buf.hmbs.length == 1)
               val headBuf = withRetryNoSplit[HostMemoryBuffer] {
-                buf.hmbs.head.getHostBuffer()
+                buf.hmbs.head.getDataHostBuffer()
               }
               withResource(headBuf) { _ =>
                 combinedBuf.copyFromHostBuffer(

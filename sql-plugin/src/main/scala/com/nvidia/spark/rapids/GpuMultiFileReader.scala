@@ -1014,7 +1014,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           } else {
             startNewBufferRetry
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
-              val dataBuf = dataBuffer.getHostBuffer()
+              val dataBuf = dataBuffer.getDataHostBuffer()
               val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
                 currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
                 currentChunkMeta.extraInfo)
@@ -1138,12 +1138,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       }
       logDebug(s"$getFileFormatShortName Coalescing reading estimates the initTotalSize:" +
         s" $initTotalSize, and the true size: $finalBufferSize")
-      withResource(finalBuffer) { _ =>
-        SpillableHostBuffer(
-          finalBuffer.slice(0, finalBufferSize),
-          finalBufferSize,
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-      }
+      SpillableHostBuffer(finalBuffer,
+        finalBufferSize,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
   }
 

@@ -479,6 +479,19 @@ class SpillableHostBuffer(handle: SpillableHostBufferHandle,
     handle.materialize()
   }
 
+  /**
+   * Get the host buffer for data part only, which is sliced to the range of [0, length).
+   * Since a spillable buffer may have larger space than the actual data size.
+   */
+  def getDataHostBuffer(): HostMemoryBuffer = {
+    val buf = getHostBuffer()
+    if (length < buf.getLength) {
+      withResource(buf)(_.slice(0, length))
+    } else { // length == buf.getLength
+      buf
+    }
+  }
+
   override def toString: String =
     s"SpillableHostBuffer length:$length, handle:$handle"
 }

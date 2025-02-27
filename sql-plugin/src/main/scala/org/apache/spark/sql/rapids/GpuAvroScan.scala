@@ -374,7 +374,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       hostBuf.close()
       None
     } else {
-      val dataBuf = withRetryNoSplit(hostBuf)(_.getHostBuffer())
+      val dataBuf = withRetryNoSplit(hostBuf)(_.getDataHostBuffer())
       val t = withResource(dataBuf)(sendToGpuUnchecked(_, bufSize, splits))
       withResource(t) { _ =>
         val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
@@ -452,9 +452,8 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
               throw new QueryExecutionException(s"Calculated buffer size $estOutSize is" +
                 s" too small, actual written: ${out.getPos}")
             }
-            val shb = SpillableHostBuffer(hmb, hmb.getLength,
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-            (shb, out.getPos)
+            (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+              out.getPos)
           }
         }
       }

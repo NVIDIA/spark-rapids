@@ -1928,11 +1928,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
               s"small, actual written: ${out.getPos}")
         }
-        val outputBuffer = withResource(hmb) { _ =>
-          SpillableHostBuffer(hmb.slice(0, out.getPos), out.getPos,
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-        }
-        (outputBuffer, outputBlocks)
+        (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+          outputBlocks)
       }
     }
   }
@@ -2788,7 +2785,7 @@ class MultiFileCloudParquetPartitionReader(
     withResource(hostBuffers) { _ =>
       RmmRapidsRetryIterator.withRetryNoSplit {
         // The MakeParquetTableProducer will close the input buffers
-        val hostBufs = hostBuffers.safeMap(_.getHostBuffer())
+        val hostBufs = hostBuffers.safeMap(_.getDataHostBuffer())
         // Duplicate request is ok, and start to use the GPU just after the host
         // buffer is ready to not block CPU things.
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -3052,7 +3049,7 @@ class ParquetPartitionReader(
           } else {
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
               // MakeParquetTableProducer will try to close the hostBuf
-              val hostBuf = dataBuffer.getHostBuffer()
+              val hostBuf = dataBuffer.getDataHostBuffer()
               // Duplicate request is ok, and start to use the GPU just after the host
               // buffer is ready to not block CPU things.
               GpuSemaphore.acquireIfNecessary(TaskContext.get())
