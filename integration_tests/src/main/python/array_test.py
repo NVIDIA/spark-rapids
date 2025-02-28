@@ -293,6 +293,38 @@ def test_array_slice(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+def test_array_slice_with_illegal_arguments(data_gen):
+    length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])
+    neg_length_gen = IntegerGen(min_val=-25, max_val=-1, special_cases=[None])
+    # start can not be zero
+    assert_gpu_and_cpu_error(
+        lambda spark: three_col_df(spark, data_gen, array_zero_index_gen, length_gen).selectExpr(
+            'slice(a, 0, 5)',
+            'slice(a, 0, c)',
+            'slice(a, b, 5)',
+            'slice(a, b, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), 0, 5)',
+            'slice(array(array(1, null, 2), array(1), array(null)), 0, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, 5)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, c)').collect(),
+        conf={},
+        error_message='Unexpected value for start in function slice: SQL array indices start at 1.')
+    # length can not be negative
+    assert_gpu_and_cpu_error(
+        lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, neg_length_gen).selectExpr(
+            'slice(a, 1, -5)',
+            'slice(a, b, -5)',
+            'slice(a, 1, c)',
+            'slice(a, b, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), 1, -5)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, -5)',
+            'slice(array(array(1, null, 2), array(1), array(null)), 1, c)',
+            'slice(array(array(1, null, 2), array(1), array(null)), b, c)').collect(),
+        conf={},
+        error_message='Unexpected value for length in function slice: length must be greater than or equal to 0.')
+
+
+@pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 @disable_ansi_mode
 def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
