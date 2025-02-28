@@ -26,8 +26,9 @@ import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerializat
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader, WriteInput}
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTableHeader, WriteInput}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
@@ -326,7 +327,7 @@ object SerializedTableColumn {
         case serializedTableColumn: SerializedTableColumn =>
           sum += Option(serializedTableColumn.hostBuffer).map(_.getLength).getOrElse(0L)
         case kudo: KudoSerializedTableColumn =>
-          sum += Option(kudo.kudoTable.getBuffer).map(_.getLength).getOrElse(0L)
+          sum += Option(kudo.spillableKudoTable).map(_.length).getOrElse(0L)
         case _ =>
           throw new IllegalStateException(s"Unexpected column type: ${cv.getClass}" )
       }
@@ -491,10 +492,11 @@ private class KudoSerializerInstance(
  * This appears in a `ColumnarBatch` to pass serialized tables to [[GpuShuffleCoalesceExec]]
  * which should always appear in the query plan immediately after a shuffle.
  */
-case class KudoSerializedTableColumn(kudoTable: KudoTable) extends GpuColumnVectorBase(NullType) {
+case class KudoSerializedTableColumn(spillableKudoTable: SpillableKudoTable)
+  extends GpuColumnVectorBase(NullType) {
   override def close(): Unit = {
-    if (kudoTable != null) {
-      kudoTable.close()
+    if (spillableKudoTable != null) {
+      spillableKudoTable.close()
     }
   }
 
@@ -508,12 +510,14 @@ object KudoSerializedTableColumn {
    * Build a `ColumnarBatch` consisting of a single [[KudoSerializedTableColumn]] describing
    * the specified serialized table.
    *
-   * @param kudoTable Serialized kudo table.
+   * @param header the header of the kudo table
+   * @param hostBuffer the buffer for the kudo table
    * @return columnar batch to be passed to [[GpuShuffleCoalesceExec]]
    */
-  def from(kudoTable: KudoTable): ColumnarBatch = {
+  def from(header: KudoTableHeader, hostBuffer: HostMemoryBuffer): ColumnarBatch = {
+    val kudoTable = SpillableKudoTable(header, hostBuffer)
     val column = new KudoSerializedTableColumn(kudoTable)
-    new ColumnarBatch(Array(column), kudoTable.getHeader.getNumRows)
+    new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
 }
 
@@ -555,15 +559,22 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
       val header = nextHeader.get
       nextHeader = None
       if (header.getNumColumns > 0) {
-        // This buffer will later be concatenated into another host buffer before being
-        // sent to the GPU, so no need to use pinned memory for these buffers.
-        closeOnExcept(HostMemoryBuffer.allocate(header.getTotalDataLen, false)) { hostBuffer =>
-          hostBuffer.copyFromStream(0, dIn, header.getTotalDataLen)
-          val kudoTable = new KudoTable(header, hostBuffer)
-          KudoSerializedTableColumn.from(kudoTable)
+
+        // When allocation fails, will roll back to the beginning of this withRetryNoSplit,
+        // with previous batches saved in HostCoalesceIteratorBase.serializedTables.
+        // The previous batches should be able to be spilled by itself.
+        val buffer = withRetryNoSplit[HostMemoryBuffer] (
+          // This buffer will later be concatenated into another host buffer before being
+          // sent to the GPU, so no need to use pinned memory for these buffers.
+          HostMemoryBuffer.allocate(header.getTotalDataLen, false)
+        )
+
+        closeOnExcept(buffer) { _ =>
+          buffer.copyFromStream(0, dIn, header.getTotalDataLen)
+          KudoSerializedTableColumn.from(header, buffer)
         }
       } else {
-        KudoSerializedTableColumn.from(new KudoTable(header, null))
+        KudoSerializedTableColumn.from(header, null)
       }
     }
   }
