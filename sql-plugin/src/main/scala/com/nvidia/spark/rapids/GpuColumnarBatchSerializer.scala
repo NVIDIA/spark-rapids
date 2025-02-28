@@ -513,7 +513,8 @@ object KudoSerializedTableColumn {
    * @param kudoTable Serialized kudo table.
    * @return columnar batch to be passed to [[GpuShuffleCoalesceExec]]
    */
-  def from(kudoTable: SpillableKudoTable): ColumnarBatch = {
+  def from(header: KudoTableHeader, hostBuffer: HostMemoryBuffer): ColumnarBatch = {
+    val kudoTable = SpillableKudoTable(header, hostBuffer)
     val column = new KudoSerializedTableColumn(kudoTable)
     new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
@@ -569,11 +570,10 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
 
         closeOnExcept(buffer) { _ =>
           buffer.copyFromStream(0, dIn, header.getTotalDataLen)
-          val kudoTable = SpillableKudoTable(header, buffer)
-          KudoSerializedTableColumn.from(kudoTable)
+          KudoSerializedTableColumn.from(header, buffer)
         }
       } else {
-        KudoSerializedTableColumn.from(SpillableKudoTable(header, null))
+        KudoSerializedTableColumn.from(header, null)
       }
     }
   }

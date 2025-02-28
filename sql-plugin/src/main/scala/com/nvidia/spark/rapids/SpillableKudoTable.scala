@@ -1,9 +1,3 @@
-package com.nvidia.spark.rapids
-
-import ai.rapids.cudf.HostMemoryBuffer
-import com.nvidia.spark.rapids.jni.kudo.KudoTable
-import com.nvidia.spark.rapids.jni.kudo.KudoTableHeader
-
 /*
  * Copyright (c) 2025, NVIDIA CORPORATION.
  *
@@ -19,6 +13,11 @@ import com.nvidia.spark.rapids.jni.kudo.KudoTableHeader
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids
+
+import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.jni.kudo.KudoTable
+import com.nvidia.spark.rapids.jni.kudo.KudoTableHeader
 
 
 class SpillableKudoTable(val header: KudoTableHeader,

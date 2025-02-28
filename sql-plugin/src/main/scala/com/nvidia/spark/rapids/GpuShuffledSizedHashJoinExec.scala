@@ -1141,7 +1141,7 @@ class KudoSpillableHostConcatResult(kudoTableHeader: KudoTableHeader,
   val bufferLength: Long = hmb.getLength
 
   override def toBatch: ColumnarBatch = closeOnExcept(spillableBuffer.getHostBuffer()) { hostBuf =>
-    KudoSerializedTableColumn.from(SpillableKudoTable(kudoTableHeader, hostBuf))
+    KudoSerializedTableColumn.from(kudoTableHeader, hostBuf)
   }
 
   override def getNumRows: Long = kudoTableHeader.getNumRows
