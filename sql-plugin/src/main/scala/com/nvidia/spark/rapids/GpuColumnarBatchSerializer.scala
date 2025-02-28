@@ -510,7 +510,8 @@ object KudoSerializedTableColumn {
    * Build a `ColumnarBatch` consisting of a single [[KudoSerializedTableColumn]] describing
    * the specified serialized table.
    *
-   * @param kudoTable Serialized kudo table.
+   * @param header the header of the kudo table
+   * @param hostBuffer the buffer for the kudo table
    * @return columnar batch to be passed to [[GpuShuffleCoalesceExec]]
    */
   def from(header: KudoTableHeader, hostBuffer: HostMemoryBuffer): ColumnarBatch = {
