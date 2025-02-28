@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.spill.{SpillableColumnarBatchFromBufferHandle, SpillableColumnarBatchHandle, SpillableCompressedColumnarBatchHandle, SpillableDeviceBufferHandle, SpillableHostBufferHandle, SpillableHostColumnarBatchHandle}
 
 import org.apache.spark.TaskContext
@@ -478,6 +479,19 @@ class SpillableHostBuffer(handle: SpillableHostBufferHandle,
     handle.materialize()
   }
 
+  /**
+   * Get the host buffer for data part only, which is sliced to the range of [0, length).
+   * Since a spillable buffer may have larger space than the actual data size.
+   */
+  def getDataHostBuffer(): HostMemoryBuffer = {
+    val buf = getHostBuffer()
+    if (length < buf.getLength) {
+      withResource(buf)(_.slice(0, length))
+    } else { // length == buf.getLength
+      buf
+    }
+  }
+
   override def toString: String =
     s"SpillableHostBuffer length:$length, handle:$handle"
 }
@@ -519,5 +533,11 @@ object SpillableHostBuffer {
           s"greater than the backing host buffer length ${buffer.getLength} B")
     }
     new SpillableHostBuffer(SpillableHostBufferHandle(buffer), length)
+  }
+
+  def sliceWithRetry(shb: SpillableHostBuffer, start: Long, len: Long): HostMemoryBuffer = {
+    withRetryNoSplit[HostMemoryBuffer] {
+      withResource(shb.getHostBuffer())(_.slice(start, len))
+    }
   }
 }
