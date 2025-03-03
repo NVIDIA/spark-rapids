@@ -59,8 +59,6 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
 
     val conf = SQLConf.get
     val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-    val tmp = conf.getConfString("spark.sql.test.multiget.parallel", null)
-    val parallel = Option(tmp).map(_.toInt)
 
     withRetry(inputBatches, splitSpillableInHalfByRows) { attempt =>
       withResource(attempt.getColumnarBatch()) { inputBatch =>
@@ -85,7 +83,7 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
         var validPathsIndex = 0
         withResource(new Array[ColumnVector](fieldInstructions.length)) { validPathColumns =>
           withResource(JSONUtils.getJsonObjectMultiplePaths(
-              json, validPaths, 4 * targetBatchSize, parallel.getOrElse(-1))) { chunkedResult =>
+              json, validPaths, 4 * targetBatchSize, -1)) { chunkedResult =>
               chunkedResult.foreach { cr =>
                 validPathColumns(validPathsIndex) = cr.incRefCount()
                 validPathsIndex += 1

@@ -179,13 +179,11 @@ class GpuGetJsonObjectMeta(
 
 case class GpuMultiGetJsonObject(json: Expression,
                                  paths: Seq[Option[List[PathInstruction]]],
-                                 output: StructType)(targetBatchSize: Long,
-                                                     parallel: Option[Int])
+                                 output: StructType)(targetBatchSize: Long)
   extends GpuExpression with ShimExpression {
 
   override def otherCopyArgs: Seq[AnyRef] =
     targetBatchSize.asInstanceOf[java.lang.Long] ::
-      parallel ::
       Nil
 
   override def dataType: DataType = output
@@ -215,7 +213,7 @@ case class GpuMultiGetJsonObject(json: Expression,
       withResource(json.columnarEval(batch)) { input =>
         withResource(JSONUtils.getJsonObjectMultiplePaths(input.getBase,
           java.util.Arrays.asList(validPaths: _*), 4 * targetBatchSize,
-          parallel.getOrElse(-1))) { chunkedResult =>
+          -1)) { chunkedResult =>
           chunkedResult.foreach { cr =>
             validPathColumns(validPathsIndex) = cr.incRefCount()
             validPathsIndex += 1
@@ -321,9 +319,7 @@ class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpres
     val dt = StructType(fieldsNPaths.map(_._1))
     val conf = SQLConf.get
     val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-    val tmp = conf.getConfString("spark.sql.test.multiget.parallel", null)
-    val parallel = Option(tmp).map(_.toInt)
-    GpuMultiGetJsonObject(json, fieldsNPaths.map(_._2), dt)(targetBatchSize, parallel)
+    GpuMultiGetJsonObject(json, fieldsNPaths.map(_._2), dt)(targetBatchSize)
   }
 
   override def getReplacementExpression(e: Expression): Expression = {
