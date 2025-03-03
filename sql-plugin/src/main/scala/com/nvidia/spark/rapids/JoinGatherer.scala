@@ -143,16 +143,16 @@ trait JoinGatherer extends LazySpillable {
 
 object JoinGatherer {
   def apply(gatherMap: LazySpillableGatherMap,
-            inputData: LazySpillableColumnarBatch,
-            outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
+      inputData: LazySpillableColumnarBatch,
+      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
     new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
 
   def apply(leftMap: LazySpillableGatherMap,
-            leftData: LazySpillableColumnarBatch,
-            rightMap: LazySpillableGatherMap,
-            rightData: LazySpillableColumnarBatch,
-            outOfBoundsPolicyLeft: OutOfBoundsPolicy,
-            outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
+      leftData: LazySpillableColumnarBatch,
+      rightMap: LazySpillableGatherMap,
+      rightData: LazySpillableColumnarBatch,
+      outOfBoundsPolicyLeft: OutOfBoundsPolicy,
+      outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
     val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
     val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
     MultiJoinGather(left, right)
@@ -220,7 +220,7 @@ trait LazySpillableColumnarBatch extends LazySpillable {
 
 object LazySpillableColumnarBatch {
   def apply(cb: ColumnarBatch,
-            name: String): LazySpillableColumnarBatch =
+      name: String): LazySpillableColumnarBatch =
     new LazySpillableColumnarBatchImpl(cb, name)
 
   /**
