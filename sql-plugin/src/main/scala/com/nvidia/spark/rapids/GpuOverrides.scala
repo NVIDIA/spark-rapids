@@ -2732,6 +2732,17 @@ object GpuOverrides extends Logging {
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
+    expr[ArrayDistinct](
+      "Removes duplicate values from the array",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[ArrayDistinct](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuArrayDistinct(child)
+      }),
     expr[Flatten](
       "Creates a single array from an array of arrays",
       ExprChecks.unaryProject(

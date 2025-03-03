@@ -1561,6 +1561,15 @@ case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with Nu
   }
 }
 
+case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with NullIntolerantShim {
+  private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
+  override def nullable: Boolean = child.nullable || childDataType.containsNull
+  override def dataType: DataType = child.dataType
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    input.getBase.dropListDuplicates
+  }
+}
+
 class GpuSequenceMeta(
     expr: Sequence,
     conf: RapidsConf,
