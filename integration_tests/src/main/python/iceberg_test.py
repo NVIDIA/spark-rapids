@@ -37,7 +37,7 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
-pytestmark = pytest.mark.skip(reason="Skipping all iceberg tests as it's under refactoring")
+pytestmark = pytest.mark.skip(reason="Skipping all iceberg tests as it's under refactoring: https://github.com/NVIDIA/spark-rapids/issues/12176")
 
 @allow_non_gpu("BatchScanExec")
 @iceberg
