@@ -2099,18 +2099,22 @@ class DynamicGpuPartialAggregateIterator(
       helper: AggHelper): (Iterator[ColumnarBatch], Boolean) = {
     // we need to decide if we are going to sort the data or not, so the very
     // first thing we need to do is get a batch and make a choice.
-    val cb = cbIter.next()
     withResource(new NvtxWithMetrics("dynamic sort heuristic", NvtxColor.BLUE,
       metrics.opTime, metrics.heuristicTime)) { _ =>
-      lazy val estimatedGrowthAfterAgg: Double = closeOnExcept(cb) { cb =>
-        val numRows = cb.numRows()
-        val cardinality = estimateCardinality(cb)
-        val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
-          helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-        (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
-      }
-      val wrappedIter = Seq(cb).toIterator ++ cbIter
-      (wrappedIter, estimatedGrowthAfterAgg > 1.0)
+
+        withRetryNoSplit(SpillableColumnarBatch(cbIter.next(),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            val numRows = cb.numRows()
+            val cardinality = estimateCardinality(cb)
+            val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
+              helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+            val estimatedGrowthAfterAgg =
+              (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
+            val wrappedIter = Seq(GpuColumnVector.incRefCounts(cb)).toIterator ++ cbIter
+            (wrappedIter, estimatedGrowthAfterAgg > 1.0)
+          }
+        }
     }
   }
 
