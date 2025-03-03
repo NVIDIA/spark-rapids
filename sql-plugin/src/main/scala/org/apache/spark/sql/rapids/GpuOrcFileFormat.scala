@@ -185,7 +185,7 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
     // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
     val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
       .getOrElse(asyncOutputWriteEnabled)
-    val orcStripeSizeRows = RapidsConf.ORC_STRIPE_SIZE_ROWS.get(sqlConf)
+    val orcStripeSizeRows = RapidsConf.TEST_ORC_STRIPE_SIZE_ROWS.get(sqlConf)
 
     new ColumnarOutputWriterFactory {
       override def newInstance(path: String,
