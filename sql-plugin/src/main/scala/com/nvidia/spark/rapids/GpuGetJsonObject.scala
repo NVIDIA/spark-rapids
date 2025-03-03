@@ -211,6 +211,7 @@ case class GpuMultiGetJsonObject(json: Expression,
     val validPaths = validPathsWithIndexes.map(_._1)
     withResource(new Array[ColumnVector](validPaths.length)) { validPathColumns =>
       withResource(json.columnarEval(batch)) { input =>
+        // Last argument -1 indicates to use automatically calculated parallelism
         withResource(JSONUtils.getJsonObjectMultiplePaths(input.getBase,
           java.util.Arrays.asList(validPaths: _*), 4 * targetBatchSize,
           -1)) { chunkedResult =>
