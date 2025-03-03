@@ -106,6 +106,8 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
 def test_write_with_stripe_size_rows(spark_tmp_path, orc_gen, orc_impl):
     gen_list = [('_c0', orc_gen)]
     data_path = spark_tmp_path + '/ORC_DATA'
+    # cuDF ORC writer rounds the number of elements in each stripe (except the last) to a multiple
+    # of 8 to be able to efficiently encode the validity masks. So use an integer divisible by 8.
     stripe_size_rows = 10000
     with_gpu_session(
         lambda spark: gen_df(spark, gen_list, stripe_size_rows + 1, num_slices=1).write.orc(data_path),
