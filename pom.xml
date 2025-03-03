@@ -814,6 +814,8 @@
                                 <configuration>
                                     <!-- Metals looks at the repo root. so to accomodate scala 2.13  define -->
                                     <bloopConfigDir>${bloop.configDirectory}</bloopConfigDir>
+
+                                    <downloadSources>true</downloadSources>
                                 </configuration>
                             </execution>
                         </executions>
