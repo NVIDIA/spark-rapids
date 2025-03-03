@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -592,8 +592,11 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
         } else {
           val (build, stream) = pair.release
           val buildCb = closeOnExcept(stream) { _ =>
-            withResource(build) { _ =>
+            val cb = withResource(build) { _ =>
               build.map(_.getColumnarBatch()).getOrElse(GpuColumnVector.emptyBatch(buildSchema))
+            }
+            withResource(cb) {
+              LazySpillableColumnarBatch(_, "built")
             }
           }
           val streamIter = closeOnExcept(buildCb) { _ =>
@@ -602,7 +605,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
             }
           }
           // Leverage the original join iterators
-          val joinIter = doJoin(buildCb, streamIter, targetSize, 
+          val joinIter = doJoin(buildCb, streamIter, targetSize,
             numOutputRows, numOutputBatches, opTime, joinTime)
           Some(joinIter)
         }

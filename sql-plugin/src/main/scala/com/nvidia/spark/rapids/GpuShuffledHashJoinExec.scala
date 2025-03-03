@@ -215,11 +215,12 @@ case class GpuShuffledHashJoinExec(
 
         buildData match {
           case Left(singleBatch) =>
-            closeOnExcept(singleBatch) { _ =>
+            val singleLazyScb = withResource(singleBatch) { _ =>
               buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBatch)
+              LazySpillableColumnarBatch(singleBatch, "built")
             }
             // doJoin will close singleBatch
-            doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
+            doJoin(singleLazyScb, maybeBufferedStreamIter, realTarget,
               numOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.

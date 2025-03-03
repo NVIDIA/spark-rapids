@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf._
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -143,16 +143,16 @@ trait JoinGatherer extends LazySpillable {
 
 object JoinGatherer {
   def apply(gatherMap: LazySpillableGatherMap,
-      inputData: LazySpillableColumnarBatch,
-      outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
+            inputData: LazySpillableColumnarBatch,
+            outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
     new JoinGathererImpl(gatherMap, inputData, outOfBoundsPolicy)
 
   def apply(leftMap: LazySpillableGatherMap,
-      leftData: LazySpillableColumnarBatch,
-      rightMap: LazySpillableGatherMap,
-      rightData: LazySpillableColumnarBatch,
-      outOfBoundsPolicyLeft: OutOfBoundsPolicy,
-      outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
+            leftData: LazySpillableColumnarBatch,
+            rightMap: LazySpillableGatherMap,
+            rightData: LazySpillableColumnarBatch,
+            outOfBoundsPolicyLeft: OutOfBoundsPolicy,
+            outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
     val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
     val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
     MultiJoinGather(left, right)
@@ -220,8 +220,30 @@ trait LazySpillableColumnarBatch extends LazySpillable {
 
 object LazySpillableColumnarBatch {
   def apply(cb: ColumnarBatch,
-      name: String): LazySpillableColumnarBatch =
+            name: String): LazySpillableColumnarBatch =
     new LazySpillableColumnarBatchImpl(cb, name)
+
+  /**
+   * Creates a new [[LazySpillableBatchBuilder]] from a given build function that produces a
+   * [[ColumnarBatch]]. This approach defers materialization of the batch until it's actually
+   * needed, helping avoid taking GPU semaphore too early.
+   *
+   * @param name   a descriptive name (used in logs/debugging)
+   * @param schema the data types describing the eventual batch
+   * @param bf     a function returning a [[ColumnarBatch]], typically referencing GPU data
+   * @return       a [[LazySpillableBatchBuilder]] that defers construction of the batch
+   */
+  def builder(name: String,
+              schema: Array[DataType],
+              bf: () => ColumnarBatch): LazySpillableBatchBuilder = {
+    new LazySpillableBatchBuilder(name, schema,
+      () => {
+        withResource(bf()) { batch =>
+          LazySpillableColumnarBatch(batch, name)
+        }
+      }
+    )
+  }
 
   def spillOnly(wrapped: LazySpillableColumnarBatch): LazySpillableColumnarBatch = wrapped match {
     case alreadyGood: AllowSpillOnlyLazySpillableColumnarBatchImpl => alreadyGood
@@ -235,7 +257,7 @@ object LazySpillableColumnarBatch {
  * where the data itself needs to out live the JoinGatherer it is handed off to.
  */
 case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableColumnarBatch)
-    extends LazySpillableColumnarBatch {
+  extends LazySpillableColumnarBatch {
   override def getBatch: ColumnarBatch =
     wrapped.getBatch
 
@@ -332,6 +354,106 @@ class LazySpillableColumnarBatchImpl(
   override def toString: String = s"SpillableBatch $name $numCols X $numRows"
 }
 
+/**
+ * A lazy-evaluation variant of LazySpillableColumnarBatchImpl. Rather than accepting a prebuilt
+ * GPU batch, this builder takes a `buildFn` for on-demand materialization. By deferring
+ * materialization, we can avoid constructing the GPU batch until absolutely necessary, so that
+ * we can avoid taking the GpuSemaphore too early, especially when we try to take semaphore for
+ * small broadcast batches, then do I/O work of the probe side while keeping the GPU semaphore.
+ *
+ * Optionally, metadata like schema, row count, and memory size can be supplied upfront, preventing
+ * early materialization solely for metadata retrieval.
+ *
+ * Once the GPU batch is materialized, this builder behaves like a normal
+ * LazySpillableColumnarBatchImpl.
+ */
+class LazySpillableBatchBuilder(
+    val name: String,
+    val schema: Array[DataType],
+    private val buildFn: () => LazySpillableColumnarBatch,
+) extends LazySpillableColumnarBatch {
+  @transient
+  private var materialized = false
+
+  @transient
+  private lazy val result: LazySpillableColumnarBatch = {
+    require(!materialized, "Already being materialized")
+    materialized = true
+    buildFn()
+  }
+
+  private var rowCntVal: Option[Int] = None
+  private var totalMemory: Option[Long] = None
+
+  // Sets the row count in advance, preventing early materialization when `numRows` is called.
+  // Throws an error if already materialized.
+  def setRowCnt(newRowCnt: Int): LazySpillableBatchBuilder = {
+    require(!materialized, "Can NOT change meta data after being materialized")
+    rowCntVal = Some(newRowCnt)
+    this
+  }
+
+  // Sets the underlying batch’s total memory size in advance, preventing early materialization
+  // when `deviceMemorySize` is called. Throws an error if already materialized.
+  def setTotalMemory(newTotalMemory: Long): LazySpillableBatchBuilder = {
+    require(!materialized, "Can NOT change meta data after being materialized")
+    totalMemory = Some(newTotalMemory)
+    this
+  }
+
+  /*
+   * Transforms the current builder to a new one lazily through chaining a transformFn with buildFn
+   * of this builder. This method is super cheap since it just updates the lazy buildFn and
+   * optionally modifies metadata.
+   *
+   * NOTE:
+   *  1. Only call this on builders that have not been materialized. For an already materialized
+   *     builder, use `releaseBatch()` to get the batch.
+   *  2. After calling `transform`, this original builder should no longer be used.
+   */
+  def transform(newName: String,
+                newSchema: Array[DataType],
+                fn: ColumnarBatch => ColumnarBatch): LazySpillableBatchBuilder = {
+    require(!materialized, "can NOT transform a materialized future")
+    new LazySpillableBatchBuilder(newName,
+      newSchema,
+      () => {
+        // Use `releaseBatch` to transfer the ownership of wrapped lazySCB from the current
+        // builder to the new one. The wrapped lazySCB should always be the actual data rather
+        // than another level of lazyScbBuilder.
+        val transformed = withResource(this.releaseBatch()) { input =>
+          fn(input)
+        }
+        withResource(transformed) { _ =>
+          LazySpillableColumnarBatch(transformed, newName)
+        }
+      }
+    )
+  }
+
+  override def numRows: Int = rowCntVal.getOrElse(result.numRows)
+
+  override def numCols: Int = schema.length
+
+  override def dataTypes: Array[DataType] = schema
+
+  override def deviceMemorySize: Long = {
+    totalMemory.getOrElse(result.deviceMemorySize)
+  }
+
+  override def getBatch: ColumnarBatch = result.getBatch
+
+  override def releaseBatch(): ColumnarBatch = result.releaseBatch()
+
+  override def allowSpilling(): Unit = if (materialized) result.allowSpilling()
+
+  override def checkpoint(): Unit = if (materialized) result.checkpoint()
+
+  override def restore(): Unit = if (materialized) result.restore()
+
+  override def close(): Unit = if (materialized) result.close()
+}
+
 trait LazySpillableGatherMap extends LazySpillable {
   /**
    * How many rows total are in this gather map
@@ -361,8 +483,8 @@ object LazySpillableGatherMap {
  * Holds a gather map that is also lazy spillable.
  */
 class LazySpillableGatherMapImpl(
-    map: GatherMap,
-    name: String) extends LazySpillableGatherMap {
+  map: GatherMap,
+  name: String) extends LazySpillableGatherMap {
 
   override val getRowCount: Long = map.getRowCount
 
@@ -419,7 +541,7 @@ class LazySpillableGatherMapImpl(
 }
 
 abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
-    extends LazySpillableGatherMap {
+  extends LazySpillableGatherMap {
   override val getRowCount: Long = leftCount.toLong * rightCount.toLong
 
   override def toColumnView(startRow: Long, numRows: Int): ColumnView = withRetryNoSplit {
@@ -454,7 +576,7 @@ abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
 }
 
 class LeftCrossGatherMap(leftCount: Int, rightCount: Int) extends
-    BaseCrossJoinGatherMap(leftCount, rightCount) {
+  BaseCrossJoinGatherMap(leftCount, rightCount) {
 
   override def compute(rowNum: ColumnVector): ColumnVector = {
     withResource(GpuScalar.from(rightCount, IntegerType)) { rightCountScalar =>
@@ -467,7 +589,7 @@ class LeftCrossGatherMap(leftCount: Int, rightCount: Int) extends
 }
 
 class RightCrossGatherMap(leftCount: Int, rightCount: Int) extends
-    BaseCrossJoinGatherMap(leftCount, rightCount) {
+  BaseCrossJoinGatherMap(leftCount, rightCount) {
 
   override def compute(rowNum: ColumnVector): ColumnVector = {
     withResource(GpuScalar.from(rightCount, IntegerType)) { rightCountScalar =>
@@ -534,9 +656,9 @@ object JoinGathererImpl {
  * JoinGatherer for a single map/table
  */
 class JoinGathererImpl(
-    private val gatherMap: LazySpillableGatherMap,
-    private val data: LazySpillableColumnarBatch,
-    boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
+  private val gatherMap: LazySpillableGatherMap,
+  private val data: LazySpillableColumnarBatch,
+  boundsCheckPolicy: OutOfBoundsPolicy) extends JoinGatherer {
 
   assert(data.numCols > 0, "data with no columns should have been filtered out already")
 
@@ -650,7 +772,7 @@ class JoinGathererImpl(
  * JoinGatherer for the case where the gather produces the same table as the input table.
  */
 class JoinGathererSameTable(
-    private val data: LazySpillableColumnarBatch) extends JoinGatherer {
+  private val data: LazySpillableColumnarBatch) extends JoinGatherer {
 
   assert(data.numCols > 0, "data with no columns should have been filtered out already")
 

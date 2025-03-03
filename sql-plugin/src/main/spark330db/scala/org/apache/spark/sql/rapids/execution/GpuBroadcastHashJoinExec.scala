@@ -134,7 +134,8 @@ case class GpuBroadcastHashJoinExec(
       buildSchema: StructType,
       buildOutput: Seq[Attribute],
       streamIter: Iterator[ColumnarBatch],
-      coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+      coalesceMetricsMap: Map[String, GpuMetric]
+  ): (LazySpillableBatchBuilder, Iterator[ColumnarBatch]) = {
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
 
@@ -147,9 +148,19 @@ case class GpuBroadcastHashJoinExec(
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
-      val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
+      // Create a builder which will materialize the build batch on GPU lazily.
+      val buildBatchFn = () => {
+        GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
           buildSchema, buildOutput, metricsMap, targetSize)
-      (buildBatch, bufferedStreamIter)
+      }
+      val lazyScbBuilder = LazySpillableColumnarBatch.builder("built_batch",
+        buildSchema.fields.map(_.dataType),
+        buildBatchFn
+      ).setRowCnt(
+        // Good side-effect: the broadcast materialization will be triggered here
+        GpuExecutorBroadcastHelper.getExecutorBroadcastBatchNumRows(buildRelation)
+      )
+      (lazyScbBuilder, bufferedStreamIter)
     }
   }
 

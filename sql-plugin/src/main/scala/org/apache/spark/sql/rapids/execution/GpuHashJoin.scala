@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1140,7 +1140,7 @@ trait GpuHashJoin extends GpuJoinExec {
   }
 
   def doJoin(
-      builtBatch: ColumnarBatch,
+      lazyBuiltScb: LazySpillableColumnarBatch,
       stream: Iterator[ColumnarBatch],
       targetSize: Long,
       numOutputRows: GpuMetric,
@@ -1151,16 +1151,32 @@ trait GpuHashJoin extends GpuJoinExec {
     // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
     val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
-    val nullFiltered = if (builtAnyNullable) {
-      val sb = closeOnExcept(builtBatch)(
-        SpillableColumnarBatch(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-      GpuHashJoin.filterNullsWithRetryAndClose(sb, boundBuildKeys)
+    val spillableBuiltBatch = if (builtAnyNullable) {
+      val transformer = (batch: ColumnarBatch) => {
+        // Increase the refCount in previous because `GpuHashJoin.filterNullsWithRetryAndClose`
+        // will close the batch as well.
+        closeOnExcept(GpuColumnVector.incRefCounts(batch)) { cb =>
+          val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          GpuHashJoin.filterNullsWithRetryAndClose(sb, boundBuildKeys)
+        }
+      }
+      lazyBuiltScb match {
+        // If the build side is a lazy builder, chain its build function with the filterNulls
+        // function to keep the laziness.
+        case lazyScbBuilder: LazySpillableBatchBuilder =>
+          lazyScbBuilder.transform("built", lazyScbBuilder.schema, transformer)
+        // If the build side has been already materialized, conduct the filterNulls transformation
+        // eagerly. And hand over the data ownership to the transformed LazySCB.
+        case lazyScb =>
+          val transformed = withResource(lazyScb.releaseBatch()) { cb =>
+            transformer(cb)
+          }
+          withResource(transformed) { _ =>
+            LazySpillableColumnarBatch(transformed, "built")
+          }
+      }
     } else {
-      builtBatch
-    }
-
-    val spillableBuiltBatch = withResource(nullFiltered) {
-      LazySpillableColumnarBatch(_, "built")
+      lazyBuiltScb
     }
 
     val lazyStream = stream.map { cb =>

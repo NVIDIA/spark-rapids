@@ -155,7 +155,8 @@ abstract class GpuBroadcastHashJoinExecBase(
       broadcastRelation: Broadcast[Any],
       buildSchema: StructType,
       streamIter: Iterator[ColumnarBatch],
-      coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+      coalesceMetricsMap: Map[String, GpuMetric]
+  ): (LazySpillableBatchBuilder, Iterator[ColumnarBatch]) = {
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
@@ -167,9 +168,17 @@ abstract class GpuBroadcastHashJoinExecBase(
         }
       }
 
-      val buildBatch =
+      val buildBatchFn = () => {
         GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
-      (buildBatch, bufferedStreamIter)
+      }
+      val lazyScbBuilder = LazySpillableColumnarBatch.builder("built_batch",
+        buildSchema.fields.map(_.dataType),
+        buildBatchFn
+      ).setRowCnt(
+        // Good side-effect: the broadcast materialization will be triggered here
+        GpuBroadcastHelper.getBroadcastBatchNumRows(broadcastRelation)
+      )
+      (lazyScbBuilder, bufferedStreamIter)
     }
   }
 
