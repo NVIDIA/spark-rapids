@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -137,42 +137,6 @@ abstract class GpuBroadcastHashJoinExecBase(
     throw new IllegalStateException(
       "GpuBroadcastHashJoin does not support row-based processing")
 
-  /**
-   * Gets the ColumnarBatch for the build side and the stream iterator by
-   * acquiring the GPU only after first stream batch has been streamed to GPU.
-   *
-   * `broadcastRelation` represents the broadcasted build side table on the host. The code
-   * in this function peaks at the stream side, after having wrapped it in a closeable
-   * buffered iterator, to cause the stream side to produce the first batch. This delays
-   * acquiring the semaphore until after the stream side performs all the steps needed
-   * (including IO) to produce that first batch. Once the first stream batch is produced,
-   * the build side is materialized to the GPU (while holding the semaphore).
-   *
-   * TODO: This could try to trigger the broadcast materialization on the host before
-   *   getting started on the stream side (e.g. call `broadcastRelation.value`).
-   */
-  private def getBroadcastBuiltBatchAndStreamIter(
-      broadcastRelation: Broadcast[Any],
-      buildSchema: StructType,
-      streamIter: Iterator[ColumnarBatch],
-      coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-
-    val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
-    closeOnExcept(bufferedStreamIter) { _ =>
-      withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
-        if (bufferedStreamIter.hasNext) {
-          bufferedStreamIter.head
-        } else {
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        }
-      }
-
-      val buildBatch =
-        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
-      (buildBatch, bufferedStreamIter)
-    }
-  }
-
   protected def doColumnarBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
@@ -188,11 +152,10 @@ abstract class GpuBroadcastHashJoinExecBase(
     val buildSchema = buildPlan.schema
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
-        getBroadcastBuiltBatchAndStreamIter(
+        GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           broadcastRelation,
           buildSchema,
-          new CollectTimeIterator("broadcast join stream", it, streamTime),
-          allMetrics)
+          new CollectTimeIterator("broadcast join stream", it, streamTime))
       // builtBatch will be closed in doJoin
       doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
     }

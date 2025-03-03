@@ -222,17 +222,19 @@ case class GpuBroadcastNestedLoopJoinExec(
     }
   }
 
-  override def makeBuiltBatchInternal(
+  override def makeBuiltBatchAndStreamIter(
       relation: Any,
+      streamIter: Iterator[ColumnarBatch],
       buildTime: GpuMetric,
-      buildDataSize: GpuMetric): ColumnarBatch = {
+      buildDataSize: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     // NOTE: pattern matching doesn't work here because of type-invariance
     if (isExecutorBroadcast) {
       val rdd = relation.asInstanceOf[RDD[ColumnarBatch]]
-      makeExecutorBuiltBatch(rdd, buildTime, buildDataSize)
+      val builtBatch = makeExecutorBuiltBatch(rdd, buildTime, buildDataSize)
+      (builtBatch, streamIter)
     } else {
-      val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
-      makeBroadcastBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+      super.makeBuiltBatchAndStreamIter(
+        relation, streamIter, buildTime, buildDataSize)
     }
   }
 
