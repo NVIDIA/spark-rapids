@@ -33,8 +33,8 @@ class RetryHostMemoryAllocatorTest extends RmmSparkRetrySuiteBase {
     }
     withResource(allocator.allocate(sizesInBytes)) { bufs =>
       assertResult(sizesInBytes.length)(bufs.length)
-      sizesInBytes.zipWithIndex.foreach { case (expSize, id) =>
-        assertResult(expSize)(bufs(id).buffer.getLength)
+      sizesInBytes.zip(bufs).foreach { case (expSize, bufInfo) =>
+        assertResult(expSize)(bufInfo.buffer.getLength)
       }
     }
   }
