@@ -51,6 +51,8 @@ declare -A artifacts
 # Initializes the scripts and the variables based on teh arguments passed to the script.
 initialize()
 {
+    set -ex
+
     # install rsync to be used for copying onto the databricks nodes
     sudo apt install -y rsync
 
@@ -134,6 +136,8 @@ initialize()
 # Install dependency jars to MVN repository.
 install_dependencies()
 {
+    set -ex
+
     local depsPomXml="$(mktemp /tmp/install-databricks-deps-XXXXXX-pom.xml)"
 
     python jenkins/databricks/install_deps.py "${BASE_SPARK_VERSION}" "${SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}" "${SCALA_VERSION}" "${M2DIR}" "${JARDIR}" "${depsPomXml}"
@@ -163,7 +167,8 @@ fi
 if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_OPT="-DbloopInstall $MVN_OPT"
     MVN_PHASES="clean install"
-    export JAVA_HOME="/usr/lib/jvm/zulu11"
+    export JAVA_HOME="/usr/lib/jvm/zulu17"
+    WITH_DEFAULT_UPSTREAM_SHIM=0
 else
     MVN_PHASES="clean package"
 fi
