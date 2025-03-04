@@ -1016,6 +1016,11 @@
               <classifier>${jni.classifier}</classifier>
             </dependency>
             <dependency>
+                <groupId>com.nvidia</groupId>
+                <artifactId>rapids-4-spark-hybrid_${scala.binary.version}</artifactId>
+                <version>${spark-rapids-hybrid.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.openucx</groupId>
                 <artifactId>jucx</artifactId>
                 <version>${ucx.version}</version>
