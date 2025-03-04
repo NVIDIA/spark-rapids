@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
@@ -24,6 +25,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -54,6 +56,12 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       inputBatches: Iterator[SpillableColumnarBatch],
       generatorOffset: Int,
       outer: Boolean): Iterator[ColumnarBatch] = {
+
+    val conf = SQLConf.get
+    val targetBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val tmp = conf.getConfString("spark.sql.test.multiget.parallel", null)
+    val parallel = Option(tmp).map(_.toInt)
+
     withRetry(inputBatches, splitSpillableInHalfByRows) { attempt =>
       withResource(attempt.getColumnarBatch()) { inputBatch =>
         val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
@@ -69,9 +77,22 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
           }
         }
 
-        withResource(fieldInstructions.safeMap(field => JSONUtils.getJsonObject(json, field))) { 
-            resultCols =>
-          val generatorCols = resultCols.safeMap(_.incRefCount).safeMap {
+        val validPaths: java.util.List[java.util.List[JSONUtils.PathInstructionJni]] =
+          java.util.Arrays.asList(fieldInstructions.map { arr =>
+            java.util.Arrays.asList(arr: _*)
+          }: _*)
+
+        var validPathsIndex = 0
+        withResource(new Array[ColumnVector](fieldInstructions.length)) { validPathColumns =>
+          withResource(JSONUtils.getJsonObjectMultiplePaths(
+              json, validPaths, 4 * targetBatchSize, parallel.getOrElse(-1))) { chunkedResult =>
+              chunkedResult.foreach { cr =>
+                validPathColumns(validPathsIndex) = cr.incRefCount()
+                validPathsIndex += 1
+              }
+          }
+
+          val generatorCols = validPathColumns.safeMap(_.incRefCount).safeMap {
             col => GpuColumnVector.from(col, StringType)
           }
           val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
