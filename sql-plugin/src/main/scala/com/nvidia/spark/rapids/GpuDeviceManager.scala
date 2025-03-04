@@ -52,6 +52,10 @@ object GpuDeviceManager extends Logging {
    */
   def getNumCores: Int = numCores
 
+  private var memorySize = 0L
+
+  def getMemorySize: Long = memorySize
+
   // Memory resource used only for cudf::chunked_pack to allocate scratch space
   // during spill to host. This is done to set aside some memory for this operation
   // from the beginning of the job.
@@ -322,6 +326,7 @@ object GpuDeviceManager extends Logging {
 
       val info = Cuda.memGetInfo()
       val poolAllocation = computeRmmPoolSize(conf, info)
+      memorySize = poolAllocation
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
