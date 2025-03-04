@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Shim Source Code Layout Simplification with Shimplify
-nav_order: 8
+nav_order: 10
 parent: Developer Overview
 ---
 
