@@ -24,14 +24,15 @@ import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 class RetryHostMemoryAllocatorTest extends RmmSparkRetrySuiteBase {
 
   private val sizesInBytes = Seq(100L, 200L, 300L)
-  private val allocator = new RetryHostMemoryAllocator(tryPinned = false)
+  private val allocator = new HostRetryAllocator {}
+  private val tryPinned = false
 
   private def testAlloc(numOOMs: Int, start: Int = 1): Unit = {
     if (numOOMs > 0) {
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, numOOMs,
         OomInjectionType.CPU.ordinal(), start - 1)
     }
-    withResource(allocator.allocate(sizesInBytes)) { bufs =>
+    withResource(allocator.allocWithRetry(sizesInBytes, tryPinned)) { bufs =>
       assertResult(sizesInBytes.length)(bufs.length)
       sizesInBytes.zip(bufs).foreach { case (expSize, bufInfo) =>
         assertResult(expSize)(bufInfo.buffer.getLength)

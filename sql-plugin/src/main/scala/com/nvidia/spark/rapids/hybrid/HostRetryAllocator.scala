@@ -20,20 +20,18 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.hybrid.{HostMemoryAllocator => HybridMemoryAllocator}
 
 /**
  * Allocator that has the memory allocation protected by the retry framework to handle
- * OOM errors. And it will always try pinned memory first by default.
- * Setting "tryPinned" to false to disable this behavior.
- *
- * This is designed to support retry things for the host allocation in hybrid scans.
+ * OOM errors. And "tryPinned" indicates whether it will try pinned memory first.
  */
-class RetryHostMemoryAllocator(tryPinned: Boolean = true)
-  extends HybridMemoryAllocator[HostBufferInfo] {
+trait HostRetryAllocator {
 
-  override def allocate(bytesSizes: Seq[Long]): Seq[HostBufferInfo] = {
-    val arrBufs = new Array[HostBufferInfo](bytesSizes.length)
+  /** Visible for tests */
+  final private[rapids] def allocWithRetry(
+      bytesSizes: Seq[Long],
+      tryPinned: Boolean): Seq[AllocResult] = {
+    val arrBufs = new Array[AllocResult](bytesSizes.length)
     val arrRetryable = new Retryable {
       override def checkpoint(): Unit = {}
       override def restore(): Unit = {
@@ -51,14 +49,23 @@ class RetryHostMemoryAllocator(tryPinned: Boolean = true)
               buf = PinnedMemoryPool.tryAllocate(size)
             }
             arrBufs(idx) = if (buf != null) { // pinned
-              HostBufferInfo(buf, isPinned = true)
+              new AllocResult(buf, isPinned = true)
             } else {
-              HostBufferInfo(HostMemoryBuffer.allocate(size, false), isPinned = false)
+              new AllocResult(HostMemoryBuffer.allocate(size, false), isPinned = false)
             }
           } // end of foreach
         }
       } // end of withRetryNoSplit
     }
     arrBufs.toSeq
+  }
+}
+
+private[rapids] class AllocResult(
+    val buffer: HostMemoryBuffer,
+    val isPinned: Boolean) extends AutoCloseable {
+
+  override def close(): Unit = if (buffer != null) {
+    buffer.close()
   }
 }

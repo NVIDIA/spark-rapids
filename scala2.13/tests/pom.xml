@@ -64,11 +64,6 @@
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${jni.classifier}</classifier>
         </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-hybrid_${scala.binary.version}</artifactId>
-            <scope>test</scope>
-        </dependency>
         <!-- use aggregator jar because accessing internal classes -->
         <dependency>
             <groupId>com.nvidia</groupId>
