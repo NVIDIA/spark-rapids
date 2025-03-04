@@ -1497,7 +1497,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     conf("spark.rapids.sql.format.hive.text.write.enabled")
       .doc("When set to false disables Hive text table write acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
       .doc("Hive text file reading is not 100% compatible when reading floats.")
