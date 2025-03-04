@@ -36,7 +36,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.types.{BooleanType, DataType}
+import org.apache.spark.sql.types.{BooleanType, DataType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 abstract class GpuBroadcastNestedLoopJoinMetaBase(
@@ -573,18 +573,18 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   protected def makeBuiltBatchAndStreamIter(
       relation: Any,
       streamIter: Iterator[ColumnarBatch],
+      buildSchema: StructType,
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
       relation.asInstanceOf[Broadcast[Any]],
-      buildPlan.schema,
+      buildSchema,
       streamIter,
       Some(buildTime),
       Some(buildDataSize))
   }
 
-  @transient
-  private lazy val buildSidePostProjection: Option[ColumnarBatch => ColumnarBatch] = {
+  private def buildSidePostProjection: Option[ColumnarBatch => ColumnarBatch] = {
     buildPlan match {
       case p: GpuProjectExec =>
         // Need to manually do project columnar execution other than calling child's
@@ -633,14 +633,17 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           // Everything else is treated like an unconditional cross join
           val buildSide = gpuBuildSide
           val joinTime = gpuLongMetric(JOIN_TIME)
+          val buildSchema = buildPlan.schema
+          val postProjection = buildSidePostProjection
           streamed.executeColumnar().mapPartitions { streamedIter =>
             // Will materialize the stream batch before materializing the build batch.
             val (buildBatch, bufferedStream) = makeBuiltBatchAndStreamIter(
               relation,
               streamedIter,
+              buildSchema,
               buildTime,
               buildDataSize)
-            val prjBuildBatch = buildSidePostProjection.map(_(buildBatch)).getOrElse(buildBatch)
+            val prjBuildBatch = postProjection.map(_(buildBatch)).getOrElse(buildBatch)
 
             val lazyStream = bufferedStream.map { cb =>
               withResource(cb) { cb =>
@@ -778,17 +781,19 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val nestedLoopJoinType = joinType
     val buildSide = gpuBuildSide
+    val buildSchema = buildPlan.schema
+    val postProjection = buildSidePostProjection
     streamed.executeColumnar().mapPartitions { streamedIter =>
       // Will materialize the stream batch before materializing the build batch.
       val (buildBatch, bufferedStream) = {
         GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           relation.asInstanceOf[Broadcast[Any]],
-          buildPlan.schema,
+          buildSchema,
           streamedIter,
           Some(buildTime),
           Some(buildDataSize))
       }
-      val prjBuildBatch = buildSidePostProjection.map(_(buildBatch)).getOrElse(buildBatch)
+      val prjBuildBatch = postProjection.map(_(buildBatch)).getOrElse(buildBatch)
 
       val lazyStream = bufferedStream.map { cb =>
         withResource(cb) { cb =>

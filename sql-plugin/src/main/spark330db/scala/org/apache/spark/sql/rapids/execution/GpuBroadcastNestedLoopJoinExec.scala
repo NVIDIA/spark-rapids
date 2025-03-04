@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -225,6 +226,7 @@ case class GpuBroadcastNestedLoopJoinExec(
   override def makeBuiltBatchAndStreamIter(
       relation: Any,
       streamIter: Iterator[ColumnarBatch],
+      buildSchema: StructType,
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     // NOTE: pattern matching doesn't work here because of type-invariance
@@ -234,7 +236,7 @@ case class GpuBroadcastNestedLoopJoinExec(
       (builtBatch, streamIter)
     } else {
       super.makeBuiltBatchAndStreamIter(
-        relation, streamIter, buildTime, buildDataSize)
+        relation, streamIter, buildSchema, buildTime, buildDataSize)
     }
   }
 

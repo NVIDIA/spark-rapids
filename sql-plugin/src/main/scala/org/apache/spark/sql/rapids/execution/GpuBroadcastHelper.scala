@@ -109,17 +109,17 @@ object GpuBroadcastHelper {
    * the build side is materialized to the GPU (while holding the semaphore).
    */
   def getBroadcastBuiltBatchAndStreamIter(
-    broadcastRelation: Broadcast[Any],
-    buildSchema: StructType,
-    streamIter: Iterator[ColumnarBatch],
-    buildTime: Option[GpuMetric] = None,
-    buildDataSize: Option[GpuMetric] = None): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+      broadcastRelation: Broadcast[Any],
+      buildSchema: StructType,
+      streamIter: Iterator[ColumnarBatch],
+      buildTime: Option[GpuMetric] = None,
+      buildDataSize: Option[GpuMetric] = None): (ColumnarBatch, Iterator[ColumnarBatch]) = {
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
       // Extract the build-side row count helping to trigger the broadcast materialization
       // on the host before acquiring the semaphore.
-      val buildSideRows = GpuBroadcastHelper.getBroadcastBatchNumRows(broadcastRelation)
+      broadcastRelation.value
 
       withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
         if (bufferedStreamIter.hasNext) {
@@ -129,17 +129,12 @@ object GpuBroadcastHelper {
         }
       }
 
-      val buildBatch = if (buildSideRows > 0) {
-        val batch = withResource(new NvtxWithMetrics(
-          "build join table", NvtxColor.GREEN, buildTime.toSeq: _*)) { _ =>
-          GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
-        }
-        buildDataSize.foreach(_.add(GpuColumnVector.getTotalDeviceMemoryUsed(batch)))
-        batch
-      } else {
-        GpuColumnVector.emptyBatch(buildSchema)
+      val batch = withResource(new NvtxWithMetrics(
+        "build join table", NvtxColor.GREEN, buildTime.toSeq: _*)) { _ =>
+        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
       }
-      (buildBatch, bufferedStreamIter)
+      buildDataSize.foreach(_.add(GpuColumnVector.getTotalDeviceMemoryUsed(batch)))
+      (batch, bufferedStreamIter)
     }
   }
 }
