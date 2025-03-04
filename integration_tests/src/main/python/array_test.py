@@ -292,6 +292,41 @@ def test_array_slice(data_gen):
             'slice(array(array(1, null, 2), array(1), array(null)), NULL, NULL)'))
 
 
+@pytest.mark.parametrize('zero_start', [0, 'b'], ids=idfn)
+@pytest.mark.parametrize('valid_length', [5, 'c'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
+def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
+    zero_start_gen = IntegerGen(nullable=False, min_val=0, max_val=0, special_cases=[])
+    valid_length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])
+    # When the list column is all null, the result is also all null regardless of the start and length
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
+            f"slice(a, {zero_start}, {valid_length})"))
+    # start can not be zero
+    assert_gpu_and_cpu_error(
+        lambda spark: three_col_df(spark, data_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
+            f"slice(a, {zero_start}, {valid_length})").collect(),
+        conf={},
+        error_message='Unexpected value for start in function slice: SQL array indices start at 1.')
+
+
+@pytest.mark.parametrize('valid_start', [5, 'b'], ids=idfn)
+@pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
+def test_array_slice_with_negative_length(data_gen, valid_start, negative_length):
+    negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
+    # When the list column is all null, the result is also all null regardless of the start and length
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, {valid_start}, {negative_length})"))
+    # length can not be negative
+    assert_gpu_and_cpu_error(
+        lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, {valid_start}, {negative_length})").collect(),
+        conf={},
+        error_message='Unexpected value for length in function slice: length must be greater than or equal to 0.')
+
+
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 @disable_ansi_mode
 def test_array_element_at(data_gen):
