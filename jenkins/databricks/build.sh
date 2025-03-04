@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -163,7 +163,8 @@ fi
 if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_OPT="-DbloopInstall $MVN_OPT"
     MVN_PHASES="clean install"
-    export JAVA_HOME="/usr/lib/jvm/zulu11"
+    export JAVA_HOME="/usr/lib/jvm/zulu17"
+    WITH_DEFAULT_UPSTREAM_SHIM=0
 else
     MVN_PHASES="clean package"
 fi
