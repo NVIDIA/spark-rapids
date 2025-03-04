@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.RmmSparkRetrySuiteBase
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 
-class RetryHostMemoryAllocatorTest extends RmmSparkRetrySuiteBase {
+class HostRetryAllocatorTest extends RmmSparkRetrySuiteBase {
 
   private val sizesInBytes = Seq(100L, 200L, 300L)
   private val allocator = new HostRetryAllocator {}
