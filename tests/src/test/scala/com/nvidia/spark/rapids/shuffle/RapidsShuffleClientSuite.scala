@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.shuffle
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.{MoreMockitoSugar, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.ShuffleMetadata
 import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
@@ -29,7 +29,7 @@ import org.mockito.Mockito._
 
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
+class RapidsShuffleClientSuite extends RapidsShuffleTestHelper with MoreMockitoSugar {
   def prepareBufferReceiveState(
       tableMeta: TableMeta,
       bounceBuffer: BounceBuffer): BufferReceiveState = {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableFromBatchColumns
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers.{any, isA}
-import org.mockito.Mockito.{doAnswer, mock, mockStatic, spy, times, verify, when}
+import org.mockito.Mockito.{doAnswer, mock, mockStatic, times, verify, when}
 import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.sql.SparkSession
@@ -44,7 +44,7 @@ import org.apache.spark.storage.StorageLevel.MEMORY_ONLY
 /**
  * Unit tests for cached batch writing
  */
-class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
+class CachedBatchWriterSuite extends SparkQueryCompareTestSuite with MoreMockitoSugar {
 
   class TestResources extends AutoCloseable {
     assert(Rmm.isInitialized, "Need to use this within Spark GPU session, or it may fail to " +

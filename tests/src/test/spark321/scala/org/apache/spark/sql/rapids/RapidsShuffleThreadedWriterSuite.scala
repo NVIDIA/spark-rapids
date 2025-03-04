@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
+import com.nvidia.spark.rapids.MoreMockitoSugar
 import org.mockito.{Mock, MockitoAnnotations}
 import org.mockito.Answers.RETURNS_SMART_NULLS
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
@@ -152,7 +153,7 @@ class TestIndexShuffleBlockResolver(
 class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
-    with MockitoSugar
+    with MockitoSugar with MoreMockitoSugar
     with ShuffleChecksumTestHelper
     with Logging {
   @scala.annotation.nowarn("msg=consider using immutable val")

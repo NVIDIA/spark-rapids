@@ -328,11 +328,13 @@ object SpillableHostBufferHandle extends Logging {
   }
 }
 
-class SpillableHostBufferHandle private (
+class SpillableHostBufferHandle private[spill] (
     val sizeInBytes: Long,
     private[spill] override var host: Option[HostMemoryBuffer] = None,
-    private[spill] var disk: Option[DiskHandle] = None)
-  extends HostSpillableHandle[HostMemoryBuffer] {
+    private[spill] var disk: Option[DiskHandle] = None,
+    private[spill] var spillingInterrupted: Boolean = false
+)
+  extends HostSpillableHandle[HostMemoryBuffer] with Logging {
 
   override val approxSizeInBytes: Long = sizeInBytes
 
@@ -347,7 +349,15 @@ class SpillableHostBufferHandle private (
     }
   }
 
-  def materialize(): HostMemoryBuffer = {
+  /**
+   * Get the buffer in host, this may incur reading from disk if the buffer was spilled before.
+   *
+   * @param unspill if set to true, an unspill step will be added after reading
+   *                from disk (if applies), so that the buffer is guaranteed to be
+   *                in host memory before the returned HostMemoryBuffer is closed.
+   * @return
+   */
+  def materialize(unspill: Boolean = false): HostMemoryBuffer = {
     var materialized: HostMemoryBuffer = null
     var diskHandle: DiskHandle = null
     synchronized {
@@ -361,6 +371,10 @@ class SpillableHostBufferHandle private (
       } else if (host.isDefined) {
         materialized = host.get
         materialized.incRefCount()
+
+        if (unspill && spilling) {
+          spillingInterrupted = true
+        }
       } else {
         throw new IllegalStateException(
           "open handle has no underlying buffer")
@@ -372,60 +386,81 @@ class SpillableHostBufferHandle private (
         hmb
       }
     }
+
+    if (unspill) {
+      synchronized {
+        if (!closed && disk.isDefined) {
+          disk = None
+          host = Some(materialized)
+          materialized.incRefCount()
+          SpillFramework.stores.hostStore.trackNoSpill(this)
+        }
+      }
+    }
+
     materialized
   }
 
+  def makeDiskHandleBuilder(): DiskHandleStore.DiskHandleBuilder = {
+    DiskHandleStore.makeBuilder
+  }
+
   override def spill(): Long = {
-    if (!spillable) {
-      0L
-    } else {
-      val thisThreadSpills = synchronized {
-        if (!closed && disk.isEmpty && host.isDefined && !spilling) {
-          spilling = true
-          // incRefCount here so that if close() is called
-          // while we are spilling, we will prevent the buffer being freed
-          host.get.incRefCount()
-          true
-        } else {
-          false
-        }
+    val thisThreadSpills = synchronized {
+      if (!spillable) {
+        return 0L
       }
-      if (thisThreadSpills) {
-        withResource(host.get) { buf =>
-          withResource(DiskHandleStore.makeBuilder) { diskHandleBuilder =>
-            val outputChannel = diskHandleBuilder.getChannel
-            // the spill IO is non-blocking as it won't impact dev or host directly
-            // instead we "atomically" swap the buffers below once they are ready
-            GpuTaskMetrics.get.spillToDiskTime {
-              val iter = new HostByteBufferIterator(buf)
-              iter.foreach { bb =>
-                try {
-                  while (bb.hasRemaining) {
-                    outputChannel.write(bb)
-                  }
-                } finally {
-                  RapidsStorageUtils.dispose(bb)
+      if (!closed && disk.isEmpty && host.isDefined && !spilling) {
+        spilling = true
+        // incRefCount here so that if close() is called
+        // while we are spilling, we will prevent the buffer being freed
+        host.get.incRefCount()
+        true
+      } else {
+        false
+      }
+    }
+    if (thisThreadSpills) {
+      withResource(host.get) { buf =>
+        withResource(makeDiskHandleBuilder()) { diskHandleBuilder =>
+          val outputChannel = diskHandleBuilder.getChannel
+          // the spill IO is non-blocking as it won't impact dev or host directly
+          // instead we "atomically" swap the buffers below once they are ready
+          GpuTaskMetrics.get.spillToDiskTime {
+            val iter = new HostByteBufferIterator(buf)
+            iter.foreach { bb =>
+              try {
+                while (bb.hasRemaining) {
+                  outputChannel.write(bb)
                 }
+              } finally {
+                RapidsStorageUtils.dispose(bb)
               }
             }
-            var staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
-            synchronized {
-              spilling = false
+          }
+          val staging: Option[DiskHandle] = Some(diskHandleBuilder.build)
+          synchronized {
+            spilling = false
+
+            if (!spillingInterrupted) {
               if (closed) {
                 staging.foreach(_.close())
-                staging = None
                 doClose()
               } else {
                 disk = staging
               }
+              releaseHostResource()
+              sizeInBytes
+            } else {
+              staging.foreach(_.close())
+              spillingInterrupted = false
+              0
             }
-            releaseHostResource()
           }
         }
-        sizeInBytes
-      } else {
-        0
       }
+    } else {
+      0
     }
   }
 
@@ -1670,7 +1705,7 @@ object SpillFramework extends Logging {
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
   var storesInternal: SpillableStores = _
-  
+
   def stores: SpillableStores = {
     if (storesInternal == null) {
       throw new IllegalStateException(

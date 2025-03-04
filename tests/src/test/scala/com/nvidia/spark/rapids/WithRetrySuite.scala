@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.apache.spark.sql.types.{DataType, LongType}
 
 class WithRetrySuite
     extends AnyFunSuite
-        with BeforeAndAfterEach with MockitoSugar {
+        with BeforeAndAfterEach with MockitoSugar with MoreMockitoSugar {
 
   private def buildBatch: SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()

@@ -476,7 +476,11 @@ class SpillableHostBuffer(handle: SpillableHostBufferHandle,
   }
 
   def getHostBuffer(): HostMemoryBuffer = {
-    handle.materialize()
+    handle.materialize(false)
+  }
+
+  def getHostBuffer(unspill: Boolean = false): HostMemoryBuffer = {
+    handle.materialize(unspill)
   }
 
   /**
