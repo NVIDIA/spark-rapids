@@ -23,7 +23,7 @@ set -ex
 export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
 
 DIST_PL="dist"
-DIST_PATH="$DIST_PL" # The path of the dist mod is used only outside of the mvn cmd
+DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 if [ $SCALA_BINARY_VER == "2.13" ]; then
     # Run scala2.13 build and test against JDK17
@@ -93,23 +93,26 @@ function distWithReducedPom {
 
 function build_shim() {
   local BUILD_VER=$1
-  local SHIM_PATH="${TMP_PATH}/shim/${BUILD_VER}"
-  local SHIM_M2DIR="${SHIM_PATH}/.m2"
+  local SLOT_ID=$2
+  # reuse slot workspace and maven cache to save time
+  local SHIM_WORKSPACE="${TMP_PATH}/shim/${SLOT_ID}"
+  local SHIM_M2DIR="${SHIM_WORKSPACE}/.m2"
 
-  mkdir -p "${SHIM_PATH}"
-
-  local CODE_PATH="${SHIM_PATH}/workspace"
-  cp -r "${WORKSPACE}/" "${CODE_PATH}"
+  local CODE_PATH="${SHIM_WORKSPACE}/workspace"
+  if [ ! -d "${CODE_PATH}" ]; then
+    mkdir -p "${SHIM_WORKSPACE}"
+    cp -r "${WORKSPACE}/" "${CODE_PATH}"
+  fi
   cd "${CODE_PATH}"
   echo "Workspace at ${CODE_PATH}..."
 
   local BUILD_CMD="$MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$SHIM_M2DIR \
     -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
-    -DskipTests -Drat.skip=true -Djava.io.tmpdir=${SHIM_PATH} \
+    -DskipTests -Drat.skip=true -Djava.io.tmpdir=${SHIM_WORKSPACE} \
     -Dbuildver=${BUILD_VER}"
 
   echo "Building ${BUILD_VER}"
-  BUILD_LOG="${SHIM_PATH}/build.log"
+  BUILD_LOG="${SHIM_WORKSPACE}/build-${BUILD_VER}.log"
 
   $BUILD_CMD > "${BUILD_LOG}" 2>&1
   CODE="$?"
@@ -118,7 +121,7 @@ function build_shim() {
     return $CODE
   fi
 
-  (
+  ( # use flock to prevent maven local repository contention across all parallel builds
     flock -x -w 300 200 || { echo "Lock acquisition failed"; exit 1; }
 
     echo "Copying sql-plugin-api,aggregator to .m2 repo..."
@@ -138,14 +141,14 @@ function build_shim() {
     local DEPLOY_CMD="$MVN -B deploy -pl $DEPLOY_SUBMODULES $MVN_URM_MIRROR \
           -Dmaven.repo.local=$SHIM_M2DIR \
           -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
-          -DskipTests -Drat.skip=true -Djava.io.tmpdir=${SHIM_PATH} \
+          -DskipTests -Drat.skip=true -Djava.io.tmpdir=${SHIM_WORKSPACE} \
           -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
           -Dbuildver=${BUILD_VER}"
 
     echo "Deploying ${BUILD_VER}"
-    DEPLOY_LOG="${SHIM_PATH}/deploy.log"
+    DEPLOY_LOG="${SHIM_WORKSPACE}/deploy-${BUILD_VER}.log"
 
-      $DEPLOY_CMD > "${DEPLOY_LOG}" 2>&1
+    $DEPLOY_CMD > "${DEPLOY_LOG}" 2>&1
     CODE="$?"
     if [[ $CODE != "0" ]]; then
       tail -1000 "${DEPLOY_LOG}" || true
@@ -153,14 +156,11 @@ function build_shim() {
     fi
   fi
 
-  # clean up if no error
-  rm -rf "${SHIM_PATH}"
-
   echo "${BUILD_VER} done."
 }
 export -f build_shim
 
-# build, install, and deploy all the versions we support, but skip deploy of individual dist mod since we
+# build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
 # Deploy jars unless SKIP_DEPLOY is 'true'
@@ -168,6 +168,7 @@ export -f build_shim
 set +H # turn off history expansion
 export DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"integration_tests"}
 if ! command -v parallel &> /dev/null; then
+  # the script still supports building shims sequentially, but not recommended
   for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
       build_shim "${buildver}"
   done
@@ -177,7 +178,7 @@ else
   # Ignore SIGTTOU to allow background processes to write to the terminal
   # this is a workaround for cdh shims build, otherwise it will hang forever with parallel
   trap '' SIGTTOU
-  parallel --ungroup --halt "now,fail=1" -j"${BUILD_PARALLELISM}" build_shim ::: "${SPARK_SHIM_VERSIONS[@]:1}"
+  parallel --ungroup --halt "now,fail=1" -j"${BUILD_PARALLELISM}" 'build_shim {1} {%}' ::: "${SPARK_SHIM_VERSIONS[@]:1}"
   trap - SIGTTOU
 fi
 
@@ -194,6 +195,7 @@ installDistArtifact() {
       -DskipTests
 }
 
+# TODO: parallel build for different cuda classifiers
 # build extra cuda classifiers
 if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
   for classifier in "${CLASSIFIERS_ARR[@]}"; do
