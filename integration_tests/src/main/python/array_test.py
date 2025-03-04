@@ -32,10 +32,9 @@ array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
     special_cases=[(-25, 100), (-20, 100), (-10, 100), (-4, 100), (-3, 100), (-2, 100), (-1, 100), (None, 100)])
 
 array_all_null_gen = ArrayGen(int_gen, all_null=True)
-array_item_test_gens_sans_allnull = array_gens_sample + [
+array_item_test_gens = array_gens_sample + [array_all_null_gen,
     ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10),
     ArrayGen(BinaryGen(max_length=10), max_length=10)]
-array_item_test_gens = array_item_test_gens_sans_allnull + [array_all_null_gen]
 
 
 # Need these for set-based operations
@@ -295,7 +294,7 @@ def test_array_slice(data_gen):
 
 @pytest.mark.parametrize('zero_start', [0, 'b'], ids=idfn)
 @pytest.mark.parametrize('valid_length', [5, 'c'], ids=idfn)
-@pytest.mark.parametrize('data_gen', array_item_test_gens_sans_allnull, ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
 def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
     zero_start_gen = IntegerGen(nullable=False, min_val=0, max_val=0, special_cases=[])
     valid_length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])
@@ -313,7 +312,7 @@ def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
 
 @pytest.mark.parametrize('valid_start', [5, 'b'], ids=idfn)
 @pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
-@pytest.mark.parametrize('data_gen', array_item_test_gens_sans_allnull, ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
 def test_array_slice_with_negative_length(data_gen, valid_start, negative_length):
     negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
     # When the list column is all null, the result is also all null regardless of the start and length
