@@ -399,6 +399,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction|true|None|
 <a name="sql.expression.Count"></a>spark.rapids.sql.expression.Count|`count`|Count aggregate operator|true|None|
 <a name="sql.expression.First"></a>spark.rapids.sql.expression.First|`first_value`, `first`|first aggregate operator|true|None|
+<a name="sql.expression.HyperLogLogPlusPlus"></a>spark.rapids.sql.expression.HyperLogLogPlusPlus|`approx_count_distinct`|Aggregation approximate count distinct|true|None|
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last_value`, `last`|last aggregate operator|true|None|
 <a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|`max`|Max aggregate operator|true|None|
 <a name="sql.expression.MaxBy"></a>spark.rapids.sql.expression.MaxBy|`max_by`|MaxBy aggregate operator. It may produce different results than CPU when multiple rows in a group have same minimum value in the ordering column and different associated values in the value column.|true|None|
