@@ -20,7 +20,7 @@ set -ex
 . jenkins/version-def.sh
 
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
-MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
+export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT} -Psource-javadoc"
 
 DIST_PL="dist"
 DIST_PATH="$DIST_PL" # The path of the dist module is used only outside of the mvn cmd
@@ -31,11 +31,11 @@ if [ $SCALA_BINARY_VER == "2.13" ]; then
     update-java-alternatives --set $JAVA_HOME
     java -version
 
-    MVN="$MVN -f scala2.13/"
+    export MVN="$MVN -f scala2.13/"
     DIST_PATH="scala2.13/$DIST_PL"
 fi
 
-WORKSPACE=${WORKSPACE:-$(pwd)}
+export WORKSPACE=${WORKSPACE:-$(pwd)}
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 
@@ -46,11 +46,13 @@ function mvnEval {
 ART_ID=$(mvnEval project.artifactId)
 ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
-DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
+export DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"} # e.g. cuda11,cuda12
 CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"}  # default as CUDA_CLASSIFIERS for compatibility
 IFS=',' read -a CLASSIFIERS_ARR <<< "$CLASSIFIERS"
-TMP_PATH="/tmp/$(date '+%Y-%m-%d')-$$"
+
+export TMP_PATH="/tmp/$(date '+%Y%m%d')-$$"
+mkdir -p ${TMP_PATH}
 
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$DEFAULT_CUDA_CLASSIFIER"
 DIST_POM_FPATH="$DIST_PL/target/parallel-world/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
@@ -89,39 +91,96 @@ function distWithReducedPom {
         $mvnExtraFlags
 }
 
+function build_shim() {
+  local BUILD_VER=$1
+  local SLOT_ID=$2
+  # reuse slot workspace and maven cache to save time
+  local SHIM_WORKSPACE="${TMP_PATH}/shim/${SLOT_ID}"
+  local SHIM_M2DIR="${SHIM_WORKSPACE}/.m2"
+
+  local CODE_PATH="${SHIM_WORKSPACE}/workspace"
+  if [ ! -d "${CODE_PATH}" ]; then
+    mkdir -p "${SHIM_WORKSPACE}"
+    cp -r "${WORKSPACE}/" "${CODE_PATH}"
+  fi
+  cd "${CODE_PATH}"
+  echo "Workspace at ${CODE_PATH}..."
+
+  local BUILD_CMD="$MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$SHIM_M2DIR \
+    -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
+    -DskipTests -Drat.skip=true -Djava.io.tmpdir=${SHIM_WORKSPACE} \
+    -Dbuildver=${BUILD_VER}"
+
+  echo "Building ${BUILD_VER}"
+  BUILD_LOG="${SHIM_WORKSPACE}/build-${BUILD_VER}.log"
+
+  $BUILD_CMD > "${BUILD_LOG}" 2>&1
+  CODE="$?"
+  if [[ $CODE != "0" ]]; then
+    tail -1000 "${BUILD_LOG}" || true
+    return $CODE
+  fi
+
+  ( # use flock to prevent maven local repository contention across all parallel builds
+    flock -x -w 300 200 || { echo "Lock acquisition failed"; exit 1; }
+
+    echo "Copying sql-plugin-api,aggregator to .m2 repo..."
+    for mod in \
+      "rapids-4-spark-sql-plugin-api_${SCALA_BINARY_VER}" "rapids-4-spark-aggregator_${SCALA_BINARY_VER}"; do
+      SRC_DIR="${SHIM_M2DIR}/com/nvidia/${mod}/${ART_VER}"
+      DEST_DIR="${M2DIR}/com/nvidia/${mod}/${ART_VER}"
+
+      if [[ -d "$SRC_DIR" ]]; then
+        mkdir -p "$DEST_DIR"
+        rsync -av --checksum --ignore-existing "${SRC_DIR}/" "${DEST_DIR}/"
+      fi
+    done
+  ) 200>"${M2DIR}/.copy.lock"
+
+  if [[ $SKIP_DEPLOY != 'true' ]]; then
+    local DEPLOY_CMD="$MVN -B deploy -pl $DEPLOY_SUBMODULES $MVN_URM_MIRROR \
+          -Dmaven.repo.local=$SHIM_M2DIR \
+          -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
+          -DskipTests -Drat.skip=true -Djava.io.tmpdir=${SHIM_WORKSPACE} \
+          -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
+          -Dbuildver=${BUILD_VER}"
+
+    echo "Deploying ${BUILD_VER}"
+    DEPLOY_LOG="${SHIM_WORKSPACE}/deploy-${BUILD_VER}.log"
+
+    $DEPLOY_CMD > "${DEPLOY_LOG}" 2>&1
+    CODE="$?"
+    if [[ $CODE != "0" ]]; then
+      tail -1000 "${DEPLOY_LOG}" || true
+      return $CODE
+    fi
+  fi
+
+  echo "${BUILD_VER} done."
+}
+export -f build_shim
+
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
 # Deploy jars unless SKIP_DEPLOY is 'true'
 
-# option to skip unit tests. Used in our CI to separate test runs in parallel stages
-SKIP_TESTS=${SKIP_TESTS:-"false"}
-
 set +H # turn off history expansion
-DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"integration_tests"}
-for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
-    $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
-        -DskipTests=$SKIP_TESTS \
-        -Dbuildver="${buildver}"
-    if [[ $SKIP_TESTS == "false" ]]; then
-      # Run filecache tests
-      SPARK_CONF=spark.rapids.filecache.enabled=true \
-          $MVN -B test -rf tests $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-              -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
-              -Dbuildver="${buildver}" \
-              -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
-    fi
-    distWithReducedPom "install"
-    [[ $SKIP_DEPLOY != 'true' ]] && \
-        # this deploys selected submodules
-        $MVN -B deploy -pl $DEPLOY_SUBMODULES $MVN_URM_MIRROR \
-            -Dmaven.repo.local=$M2DIR \
-            -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
-            -DskipTests \
-            -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
-            -Dbuildver="${buildver}"
-done
+export DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"integration_tests"}
+if ! command -v parallel &> /dev/null; then
+  # the script still supports building shims sequentially, but not recommended
+  for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
+      build_shim "${buildver}"
+  done
+else
+  # The default is derived from the average perf of cpu, mem, disk and network on internal CI machines.
+  BUILD_PARALLELISM=${BUILD_PARALLELISM:-'6'}
+  # Ignore SIGTTOU to allow background processes to write to the terminal
+  # this is a workaround for cdh shims build, otherwise it will hang forever with parallel
+  trap '' SIGTTOU
+  parallel --ungroup --halt "now,fail=1" -j"${BUILD_PARALLELISM}" 'build_shim {1} {%}' ::: "${SPARK_SHIM_VERSIONS[@]:1}"
+  trap - SIGTTOU
+fi
 
 installDistArtifact() {
   local cuda_version="$1"
@@ -133,12 +192,12 @@ installDistArtifact() {
       $MVN_URM_MIRROR \
       -Dmaven.repo.local=$M2DIR \
       -Dcuda.version=$cuda_version \
-      -DskipTests=$SKIP_TESTS
+      -DskipTests
 }
 
+# TODO: parallel build for different cuda classifiers
 # build extra cuda classifiers
 if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
-  mkdir -p ${TMP_PATH}
   for classifier in "${CLASSIFIERS_ARR[@]}"; do
     if [ "${classifier}" == "${DEFAULT_CUDA_CLASSIFIER}" ]; then
       echo "skip default: ${DEFAULT_CUDA_CLASSIFIER} in build extra cuda classifiers step..."
@@ -166,7 +225,7 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
     # this deploys selected submodules that is unconditionally built with Spark 3.2.0
     $MVN -B deploy -pl "!${DIST_PL}" \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
-        -DskipTests \
+        -DskipTests -Drat.skip=true \
         -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER
