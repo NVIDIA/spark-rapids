@@ -170,7 +170,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
       lengthS: GpuScalar): ColumnVector = {
     // When either start or length is null, return all nulls like the CPU does.
-    if (!startS.isValid || !lengthS.isValid) {
+    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid || !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -189,7 +189,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
       lengthCol: GpuColumnVector): ColumnVector = {
     // When start is null, return all nulls like the CPU does.
-    if (!startS.isValid) {
+    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -210,7 +210,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthS: GpuScalar): ColumnVector = {
     // When length is null, return all nulls like the CPU does.
-    if (!lengthS.isValid) {
+    if (listCol.getRowCount == listCol.numNulls() || !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
@@ -230,20 +230,24 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
 
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthCol: GpuColumnVector): ColumnVector = {
-    val list = listCol.getBase
-    val start = startCol.getBase
-    val length = lengthCol.getBase
-    withResource(Scalar.fromInt(0)) { zero =>
-      if (start.contains(zero)) {
-        throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+    if (listCol.getRowCount == listCol.numNulls()) {
+      GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
+    } else {
+      val list = listCol.getBase
+      val start = startCol.getBase
+      val length = lengthCol.getBase
+      withResource(Scalar.fromInt(0)) { zero =>
+        if (start.contains(zero)) {
+          throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+        }
       }
-    }
-    withResource(length.min()) { minLen =>
-      if (minLen.isValid && minLen.getInt < 0) {
-        throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+      withResource(length.min()) { minLen =>
+        if (minLen.isValid && minLen.getInt < 0) {
+          throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+        }
       }
+      GpuListSliceUtils.listSlice(list, start, length, false)
     }
-    GpuListSliceUtils.listSlice(list, start, length, false)
   }
 }
 
