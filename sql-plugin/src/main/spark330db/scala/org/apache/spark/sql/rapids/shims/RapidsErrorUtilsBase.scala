@@ -89,7 +89,7 @@ class RapidsErrorUtilsBase extends RapidsErrorUtilsFor330plus {
   def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
-    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName, length)
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
   }
 
   override def intervalDivByZeroError(origin: Origin): ArithmeticException = {
