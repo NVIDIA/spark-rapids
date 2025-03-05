@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,10 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.commands.DeletionVectorUtils
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.delta.{DeleteCommandEdgeMeta, DeleteCommandMeta}
 
 object DeleteCommandMetaShim {
-  def tagForGpu(meta: DeleteCommandMeta): Unit = {
-    val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(
-      meta.deleteCmd.deltaLog.unsafeVolatileSnapshot)
-    if (dvFeatureEnabled && meta.deleteCmd.conf.getConf(
-        DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
-      // https://github.com/NVIDIA/spark-rapids/issues/8654
-      meta.willNotWorkOnGpu("Deletion vector writes are not supported on GPU")
-    }
-  }
+  def tagForGpu(meta: DeleteCommandMeta): Unit = {}
 
-  def tagForGpu(meta: DeleteCommandEdgeMeta): Unit = {
-    val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(
-      meta.deleteCmd.deltaLog.unsafeVolatileSnapshot)
-    if (dvFeatureEnabled && meta.deleteCmd.conf.getConf(
-        DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
-      // https://github.com/NVIDIA/spark-rapids/issues/8654
-      meta.willNotWorkOnGpu("Deletion vector writes are not supported on GPU")
-    }
-  }
+  def tagForGpu(meta: DeleteCommandEdgeMeta): Unit = {}
 }
