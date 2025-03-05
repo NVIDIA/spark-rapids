@@ -45,6 +45,19 @@ ast_comparable_descrs = [
     (string_gen, True)
 ]
 
+ast_descrs = [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (float_gen, True),
+    (double_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, True)
+]
+
 ast_boolean_descr = [(boolean_gen, True)]
 ast_double_descr = [(double_gen, True)]
 
@@ -87,31 +100,11 @@ def test_null_literal(spark_tmp_path, data_gen):
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(f.lit(None).cast(data_type)))
 
-@pytest.mark.parametrize('data_descr', [
-    (boolean_gen, True),
-    (byte_gen, True),
-    (short_gen, True),
-    (int_gen, True),
-    (long_gen, True),
-    (float_gen, True),
-    (double_gen, True),
-    (timestamp_gen, True),
-    (date_gen, True),
-    (string_gen, True)], ids=idfn)
+@pytest.mark.parametrize('data_descr', ast_descrs, ids=idfn)
 def test_isnull(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('isnull(a)'))
 
-@pytest.mark.parametrize('data_descr', [
-    (boolean_gen, True),
-    (byte_gen, True),
-    (short_gen, True),
-    (int_gen, True),
-    (long_gen, True),
-    (float_gen, True),
-    (double_gen, True),
-    (timestamp_gen, True),
-    (date_gen, True),
-    (string_gen, True)], ids=idfn)
+@pytest.mark.parametrize('data_descr', ast_descrs, ids=idfn)
 def test_isnotnull(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('isnotnull(a)'))
 
