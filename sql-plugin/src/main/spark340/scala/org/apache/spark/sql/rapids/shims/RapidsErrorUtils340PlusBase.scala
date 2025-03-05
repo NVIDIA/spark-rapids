@@ -94,6 +94,16 @@ trait RapidsErrorUtils340PlusBase extends RapidsErrorUtilsFor330plus with Rapids
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }
 
+  def unexpectedValueForStartInFunctionError(prettyName: String): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+  }
+
+  def unexpectedValueForLengthInFunctionError(
+      prettyName: String,
+      length: Int): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+  }
+
   override def intervalDivByZeroError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.intervalDividedByZeroError(origin.context)
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,5 +26,15 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
   with RapidsQueryErrorUtils {
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
+  }
+
+  def unexpectedValueForStartInFunctionError(prettyName: String): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+  }
+
+  def unexpectedValueForLengthInFunctionError(
+      prettyName: String,
+      length: Int): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
   }
 }

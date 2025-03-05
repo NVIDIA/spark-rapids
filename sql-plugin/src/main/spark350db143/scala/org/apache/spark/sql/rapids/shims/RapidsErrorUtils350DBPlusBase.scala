@@ -27,6 +27,10 @@ trait RapidsErrorUtils350DBPlusBase extends RapidsErrorUtilsBase
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }
 
+  def unexpectedValueForStartInFunctionError(prettyName: String): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+  }
+
   def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
