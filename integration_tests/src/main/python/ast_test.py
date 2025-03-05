@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -86,6 +86,34 @@ def test_null_literal(spark_tmp_path, data_gen):
     data_type = data_gen.data_type
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(f.lit(None).cast(data_type)))
+
+@pytest.mark.parametrize('data_descr', [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (float_gen, True),
+    (double_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, True)], ids=idfn)
+def test_isnull(data_descr):
+    assert_unary_ast(data_descr, lambda df: df.selectExpr('isnull(a)'))
+
+@pytest.mark.parametrize('data_descr', [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (float_gen, True),
+    (double_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, True)], ids=idfn)
+def test_isnotnull(data_descr):
+    assert_unary_ast(data_descr, lambda df: df.selectExpr('isnotnull(a)'))
 
 @pytest.mark.parametrize('data_descr', ast_integral_descrs, ids=idfn)
 def test_bitwise_not(data_descr):
