@@ -793,7 +793,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           Some(buildTime),
           Some(buildDataSize))
       }
-      val prjBuildBatch = postProjection.map(_(buildBatch)).getOrElse(buildBatch)
+      val prjBuildBatch = postProjectionAndClose.map(_(buildBatch)).getOrElse(buildBatch)
 
       val lazyStream = bufferedStream.map { cb =>
         withResource(cb) { cb =>
