@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
+import java.io.IOException;
+import java.util.Iterator;
 import java.util.Map;
 
 import com.nvidia.spark.rapids.GpuMetric;
@@ -26,6 +28,8 @@ import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
+import org.apache.iceberg.ScanTask;
+import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
@@ -37,9 +41,15 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 
 import org.apache.spark.rdd.InputFileBlockHolder;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-/** GPU version of Apache Iceberg's BatchDataReader. */
-class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
+/**
+ * This reader reads data file in one-by-one manner without using multi thread to speed up.
+ */
+class GpuBatchDataReader extends BaseDataReader {
+  private static final Logger LOG = LoggerFactory.getLogger(GpuBatchDataReader.class);
+
   private final Schema expectedSchema;
   private final String nameMapping;
   private final boolean caseSensitive;
@@ -52,8 +62,14 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
   private final scala.Option<String> parquetDebugDumpPrefix;
   private final boolean parquetDebugDumpAlways;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
+  private final Iterator<FileScanTask> tasksIterator;
 
-  GpuBatchDataReader(CombinedScanTask task, Table table, Schema expectedSchema, boolean caseSensitive,
+  private CloseableIterator<ColumnarBatch> currentIterator;
+  private ColumnarBatch current = null;
+  private FileScanTask currentTask = null;
+
+  GpuBatchDataReader(ScanTaskGroup<? extends ScanTask> task, Table table, Schema expectedSchema,
+      boolean caseSensitive,
                      Configuration conf, int maxBatchSizeRows, long maxBatchSizeBytes,
                      long targetBatchSizeBytes,
                      boolean useChunkedReader, long maxChunkedReaderMemoryUsageSizeBytes,
@@ -72,9 +88,53 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
     this.parquetDebugDumpPrefix = parquetDebugDumpPrefix;
     this.parquetDebugDumpAlways = parquetDebugDumpAlways;
     this.metrics = metrics;
+    this.tasksIterator = tasks.iterator();
+
+    this.currentIterator = CloseableIterator.empty();
+  }
+
+
+  public boolean next() throws IOException {
+    try {
+      while (true) {
+        if (currentIterator.hasNext()) {
+          this.current = currentIterator.next();
+          return true;
+        } else if (tasksIterator.hasNext()) {
+          this.currentIterator.close();
+          this.currentTask = tasksIterator.next();
+          this.currentIterator = open(currentTask);
+        } else {
+          this.currentIterator.close();
+          return false;
+        }
+      }
+    } catch (IOException | RuntimeException e) {
+      if (currentTask != null && !currentTask.isDataTask()) {
+        LOG.error("Error reading file: {}", getInputFile(currentTask).location(), e);
+      }
+      throw e;
+    }
   }
 
   @Override
+  public ColumnarBatch get() {
+    return current;
+  }
+
+  @Override
+  public void close() throws IOException {
+    InputFileBlockHolder.unset();
+
+    // close the current iterator
+    this.currentIterator.close();
+
+    // exhaust the task iterator
+    while (tasksIterator.hasNext()) {
+      tasksIterator.next();
+    }
+  }
+
   CloseableIterator<ColumnarBatch> open(FileScanTask task) {
     DataFile file = task.file();
 
