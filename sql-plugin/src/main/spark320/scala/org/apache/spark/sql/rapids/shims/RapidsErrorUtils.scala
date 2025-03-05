@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,5 +84,15 @@ object RapidsErrorUtils extends RapidsQueryErrorUtils with SequenceSizeTooLongEr
 
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
+  }
+
+  def unexpectedValueForStartInFunctionError(prettyName: String): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+  }
+
+  def unexpectedValueForLengthInFunctionError(
+      prettyName: String,
+      length: Int): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
   }
 }

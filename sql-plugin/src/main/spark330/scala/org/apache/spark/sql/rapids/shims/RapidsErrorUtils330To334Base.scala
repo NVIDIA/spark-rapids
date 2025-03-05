@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,5 +80,15 @@ trait RapidsErrorUtils330To334Base extends RapidsErrorUtilsFor330plus with Rapid
 
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+  }
+
+  def unexpectedValueForStartInFunctionError(prettyName: String): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+  }
+
+  def unexpectedValueForLengthInFunctionError(
+      prettyName: String,
+      length: Int): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
   }
 }
