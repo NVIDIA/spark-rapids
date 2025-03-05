@@ -20,6 +20,7 @@ import java.util.Optional
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, ReductionAggregation, Scalar, SegmentedReductionAggregation, Table}
+import ai.rapids.cudf.ColumnView.DuplicateKeepOption
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
@@ -1566,7 +1567,7 @@ case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with N
   override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = child.dataType
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    input.getBase.dropListDuplicates
+    input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
   }
 }
 
