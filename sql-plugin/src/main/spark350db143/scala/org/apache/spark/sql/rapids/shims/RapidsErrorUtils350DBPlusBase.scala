@@ -27,7 +27,7 @@ trait RapidsErrorUtils350DBPlusBase extends RapidsErrorUtilsBase
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }
 
-  override def unexpectedValueForLengthInFunctionError(
+  def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
     QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName, length)
