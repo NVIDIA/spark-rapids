@@ -68,10 +68,10 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
     val qeErrorsClass = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
     val qeErrorsInstance = qeErrorsClass.getField("MODULE$").get(null)
     val method = qeErrorsClass.getMethod(
-      "unexpectedValueForLengthInFunctionError", classOf[String], classOf[Int])
+      "unexpectedValueForLengthInFunctionError", classOf[String], Integer.TYPE)
 
     (name: String, len: Int) => {
-      method.invoke(qeErrorsInstance, name, len).asInstanceOf[RuntimeException]
+      method.invoke(qeErrorsInstance, name, Integer.valueOf(len)).asInstanceOf[RuntimeException]
     }
   }
 }
