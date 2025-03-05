@@ -34,20 +34,33 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
     QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
   }
 
-  // TODO: Create an independent shim for spark-350db
+  // TODO: Create an independent shim for spark-350DBPlus
   def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
+    // A temporary version dispatcher to workaround interface conflict on Databricks runtime
     ShimLoader.getShimVersion match {
       case DatabricksShimVersion(major, minor, _, _) if minor > 4 || major > 3 =>
-        unexpectedLengthErrorMethod350(prettyName, length)
+        unexpectedLengthErrorAfter350(prettyName, length)
       case _ =>
-        QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+        unexpectedLengthErrorBefore350(prettyName)
     }
   }
 
-  @transient
-  private lazy val unexpectedLengthErrorMethod350 = {
+  // unexpectedValueForLengthInFunctionError(name: String): RuntimeException
+  @transient private lazy val unexpectedLengthErrorBefore350 = {
+    val qeErrorsClass = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
+    val qeErrorsInstance = qeErrorsClass.getField("MODULE$").get(null)
+    val method = qeErrorsClass.getMethod(
+      "unexpectedValueForLengthInFunctionError", classOf[String])
+
+    (name: String) => {
+      method.invoke(qeErrorsInstance, name).asInstanceOf[RuntimeException]
+    }
+  }
+
+  // unexpectedValueForLengthInFunctionError(name: String, length: Int): RuntimeException
+  @transient private lazy val unexpectedLengthErrorAfter350 = {
     val qeErrorsClass = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
     val qeErrorsInstance = qeErrorsClass.getField("MODULE$").get(null)
     val method = qeErrorsClass.getMethod(
