@@ -706,6 +706,27 @@
                 <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
+        <profile>
+            <id>release355</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>355</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>355</buildver>
+                <spark.version>${spark355.version}</spark.version>
+                <spark.test.version>${spark355.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
         <!-- #if scala-2.13 -->
         <profile>
             <id>release400</id>
@@ -915,6 +936,7 @@
         <spark352.version>3.5.2</spark352.version>
         <spark353.version>3.5.3</spark353.version>
         <spark354.version>3.5.4</spark354.version>
+        <spark355.version>3.5.5</spark355.version>
         <!-- spark400.version>4.0.0-SNAPSHOT</spark400.version -->
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
