@@ -31,7 +31,6 @@ import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimE
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
-import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -115,7 +114,6 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
 
   override def dataType: DataType = x.dataType
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, IntegerType, IntegerType)
-  override def prettyName: String = "slice"
 
   override def first: Expression = x
   override def second: Expression = start
@@ -170,84 +168,48 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
       lengthS: GpuScalar): ColumnVector = {
     // When either start or length is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid || !lengthS.isValid) {
+    if (!startS.isValid || !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
       val start = startS.getValue.asInstanceOf[Int]
       val length = lengthS.getValue.asInstanceOf[Int]
-      if (start == 0) {
-        throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
-      }
-      if (length < 0) {
-        throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
-      }
-      GpuListSliceUtils.listSlice(list, start, length, false)
+      GpuListSliceUtils.listSlice(list, start, length)
     }
   }
 
   override def doColumnar(listCol: GpuColumnVector, startS: GpuScalar,
       lengthCol: GpuColumnVector): ColumnVector = {
     // When start is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !startS.isValid) {
+    if (!startS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
       val start = startS.getValue.asInstanceOf[Int]
       val length = lengthCol.getBase
-      if (start == 0) {
-        throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
-      }
-      withResource(length.min()) { minLen =>
-        if (minLen.isValid && minLen.getInt < 0) {
-          throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
-        }
-      }
-      GpuListSliceUtils.listSlice(list, start, length, false)
+      GpuListSliceUtils.listSlice(list, start, length)
     }
   }
 
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthS: GpuScalar): ColumnVector = {
     // When length is null, return all nulls like the CPU does.
-    if (listCol.getRowCount == listCol.numNulls() || !lengthS.isValid) {
+    if (!lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
     } else {
       val list = listCol.getBase
       val start = startCol.getBase
       val length = lengthS.getValue.asInstanceOf[Int]
-      withResource(Scalar.fromInt(0)) { zero =>
-        if (start.contains(zero)) {
-          throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
-        }
-      }
-      if (length < 0) {
-        throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
-      }
-      GpuListSliceUtils.listSlice(list, start, length, false)
+      GpuListSliceUtils.listSlice(list, start, length)
     }
   }
 
   override def doColumnar(listCol: GpuColumnVector, startCol: GpuColumnVector,
       lengthCol: GpuColumnVector): ColumnVector = {
-    if (listCol.getRowCount == listCol.numNulls()) {
-      GpuColumnVector.columnVectorFromNull(listCol.getRowCount.toInt, dataType)
-    } else {
-      val list = listCol.getBase
-      val start = startCol.getBase
-      val length = lengthCol.getBase
-      withResource(Scalar.fromInt(0)) { zero =>
-        if (start.contains(zero)) {
-          throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
-        }
-      }
-      withResource(length.min()) { minLen =>
-        if (minLen.isValid && minLen.getInt < 0) {
-          throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
-        }
-      }
-      GpuListSliceUtils.listSlice(list, start, length, false)
-    }
+    val list = listCol.getBase
+    val start = startCol.getBase
+    val length = lengthCol.getBase
+    GpuListSliceUtils.listSlice(list, start, length)
   }
 }
 
