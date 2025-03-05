@@ -20,8 +20,7 @@ import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, GpuSemaphore, NvtxWithMetrics}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter}
-import com.nvidia.spark.rapids.hybrid.RapidsHostColumn
+import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter, HybridHostRetryAllocator, RapidsHostColumn}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -101,7 +100,8 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
         upstreamNext(),
         targetBatchSizeInBytes,
         schema,
-        converterMetrics
+        converterMetrics,
+        new HybridHostRetryAllocator()
       )
     }
 
