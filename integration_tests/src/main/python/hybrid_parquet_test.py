@@ -296,7 +296,8 @@ def test_hybrid_parquet_filter_pushdown_aqe(spark_tmp_path):
     conf = filter_split_conf.copy()
     conf.update({
         'spark.sql.adaptive.enabled': 'true',
-        'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU'
+        'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU'
     })
 
     def build_side_df(spark):
