@@ -592,7 +592,7 @@ def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_tabl
 @ignore_order(local=True)
 @pytest.mark.parametrize('mode', [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite])
 @pytest.mark.parametrize('input_dir,schema,options', [
-    ('hive-delim-text/simple-ing-values', make_schema(IntegerType()), {})
+    ('hive-delim-text/simple-int-values', make_schema(IntegerType()), {})
 ], ids=idfn)
 @allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
 def test_basic_hive_text_write_enabled_by_default(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options):
