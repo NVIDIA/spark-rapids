@@ -52,26 +52,28 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
   }
 
   // unexpectedValueForLengthInFunctionError(name: String): RuntimeException
-  @transient private lazy val unexpectedLengthErrorBefore350 = {
-    val qeErrorsClass = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
-    val qeErrorsInstance = qeErrorsClass.getField("MODULE$").get(null)
-    val method = qeErrorsClass.getMethod(
+  @transient
+  private lazy val unexpectedLengthErrorBefore350: String => RuntimeException = {
+    val qeErrorsClz = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
+    val qeErrorsInst = qeErrorsClz.getField("MODULE$").get(null)
+    val method = qeErrorsClz.getMethod(
       "unexpectedValueForLengthInFunctionError", classOf[String])
 
     (name: String) => {
-      method.invoke(qeErrorsInstance, name).asInstanceOf[RuntimeException]
+      method.invoke(qeErrorsInst, name).asInstanceOf[RuntimeException]
     }
   }
 
   // unexpectedValueForLengthInFunctionError(name: String, length: Int): RuntimeException
-  @transient private lazy val unexpectedLengthErrorAfter350 = {
-    val qeErrorsClass = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
-    val qeErrorsInstance = qeErrorsClass.getField("MODULE$").get(null)
-    val method = qeErrorsClass.getMethod(
+  @transient
+  private lazy val unexpectedLengthErrorAfter350: (String, Int) => RuntimeException = {
+    val qeErrorsClz = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
+    val qeErrorsInst = qeErrorsClz.getField("MODULE$").get(null)
+    val method = qeErrorsClz.getMethod(
       "unexpectedValueForLengthInFunctionError", classOf[String], Integer.TYPE)
 
     (name: String, len: Int) => {
-      method.invoke(qeErrorsInstance, name, Integer.valueOf(len)).asInstanceOf[RuntimeException]
+      method.invoke(qeErrorsInst, name, Integer.valueOf(len)).asInstanceOf[RuntimeException]
     }
   }
 }
