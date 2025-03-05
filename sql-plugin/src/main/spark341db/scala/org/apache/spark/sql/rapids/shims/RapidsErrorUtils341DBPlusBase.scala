@@ -39,12 +39,16 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
       prettyName: String,
       length: Int): RuntimeException = {
     // A temporary version dispatcher to workaround interface conflict on Databricks runtime
-    ShimLoader.getShimVersion match {
-      case DatabricksShimVersion(major, minor, _, _) if minor > 4 || major > 3 =>
-        unexpectedLengthErrorAfter350(prettyName, length)
-      case _ =>
-        unexpectedLengthErrorBefore350(prettyName)
+    if (isAfter350) {
+      unexpectedLengthErrorAfter350(prettyName, length)
+    } else {
+      unexpectedLengthErrorBefore350(prettyName)
     }
+  }
+
+  private val isAfter350 = ShimLoader.getShimVersion match {
+    case DatabricksShimVersion(major, minor, _, _) if minor > 4 || major > 3 => true
+    case _ => false
   }
 
   // unexpectedValueForLengthInFunctionError(name: String): RuntimeException
