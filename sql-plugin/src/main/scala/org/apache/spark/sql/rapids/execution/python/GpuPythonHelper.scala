@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
-import ai.rapids.cudf.Cuda
+import ai.rapids.cudf.{Cuda, RmmAllocationMode}
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.python.PythonConfEntries._
 
@@ -29,13 +29,22 @@ import org.apache.spark.sql.internal.SQLConf
 
 object GpuPythonHelper extends Logging {
 
-  private val sparkConf = SparkEnv.get.conf
+  private lazy val sparkConf = SparkEnv.get.conf
   private lazy val rapidsConf = new RapidsConf(sparkConf)
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
     .toString
   private lazy val isPythonPooledMemEnabled = rapidsConf.get(PYTHON_POOLED_MEM)
-    .getOrElse(rapidsConf.isPooledMemEnabled)
+    .getOrElse {
+      val rmmMode = GpuDeviceManager.rmmModeFromConf(rapidsConf)
+      if ((rmmMode & RmmAllocationMode.CUDA_ASYNC) != 0) {
+        logWarning("ASYNC pool is not supported by Rapids Python, fallback to normal pool")
+      } else if ((rmmMode & RmmAllocationMode.ARENA) != 0) {
+        logWarning("ARENA pool is not supported by Rapids Python, fallback to normal pool")
+      }
+      // Clear the uvm flag which is not relevant to memory pool
+      (rmmMode & (~RmmAllocationMode.CUDA_MANAGED_MEMORY)) != RmmAllocationMode.CUDA_DEFAULT
+    }
     .toString
   private lazy val isPythonUvmEnabled = rapidsConf.get(PYTHON_UVM_ENABLED)
     .getOrElse(rapidsConf.isUvmEnabled)

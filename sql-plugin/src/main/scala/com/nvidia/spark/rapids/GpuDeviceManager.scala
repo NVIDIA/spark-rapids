@@ -305,6 +305,51 @@ object GpuDeviceManager extends Logging {
     }
   }
 
+  /** Visible for GpuPythonHelper */
+  def rmmModeFromConf(conf: RapidsConf,
+      features: Option[ArrayBuffer[String]] = None): Int = {
+    var init = RmmAllocationMode.CUDA_DEFAULT
+    if (conf.isPooledMemEnabled) {
+      init = conf.rmmPool match {
+        case c if "default".equalsIgnoreCase(c) =>
+          if (Cuda.isPtdsEnabled) {
+            logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
+              "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
+              "We recommend you use the ARENA allocator when PTDS is enabled.")
+          }
+          features.foreach(_ += "POOLED")
+          init | RmmAllocationMode.POOL
+        case c if "arena".equalsIgnoreCase(c) =>
+          features.foreach(_ += "ARENA")
+          init | RmmAllocationMode.ARENA
+        case c if "async".equalsIgnoreCase(c) =>
+          features.foreach(_ += "ASYNC")
+          init | RmmAllocationMode.CUDA_ASYNC
+        case c if "none".equalsIgnoreCase(c) =>
+          // Pooling is disabled.
+          init
+        case c =>
+          throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
+      }
+    } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
+      logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
+        "to false; however, this configuration is deprecated and the behavior may change in a " +
+        "future release.")
+    }
+
+    if (conf.isUvmEnabled) {
+      // Enable managed memory only if async allocator is not used.
+      if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
+        features.foreach(_ += "UVM")
+        init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
+      } else {
+        throw new IllegalArgumentException(
+          "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
+      }
+    }
+    init
+  }
+
   private def initializeRmmGpuPool(gpuId: Int, conf: RapidsConf): Unit = {
     if (!Rmm.isInitialized) {
       val poolSize = conf.chunkedPackPoolSize
@@ -322,46 +367,8 @@ object GpuDeviceManager extends Logging {
 
       val info = Cuda.memGetInfo()
       val poolAllocation = computeRmmPoolSize(conf, info)
-      var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
-      if (conf.isPooledMemEnabled) {
-        init = conf.rmmPool match {
-          case c if "default".equalsIgnoreCase(c) =>
-            if (Cuda.isPtdsEnabled) {
-              logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
-                  "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
-                  "We recommend you use the ARENA allocator when PTDS is enabled.")
-            }
-            features += "POOLED"
-            init | RmmAllocationMode.POOL
-          case c if "arena".equalsIgnoreCase(c) =>
-            features += "ARENA"
-            init | RmmAllocationMode.ARENA
-          case c if "async".equalsIgnoreCase(c) =>
-            features += "ASYNC"
-            init | RmmAllocationMode.CUDA_ASYNC
-          case c if "none".equalsIgnoreCase(c) =>
-            // Pooling is disabled.
-            init
-          case c =>
-            throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
-        }
-      } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
-        logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
-          "to false; however, this configuration is deprecated and the behavior may change in a " +
-          "future release.")
-      }
-
-      if (conf.isUvmEnabled) {
-        // Enable managed memory only if async allocator is not used.
-        if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
-          features += "UVM"
-          init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
-        } else {
-          throw new IllegalArgumentException(
-            "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
-        }
-      }
+      var init = rmmModeFromConf(conf, Some(features))
 
       val logConf: Rmm.LogConf = conf.rmmDebugLocation match {
         case c if "none".equalsIgnoreCase(c) => null
