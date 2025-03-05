@@ -15,8 +15,8 @@
  */
 
 /*** spark-rapids-shim-json-lines
- {"spark": "350db143"}
- spark-rapids-shim-json-lines ***/
+{"spark": "350db143"}
+spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.errors.QueryExecutionErrors
