@@ -230,7 +230,7 @@ class GpuOrcWriter(
       .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema, nullable = false)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
     orcStripeSizeRows.foreach { ss =>
-      builder.withStripeSizeRows(orcStripeSizeRows)
+      builder.withStripeSizeRows(ss)
     }
     Table.writeORCChunked(builder.build(), this)
   }
