@@ -1339,22 +1339,22 @@ object GpuOverrides extends Logging {
       }),
     expr[IsNull](
       "Checks if a value is null",
-      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProjectAndAst(TypeSig.astTypes, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalPredicateSupportedTypes).nested(),
         TypeSig.all),
-      (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[IsNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
       }),
     expr[IsNotNull](
       "Checks if a value is not null",
-      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProjectAndAst(TypeSig.astTypes, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalPredicateSupportedTypes).nested(),
         TypeSig.all),
-      (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[IsNotNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
     expr[IsNaN](
