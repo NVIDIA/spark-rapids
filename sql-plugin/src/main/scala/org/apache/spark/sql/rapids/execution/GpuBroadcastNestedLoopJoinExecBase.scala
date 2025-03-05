@@ -782,7 +782,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val nestedLoopJoinType = joinType
     val buildSide = gpuBuildSide
     val buildSchema = buildPlan.schema
-    val postProjection = buildSidePostProjection
+    val postProjectionAndClose = buildSidePostProjection
     streamed.executeColumnar().mapPartitions { streamedIter =>
       // Will materialize the stream batch before materializing the build batch.
       val (buildBatch, bufferedStream) = {
