@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -263,7 +263,9 @@ def test_hash_repartition_exact_fallback(gen, num_parts, kudo_enabled):
             .repartition(num_parts, *part_on) \
             .withColumn('id', f.spark_partition_id()) \
             .selectExpr('*'), "ShuffleExchangeExec",
-        conf = {kudo_enabled_conf_key: kudo_enabled})
+        # Force to use murmur3
+        conf = {'spark.rapids.sql.partitioning.hashFunction.enabled': False,
+                kudo_enabled_conf_key: kudo_enabled})
 
 @allow_non_gpu("ProjectExec")
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
