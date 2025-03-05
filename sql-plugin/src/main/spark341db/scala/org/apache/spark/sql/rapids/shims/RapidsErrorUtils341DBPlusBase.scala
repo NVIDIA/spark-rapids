@@ -35,6 +35,6 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
   def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
-    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName, length)
   }
 }
