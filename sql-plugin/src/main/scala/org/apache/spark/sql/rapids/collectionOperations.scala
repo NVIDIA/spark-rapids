@@ -242,7 +242,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       }
       withResource(length.min()) { minLen =>
         if (minLen.isValid && minLen.getInt < 0) {
-          throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName, length)
+          throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName, minLen.getInt)
         }
       }
       GpuListSliceUtils.listSlice(list, start, length, false)
