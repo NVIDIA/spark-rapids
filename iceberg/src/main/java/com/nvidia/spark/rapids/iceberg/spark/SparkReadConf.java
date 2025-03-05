@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,19 @@
 
 package com.nvidia.spark.rapids.iceberg.spark;
 
-import java.util.Map;
-import java.util.Set;
 
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.iceberg.PlanningMode;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
-import org.apache.iceberg.hadoop.HadoopInputFile;
-import org.apache.iceberg.io.InputFile;
-import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
-import org.apache.iceberg.util.PropertyUtil;
+import org.apache.iceberg.exceptions.ValidationException;
+import org.apache.iceberg.hadoop.Util;
 
+import org.apache.iceberg.util.PropertyUtil;
+import org.apache.spark.SparkConf;
 import org.apache.spark.sql.SparkSession;
+
+import static org.apache.iceberg.PlanningMode.LOCAL;
 
 /**
  * A class for common Iceberg configs for Spark reads.
@@ -46,26 +47,29 @@ import org.apache.spark.sql.SparkSession;
  * Note this class is NOT meant to be serialized and sent to executors.
  */
 public class SparkReadConf {
-  private static final Set<String> LOCALITY_WHITELIST_FS = ImmutableSet.of("hdfs");
+  private static final String DRIVER_MAX_RESULT_SIZE = "spark.driver.maxResultSize";
+  private static final String DRIVER_MAX_RESULT_SIZE_DEFAULT = "1G";
+  private static final long DISTRIBUTED_PLANNING_MIN_RESULT_SIZE = 256L * 1024 * 1024; // 256 MB
 
   private final SparkSession spark;
   private final Table table;
-  private final Map<String, String> readOptions;
+  private final String branch;
   private final SparkConfParser confParser;
 
-  @SuppressWarnings("unchecked")
   public static SparkReadConf fromReflect(Object obj) throws IllegalAccessException {
     SparkSession spark = SparkSession.active();
     Table table = (Table) FieldUtils.readField(obj, "table", true);
-    Map<String, String> readOptions = (Map<String, String>) FieldUtils.readField(obj, "readOptions", true);
-    return new SparkReadConf(spark, table, readOptions);
+    String branch = (String) FieldUtils.readField(obj, "branch", true);
+    SparkConfParser confParser = SparkConfParser.fromReflect(FieldUtils.readField(obj, "confParser", true));
+    return new SparkReadConf(spark, table, branch, confParser);
   }
 
-  public SparkReadConf(SparkSession spark, Table table, Map<String, String> readOptions) {
+  public SparkReadConf(SparkSession spark, Table table,
+      String branch, SparkConfParser confParser) {
     this.spark = spark;
     this.table = table;
-    this.readOptions = readOptions;
-    this.confParser = new SparkConfParser(spark, table, readOptions);
+    this.branch = branch;
+    this.confParser = confParser;
   }
 
   public boolean caseSensitive() {
@@ -73,59 +77,84 @@ public class SparkReadConf {
   }
 
   public boolean localityEnabled() {
-    InputFile file = table.io().newInputFile(table.location());
-
-    if (file instanceof HadoopInputFile) {
-      String scheme = ((HadoopInputFile) file).getFileSystem().getScheme();
-      boolean defaultValue = LOCALITY_WHITELIST_FS.contains(scheme);
-      return PropertyUtil.propertyAsBoolean(
-          readOptions,
-          SparkReadOptions.LOCALITY,
-          defaultValue);
-    }
-
-    return false;
+    boolean defaultValue = Util.mayHaveBlockLocations(table.io(), table.location());
+    return confParser
+        .booleanConf()
+        .option(SparkReadOptions.LOCALITY)
+        .sessionConf(SparkSQLProperties.LOCALITY)
+        .defaultValue(defaultValue)
+        .parse();
   }
 
   public Long snapshotId() {
-    return confParser.longConf()
-        .option(SparkReadOptions.SNAPSHOT_ID)
-        .parseOptional();
+    return confParser.longConf().option(SparkReadOptions.SNAPSHOT_ID).parseOptional();
   }
 
   public Long asOfTimestamp() {
-    return confParser.longConf()
-        .option(SparkReadOptions.AS_OF_TIMESTAMP)
-        .parseOptional();
+    return confParser.longConf().option(SparkReadOptions.AS_OF_TIMESTAMP).parseOptional();
   }
 
   public Long startSnapshotId() {
-    return confParser.longConf()
-        .option(SparkReadOptions.START_SNAPSHOT_ID)
-        .parseOptional();
+    return confParser.longConf().option(SparkReadOptions.START_SNAPSHOT_ID).parseOptional();
   }
 
   public Long endSnapshotId() {
-    return confParser.longConf()
-        .option(SparkReadOptions.END_SNAPSHOT_ID)
-        .parseOptional();
+    return confParser.longConf().option(SparkReadOptions.END_SNAPSHOT_ID).parseOptional();
   }
 
-  public String fileScanTaskSetId() {
-    return confParser.stringConf()
-        .option(SparkReadOptions.FILE_SCAN_TASK_SET_ID)
-        .parseOptional();
+  public String branch() {
+    String optionBranch = confParser.stringConf().option(SparkReadOptions.BRANCH).parseOptional();
+    ValidationException.check(
+        branch == null || optionBranch == null || optionBranch.equals(branch),
+        "Must not specify different branches in both table identifier and read option, "
+            + "got [%s] in identifier and [%s] in options",
+        branch,
+        optionBranch);
+    String inputBranch = branch != null ? branch : optionBranch;
+    if (inputBranch != null) {
+      return inputBranch;
+    }
+
+    boolean wapEnabled =
+        PropertyUtil.propertyAsBoolean(
+            table.properties(), TableProperties.WRITE_AUDIT_PUBLISH_ENABLED, false);
+    if (wapEnabled) {
+      String wapBranch = spark.conf().get(SparkSQLProperties.WAP_BRANCH, null);
+      if (wapBranch != null && table.refs().containsKey(wapBranch)) {
+        return wapBranch;
+      }
+    }
+
+    return null;
+  }
+
+  public String tag() {
+    return confParser.stringConf().option(SparkReadOptions.TAG).parseOptional();
+  }
+
+  public String scanTaskSetId() {
+    return confParser.stringConf().option(SparkReadOptions.SCAN_TASK_SET_ID).parseOptional();
   }
 
   public boolean streamingSkipDeleteSnapshots() {
-    return confParser.booleanConf()
+    return confParser
+        .booleanConf()
         .option(SparkReadOptions.STREAMING_SKIP_DELETE_SNAPSHOTS)
         .defaultValue(SparkReadOptions.STREAMING_SKIP_DELETE_SNAPSHOTS_DEFAULT)
         .parse();
   }
 
+  public boolean streamingSkipOverwriteSnapshots() {
+    return confParser
+        .booleanConf()
+        .option(SparkReadOptions.STREAMING_SKIP_OVERWRITE_SNAPSHOTS)
+        .defaultValue(SparkReadOptions.STREAMING_SKIP_OVERWRITE_SNAPSHOTS_DEFAULT)
+        .parse();
+  }
+
   public boolean parquetVectorizationEnabled() {
-    return confParser.booleanConf()
+    return confParser
+        .booleanConf()
         .option(SparkReadOptions.VECTORIZATION_ENABLED)
         .sessionConf(SparkSQLProperties.VECTORIZATION_ENABLED)
         .tableProperty(TableProperties.PARQUET_VECTORIZATION_ENABLED)
@@ -134,7 +163,8 @@ public class SparkReadConf {
   }
 
   public int parquetBatchSize() {
-    return confParser.intConf()
+    return confParser
+        .intConf()
         .option(SparkReadOptions.VECTORIZATION_BATCH_SIZE)
         .tableProperty(TableProperties.PARQUET_BATCH_SIZE)
         .defaultValue(TableProperties.PARQUET_BATCH_SIZE_DEFAULT)
@@ -142,7 +172,8 @@ public class SparkReadConf {
   }
 
   public boolean orcVectorizationEnabled() {
-    return confParser.booleanConf()
+    return confParser
+        .booleanConf()
         .option(SparkReadOptions.VECTORIZATION_ENABLED)
         .sessionConf(SparkSQLProperties.VECTORIZATION_ENABLED)
         .tableProperty(TableProperties.ORC_VECTORIZATION_ENABLED)
@@ -151,7 +182,8 @@ public class SparkReadConf {
   }
 
   public int orcBatchSize() {
-    return confParser.intConf()
+    return confParser
+        .intConf()
         .option(SparkReadOptions.VECTORIZATION_BATCH_SIZE)
         .tableProperty(TableProperties.ORC_BATCH_SIZE)
         .defaultValue(TableProperties.ORC_BATCH_SIZE_DEFAULT)
@@ -159,13 +191,12 @@ public class SparkReadConf {
   }
 
   public Long splitSizeOption() {
-    return confParser.longConf()
-        .option(SparkReadOptions.SPLIT_SIZE)
-        .parseOptional();
+    return confParser.longConf().option(SparkReadOptions.SPLIT_SIZE).parseOptional();
   }
 
   public long splitSize() {
-    return confParser.longConf()
+    return confParser
+        .longConf()
         .option(SparkReadOptions.SPLIT_SIZE)
         .tableProperty(TableProperties.SPLIT_SIZE)
         .defaultValue(TableProperties.SPLIT_SIZE_DEFAULT)
@@ -173,13 +204,12 @@ public class SparkReadConf {
   }
 
   public Integer splitLookbackOption() {
-    return confParser.intConf()
-        .option(SparkReadOptions.LOOKBACK)
-        .parseOptional();
+    return confParser.intConf().option(SparkReadOptions.LOOKBACK).parseOptional();
   }
 
   public int splitLookback() {
-    return confParser.intConf()
+    return confParser
+        .intConf()
         .option(SparkReadOptions.LOOKBACK)
         .tableProperty(TableProperties.SPLIT_LOOKBACK)
         .defaultValue(TableProperties.SPLIT_LOOKBACK_DEFAULT)
@@ -187,16 +217,143 @@ public class SparkReadConf {
   }
 
   public Long splitOpenFileCostOption() {
-    return confParser.longConf()
-        .option(SparkReadOptions.FILE_OPEN_COST)
-        .parseOptional();
+    return confParser.longConf().option(SparkReadOptions.FILE_OPEN_COST).parseOptional();
   }
 
   public long splitOpenFileCost() {
-    return confParser.longConf()
+    return confParser
+        .longConf()
         .option(SparkReadOptions.FILE_OPEN_COST)
         .tableProperty(TableProperties.SPLIT_OPEN_FILE_COST)
         .defaultValue(TableProperties.SPLIT_OPEN_FILE_COST_DEFAULT)
+        .parse();
+  }
+
+  public long streamFromTimestamp() {
+    return confParser
+        .longConf()
+        .option(SparkReadOptions.STREAM_FROM_TIMESTAMP)
+        .defaultValue(Long.MIN_VALUE)
+        .parse();
+  }
+
+  public Long startTimestamp() {
+    return confParser.longConf().option(SparkReadOptions.START_TIMESTAMP).parseOptional();
+  }
+
+  public Long endTimestamp() {
+    return confParser.longConf().option(SparkReadOptions.END_TIMESTAMP).parseOptional();
+  }
+
+  public int maxFilesPerMicroBatch() {
+    return confParser
+        .intConf()
+        .option(SparkReadOptions.STREAMING_MAX_FILES_PER_MICRO_BATCH)
+        .defaultValue(Integer.MAX_VALUE)
+        .parse();
+  }
+
+  public int maxRecordsPerMicroBatch() {
+    return confParser
+        .intConf()
+        .option(SparkReadOptions.STREAMING_MAX_ROWS_PER_MICRO_BATCH)
+        .defaultValue(Integer.MAX_VALUE)
+        .parse();
+  }
+
+  public boolean preserveDataGrouping() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.PRESERVE_DATA_GROUPING)
+        .defaultValue(SparkSQLProperties.PRESERVE_DATA_GROUPING_DEFAULT)
+        .parse();
+  }
+
+  public boolean aggregatePushDownEnabled() {
+    return confParser
+        .booleanConf()
+        .option(SparkReadOptions.AGGREGATE_PUSH_DOWN_ENABLED)
+        .sessionConf(SparkSQLProperties.AGGREGATE_PUSH_DOWN_ENABLED)
+        .defaultValue(SparkSQLProperties.AGGREGATE_PUSH_DOWN_ENABLED_DEFAULT)
+        .parse();
+  }
+
+  public boolean adaptiveSplitSizeEnabled() {
+    return confParser
+        .booleanConf()
+        .tableProperty(TableProperties.ADAPTIVE_SPLIT_SIZE_ENABLED)
+        .defaultValue(TableProperties.ADAPTIVE_SPLIT_SIZE_ENABLED_DEFAULT)
+        .parse();
+  }
+
+  public int parallelism() {
+    int defaultParallelism = spark.sparkContext().defaultParallelism();
+    int numShufflePartitions = spark.sessionState().conf().numShufflePartitions();
+    return Math.max(defaultParallelism, numShufflePartitions);
+  }
+
+  public boolean distributedPlanningEnabled() {
+    return dataPlanningMode() != LOCAL || deletePlanningMode() != LOCAL;
+  }
+
+  public PlanningMode dataPlanningMode() {
+    if (driverMaxResultSize() < DISTRIBUTED_PLANNING_MIN_RESULT_SIZE) {
+      return LOCAL;
+    }
+
+    return confParser
+        .enumConf(PlanningMode::fromName)
+        .sessionConf(SparkSQLProperties.DATA_PLANNING_MODE)
+        .tableProperty(TableProperties.DATA_PLANNING_MODE)
+        .defaultValue(TableProperties.PLANNING_MODE_DEFAULT)
+        .parse();
+  }
+
+  public PlanningMode deletePlanningMode() {
+    if (driverMaxResultSize() < DISTRIBUTED_PLANNING_MIN_RESULT_SIZE) {
+      return LOCAL;
+    }
+
+    String modeName =
+        confParser
+            .stringConf()
+            .sessionConf(SparkSQLProperties.DELETE_PLANNING_MODE)
+            .tableProperty(TableProperties.DELETE_PLANNING_MODE)
+            .defaultValue(TableProperties.PLANNING_MODE_DEFAULT)
+            .parse();
+    return PlanningMode.fromName(modeName);
+  }
+
+  private long driverMaxResultSize() {
+    SparkConf sparkConf = spark.sparkContext().conf();
+    return sparkConf.getSizeAsBytes(DRIVER_MAX_RESULT_SIZE, DRIVER_MAX_RESULT_SIZE_DEFAULT);
+  }
+
+  public boolean executorCacheLocalityEnabled() {
+    return executorCacheEnabled() && executorCacheLocalityEnabledInternal();
+  }
+
+  private boolean executorCacheEnabled() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.EXECUTOR_CACHE_ENABLED)
+        .defaultValue(SparkSQLProperties.EXECUTOR_CACHE_ENABLED_DEFAULT)
+        .parse();
+  }
+
+  private boolean executorCacheLocalityEnabledInternal() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.EXECUTOR_CACHE_LOCALITY_ENABLED)
+        .defaultValue(SparkSQLProperties.EXECUTOR_CACHE_LOCALITY_ENABLED_DEFAULT)
+        .parse();
+  }
+
+  public boolean reportColumnStats() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.REPORT_COLUMN_STATS)
+        .defaultValue(SparkSQLProperties.REPORT_COLUMN_STATS_DEFAULT)
         .parse();
   }
 
@@ -220,10 +377,4 @@ public class SparkReadConf {
         .parse();
   }
 
-  public Long streamFromTimestamp() {
-    return confParser.longConf()
-        .option(SparkReadOptions.STREAM_FROM_TIMESTAMP)
-        .defaultValue(Long.MIN_VALUE)
-        .parse();
-  }
 }

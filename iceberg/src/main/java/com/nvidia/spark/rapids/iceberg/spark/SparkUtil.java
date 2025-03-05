@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,20 @@
 package com.nvidia.spark.rapids.iceberg.spark;
 
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.relocated.com.google.common.base.Joiner;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
+import org.apache.spark.SparkEnv;
+import org.apache.spark.scheduler.ExecutorCacheTaskLocation;
+import org.apache.spark.sql.connector.expressions.NamedReference;
+import org.apache.spark.storage.BlockManager;
+import org.apache.spark.storage.BlockManagerId;
+import org.apache.spark.storage.BlockManagerMaster;
+import scala.collection.JavaConverters;
+import scala.collection.Seq;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /** Derived from Apache Iceberg's SparkUtil class. */
 public class SparkUtil {
@@ -30,6 +42,8 @@ public class SparkUtil {
       " https://docs.databricks.com/spark/latest/dataframes-datasets/dates-timestamps.html#ansi-sql-and" +
       "-spark-sql-timestamps", SparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE);
 
+  private static final Joiner DOT = Joiner.on(".");
+
   private SparkUtil() {
   }
 
@@ -40,5 +54,32 @@ public class SparkUtil {
    */
   public static boolean hasTimestampWithoutZone(Schema schema) {
     return TypeUtil.find(schema, t -> Types.TimestampType.withoutZone().equals(t)) != null;
+  }
+
+  public static List<String> executorLocations() {
+    BlockManager driverBlockManager = SparkEnv.get().blockManager();
+    List<BlockManagerId> executorBlockManagerIds = fetchPeers(driverBlockManager);
+    return executorBlockManagerIds.stream()
+        .map(SparkUtil::toExecutorLocation)
+        .sorted()
+        .collect(Collectors.toList());
+  }
+
+  private static List<BlockManagerId> fetchPeers(BlockManager blockManager) {
+    BlockManagerMaster master = blockManager.master();
+    BlockManagerId id = blockManager.blockManagerId();
+    return toJavaList(master.getPeers(id));
+  }
+
+  private static <T> List<T> toJavaList(Seq<T> seq) {
+    return JavaConverters.seqAsJavaListConverter(seq).asJava();
+  }
+
+  private static String toExecutorLocation(BlockManagerId id) {
+    return ExecutorCacheTaskLocation.apply(id.host(), id.executorId()).toString();
+  }
+
+  public static String toColumnName(NamedReference ref) {
+    return DOT.join(ref.fieldNames());
   }
 }
