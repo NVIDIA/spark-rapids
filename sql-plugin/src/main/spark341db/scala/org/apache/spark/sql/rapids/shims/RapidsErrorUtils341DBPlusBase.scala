@@ -20,6 +20,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
+import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimLoader}
+
 import org.apache.spark.sql.errors.QueryExecutionErrors
 
 trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
@@ -32,9 +34,27 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
     QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
   }
 
+  // TODO: Create an independent shim for spark-350db
   def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
-    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName, length)
+    ShimLoader.getShimVersion match {
+      case DatabricksShimVersion(major, minor, _, _) if minor > 4 || major > 3 =>
+        unexpectedLengthErrorMethod350(prettyName, length)
+      case _ =>
+        QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+    }
+  }
+
+  @transient
+  private lazy val unexpectedLengthErrorMethod350 = {
+    val qeErrorsClass = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors$")
+    val qeErrorsInstance = qeErrorsClass.getField("MODULE$").get(null)
+    val method = qeErrorsClass.getMethod(
+      "unexpectedValueForLengthInFunctionError", classOf[String], classOf[Int])
+
+    (name: String, len: Int) => {
+      method.invoke(qeErrorsInstance, name, len).asInstanceOf[RuntimeException]
+    }
   }
 }
