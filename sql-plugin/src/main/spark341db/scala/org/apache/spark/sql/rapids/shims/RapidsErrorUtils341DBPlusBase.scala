@@ -27,10 +27,4 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }
-
-  override def unexpectedValueForLengthInFunctionError(
-      prettyName: String,
-      length: Int): RuntimeException = {
-    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName, length)
-  }
 }

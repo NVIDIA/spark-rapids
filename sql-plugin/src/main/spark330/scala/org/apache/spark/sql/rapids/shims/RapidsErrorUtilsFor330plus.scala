@@ -68,4 +68,14 @@ trait RapidsErrorUtilsFor330plus {
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
   }
+
+  def unexpectedValueForStartInFunctionError(prettyName: String): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+  }
+
+  def unexpectedValueForLengthInFunctionError(
+      prettyName: String,
+      length: Int): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+  }
 }

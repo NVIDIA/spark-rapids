@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350db143"}
-spark-rapids-shim-json-lines ***/
+ {"spark": "350db143"}
+ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-object RapidsErrorUtils extends RapidsErrorUtils350DBPlusBase
-  with SequenceSizeExceededLimitErrorBuilder
+import org.apache.spark.sql.errors.QueryExecutionErrors
+
+trait RapidsErrorUtils350DBPlusBase extends RapidsErrorUtilsBase
+  with RapidsQueryErrorUtils {
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    QueryExecutionErrors.invalidIndexOfZeroError(context = null)
+  }
+
+  override def unexpectedValueForLengthInFunctionError(
+    prettyName: String,
+    length: Int): RuntimeException = {
+    QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName, length)
+  }
+}
