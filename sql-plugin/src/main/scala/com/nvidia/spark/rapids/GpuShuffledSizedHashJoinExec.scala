@@ -37,6 +37,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.rapids.{GpuHashExpression, GpuMurmur3Hash}
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -1321,10 +1322,13 @@ abstract class JoinPartitioner(
     numPartitions: Int,
     batchTypes: Array[DataType],
     boundJoinKeys: Seq[Expression],
-    metrics: Map[String, GpuMetric]) extends AutoCloseable {
+    metrics: Map[String, GpuMetric]) extends GpuHashPartitioner with AutoCloseable {
   protected val partitions: Array[JoinPartition] =
     (0 until numPartitions).map(_ => new JoinPartition).toArray
   protected val opTime = metrics(OP_TIME)
+
+  override protected val hashFunc: GpuHashExpression =
+    GpuMurmur3Hash(boundJoinKeys, JoinPartitioner.HASH_SEED)
 
   /**
    * Hash partitions a batch in preparation for performing a sub-join. The input batch will
@@ -1334,9 +1338,8 @@ abstract class JoinPartitioner(
     val spillableBatch = SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     withRetryNoSplit(spillableBatch) { _ =>
       opTime.ns {
-        val partsTable = GpuHashPartitioningBase.hashPartitionAndClose(
-          spillableBatch.getColumnarBatch(), boundJoinKeys, numPartitions, "partition for join",
-          JoinPartitioner.HASH_SEED)
+        val partsTable = hashPartitionAndClose(spillableBatch.getColumnarBatch(), numPartitions,
+          "partition for join")
         val contigTables = withResource(partsTable) { _ =>
           partsTable.getTable.contiguousSplit(partsTable.getPartitions.tail: _*)
         }
