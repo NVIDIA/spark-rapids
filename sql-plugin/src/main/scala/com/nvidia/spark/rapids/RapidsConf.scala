@@ -1483,19 +1483,22 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
-      .doc("When set to false disables Hive text table acceleration")
+      .doc("When set to false disables Hive text table acceleration. " +
+           "Array/Struct/Map columns are unsupported for acceleration.")
       .booleanConf
       .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.read.enabled")
-      .doc("When set to false disables Hive text table read acceleration")
+      .doc("When set to false disables Hive text table read acceleration. " +
+           "Array/Struct/Map columns are unsupported for read acceleration.")
       .booleanConf
       .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_WRITE: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.write.enabled")
-      .doc("When set to false disables Hive text table write acceleration")
+      .doc("When set to false disables Hive text table write acceleration. " +
+           "Array/Struct/Map columns are unsupported for write acceleration.")
       .booleanConf
       .createWithDefault(true)
 
