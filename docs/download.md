@@ -101,7 +101,7 @@ The output of signature verify:
 * Grab the GPU Semaphore when reading cached batch data with the GPU to avoid a GPU OOM case
 * Add an option to disable measuring buffer copy to improve large shuffle large partition serialization
 * For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
-* Bug fix for some corner cases involving CUDA 12.8 and GB100
+* Upgraded statically linked CUDA toolkit to 12.8, which includes support for GB100 GPUs
 
 Note: There is a known issue in the 25.02.1 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
