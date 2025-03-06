@@ -23,7 +23,7 @@ guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/ov
 
 The plugin is tested on the following architectures:
 
-	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+	GPU Models: NVIDIA V100, T4, A10/A100, L4, H100 and B100 GPUs
 
 ### Software Requirements:
 
