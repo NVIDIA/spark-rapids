@@ -358,10 +358,21 @@ object HybridExecutionUtils extends PredicateHelper {
           case (fsse: FileSourceScanExec, "CPU") => {
             val (supportedConditions, notSupportedConditions) = filters.partition(
                 isExprSupportedByHybridScan(_, conf.hybridExprsWhitelist))
-            val updatedFsseChild = fsse.copy(dataFilters = supportedConditions)
             notSupportedConditions match {
-              case Nil => updatedFsseChild
-              case _ => FilterExec(notSupportedConditions.reduceLeft(And), updatedFsseChild)
+              case Nil =>
+                // NOTICE: it is essential to align the output to the filter's output. Otherwise,
+                // when AQE is enabled, an extra unwanted broadcast exchange will be injected due
+                // to the mismatch between the output of ScanNode and the input of the child plan(
+                // which was supposed to be connected to the FilterNode).
+                // For more details, please refer
+                // https://github.com/NVIDIA/spark-rapids/issues/12267
+                fsse.copy(
+                  dataFilters = supportedConditions,
+                  output = filter.output)
+              case _ =>
+                FilterExec(
+                  notSupportedConditions.reduceLeft(And),
+                  fsse.copy(dataFilters = supportedConditions))
             }
           }
           case _ => filter
