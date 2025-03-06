@@ -56,7 +56,7 @@ class GpuShuffledHashJoinMeta(
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
-  def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide) {
+  def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide): Unit = {
     buildSide match {
       case GpuBuildLeft if !canBuildLeft(joinType) =>
         meta.willNotWorkOnGpu(s"$joinType does not support left-side build")
