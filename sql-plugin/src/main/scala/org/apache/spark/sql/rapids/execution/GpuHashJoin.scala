@@ -128,7 +128,9 @@ object GpuHashJoin {
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
+  }
 
+  def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide) {
     buildSide match {
       case GpuBuildLeft if !canBuildLeft(joinType) =>
         meta.willNotWorkOnGpu(s"$joinType does not support left-side build")

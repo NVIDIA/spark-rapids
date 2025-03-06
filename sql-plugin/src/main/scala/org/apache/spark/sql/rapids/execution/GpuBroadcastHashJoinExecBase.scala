@@ -58,6 +58,7 @@ abstract class GpuBroadcastHashJoinMetaBase(
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       conditionMeta)
+    GpuHashJoin.tagBuildSide(this, join.joinType, buildSide)
     val Seq(leftChild, rightChild) = childPlans
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => leftChild

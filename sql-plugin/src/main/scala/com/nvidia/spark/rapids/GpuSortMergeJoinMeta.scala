@@ -51,6 +51,7 @@ class GpuSortMergeJoinMeta(
     // Use conditions from Hash Join
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       conditionMeta)
+    GpuHashJoin.tagBuildSide(this, join.joinType, buildSide)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
