@@ -65,7 +65,7 @@ object ConfHelper {
       s.trim.toDouble
     } catch {
       case _: IllegalArgumentException =>
-        throw new IllegalArgumentException(s"$key should be integer, but was $s")
+        throw new IllegalArgumentException(s"$key should be double, but was $s")
     }
   }
 
@@ -1275,6 +1275,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val TEST_ORC_STRIPE_SIZE_ROWS = conf("spark.rapids.sql.test.orc.write.stripeSizeRows")
+    .doc("Only to be used in tests. When set to a valid value(no less than 512, as specified " +
+      "in cudf), the ORC writer will use this value as the maximum number of rows per stripe. " +
+      "Additionally, the ORC writer rounds the number of elements in each stripe " +
+      "(except the last) to a multiple of 8 to efficiently encode the validity masks. " +
+      "If not set, the ORC writer will use the default value 1,000,000.")
+    .internal()
+    .integerConf
+    .checkValue(v => v >= 512, "The stripe size rows must be no less than 512.")
+    .createOptional
 
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
@@ -3062,6 +3073,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val testOrcStripeSizeRows: Option[Integer] = get(TEST_ORC_STRIPE_SIZE_ROWS)
 
   lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
