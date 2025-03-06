@@ -31,7 +31,6 @@ import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimE
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
-import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -177,10 +176,10 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       val start = startS.getValue.asInstanceOf[Int]
       val length = lengthS.getValue.asInstanceOf[Int]
       if (start == 0) {
-        throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+        throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
       }
       if (length < 0) {
-        throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+        throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName, length)
       }
       GpuListSliceUtils.listSlice(list, start, length, false)
     }
@@ -196,11 +195,12 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       val start = startS.getValue.asInstanceOf[Int]
       val length = lengthCol.getBase
       if (start == 0) {
-        throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+        throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
       }
       withResource(length.min()) { minLen =>
         if (minLen.isValid && minLen.getInt < 0) {
-          throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+          throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
+            minLen.getInt)
         }
       }
       GpuListSliceUtils.listSlice(list, start, length, false)
@@ -218,11 +218,11 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       val length = lengthS.getValue.asInstanceOf[Int]
       withResource(Scalar.fromInt(0)) { zero =>
         if (start.contains(zero)) {
-          throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+          throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
         }
       }
       if (length < 0) {
-        throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+        throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName, length)
       }
       GpuListSliceUtils.listSlice(list, start, length, false)
     }
@@ -238,12 +238,13 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
       val length = lengthCol.getBase
       withResource(Scalar.fromInt(0)) { zero =>
         if (start.contains(zero)) {
-          throw QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
+          throw RapidsErrorUtils.unexpectedValueForStartInFunctionError(prettyName)
         }
       }
       withResource(length.min()) { minLen =>
         if (minLen.isValid && minLen.getInt < 0) {
-          throw QueryExecutionErrors.unexpectedValueForLengthInFunctionError(prettyName)
+          throw RapidsErrorUtils.unexpectedValueForLengthInFunctionError(prettyName,
+            minLen.getInt)
         }
       }
       GpuListSliceUtils.listSlice(list, start, length, false)
