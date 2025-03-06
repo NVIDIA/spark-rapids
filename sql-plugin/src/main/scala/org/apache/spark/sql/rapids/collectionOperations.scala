@@ -1567,7 +1567,29 @@ case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with N
   override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = child.dataType
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
+    val baseColumn = input.getBase
+    
+    // Reinterpret float/doubles as 
+    baseColumn.DType match {
+      case DType.FLOAT32 =>
+        // Reinterpret float bits as ints for deduplication
+        withResource(baseColumn.bitCastTo(DType.INT32)) { intColumn =>
+          withResource(intColumn.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
+          { distinctIntArray =>
+              distinctIntArray.bitCastTo(DType.FLOAT32).copyToColumnVector()
+          }
+        }
+      case DType.FLOAT64 =>
+        // Reinterpret double bits as longs for deduplication
+        withResource(baseColumn.bitCastTo(DType.INT64)) { longColumn =>
+          withResource(longColumn.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
+          { distinctLongArray =>
+              distinctLongArray.bitCastTo(DType.FLOAT64).copyToColumnVector()
+          }
+        }
+      case _ =>
+        baseColumn.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
+    }
   }
 }
 
