@@ -34,7 +34,8 @@ trait RapidsErrorUtils341DBPlusBase extends RapidsErrorUtilsBase
     QueryExecutionErrors.unexpectedValueForStartInFunctionError(prettyName)
   }
 
-  // TODO: Create an independent shim for spark-350DBPlus
+  // TODO: Create an independent shim for spark-350DBPlus to handle the interface divergence:
+  // https://github.com/NVIDIA/spark-rapids/issues/12276
   def unexpectedValueForLengthInFunctionError(
       prettyName: String,
       length: Int): RuntimeException = {
