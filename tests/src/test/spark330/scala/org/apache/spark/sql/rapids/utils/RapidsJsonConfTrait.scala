@@ -26,14 +26,12 @@ import org.apache.spark.sql.internal.SQLConf
 trait RapidsJsonConfTrait extends BeforeAndAfterAll { this: Suite =>
   override def beforeAll(): Unit = {
     super.beforeAll()
-    SQLConf.get.setConfString("spark.rapids.sql.expression.JsonTuple", true.toString)
     SQLConf.get.setConfString("spark.rapids.sql.expression.GetJsonObject", true.toString)
     SQLConf.get.setConfString("spark.rapids.sql.expression.JsonToStructs", true.toString)
     SQLConf.get.setConfString("spark.rapids.sql.expression.StructsToJson", true.toString)
   }
 
   override def afterAll(): Unit = {
-    SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonTuple")
     SQLConf.get.unsetConf("spark.rapids.sql.expression.GetJsonObject")
     SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonToStructs")
     SQLConf.get.unsetConf("spark.rapids.sql.expression.StructsToJson")
