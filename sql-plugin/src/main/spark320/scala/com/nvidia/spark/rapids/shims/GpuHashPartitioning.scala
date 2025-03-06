@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +24,14 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuHashPartitioningBase
+import com.nvidia.spark.rapids.{GpuHashPartitioningBase, HashMode, Murmur3Mode}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
 
-case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
-  extends GpuHashPartitioningBase(expressions, numPartitions) {
+case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int,
+    hashMode: HashMode = Murmur3Mode)
+  extends GpuHashPartitioningBase(expressions, numPartitions, hashMode) {
 
   override def satisfies0(required: Distribution): Boolean = {
     super.satisfies0(required) || {
