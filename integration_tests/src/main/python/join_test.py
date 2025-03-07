@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -304,6 +304,38 @@ def test_hash_join_ridealong_asymmetric(data_gen, join_type, kudo_enabled):
         kudo_enabled_conf_key: kudo_enabled
     }
     hash_join_ridealong(data_gen, join_type, confs)
+
+
+# test join side is build side for left/right join
+# using SHUFFLE_HASH hint to specify the build side
+def hash_join_side_is_build_side(data_gen, join_type, confs):
+    def do_join(spark):
+        left, right = create_ridealong_df(spark, short_gen, data_gen, 50, 500)
+        if (join_type == "LeftOuter"):
+            return left.hint("SHUFFLE_HASH").join(right, left.key == right.r_key, join_type)
+        elif (join_type == "RightOuter"):
+            return left.join(right.hint("SHUFFLE_HASH"), left.key == right.r_key, join_type)
+        else:
+            raise RuntimeError("Only supports left join and right join")
+
+    _all_conf = copy_and_update(_hash_join_conf, confs)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
+
+
+# test left outer join with left side is build side
+# test right outer join with right side is build side
+@validate_execs_in_gpu_plan('GpuShuffledAsymmetricHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('join_type', all_asymmetric_sized_join_types, ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_hash_join_side_is_build_side_asymmetric(data_gen, join_type, kudo_enabled):
+    confs = {
+        "spark.rapids.sql.join.useShuffledAsymmetricHashJoin": "true",
+        kudo_enabled_conf_key: kudo_enabled
+    }
+    hash_join_side_is_build_side(data_gen, join_type, confs)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
