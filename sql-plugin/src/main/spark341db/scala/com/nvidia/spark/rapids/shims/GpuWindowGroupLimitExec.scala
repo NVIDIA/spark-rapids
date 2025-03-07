@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -30,12 +32,12 @@ import ai.rapids.cudf.GroupByOptions
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
-import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuRank}
+import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuRank, GpuRowNumber}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, DenseRank, Expression, Rank, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, DenseRank, Expression, Rank, RowNumber, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.{Final, Partial, WindowGroupLimitExec, WindowGroupLimitMode}
 import org.apache.spark.sql.types.DataType
@@ -44,6 +46,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 sealed trait RankFunctionType
 case object RankFunction extends RankFunctionType
 case object DenseRankFunction extends RankFunctionType
+case object RowNumberFunction extends RankFunctionType
 
 class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
                                   conf: RapidsConf,
@@ -63,8 +66,8 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
     wrapped.rankLikeFunction match {
       case DenseRank(_) =>
       case Rank(_) =>
-      // case RowNumber() => // TODO: Future.
-      case _ => willNotWorkOnGpu("Only Rank() and DenseRank() are " +
+      case RowNumber() =>
+      case _ => willNotWorkOnGpu("Only rank, dense_rank and row_number are " +
                                  "currently supported for window group limits")
     }
 
@@ -166,6 +169,7 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
     rankFunctionType match {
       case RankFunction => GpuRank(sortColumns)
       case DenseRankFunction => GpuDenseRank(sortColumns)
+      case RowNumberFunction => GpuRowNumber
       case _ => throw new IllegalArgumentException("Unexpected ranking function")
     }
   }
@@ -300,8 +304,10 @@ case class GpuWindowGroupLimitExec(
   private def getRankFunctionType(expr: Expression): RankFunctionType = expr match {
     case GpuRank(_) => RankFunction
     case GpuDenseRank(_) => DenseRankFunction
+    case GpuRowNumber => RowNumberFunction
     case _ =>
-      throw new UnsupportedOperationException("Only Rank() is currently supported for group limits")
+      throw new UnsupportedOperationException("Only rank, dense_rank and row_number are " +
+                                              "currently supported for group limits")
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,8 @@
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
@@ -99,9 +101,9 @@ trait GpuV1FallbackWriters extends LeafV2CommandExec with SupportsV1Write with G
   def write: V1Write
 
   override def run(): Seq[InternalRow] = {
-    val writtenRows = writeWithV1(write.toInsertableRelation)
+    writeWithV1(write.toInsertableRelation)
     refreshCache()
-    writtenRows
+    Nil
   }
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {

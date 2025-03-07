@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,15 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase
 
   public static boolean isBatchCompressed(ColumnarBatch batch) {
     return batch.numCols() == 1 && batch.column(0) instanceof GpuCompressedColumnVector;
+  }
+
+  public static ColumnarBatch incRefCounts(ColumnarBatch batch) {
+    if (!isBatchCompressed(batch)) {
+      throw new IllegalStateException(
+              "Attempted to incRefCount for a compressed batch, but the batch was not compressed.");
+    }
+    ((GpuCompressedColumnVector)batch.column(0)).buffer.incRefCount();
+    return batch;
   }
 
   /**

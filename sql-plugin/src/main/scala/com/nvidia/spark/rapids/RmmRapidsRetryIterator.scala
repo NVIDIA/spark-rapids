@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -311,6 +311,14 @@ object RmmRapidsRetryIterator extends Logging {
     override def iterator: Iterator[T] = ts.iterator
 
     override def apply(idx: Int): T = ts.apply(idx)
+
+    override def toString(): String = {
+      val totalSize = ts.map {
+        case scb: SpillableColumnarBatch => scb.sizeInBytes
+        case _ => 0L
+      }.sum
+      s"AutoCloseableSeqInternal totalSize:$totalSize, inner:[${ts.mkString(";")}]"
+    }
   }
 
   /**
@@ -454,14 +462,42 @@ object RmmRapidsRetryIterator extends Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
+        val message = s"could not split inputs and retry. The current attempt: " +
+          s"{${attemptStack.head}}"
         if (isFromGpuOom) {
-          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+          throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
         } else {
-          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+          throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
         }
       }
-      // splitPolicy must take ownership of the argument
-      val splitted = splitPolicy(attemptStack.pop())
+      val curAttempt = attemptStack.pop()
+      // Get the info before running the split, since the attempt may be closed after splitting.
+      val attemptAsString = closeOnExcept(curAttempt)(_.toString)
+      val splitted = try {
+        // splitPolicy must take ownership of the argument
+        splitPolicy(curAttempt)
+      } catch {
+          // We only care about OOM exceptions and wrap it by a new exception with the
+          // same type to provide more context for the OOM.
+          // This looks a little odd, because we can not change the type of root exception.
+          // Otherwise, some unit tests will fail due to the wrong exception type returned.
+        case go: GpuRetryOOM =>
+          throw new GpuRetryOOM(
+            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case go: GpuSplitAndRetryOOM =>
+          throw new GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case co: CpuRetryOOM =>
+          throw new CpuRetryOOM(
+            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+        case co: CpuSplitAndRetryOOM =>
+          throw new CpuSplitAndRetryOOM(
+            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+      }
       // the splitted sequence needs to be inserted in reverse order
       // so we try the first item first.
       splitted.reverse.foreach(attemptStack.push)
@@ -570,6 +606,7 @@ object RmmRapidsRetryIterator extends Logging {
       var doSplit = false
       var isFromGpuOom = true
       while (result.isEmpty && attemptIter.hasNext) {
+        RetryStateTracker.setCurThreadRetrying(!firstAttempt)
         if (!firstAttempt) {
           // call thread block API
           try {
@@ -585,6 +622,9 @@ object RmmRapidsRetryIterator extends Logging {
         }
         firstAttempt = false
         if (doSplit) {
+          if (BOOKKEEP_MEMORY) {
+            logMemoryBookkeeping()
+          }
           attemptIter.split(isFromGpuOom)
         }
         doSplit = false
@@ -649,6 +689,7 @@ object RmmRapidsRetryIterator extends Logging {
           // else another exception wrapped a retry. So we are going to try again
         }
       }
+      RetryStateTracker.clearCurThreadRetrying()
       if (result.isEmpty) {
         // then lastException must be set, throw it.
         throw lastException
@@ -743,6 +784,41 @@ object RmmRapidsRetryIterator extends Logging {
     (target: AutoCloseableTargetSize) => {
       splitTargetSizeInHalfInternal(target, false)
   }
+
+  /**
+   * Log memory footprint when GPU OOM or CPU OOM happens.
+   */
+
+  val BOOKKEEP_MEMORY: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
+  // track the callstack for each memory allocation, don't enable it unless really needed
+  val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
+
+  private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
+
+    // print host memory bookkeeping
+    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+
+    // print device memory bookkeeping
+    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+
+    // print stack trace
+    val sb = new StringBuilder("<<Jstack Details>>\n\n")
+    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+    => {
+      // Print the thread name and its state
+      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+        s"- Thread ID: ${thread.getId}\n")
+      // Print the stack trace for this thread
+      for (element <- stackTrace) {
+        sb.append(s"\tat $element")
+      }
+      sb.append("\n\n")
+    })
+    logInfo(sb.toString())
+  }
 }
 
 /**
@@ -754,4 +830,22 @@ object RmmRapidsRetryIterator extends Logging {
  */
 case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
   override def close(): Unit = ()
+}
+
+/**
+ * This leverages a ThreadLocal of boolean to track if a task thread is currently
+ * executing a retry. And the boolean state will be used by all the
+ * `GpuExpressionRetryable`s to determine if the context is safe to retry the evaluation.
+ */
+object RetryStateTracker {
+  private val localIsRetrying = new ThreadLocal[java.lang.Boolean]()
+
+  def isCurThreadRetrying: Boolean = {
+    val ret = localIsRetrying.get()
+    ret != null && ret
+  }
+
+  def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
+
+  def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
 }

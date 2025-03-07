@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.RmmSpark
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder, SpecificInternalRow}
 import org.apache.spark.sql.types.{DataType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -36,49 +35,45 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
   }
 
   private def testRoundRobinPartitioner(partNum: Int) = {
-    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      val rrp = GpuRoundRobinPartitioning(partNum)
-      // batch will be closed within columnarEvalAny
-      val batch = buildBatch
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
-      var ret: Array[(ColumnarBatch, Int)] = null
-      try {
-        ret = rrp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-        assert(partNum === ret.size)
-      } finally {
-        if (ret != null) {
-          ret.map(_._1).safeClose()
-        }
+    val rrp = GpuRoundRobinPartitioning(partNum)
+    // batch will be closed within columnarEvalAny
+    val batch = buildBatch
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    var ret: Array[(ColumnarBatch, Int)] = null
+    try {
+      ret = rrp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+      assert(partNum === ret.size)
+    } finally {
+      if (ret != null) {
+        ret.map(_._1).safeClose()
       }
     }
   }
 
   test("GPU range partition with retry") {
-    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      // Initialize range bounds
-      val fieldTypes: Array[DataType] = Array(IntegerType)
-      val bounds = new SpecificInternalRow(fieldTypes)
-      bounds.setInt(0, 3)
-      // Initialize GPU sorter
-      val ref = GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "a")
-      val sortOrder = SortOrder(ref, Ascending)
-      val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
-      val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs))
+    // Initialize range bounds
+    val fieldTypes: Array[DataType] = Array(IntegerType)
+    val bounds = new SpecificInternalRow(fieldTypes)
+    bounds.setInt(0, 3)
+    // Initialize GPU sorter
+    val ref = GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "a")
+    val sortOrder = SortOrder(ref, Ascending)
+    val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
+    val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs))
 
-      val rp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
-      // batch will be closed within columnarEvalAny
-      val batch = buildBatch
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
-      var ret: Array[(ColumnarBatch, Int)] = null
-      try {
-        ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-        assert(ret.length === 2)
-      } finally {
-        if (ret != null) {
-          ret.map(_._1).safeClose()
-        }
+    val rp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
+    // batch will be closed within columnarEvalAny
+    val batch = buildBatch
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    var ret: Array[(ColumnarBatch, Int)] = null
+    try {
+      ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+      assert(ret.length === 2)
+    } finally {
+      if (ret != null) {
+        ret.map(_._1).safeClose()
       }
     }
   }

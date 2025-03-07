@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
@@ -366,22 +367,23 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
    * 'splits' is used only for debugging.
    */
   protected final def sendToGpu(
-      hostBuf: HostMemoryBuffer,
+      hostBuf: SpillableHostBuffer,
       bufSize: Long,
       splits: Array[PartitionedFile]): Option[ColumnarBatch] = {
-    withResource(hostBuf) { _ =>
-      if (bufSize == 0) {
-        None
-      } else {
-        withResource(sendToGpuUnchecked(hostBuf, bufSize, splits)) { t =>
-          val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
-          logDebug(s"GPU batch size: $batchSizeBytes bytes")
-          metrics(NUM_OUTPUT_BATCHES) += 1
-          // convert to batch
-          Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
-        }
-      } // end of else
-    }
+    if (bufSize == 0) {
+      hostBuf.close()
+      None
+    } else {
+      val dataBuf = withRetryNoSplit(hostBuf)(_.getDataHostBuffer())
+      val t = withResource(dataBuf)(sendToGpuUnchecked(_, bufSize, splits))
+      withResource(t) { _ =>
+        val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
+        logDebug(s"GPU batch size: $batchSizeBytes bytes")
+        metrics(NUM_OUTPUT_BATCHES) += 1
+        // convert to batch
+        Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
+      }
+    } // end of else
   }
 
   /**
@@ -433,7 +435,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       partFilePath: Path,
       blocks: Seq[BlockInfo],
       headerSize: Long,
-      conf: Configuration): (HostMemoryBuffer, Long) = {
+      conf: Configuration): (SpillableHostBuffer, Long) = {
     withResource(new NvtxRange("Avro buffer file split", NvtxColor.YELLOW)) { _ =>
       if (blocks.isEmpty) {
         // No need to check the header here since it can not be null when blocks is not empty.
@@ -450,7 +452,8 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
               throw new QueryExecutionException(s"Calculated buffer size $estOutSize is" +
                 s" too small, actual written: ${out.getPos}")
             }
-            (hmb, out.getPos)
+            (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+              out.getPos)
           }
         }
       }
@@ -663,7 +666,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufsAndSizes = buffer.memBuffersAndSizes
       val bufAndSizeInfo = bufsAndSizes.head
       val partitionValues = buffer.partitionedFile.partitionValues
-      val batchIter = if (bufAndSizeInfo.hmb == null) {
+      val batchIter = if (bufAndSizeInfo.hmbs.isEmpty) {
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
@@ -671,7 +674,8 @@ class GpuMultiFileCloudAvroPartitionReader(
         BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(emptyBatch,
           partitionValues, partitionSchema, maxGpuColumnSizeBytes)
       } else {
-        val maybeBatch = sendToGpu(bufAndSizeInfo.hmb, bufAndSizeInfo.bytes, files)
+        require(bufAndSizeInfo.hmbs.length == 1)
+        val maybeBatch = sendToGpu(bufAndSizeInfo.hmbs.head, bufAndSizeInfo.bytes, files)
         // we have to add partition values here for this batch, we already verified that
         // it's not different for all the blocks in this batch
         maybeBatch match {
@@ -700,7 +704,6 @@ class GpuMultiFileCloudAvroPartitionReader(
   override def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
-      origFile: Option[PartitionedFile],
       config: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] =
     new ReadBatchRunner(tc, file, config, filters)
@@ -844,19 +847,23 @@ class GpuMultiFileCloudAvroPartitionReader(
                       batchRowsNum <= maxReadBatchSizeRows)
 
                   // One batch is done
-                  optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty)))
+                  optOut.foreach { out =>
+                    val shb = SpillableHostBuffer(optHmb.get, optHmb.get.getLength,
+                      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                    hostBuffers +=
+                      (SingleHMBAndMeta(Array(shb), out.getPos, batchRowsNum, Seq.empty))
+                  }
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
               } // end of while
 
               val bufAndSize: Array[SingleHMBAndMeta] = if (readDataSchema.isEmpty) {
-                hostBuffers.foreach(_.hmb.safeClose(new Exception))
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 Array(SingleHMBAndMeta.empty(totalRowsNum))
               } else if (isDone) {
                 // got close before finishing, return null buffer and zero size
-                hostBuffers.foreach(_.hmb.safeClose(new Exception))
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 Array(SingleHMBAndMeta.empty())
               } else {
                 hostBuffers.toArray
@@ -864,7 +871,7 @@ class GpuMultiFileCloudAvroPartitionReader(
               createBufferAndMeta(bufAndSize, startingBytesRead)
             } catch {
               case e: Throwable =>
-                hostBuffers.foreach(_.hmb.safeClose(e))
+                hostBuffers.flatMap(_.hmbs).safeClose(e)
                 throw e
             }
           }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.unsafe.types.UTF8String
+
 class RegularExpressionRewriteSuite extends AnyFunSuite {
 
-  private def verifyRewritePattern(patterns: Seq[String], excepted: Seq[RegexOptimizationType]): 
-      Unit = {
+  private def verifyRewritePattern(patterns: Seq[String], 
+      excepted: Seq[RegexOptimizationType]): Unit = {
     val results = patterns.map { pattern =>
       val ast = new RegexParser(pattern).parse()
       RegexRewrite.matchSimplePattern(ast)
@@ -31,7 +33,7 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
   test("regex rewrite startsWith") {
     import RegexOptimizationType._
     val patterns = Seq("^abc.*", raw"\A(abc).*", "^(abc).*def", raw"\Aabc.*(.*).*", "^abc.*(.*).*", 
-        raw"^(abc)\Z)")
+        raw"^(abc)\Z")
     val excepted = Seq(StartsWith("abc"), StartsWith("abc"), NoOptimization, StartsWith("abc"), 
         StartsWith("abc"), NoOptimization)
     verifyRewritePattern(patterns, excepted)
@@ -87,11 +89,11 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
       "(火花|急流)"
     )
     val excepted = Seq(
-      MultipleContains(Seq("abc", "def")),
-      MultipleContains(Seq("abc", "def", "ghi")),
-      MultipleContains(Seq("abc", "def")),
-      MultipleContains(Seq("abc", "def")),
-      MultipleContains(Seq("火花", "急流"))
+      MultipleContains(Seq("abc", "def").map(UTF8String.fromString)),
+      MultipleContains(Seq("abc", "def", "ghi").map(UTF8String.fromString)),
+      MultipleContains(Seq("abc", "def").map(UTF8String.fromString)),
+      MultipleContains(Seq("abc", "def").map(UTF8String.fromString)),
+      MultipleContains(Seq("火花", "急流").map(UTF8String.fromString))
     )
     verifyRewritePattern(patterns, excepted)
   }

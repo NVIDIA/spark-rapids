@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -46,7 +48,6 @@ import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
 import org.apache.spark.shuffle.FetchFailedException
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, SortOrder}
@@ -56,6 +57,7 @@ import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFiles, GpuWriteFilesExec, GpuWriteFilesSpec, WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
 import org.apache.spark.sql.rapids.execution.RapidsAnalysisException
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
@@ -104,7 +106,8 @@ object GpuFileFormatWriter extends Logging {
       useStableSort: Boolean,
       concurrentWriterPartitionFlushSize: Long,
       forceHiveHashForBucketing: Boolean = false,
-      numStaticPartitionCols: Int = 0): Set[String] = {
+      numStaticPartitionCols: Int = 0,
+      baseDebugOutputPath: Option[String]): Set[String] = {
     require(partitionColumns.size >= numStaticPartitionCols)
 
     val job = Job.getInstance(hadoopConf)
@@ -208,7 +211,8 @@ object GpuFileFormatWriter extends Logging {
       // In this path, Spark version is less than 340 or 'spark.sql.optimizer.plannedWrite.enabled'
       // is disabled, should sort the data if necessary.
       executeWrite(sparkSession, plan, job, description, committer, outputSpec,
-        requiredOrdering, partitionColumns, sortColumns, orderingMatched, useStableSort)
+        requiredOrdering, partitionColumns, sortColumns, orderingMatched, useStableSort,
+        baseDebugOutputPath)
     }
   }
 
@@ -223,7 +227,8 @@ object GpuFileFormatWriter extends Logging {
       partitionColumns: Seq[Attribute],
       sortColumns: Seq[Attribute],
       orderingMatched: Boolean,
-      useStableSort: Boolean): Set[String] = {
+      useStableSort: Boolean,
+      baseDebugOutputPath: Option[String]): Set[String] = {
     val partitionSet = AttributeSet(partitionColumns)
     val hasGpuEmpty2Null = plan.find(p => GpuV1WriteUtils.hasGpuEmptyToNull(p.expressions))
       .isDefined
@@ -282,7 +287,8 @@ object GpuFileFormatWriter extends Logging {
             sparkAttemptNumber = taskContext.taskAttemptId().toInt & Integer.MAX_VALUE,
             committer,
             iterator = iter,
-            concurrentOutputWriterSpec = concurrentOutputWriterSpec)
+            concurrentOutputWriterSpec = concurrentOutputWriterSpec,
+            baseDebugOutputPath = baseDebugOutputPath)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -389,7 +395,8 @@ object GpuFileFormatWriter extends Logging {
       sparkAttemptNumber: Int,
       committer: FileCommitProtocol,
       iterator: Iterator[ColumnarBatch],
-      concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec]): WriteTaskResult = {
+      concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec],
+      baseDebugOutputPath: Option[String]): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -415,14 +422,16 @@ object GpuFileFormatWriter extends Logging {
         // In case of empty job, leave first partition to save meta for file format like parquet.
         new GpuEmptyDirectoryDataWriter(description, taskAttemptContext, committer)
       } else if (description.partitionColumns.isEmpty && description.bucketSpec.isEmpty) {
-        new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer)
+        new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer,
+          baseDebugOutputPath)
       } else {
         concurrentOutputWriterSpec match {
           case Some(spec) =>
             new GpuDynamicPartitionDataConcurrentWriter(description, taskAttemptContext,
-              committer, spec)
+              committer, spec, baseDebugOutputPath)
           case _ =>
-            new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
+            new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer,
+              baseDebugOutputPath)
         }
       }
 

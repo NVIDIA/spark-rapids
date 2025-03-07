@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,22 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
+import java.io.{BufferedOutputStream, DataOutputStream, OutputStream}
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange, TableWriter}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.io.async.{AsyncOutputStream, TrafficController}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataOutputStream, Path}
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -59,7 +61,9 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
   def newInstance(
       path: String,
       dataSchema: StructType,
-      context: TaskAttemptContext): ColumnarOutputWriter
+      context: TaskAttemptContext,
+      statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+      debugOutputPath: Option[String]): ColumnarOutputWriter
 }
 
 /**
@@ -70,21 +74,69 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
 abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
-    includeRetry: Boolean) extends HostBufferConsumer {
+    includeRetry: Boolean,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+    debugDumpPath: Option[String],
+    holdGpuBetweenBatches: Boolean = false,
+    useAsyncWrite: Boolean = false) extends HostBufferConsumer with Logging {
 
   protected val tableWriter: TableWriter
+  private lazy val debugDumpOutputStream: Option[OutputStream] = try {
+    debugDumpPath.map { path =>
+      val tc = TaskContext.get()
+      logWarning(s"DEBUG FILE OUTPUT $rangeName FOR " +
+        s"STAGE ${tc.stageId()} TASK ${tc.taskAttemptId()} is $path")
+      val hadoopPath = new Path(path)
+      val fs = hadoopPath.getFileSystem(conf)
+      new DataOutputStream(new BufferedOutputStream(fs.create(hadoopPath, false)))
+    }
+  } catch {
+    case e: Exception =>
+      logError(s"Could Not Write Debug Table $debugDumpPath", e)
+      None
+  }
+
+  /**
+   * Write out a debug batch to the debug output stream if it is configured.
+   * If it is not configured, this is a noop. If an exception happens the exception
+   * is ignored, but it is logged.
+   */
+  private def debugWriteBatch(batch: ColumnarBatch): Unit = {
+    debugDumpOutputStream.foreach { output =>
+      try {
+        withResource(GpuColumnVector.from(batch)) { table =>
+          JCudfSerialization.writeToStream(table, output, 0, table.getRowCount)
+        }
+        output.flush()
+      } catch {
+        case t: Throwable =>
+          logError(s"Could Not Write Debug Table $debugDumpPath", t)
+      }
+    }
+  }
 
   protected val conf: Configuration = context.getConfiguration
 
-  // This is implemented as a method to make it easier to subclass
-  // ColumnarOutputWriter in the tests, and override this behavior.
-  protected def getOutputStream: FSDataOutputStream = {
+  private val trafficController: TrafficController = TrafficController.getInstance
+
+  private def openOutputStream(): OutputStream = {
     val hadoopPath = new Path(path)
     val fs = hadoopPath.getFileSystem(conf)
     fs.create(hadoopPath, false)
   }
 
-  protected val outputStream: FSDataOutputStream = getOutputStream
+  // This is implemented as a method to make it easier to subclass
+  // ColumnarOutputWriter in the tests, and override this behavior.
+  protected def getOutputStream: OutputStream = {
+    if (useAsyncWrite) {
+      logWarning("Async output write enabled")
+      new AsyncOutputStream(() => openOutputStream(), trafficController, statsTrackers)
+    } else {
+      openOutputStream()
+    }
+  }
+
+  protected val outputStream: OutputStream = getOutputStream
 
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] var anythingWritten = false
@@ -106,8 +158,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private[this] def updateStatistics(
       writeStartTime: Long,
-      gpuTime: Long,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+      gpuTime: Long): Unit = {
     // Update statistics
     val writeTime = System.nanoTime - writeStartTime - gpuTime
     statsTrackers.foreach {
@@ -133,9 +184,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
    * during the distributed filesystem transfer to allow other tasks to start/continue
    * GPU processing.
    */
-  def writeSpillableAndClose(
-      spillableBatch: SpillableColumnarBatch,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
+  def writeSpillableAndClose(spillableBatch: SpillableColumnarBatch): Long = {
     val writeStartTime = System.nanoTime
     closeOnExcept(spillableBatch) { _ =>
       val cb = withRetryNoSplit[ColumnarBatch] {
@@ -166,9 +215,13 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
     // we successfully buffered to host memory, release the semaphore and write
     // the buffered data to the FS
-    GpuSemaphore.releaseIfNecessary(TaskContext.get)
+    if (!holdGpuBetweenBatches) {
+      logDebug("Releasing semaphore between batches")
+      GpuSemaphore.releaseIfNecessary(TaskContext.get)
+    }
+
     writeBufferedData()
-    updateStatistics(writeStartTime, gpuTime, statsTrackers)
+    updateStatistics(writeStartTime, gpuTime)
     spillableBatch.numRows()
   }
 
@@ -202,6 +255,11 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       // buffer an empty batch on close() to work around issues in cuDF
       // where corrupt files can be written if nothing is encoded via the writer.
       anythingWritten = true
+
+      debugWriteBatch(batch)
+      // tableWriter.write() serializes the table into the HostMemoryBuffer, and buffers it
+      // by calling handleBuffer() on the ColumnarOutputWriter. It may not write to the
+      // output stream just yet.
       tableWriter.write(table)
     }
   }
@@ -219,6 +277,9 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     GpuSemaphore.releaseIfNecessary(TaskContext.get())
     writeBufferedData()
     outputStream.close()
+    debugDumpOutputStream.foreach { os =>
+      os.close()
+    }
   }
 
   /**

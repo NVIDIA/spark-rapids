@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.CastStrings
@@ -1063,17 +1064,21 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
    * @return HostMemeoryBuffer and its data size
    */
   protected def readPartFile(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
-      (HostMemoryBuffer, Long) = {
+      (SpillableHostBuffer, Long) = {
     withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
       if (stripes.isEmpty) {
         return (null, 0L)
       }
 
       val hostBufferSize = estimateOutputSize(ctx, stripes)
-      closeOnExcept(HostMemoryBuffer.allocate(hostBufferSize)) { hmb =>
+      val hostBuffer = withRetryNoSplit[HostMemoryBuffer] {
+        HostMemoryBuffer.allocate(hostBufferSize)
+      }
+      closeOnExcept(hostBuffer) { hmb =>
         withResource(new HostMemoryOutputStream(hmb)) { out =>
           writeOrcOutputFile(ctx, out, stripes)
-          (hmb, out.getPos)
+          (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+            out.getPos)
         }
       }
     }
@@ -1227,19 +1232,17 @@ class GpuOrcPartitionReader(
             dataBuffer.close()
             CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
-            // about to start using the GPU
-            GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
+            val (parseOpts, tableSchema) = getORCOptionsAndSchema(ctx.updatedReadSchema,
+              ctx.requestedMapping, readDataSchema)
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
-              // Inc the ref count because MakeOrcTableProducer will try to close the dataBuffer
-              // which we don't want until we know that the retry is done with it.
-              dataBuffer.incRefCount()
-
-              val (parseOpts, tableSchema) = getORCOptionsAndSchema(ctx.updatedReadSchema,
-                ctx.requestedMapping, readDataSchema)
+              // MakeOrcTableProducer will try to close the dataBuf
+              val dataBuf = dataBuffer.getDataHostBuffer()
+              // Duplicate request is ok and start to use the GPU just after the host
+              // buffer is ready to not block CPU things.
+              GpuSemaphore.acquireIfNecessary(TaskContext.get())
               val producer = MakeOrcTableProducer(useChunkedReader,
                 maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
-                dataBuffer, 0, dataSize, metrics, isCaseSensitive, readDataSchema,
+                dataBuf, 0, dataSize, metrics, isCaseSensitive, readDataSchema,
                 tableSchema, Array(partFile), debugDumpPrefix, debugDumpAlways)
               CachedGpuBatchIterator(producer, colTypes)
             }
@@ -2105,12 +2108,12 @@ class MultiFileCloudOrcPartitionReader(
                 val (hostBuf, bufSize) = readPartFile(ctx, blocksToRead)
                 val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum
                 val metas = blocksToRead.map(b => OrcDataStripe(OrcStripeWithMeta(b, ctx)))
-                hostBuffers += SingleHMBAndMeta(hostBuf, bufSize, numRows, metas)
+                hostBuffers += SingleHMBAndMeta(Array(hostBuf), bufSize, numRows, metas)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.foreach(_.hmb.safeClose())
+                hostBuffers.flatMap(_.hmbs).safeClose()
                 logDebug("Reader is closed, return empty buffer for the current read for " +
                   s"file: ${partFile.filePath.toString}")
                 HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
@@ -2123,7 +2126,7 @@ class MultiFileCloudOrcPartitionReader(
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.foreach(_.hmb.safeClose())
+          hostBuffers.flatMap(_.hmbs).safeClose(e)
           throw e
       }
       val bufferTime = System.nanoTime() - bufferTimeStart
@@ -2150,7 +2153,6 @@ class MultiFileCloudOrcPartitionReader(
   override def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
-      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
     new ReadBatchRunner(tc, file, conf, filters)
@@ -2223,9 +2225,10 @@ class MultiFileCloudOrcPartitionReader(
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val hmbInfo = memBuffersAndSize.head
-        val batchIter = readBufferToBatches(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
-          buffer.requestedMapping, filterHandler.isCaseSensitive, buffer.partitionedFile,
-          buffer.allPartValues)
+        require(hmbInfo.hmbs.length == 1)
+        val batchIter = readBufferToBatches(hmbInfo.hmbs.head, hmbInfo.bytes,
+          buffer.updatedReadSchema, buffer.requestedMapping, filterHandler.isCaseSensitive,
+          buffer.partitionedFile, buffer.allPartValues)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
@@ -2239,7 +2242,7 @@ class MultiFileCloudOrcPartitionReader(
   }
 
   private def readBufferToBatches(
-      hostBuffer: HostMemoryBuffer,
+      hostBuffer: SpillableHostBuffer,
       bufferSize: Long,
       memFileSchema: TypeDescription,
       requestedMapping: Option[Array[Int]],
@@ -2251,16 +2254,15 @@ class MultiFileCloudOrcPartitionReader(
     }
     val colTypes = readDataSchema.fields.map(f => f.dataType)
 
-    // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
     RmmRapidsRetryIterator.withRetryNoSplit(hostBuffer) { _ =>
-      // The MakeParquetTableProducer will close the input buffer, and that would be bad
-      // because we don't want to close it until we know that we are done with it
-      hostBuffer.incRefCount()
+      // The MakeOrcTableProducer will close the input buffer
+      val dataBuf = hostBuffer.getDataHostBuffer()
+      // Duplicate request is ok, and start to use the GPU just after the host
+      // buffer is ready to not block CPU things.
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       val producer = MakeOrcTableProducer(useChunkedReader,
         maxChunkedReaderMemoryUsageSizeBytes, conf, targetBatchSizeBytes, parseOpts,
-        hostBuffer, 0, bufferSize, metrics, isCaseSensitive, readDataSchema,
+        dataBuf, 0, bufferSize, metrics, isCaseSensitive, readDataSchema,
         tableSchema, files, debugDumpPrefix, debugDumpAlways)
       val batchIter = CachedGpuBatchIterator(producer, colTypes)
 
@@ -2315,9 +2317,15 @@ class MultiFileCloudOrcPartitionReader(
         toCombine.foreach { hmbWithMeta =>
           hmbWithMeta.memBuffersAndSizes.foreach { buf =>
             val dataCopyAmount = buf.blockMeta.map(_.getBlockSize).sum
-            if (dataCopyAmount > 0 && buf.hmb != null) {
-              combinedBuf.copyFromHostBuffer(
-                offset, buf.hmb, OrcTools.ORC_MAGIC.length, dataCopyAmount)
+            if (dataCopyAmount > 0 && buf.hmbs.nonEmpty) {
+              require(buf.hmbs.length == 1)
+              val headBuf = withRetryNoSplit[HostMemoryBuffer] {
+                buf.hmbs.head.getDataHostBuffer()
+              }
+              withResource(headBuf) { _ =>
+                combinedBuf.copyFromHostBuffer(
+                  offset, headBuf, OrcTools.ORC_MAGIC.length, dataCopyAmount)
+              }
             }
             // update the offset for each stripe
             var stripeOffset = offset
@@ -2326,9 +2334,7 @@ class MultiFileCloudOrcPartitionReader(
               stripeOffset += block.getBlockSize
             }
             offset += dataCopyAmount
-            if (buf.hmb != null) {
-              buf.hmb.close()
-            }
+            buf.hmbs.safeClose()
             allOutputStripes ++= buf.blockMeta.map(_.stripe)
           }
         }
@@ -2365,7 +2371,10 @@ class MultiFileCloudOrcPartitionReader(
 
           // e: Create the new meta for the combined buffer
           val numRows = combinedMeta.allPartValues.map(_._1).sum
-          val combinedRet = SingleHMBAndMeta(maybeNewBuf, outStream.getPos, numRows, blockMetas)
+          val finalBuf = SpillableHostBuffer(maybeNewBuf, maybeNewBuf.getLength,
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          val combinedRet = SingleHMBAndMeta(Array(finalBuf), outStream.getPos, numRows,
+            blockMetas)
           val newHmbWithMeta = metaToUse.copy(
             memBuffersAndSizes = Array(combinedRet),
             allPartValues = Some(combinedMeta.allPartValues))

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_utc, is_supported_time_zone, get_test_tz
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import allow_non_gpu, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
+from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -138,6 +138,39 @@ def test_datediff(data_gen):
             'datediff(a, \'2016-03-02\')'))
 
 hms_fallback = ['ProjectExec'] if not is_supported_time_zone() else []
+
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, false)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between_first_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", false)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+def test_months_between_last_day():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", false)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, timestamp_gen).selectExpr('months_between(a, b, true)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_first_day_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2024-01-01", true)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@approximate_float()
+def test_months_between_last_day_round():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('months_between(a, timestamp"2023-12-31", true)'))
 
 @allow_non_gpu(*hms_fallback)
 def test_hour():
@@ -288,7 +321,7 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
         spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
         "to_unix_timestamp(a, b)"),
         "ToUnixTimestamp")
-    
+
 supported_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
 unsupported_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
 
@@ -461,7 +494,7 @@ def test_to_timestamp(parser_policy):
 
 # mm: minute; MM: month
 @pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
-@pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd'], ids=idfn)
+@pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd', 'yyyy-mm-dd'], ids=idfn)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
 def test_formats_for_legacy_mode(format):
@@ -648,7 +681,7 @@ def test_unsupported_fallback_to_date():
         conf)
 
 
-# (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds 
+# (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds
 # considering the influence of time zone.
 ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, 16777215.0, float('inf'), float('-inf'), float('nan')])
 seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(),
@@ -677,7 +710,7 @@ def test_timestamp_seconds_rounding_necessary(data_gen):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
         conf={},
         error_message='Rounding necessary')
-    
+
 @pytest.mark.parametrize('data_gen', [DecimalGen(19, 6), DecimalGen(20, 6)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_seconds_decimal_overflow(data_gen):
@@ -692,7 +725,7 @@ millis_gens = [LongGen(min_val=-62135410400000, max_val=253402214400000), Intege
 def test_timestamp_millis(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_millis(a)"))
-    
+
 @allow_non_gpu(*non_utc_allow)
 def test_timestamp_millis_long_overflow():
     assert_gpu_and_cpu_error(
@@ -718,3 +751,70 @@ def test_date_to_timestamp(parser_policy):
         conf = {
             "spark.sql.legacy.timeParserPolicy": parser_policy,
             "spark.rapids.sql.incompatibleDateFormats.enabled": True})
+
+# Generate format strings, which are case insensitive and have some garbage rows.
+trunc_date_format_gen = StringGen('(?i:YEAR|YYYY|YY|QUARTER|MONTH|MM|MON|WEEK)') \
+    .with_special_pattern('invalid', weight=50)
+trunc_timestamp_format_gen = StringGen('(?i:YEAR|YYYY|YY|QUARTER|MONTH|MM|MON|WEEK|DAY|DD|HOUR|MINUTE|SECOND|MILLISECOND|MICROSECOND)') \
+    .with_special_pattern('invalid', weight=50)
+
+@pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
+@pytest.mark.parametrize('format_gen', [trunc_date_format_gen], ids=idfn)
+def test_trunc_date_full_input(data_gen, format_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, data_gen, format_gen).selectExpr('trunc(a, b)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@pytest.mark.parametrize('format_gen', [trunc_timestamp_format_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+def test_trunc_timestamp_full_input(format_gen, data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, format_gen, data_gen).selectExpr('date_trunc(a, b)'))
+
+@pytest.mark.parametrize('format_gen', [trunc_date_format_gen], ids=idfn)
+def test_trunc_date_single_value(format_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, format_gen).selectExpr('trunc("1980-05-18", a)'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@pytest.mark.parametrize('format_gen', [trunc_timestamp_format_gen], ids=idfn)
+def test_trunc_timestamp_single_value(format_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, format_gen).selectExpr(
+            'date_trunc(a, "1980-05-18T09:32:05.359")'))
+
+@pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
+def test_trunc_date_single_format(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'trunc(a, "YEAR")',
+            'trunc(a, "YYYY")',
+            'trunc(a, "YY")',
+            'trunc(a, "QUARTER")',
+            'trunc(a, "MONTH")',
+            'trunc(a, "MM")',
+            'trunc(a, "MON")',
+            'trunc(a, "WEEK")',
+            'trunc(a, "invalid")'))
+
+@allow_non_gpu(*non_utc_tz_allow)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+def test_trunc_timestamp_single_format(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'date_trunc("YEAR", a)',
+            'date_trunc("YYYY", a)',
+            'date_trunc("YY", a)',
+            'date_trunc("QUARTER", a)',
+            'date_trunc("MONTH", a)',
+            'date_trunc("MM", a)',
+            'date_trunc("MON", a)',
+            'date_trunc("WEEK", a)',
+            'date_trunc("DAY", a)',
+            'date_trunc("DD", a)',
+            'date_trunc("HOUR", a)',
+            'date_trunc("MINUTE", a)',
+            'date_trunc("SECOND", a)',
+            'date_trunc("MILLISECOND", a)',
+            'date_trunc("MICROSECOND", a)',
+            'date_trunc("invalid", a)'))

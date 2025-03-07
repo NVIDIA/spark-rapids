@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -113,7 +113,8 @@ class RapidsShuffleThreadedReaderSuite
       val shuffleId = 22
       val numMaps = 6
       val keyValuePairsPerMap = 10
-      val serializer = new GpuColumnarBatchSerializer(NoopMetric)
+      val serializer = new GpuColumnarBatchSerializer(Map.empty.withDefaultValue(NoopMetric),
+        Array.empty, false, false)
 
       // Make a mock BlockManager that will return RecordingManagedByteBuffers of data, so that we
       // can ensure retain() and release() are properly called.

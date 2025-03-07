@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,13 +23,11 @@ on:
       - opened
 
 jobs:
-  add-to-project:
-    if: github.repository == 'NVIDIA/spark-rapids'
-    name: Add new issues and pull requests to project
+  Add-to-project:
+    if: github.repository_owner == 'NVIDIA' # avoid adding issues from forks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/add-to-project@v0.6.1
+      - name: add-to-project
+        uses: NVIDIA/spark-rapids-common/add-to-project@main
         with:
-          project-url: https://github.com/orgs/NVIDIA/projects/4
-          github-token: ${{ secrets.PROJECT_TOKEN }}
-
+          token: ${{ secrets.PROJECT_TOKEN }}

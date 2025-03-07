@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ package org.apache.spark.sql.nvidia
 
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.internal.ExpressionUtils.{column, expression}
+import org.apache.spark.sql.classic.ExpressionUtils.{column, expression}
 
 object DFUDFShims {
-  def columnToExpr(c: Column): Expression = c
-  def exprToColumn(e: Expression): Column = e
+  def columnToExpr(c: Column): Expression = expression(c)
+  def exprToColumn(e: Expression): Column = column(e)
 }

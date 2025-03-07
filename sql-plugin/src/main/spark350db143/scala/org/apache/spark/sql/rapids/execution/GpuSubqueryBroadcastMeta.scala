@@ -15,7 +15,6 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "350db143"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
@@ -28,7 +27,7 @@ class GpuSubqueryBroadcastMeta(
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends
-    GpuSubqueryBroadcastMetaBase(s, conf, p, r) {
+    GpuSubqueryBroadcastMeta330DBBase(s, conf, p, r) {
   override def convertToGpu(): GpuExec = {
     GpuSubqueryBroadcastExec(s.name, s.indices, s.buildKeys, broadcastBuilder())(
       getBroadcastModeKeyExprs)

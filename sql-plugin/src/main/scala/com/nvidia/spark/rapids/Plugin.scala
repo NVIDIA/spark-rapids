@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.sys.process._
 import scala.util.Try
 
@@ -31,6 +32,7 @@ import com.nvidia.spark.DFUDFPlugin
 import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
+import com.nvidia.spark.rapids.io.async.TrafficController
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
@@ -38,6 +40,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -133,11 +136,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-24.12.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.04.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-24.12.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-24.12.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.04.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -342,16 +345,38 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
+  /**
+   * Find spark-rapids-extra-plugins files, and create plugin instances by reflection.
+   * Note: If Hybrid jar is not in the classpath, then will not create Hybrid plugin.
+   * @return plugin instances defined in spark-rapids-extra-plugins files.
+   */
   private def getExtraPlugins: Seq[SparkPlugin] = {
     val resourceName = "spark-rapids-extra-plugins"
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
-    val resource = classLoader.getResourceAsStream(resourceName)
-    if (resource == null) {
+    val resourceUrls = classLoader.getResources(resourceName)
+    // Somehow, it is possible that the definition of same Plugin occurs multiple times in the
+    // resourceUrls. Therefore, deduplication work is essential in case of loading some plugins
+    // repeatedly.
+    val distinctResources = mutable.HashSet.empty[URL]
+    while (resourceUrls.hasMoreElements) {
+      val url = resourceUrls.nextElement()
+      if (distinctResources.contains(url)) {
+        logWarning(s"Found duplicated definition of ExtraPlugin: $url! Discarded it.")
+      } else {
+        distinctResources.add(url)
+      }
+    }
+
+    if (distinctResources.isEmpty) {
       logDebug(s"Could not find file $resourceName in the classpath, not loading extra plugins")
       Seq.empty
     } else {
-      val pluginClasses = scala.io.Source.fromInputStream(resource).getLines().toSeq
-      loadExtensions(classOf[SparkPlugin], pluginClasses)
+      distinctResources.iterator.flatMap { resourceUrl =>
+        val source = scala.io.Source.fromURL(resourceUrl)
+        val pluginClasses = source.getLines().toList
+        source.close()
+        loadExtensions(classOf[SparkPlugin], pluginClasses)
+      }.toList
     }
   }
 
@@ -513,6 +538,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Fail if there are multiple plugin jars in the classpath.
       RapidsPluginUtils.detectMultipleJars(conf)
 
+      // Check Hybrid jar if needed.
+      if (conf.useHybridParquetReader) {
+        HybridExecutionUtils.checkHybridJarInClassPath()
+      }
+
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
@@ -554,6 +584,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize()
       FileCache.init(pluginContext)
+      TrafficController.initialize(conf)
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
       // sticks around without any useful info until it hearbeat times out. Print what happened
@@ -656,6 +687,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
     GpuCoreDumpHandler.shutdown()
+    TrafficController.shutdown()
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {

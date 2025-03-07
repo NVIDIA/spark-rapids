@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,20 +85,14 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11476"))
   enableSuite[RapidsParquetQuerySuite]
     .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", ADJUST_UT("fetches the CPU version of Execution Plan instead of the GPU version."))
-    .exclude("SPARK-34212 Parquet should read decimals correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11433"))
+    .exclude("SPARK-34212 Parquet should read decimals correctly", ADJUST_UT("Vectorized Parquet reader throws an exception when scale is narrowed in Apache Spark where as the spark-rapids plugin does not."))
   enableSuite[RapidsParquetRebaseDatetimeSuite]
     .exclude("SPARK-31159, SPARK-37705: compatibility with Spark 2.4/3.2 in reading dates/timestamps", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11599"))
     .exclude("SPARK-31159, SPARK-37705: rebasing timestamps in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11593"))
     .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11480"))
     .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", ADJUST_UT("original test case inherited from Spark cannot find the needed local resources"))
   enableSuite[RapidsParquetSchemaPruningSuite]
-    .excludeBySuffix("select a single complex field", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11619"))
-    .excludeBySuffix("select a single complex field and the partition column", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11620"))
-    .excludeBySuffix("select missing subfield", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11621"))
     .excludeBySuffix("select explode of nested field of array of struct", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11653"))
-    .excludeBySuffix("empty schema intersection", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11627"))
-    .excludeBySuffix("select one deep nested complex field after join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11628"))
-    .excludeBySuffix("select one deep nested complex field after outer join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11629"))
   enableSuite[RapidsParquetSchemaSuite]
     .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11434"))
     .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11446"))

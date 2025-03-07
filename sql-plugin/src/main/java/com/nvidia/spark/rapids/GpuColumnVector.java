@@ -529,6 +529,55 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Converts a list of Spark data types to a cudf schema.
+   * <br/>
+   *
+   * This method correctly handles nested types, but will generate random field names.
+   *
+   * @param dataTypes the list of data types to convert
+   * @return the cudf schema
+   */
+  public static Schema from(DataType[] dataTypes) {
+    Schema.Builder builder = Schema.builder();
+    visit(dataTypes, builder, 0);
+    return builder.build();
+  }
+
+  private static void visit(DataType[] dataTypes, Schema.Builder builder, int level) {
+    for (int idx = 0; idx < dataTypes.length; idx ++) {
+      DataType dt = dataTypes[idx];
+      String name = "_col_" + level + "_" + idx;
+      if (dt instanceof MapType) {
+        // MapType is list of struct in cudf, so need to handle it specially.
+        Schema.Builder listBuilder = builder.addColumn(DType.LIST, name);
+        Schema.Builder structBuilder = listBuilder.addColumn(DType.STRUCT, name + "_map");
+        MapType mt = (MapType) dt;
+        DataType[] structChildren = {mt.keyType(), mt.valueType()};
+        visit(structChildren, structBuilder, level + 1);
+      } else if (dt instanceof BinaryType) {
+        Schema.Builder listBuilder = builder.addColumn(DType.LIST, name);
+        listBuilder.addColumn(DType.UINT8, name + "_bytes");
+      } else {
+        Schema.Builder childBuilder = builder.addColumn(GpuColumnVector.getRapidsType(dt), name);
+        if (dt instanceof ArrayType) {
+          // Array (aka List)
+          DataType[] childType = {((ArrayType) dt).elementType()};
+          visit(childType, childBuilder, level + 1);
+        } else if (dt instanceof StructType) {
+          // Struct
+          StructType st = (StructType) dt;
+          DataType[] childrenTypes = new DataType[st.length()];
+          for (int i = 0; i < childrenTypes.length; i ++) {
+            childrenTypes[i] = st.apply(i).dataType();
+          }
+          visit(childrenTypes, childBuilder, level + 1);
+        }
+      }
+    }
+  }
+
+
+  /**
    * Convert a ColumnarBatch to a table. The table will increment the reference count for all of
    * the columns in the batch, so you will need to close both the batch passed in and the table
    * returned to avoid any memory leaks.
@@ -1052,6 +1101,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
     long sum = 0;
+    if (batch.numCols() == 1 && batch.column(0) instanceof GpuPackedTableColumn) {
+      // this is a special case for a packed batch
+      return ((GpuPackedTableColumn) batch.column(0)).getTableBuffer().getLength();
+    }
     if (batch.numCols() > 0) {
       if (batch.column(0) instanceof WithTableBuffer) {
         WithTableBuffer wtb = (WithTableBuffer) batch.column(0);

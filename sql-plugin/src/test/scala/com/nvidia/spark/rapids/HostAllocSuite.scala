@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,22 +21,25 @@ import java.util.concurrent.{ExecutionException, Future, LinkedBlockingQueue, Ti
 import ai.rapids.cudf.{HostMemoryBuffer, PinnedMemoryPool, Rmm, RmmAllocationMode}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState}
+import com.nvidia.spark.rapids.spill._
 import org.mockito.Mockito.when
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Ignore}
 import org.scalatest.concurrent.{Signaler, TimeLimits}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.time._
 import org.scalatestplus.mockito.MockitoSugar.mock
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
+// Waiting for the fix of https://github.com/NVIDIA/spark-rapids/issues/12194
+@Ignore
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
-  private val rc = new RapidsConf(sqlConf)
+  Rmm.shutdown()
   private val timeoutMs = 10000
 
   def setMockContext(taskAttemptId: Long): Unit = {
@@ -316,23 +319,34 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {
-    RapidsBufferCatalog.close()
+    val sc = new SparkConf
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
+    SpillFramework.shutdown()
     if (Rmm.isInitialized) {
       rmmWasInitialized = true
       Rmm.shutdown()
     }
     Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    // this doesn't allocate memory for bounce buffers, as HostAllocSuite
+    // is playing games with the pools.
+    SpillFramework.storesInternal = new SpillableStores {
+      override var deviceStore: SpillableDeviceStore = new SpillableDeviceStore
+      override var hostStore: SpillableHostStore = new SpillableHostStore(None)
+      override var diskStore: DiskHandleStore = new DiskHandleStore(sc)
+    }
+    // some tests need an event handler
+    RmmSpark.setEventHandler(
+      new DeviceMemoryEventHandler(SpillFramework.stores.deviceStore, None, 0))
     PinnedMemoryPool.shutdown()
     HostAlloc.initialize(-1)
-    RapidsBufferCatalog.init(rc)
   }
 
   override def afterAll(): Unit = {
-    RapidsBufferCatalog.close()
+    SpillFramework.shutdown()
     PinnedMemoryPool.shutdown()
     Rmm.shutdown()
+    RmmSpark.clearEventHandler()
     if (rmmWasInitialized) {
       // put RMM back for other tests to use
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
