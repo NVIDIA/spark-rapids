@@ -56,6 +56,7 @@ class GpuShuffledHashJoinMeta(
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
+  // This is used by shuffled hash join
   def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide): Unit = {
     buildSide match {
       case GpuBuildLeft if !canBuildLeft(joinType) =>

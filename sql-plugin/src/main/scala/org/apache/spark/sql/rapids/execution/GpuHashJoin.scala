@@ -130,6 +130,7 @@ object GpuHashJoin {
     }
   }
 
+  // This is used by sort join and broadcast join
   def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide): Unit = {
     buildSide match {
       case GpuBuildLeft if !canBuildLeft(joinType) =>
