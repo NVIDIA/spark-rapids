@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectE
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
@@ -48,7 +48,7 @@ trait DeltaProvider {
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
-  def getReadFileFormat(format: FileFormat): FileFormat
+  def getReadFileFormat(relation: HadoopFsRelation): FileFormat
 
   def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
 
@@ -105,7 +105,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     throw new IllegalStateException("unsupported format")
 
-  override def getReadFileFormat(format: FileFormat): FileFormat =
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat =
     throw new IllegalStateException("unsupported format")
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false
