@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,12 @@ import org.apache.spark.sql.internal.SQLConf
 trait RapidsJsonConfTrait extends BeforeAndAfterAll { this: Suite =>
   override def beforeAll(): Unit = {
     super.beforeAll()
-    SQLConf.get.setConfString("spark.rapids.sql.expression.JsonTuple", true.toString)
     SQLConf.get.setConfString("spark.rapids.sql.expression.GetJsonObject", true.toString)
     SQLConf.get.setConfString("spark.rapids.sql.expression.JsonToStructs", true.toString)
     SQLConf.get.setConfString("spark.rapids.sql.expression.StructsToJson", true.toString)
   }
 
   override def afterAll(): Unit = {
-    SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonTuple")
     SQLConf.get.unsetConf("spark.rapids.sql.expression.GetJsonObject")
     SQLConf.get.unsetConf("spark.rapids.sql.expression.JsonToStructs")
     SQLConf.get.unsetConf("spark.rapids.sql.expression.StructsToJson")
