@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,8 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.spark.sql.errors.QueryExecutionErrors
 
 object RapidsErrorUtils extends RapidsErrorUtilsBase
-  with RapidsQueryErrorUtils with SequenceSizeTooLongErrorBuilder {
+  with RapidsQueryErrorUtils with SequenceSizeTooLongErrorBuilder
+  with ArrayInvalidArgumentErrorUtils {
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     QueryExecutionErrors.elementAtByIndexZeroError(context = null)
   }

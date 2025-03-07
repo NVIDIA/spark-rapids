@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -222,17 +223,20 @@ case class GpuBroadcastNestedLoopJoinExec(
     }
   }
 
-  override def makeBuiltBatchInternal(
+  override def makeBuiltBatchAndStreamIter(
       relation: Any,
+      streamIter: Iterator[ColumnarBatch],
+      buildSchema: StructType,
       buildTime: GpuMetric,
-      buildDataSize: GpuMetric): ColumnarBatch = {
+      buildDataSize: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     // NOTE: pattern matching doesn't work here because of type-invariance
     if (isExecutorBroadcast) {
       val rdd = relation.asInstanceOf[RDD[ColumnarBatch]]
-      makeExecutorBuiltBatch(rdd, buildTime, buildDataSize)
+      val builtBatch = makeExecutorBuiltBatch(rdd, buildTime, buildDataSize)
+      (builtBatch, streamIter)
     } else {
-      val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
-      makeBroadcastBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+      super.makeBuiltBatchAndStreamIter(
+        relation, streamIter, buildSchema, buildTime, buildDataSize)
     }
   }
 
