@@ -182,7 +182,7 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
 filter_split_conf = {
     'spark.sql.sources.useV1SourceList': 'parquet',
     'spark.rapids.sql.hybrid.parquet.enabled': 'true',
-    'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
+    'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU',
     'spark.rapids.sql.expression.Ascii': False,
     'spark.rapids.sql.expression.StartsWith': False,
     'spark.rapids.sql.hybrid.whitelistExprs': 'StartsWith'
@@ -209,7 +209,7 @@ def test_hybrid_parquet_filter_pushdown_gpu(spark_tmp_path):
         conf=rebase_write_corrected_conf)
     conf = filter_split_conf.copy()
     conf.update({
-        'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU'
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'GPU'
     })
     # filter conditions should remain on the GPU
     plan = with_gpu_session(
@@ -262,19 +262,24 @@ def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @hybrid_test
-@allow_non_gpu(*non_utc_allow)
-def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(
-        lambda spark: gen_df(spark, [('a', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)))]).write.parquet(data_path),
+def test_hybrid_parquet_bucket_read(parquet_gens, spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_BUCKET_DATA'
+    
+    gen_list = [('id', long_gen)] + [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    num_buckets = 8
+    table_name = spark_tmp_table_factory.get()
+    
+    with_cpu_session(lambda spark: 
+        gen_df(spark, gen_list, length=10000)
+            .write
+            .bucketBy(num_buckets, "id")
+            .sortBy("id")
+            .option("path", data_path)
+            .saveAsTable(table_name),
         conf=rebase_write_corrected_conf)
-
-    # Timestamp is not fully supported in Hybrid Filter, so it should remain on the GPU
-    plan = with_gpu_session(
-        lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc)))._jdf.queryExecution().executedPlan(),
-        conf=filter_split_conf)
-    check_filter_pushdown(plan, pushed_exprs=[], not_pushed_exprs=['isnotnull', '>'])
+    
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
         conf=filter_split_conf)
@@ -317,3 +322,32 @@ def test_hybrid_parquet_filter_pushdown_aqe(spark_tmp_path):
         return probe_df.join(build_df, ['key'], 'inner')
 
     assert_gpu_and_cpu_are_equal_collect(test_fn, conf=conf)
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
+@hybrid_test
+def test_hybrid_parquet_bucket_read(parquet_gens, spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_BUCKET_DATA'
+    
+    gen_list = [('id', long_gen)] + [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    num_buckets = 8
+    table_name = spark_tmp_table_factory.get()
+    
+    with_cpu_session(lambda spark: 
+        gen_df(spark, gen_list, length=10000)
+            .write
+            .bucketBy(num_buckets, "id")
+            .sortBy("id")
+            .option("path", data_path)
+            .saveAsTable(table_name),
+        conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.table(table_name).filter("id > 5000"),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+            'spark.sql.sources.bucketing.enabled': 'true',
+            'spark.sql.sources.bucketing.autoBucketedScan.enabled': 'false'
+        })

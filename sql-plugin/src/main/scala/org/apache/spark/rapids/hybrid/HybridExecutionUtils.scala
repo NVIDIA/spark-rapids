@@ -77,10 +77,8 @@ object HybridExecutionUtils extends PredicateHelper {
         case _ => false
       })
     }
-    // TODO: supports BucketedScan
-    lazy val noBucketedScan = !fsse.bucketedScan
 
-    isEnabled && isParquet && nonEmptySchema && allSupportedTypes && noBucketedScan
+    isEnabled && isParquet && nonEmptySchema && allSupportedTypes
   }
 
   /**
