@@ -317,3 +317,32 @@ def test_hybrid_parquet_filter_pushdown_aqe(spark_tmp_path):
         return probe_df.join(build_df, ['key'], 'inner')
 
     assert_gpu_and_cpu_are_equal_collect(test_fn, conf=conf)
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
+@hybrid_test
+def test_hybrid_parquet_bucket_read(parquet_gens, spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_BUCKET_DATA'
+    
+    gen_list = [('id', long_gen)] + [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    num_buckets = 8
+    table_name = spark_tmp_table_factory.get()
+    
+    with_cpu_session(lambda spark: 
+        gen_df(spark, gen_list, length=10000)
+            .write
+            .bucketBy(num_buckets, "id")
+            .sortBy("id")
+            .option("path", data_path)
+            .saveAsTable(table_name),
+        conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.table(table_name).filter("id > 5000"),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+            'spark.sql.sources.bucketing.enabled': 'true',
+            'spark.sql.sources.bucketing.autoBucketedScan.enabled': 'false'
+        })
