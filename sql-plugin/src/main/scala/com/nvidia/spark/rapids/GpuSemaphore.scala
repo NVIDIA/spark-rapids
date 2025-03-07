@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
@@ -138,8 +139,15 @@ object GpuSemaphore {
   def computeNumPermits(conf: SQLConf): Int = {
     val concurrentStr = conf.getConfString(RapidsConf.CONCURRENT_GPU_TASKS.key, null)
     val concurrentInt = Option(concurrentStr)
-      .map(ConfHelper.toInteger(_, RapidsConf.CONCURRENT_GPU_TASKS.key))
-      .getOrElse(RapidsConf.CONCURRENT_GPU_TASKS.defaultValue)
+      .map(ConfHelper.toInteger(_, RapidsConf.CONCURRENT_GPU_TASKS.key).toInt)
+      .getOrElse {
+        val memory = GpuDeviceManager.getMemorySize
+        val batchStr = conf.getConfString(RapidsConf.GPU_BATCH_SIZE_BYTES.key, null)
+        val batchBytes = Option(batchStr)
+          .map(ConfHelper.byteFromString(_, ByteUnit.BYTE))
+          .getOrElse(RapidsConf.GPU_BATCH_SIZE_BYTES.defaultValue)
+        math.max(1, math.min(4, memory / (4 * batchBytes))).toInt
+      }
     // concurrentInt <= 0 is the same as 1 (fail to the safest value)
     // concurrentInt > MAX_PERMITS becomes the same as MAX_PERMITS
     // (who has more than 1000 threads anyways).
