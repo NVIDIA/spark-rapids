@@ -69,7 +69,8 @@ class GpuShuffledHashJoinMeta(
   /** Determine if this type of join supports using the right side of the join as the build side. */
   // supports right outer join when build right
   def canBuildRight(joinType: JoinType): Boolean = joinType match {
-    case _: InnerLike | LeftOuter | RightOuter | LeftSemi | LeftAnti | FullOuter | _: ExistenceJoin => true
+    case _: InnerLike | LeftOuter | RightOuter | LeftSemi |
+         LeftAnti | FullOuter | _: ExistenceJoin => true
     case _ => false
   }
 
