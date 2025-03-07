@@ -1,11 +1,12 @@
 # Change log
-Generated on 2025-02-17
+Generated on 2025-03-07
 
 ## Release 25.02
 
 ### Features
 |||
 |:---|:---|
+|[#12225](https://github.com/NVIDIA/spark-rapids/issues/12225)|[FEA] Support Spark 3.5.5|
 |[#11648](https://github.com/NVIDIA/spark-rapids/issues/11648)|[FEA] it would be nice if we could support org.apache.spark.sql.catalyst.expressions.Bin|
 |[#11891](https://github.com/NVIDIA/spark-rapids/issues/11891)|[FEA] Support Spark 3.5.4 release|
 |[#11928](https://github.com/NVIDIA/spark-rapids/issues/11928)|[FEA] make maxCpuBatchSize in GpuPartitioning configurable|
@@ -25,13 +26,18 @@ Generated on 2025-02-17
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#12230](https://github.com/NVIDIA/spark-rapids/issues/12230)|[BUG] parquet_test.py::test_many_column_project test fails on GB100 and cuda12.8|
+|[#12231](https://github.com/NVIDIA/spark-rapids/issues/12231)|[BUG] hash_aggregate_test.py::test_hash_multiple_grpby_pivot and row_conversion_test.py::test_row_conversions_fixed_width_wide fails on GB100 and cuda12.8|
+|[#12152](https://github.com/NVIDIA/spark-rapids/issues/12152)|[BUG] mvn-verify-check failed cache non-snapshot deps|
+|[#11835](https://github.com/NVIDIA/spark-rapids/issues/11835)|[BUG] Intermittent result discrepancy for NDS SF3K query86 on L40S|
+|[#12111](https://github.com/NVIDIA/spark-rapids/issues/12111)|[BUG] Hit velox runtime error when filtering df with timestamp column inside when enabling hybrid|
 |[#12091](https://github.com/NVIDIA/spark-rapids/issues/12091)|[BUG]An assertion error in the sized hash join|
+|[#12113](https://github.com/NVIDIA/spark-rapids/issues/12113)|[BUG] HybridParquetScan fails on the `select count(1)` case|
 |[#12096](https://github.com/NVIDIA/spark-rapids/issues/12096)|[BUG] CI_PART1 for DBR 14.3 hangs in the nightly pre-release pipeline|
 |[#12076](https://github.com/NVIDIA/spark-rapids/issues/12076)|[BUG] ExtraPlugins might be loaded duplicated|
 |[#11433](https://github.com/NVIDIA/spark-rapids/issues/11433)|[BUG] Spark UT framework: SPARK-34212 Parquet should read decimals correctly|
 |[#12038](https://github.com/NVIDIA/spark-rapids/issues/12038)|[BUG] spark321 failed core dump in nightly|
 |[#12046](https://github.com/NVIDIA/spark-rapids/issues/12046)|[BUG] orc_test fail non-UTC cases with Part of the plan is not columnar class org.apache.spark.sql.execution.FileSourceScanExec|
-|[#12039](https://github.com/NVIDIA/spark-rapids/issues/12039)|[BUG] HostAllocSuite failed "Maximum pool size exceeded" in nightly UT tests|
 |[#12036](https://github.com/NVIDIA/spark-rapids/issues/12036)|[BUG] The check in assertIsOnTheGpu method to test if a plan is on the GPU is not accurate|
 |[#11989](https://github.com/NVIDIA/spark-rapids/issues/11989)|[BUG] ParquetCachedBatchSerializer does not grab the GPU semaphore and does not have retry blocks|
 |[#11651](https://github.com/NVIDIA/spark-rapids/issues/11651)|[BUG] Parse regular expressions using JDK to make error behavior more consistent between CPU and GPU|
@@ -63,6 +69,20 @@ Generated on 2025-02-17
 ### PRs
 |||
 |:---|:---|
+|[#12289](https://github.com/NVIDIA/spark-rapids/pull/12289)|Update dependency version JNI, private to 25.02.1|
+|[#12282](https://github.com/NVIDIA/spark-rapids/pull/12282)|[DOC] update the download page for 2502.1 hot release [skip ci]|
+|[#12280](https://github.com/NVIDIA/spark-rapids/pull/12280)|Disable hybrid cases for spark35X [skip ci]|
+|[#12259](https://github.com/NVIDIA/spark-rapids/pull/12259)|Add Spark 3.5.5 shim|
+|[#12252](https://github.com/NVIDIA/spark-rapids/pull/12252)|Update dependency version private to 25.02.1-SNAPSHOT|
+|[#12253](https://github.com/NVIDIA/spark-rapids/pull/12253)|Accelerate nightly build [skip ci]|
+|[#12239](https://github.com/NVIDIA/spark-rapids/pull/12239)|Mirror the Cloudera Maven repository|
+|[#12189](https://github.com/NVIDIA/spark-rapids/pull/12189)|Update version to 25.02.1-SNAPSHOT|
+|[#12204](https://github.com/NVIDIA/spark-rapids/pull/12204)|[DOC] address ghpage pr comments [skip ci]|
+|[#12212](https://github.com/NVIDIA/spark-rapids/pull/12212)|Fix deadlock in BounceBufferPool|
+|[#12205](https://github.com/NVIDIA/spark-rapids/pull/12205)|Workaround: tmply disable the HostAllocSuite to unblock CI [skip ci]|
+|[#12188](https://github.com/NVIDIA/spark-rapids/pull/12188)|Update dependency version JNI to 25.02.1-SNAPSHOT|
+|[#12157](https://github.com/NVIDIA/spark-rapids/pull/12157)|Add hybrid sha1 to mvn verify cache key [skip ci]|
+|[#12154](https://github.com/NVIDIA/spark-rapids/pull/12154)|Update latest changelog [skip ci]|
 |[#12129](https://github.com/NVIDIA/spark-rapids/pull/12129)|Update dependency version JNI, private, hybrid to 25.02.0 [skip ci]|
 |[#12102](https://github.com/NVIDIA/spark-rapids/pull/12102)|[DOC] update the download page for 2502 release [skip ci]|
 |[#12112](https://github.com/NVIDIA/spark-rapids/pull/12112)|HybridParquetScan: Fix velox runtime error in hybrid scan when filter timestamp|
@@ -330,6 +350,7 @@ Generated on 2025-02-17
 |[#11595](https://github.com/NVIDIA/spark-rapids/pull/11595)|Remove an unused config shuffle.spillThreads|
 |[#11606](https://github.com/NVIDIA/spark-rapids/pull/11606)|Disable regex tests to unblock CI|
 |[#11605](https://github.com/NVIDIA/spark-rapids/pull/11605)|Fix auto merge conflict 11604 [skip ci]|
+|[#11414](https://github.com/NVIDIA/spark-rapids/pull/11414)|Fix `collection_ops_tests` for Spark 4.0|
 |[#11587](https://github.com/NVIDIA/spark-rapids/pull/11587)|avoid long tail tasks due to PrioritySemaphore, remaing part|
 |[#11574](https://github.com/NVIDIA/spark-rapids/pull/11574)|avoid long tail tasks due to PrioritySemaphore|
 |[#11559](https://github.com/NVIDIA/spark-rapids/pull/11559)|[Spark 4.0] Address test failures in cast_test.py|
@@ -337,6 +358,8 @@ Generated on 2025-02-17
 |[#11571](https://github.com/NVIDIA/spark-rapids/pull/11571)|Log reconfigure multi-file thread pool only once|
 |[#11564](https://github.com/NVIDIA/spark-rapids/pull/11564)|Disk spill metric|
 |[#11561](https://github.com/NVIDIA/spark-rapids/pull/11561)|Add in a basic plugin for dataframe UDF support in Apache Spark|
+|[#11544](https://github.com/NVIDIA/spark-rapids/pull/11544)|Update test case related to LEACY datetime format to unblock nightly CI|
+|[#11519](https://github.com/NVIDIA/spark-rapids/pull/11519)|Spark 4:  Fix parquet_test.py|
 |[#11563](https://github.com/NVIDIA/spark-rapids/pull/11563)|Fix the latest merge conflict in integration tests|
 |[#11542](https://github.com/NVIDIA/spark-rapids/pull/11542)|Update rapids JNI and private dependency to 24.12.0-SNAPSHOT [skip ci]|
 |[#11493](https://github.com/NVIDIA/spark-rapids/pull/11493)|Support legacy mode for yyyymmdd format|
