@@ -16,14 +16,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "341db"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
 
@@ -32,7 +25,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
@@ -43,11 +35,6 @@ trait SplitFiles {
       maxSplitBytes: Long): Seq[PartitionedFile] = {
 
     def canBeSplit(filePath: Path, hadoopConf: Configuration): Boolean = {
-      // Checks if file at path `filePath` can be split.
-      // Uncompressed Hive Text files may be split. GZIP compressed files are not.
-      // Note: This method works on a Path, and cannot take a `FileStatus`.
-      //       partition.files is an Array[FileStatus] on vanilla Apache Spark,
-      //       but an Array[SerializableFileStatus] on Databricks.
       val codec = new CompressionCodecFactory(hadoopConf).getCodec(filePath)
       codec == null || codec.isInstanceOf[SplittableCompressionCodec]
     }
@@ -55,7 +42,6 @@ trait SplitFiles {
     selectedPartitions.flatMap { partition =>
       partition.files.flatMap { f =>
         PartitionedFileUtilsShim.splitFiles(
-          sparkSession,
           f,
           isSplitable = canBeSplit(f.getPath, hadoopConf),
           maxSplitBytes,
@@ -72,12 +58,10 @@ trait SplitFiles {
 
     selectedPartitions.flatMap { partition =>
       partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
         val filePath = file.getPath
         val isSplitable = relation.fileFormat.isSplitable(
           relation.sparkSession, relation.options, filePath)
         PartitionedFileUtilsShim.splitFiles(
-          sparkSession = relation.sparkSession,
           file = file,
           isSplitable = isSplitable,
           maxSplitBytes = maxSplitBytes,
@@ -86,4 +70,4 @@ trait SplitFiles {
       }
     }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
   }
-}
+} 

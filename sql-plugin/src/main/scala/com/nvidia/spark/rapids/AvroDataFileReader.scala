@@ -33,6 +33,8 @@ import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
+
 private[rapids] class AvroSeekableInputStream(in: SeekableInput) extends InputStream
     with SeekableInput {
   var oneByte = new Array[Byte](1)
@@ -80,7 +82,7 @@ case class Header(
   @transient
   lazy val schema: Schema = {
     getMetaString(SCHEMA)
-      .map(s => new Schema.Parser().setValidateDefaults(false).setValidate(false).parse(s))
+      .map(s => TrampolineConnectShims.createSchemaParser().parse(s))
       .orNull
   }
 

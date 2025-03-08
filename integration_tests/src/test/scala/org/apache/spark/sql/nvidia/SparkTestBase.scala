@@ -26,6 +26,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object SparkSessionHolder extends Logging {
   private var spark = createSparkSession()
@@ -39,7 +40,7 @@ object SparkSessionHolder extends Logging {
   }
 
   private def createSparkSession(): SparkSession = {
-    SparkSession.cleanupAnyExistingSession()
+    TrampolineUtil.cleanupAnyExistingSession()
 
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     Locale.setDefault(Locale.US)
@@ -114,7 +115,7 @@ trait SparkTestBase extends AnyFunSuite with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     super.afterAll()
-    SparkSession.cleanupAnyExistingSession()
+    TrampolineUtil.cleanupAnyExistingSession()
   }
 
   def assertSame(expected: Any, actual: Any, epsilon: Double = 0.0,
