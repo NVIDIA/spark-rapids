@@ -16,23 +16,22 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350db143"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.{FileStatusWithMetadata, PartitionedFile}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
 object PartitionedFileUtilsShim extends PartitionedFileUtilsShimBase {
 
-  def splitFiles(sparkSession: SparkSession,
-                 file: FileStatusWithMetadata,
+  def splitFiles(file: FileStatusWithMetadata,
                  isSplitable: Boolean,
                  maxSplitBytes: Long,
                  partitionValues: InternalRow): Seq[PartitionedFile] = {
-    PartitionedFileUtil.splitFiles(file, isSplitable, maxSplitBytes, partitionValues)
+    PartitionedFileUtil.splitFiles(file, file.getPath, isSplitable, maxSplitBytes, partitionValues)
   }
 
 } // object PartitionFileUtilsShim;
