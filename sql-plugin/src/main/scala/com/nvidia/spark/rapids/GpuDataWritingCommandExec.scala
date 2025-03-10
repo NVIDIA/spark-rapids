@@ -23,7 +23,7 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{Row, SaveMode}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -44,7 +45,7 @@ trait GpuDataWritingCommand extends DataWritingCommand with ShimUnaryCommand {
 
   override lazy val metrics: Map[String, SQLMetric] = GpuMetric.unwrap(basicMetrics ++ taskMetrics)
 
-  override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
+  def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
     Arm.withResource(runColumnar(sparkSession, child)) { batches =>
       assert(batches.isEmpty)
     }

@@ -39,7 +39,7 @@ import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -51,6 +51,8 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuInsertIntoHadoopFsRelationCommand, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -196,7 +198,7 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
     // before the table exists will crash. So this ends up replicating a portion of the logic
     // from OptimizedCreateHiveTableAsSelectCommand.getWritingCommand and underlying
     // utility methods to be able to tag whether we can support the optimized Hive write.
-    val spark = SparkSession.active
+    val spark = TrampolineConnectShims.getActiveSession
     val tableDesc = cmd.tableDesc
 
     if (tableDesc.partitionColumnNames.nonEmpty) {

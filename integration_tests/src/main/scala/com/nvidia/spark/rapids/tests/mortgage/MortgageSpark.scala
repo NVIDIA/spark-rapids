@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -124,7 +124,7 @@ object NameMapping {
    * will have the name we want to go to, the unambiguous name.
    */
   def apply(spark: SparkSession, fromColName: String, toColName: String): DataFrame = {
-    import spark.sqlContext.implicits._
+    import spark.implicits._
     broadcast(Seq(
       ("WITMER FUNDING, LLC", "Witmer"),
       ("WELLS FARGO CREDIT RISK TRANSFER SECURITIES TRUST 2015", "Wells Fargo"),
