@@ -38,7 +38,7 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
-pytestmark = pytest.mark.skipif(is_spark_35X(),
+pytestmark = pytest.mark.skipif(not is_spark_35X(),
                                 reason="Current spark-rapids only support spark 3.5.x")
 
 @allow_non_gpu("BatchScanExec")
