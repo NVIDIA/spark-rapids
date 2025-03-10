@@ -1581,59 +1581,48 @@ case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with N
     }
   }
 
+  private def floatingPointArrayDistinct(
+      input: GpuColumnVector,
+      elementType: DataType): ColumnVector = {
+    val intermediateDType = if (elementType == FloatType) { DType.INT32 } else { DType.INT64 }
+    val originalDType = if (elementType == FloatType) { DType.FLOAT32 } else { DType.FLOAT64 }
+    val arrayElements = input.getBase.getChildColumnView(0)
+    
+    withResource(arrayElements) { _ =>
+      val normalizedElements = normalizeNaNs(arrayElements, elementType)
+      withResource(normalizedElements) { _ =>
+        val castedElements = normalizedElements.bitCastTo(intermediateDType)
+        withResource(castedElements) { _ =>
+          val replacedList = GpuListUtils.replaceListDataColumnAsView(input.getBase,
+                                                                      castedElements)
+          withResource(replacedList) { _ =>
+            val distinctList = replacedList.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
+            withResource(distinctList) { _ =>
+              val distinctElements = distinctList.getChildColumnView(0)
+              withResource(distinctElements) { _ =>
+                val convertedElements = distinctElements.bitCastTo(originalDType)
+                withResource(convertedElements) { _ =>
+                   val resultList = GpuListUtils.replaceListDataColumnAsView(distinctList,
+                                                                             convertedElements)
+                  withResource(resultList) { _ =>
+                    resultList.copyToColumnVector()
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     val elementType = childDataType.elementType
     elementType match {
-      case FloatType =>
-        // For Array[Float], bitCast to Array[Int32], perform distinct, then cast back
-        withResource(input.getBase.getChildColumnView(0)) { arrayElements =>
-          withResource(normalizeNaNs(arrayElements, FloatType).bitCastTo(DType.INT32))
-          { castedArrayElements =>
-            withResource(GpuListUtils.replaceListDataColumnAsView(input.getBase,
-             castedArrayElements)) { castedColumnView =>
-              withResource(castedColumnView.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
-              { arrayDistinctColumnView =>
-                withResource(arrayDistinctColumnView.getChildColumnView(0))
-                { arrayDistinctElements =>
-                  withResource(arrayDistinctElements.bitCastTo(DType.FLOAT32))
-                  { floatArrayDistinctElements =>
-                    withResource(GpuListUtils.replaceListDataColumnAsView(arrayDistinctColumnView,
-                     floatArrayDistinctElements)) { resultView =>
-                      resultView.copyToColumnVector()
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      case DoubleType =>
-        // For Array[Double], bitCast to Array[Int64], perform distinct, then cast back
-        withResource(input.getBase.getChildColumnView(0)) { arrayElements =>
-          withResource(normalizeNaNs(arrayElements, DoubleType).bitCastTo(DType.INT64))
-          { castedArrayElements =>
-            withResource(GpuListUtils.replaceListDataColumnAsView(input.getBase,
-             castedArrayElements))
-            { castedColumnView =>
-              withResource(castedColumnView.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
-              { arrayDistinctColumnView =>
-                withResource(arrayDistinctColumnView.getChildColumnView(0))
-                { arrayDistinctElements =>
-                  withResource(arrayDistinctElements.bitCastTo(DType.FLOAT64))
-                  { doubleArrayDistinctElements =>
-                    withResource(GpuListUtils.replaceListDataColumnAsView(arrayDistinctColumnView,
-                     doubleArrayDistinctElements))
-                    { resultView =>
-                      resultView.copyToColumnVector()
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+      case FloatType | DoubleType =>
+        // Floating points are treated differently due to -0.0 and +0.0 equality
+        floatingPointArrayDistinct(input, elementType)
       case _ =>
-        // For all other array types, use the normal implementation
         input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
     }
   }
