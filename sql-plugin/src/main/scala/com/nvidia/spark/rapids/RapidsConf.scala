@@ -542,15 +542,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createWithDefault("ASYNC")
 
-  val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
-      .doc("Set the number of tasks that can execute concurrently per GPU. " +
-          "Tasks may temporarily block when the number of concurrent tasks in the executor " +
-          "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
-          "GPU out of memory errors.")
-      .commonlyUsed()
-      .integerConf
-      .createWithDefault(2)
-
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs.")
@@ -558,6 +549,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .checkValue(v => v > 0, "Batch size must be positive")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
+
+  val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
+    .doc("Set the number of tasks that can execute concurrently per GPU. " +
+      "Tasks may temporarily block when the number of concurrent tasks in the executor " +
+      "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
+      "GPU out of memory errors or slow performance from spilling. If not set " +
+      s"a value will be calculated using the GPUs memory and $GPU_BATCH_SIZE_BYTES")
+    .commonlyUsed()
+    .integerConf
+    .createOptional
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
     .doc("Enable a chunked reader where possible. A chunked reader allows " +
@@ -2747,7 +2748,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
-  lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
+  lazy val concurrentGpuTasks: Option[Integer] = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
