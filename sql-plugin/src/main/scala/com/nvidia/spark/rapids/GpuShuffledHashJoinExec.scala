@@ -28,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -56,9 +56,36 @@ class GpuShuffledHashJoinMeta(
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
+  // This is used by shuffled hash join
+  def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide): Unit = {
+    buildSide match {
+      case GpuBuildLeft if !canBuildLeft(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support left-side build")
+      case GpuBuildRight if !canBuildRight(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support right-side build")
+      case _ =>
+    }
+  }
+
+  /** Determine if this type of join supports using the right side of the join as the build side. */
+  // supports right outer join when build right
+  def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter | LeftSemi |
+         LeftAnti | FullOuter | _: ExistenceJoin => true
+    case _ => false
+  }
+
+  /** Determine if this type of join supports using the left side of the join as the build side. */
+  // supports left outer join when build left
+  def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter | FullOuter => true
+    case _ => false
+  }
+
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       conditionMeta)
+    tagBuildSide(this, join.joinType, buildSide)
   }
 
   override def convertToGpu(): GpuExec = {

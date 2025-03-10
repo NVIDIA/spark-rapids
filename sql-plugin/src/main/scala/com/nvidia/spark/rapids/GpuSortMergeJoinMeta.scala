@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,6 +51,7 @@ class GpuSortMergeJoinMeta(
     // Use conditions from Hash Join
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       conditionMeta)
+    GpuHashJoin.tagBuildSide(this, join.joinType, buildSide)
 
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
