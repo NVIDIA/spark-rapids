@@ -24,6 +24,7 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
 
@@ -34,7 +35,6 @@ import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompres
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionDirectory, PartitionedFile}
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
 trait SplitFiles {
   def splitFiles(sparkSession: SparkSession,
