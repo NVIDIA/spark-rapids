@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState}
 import com.nvidia.spark.rapids.spill._
 import org.mockito.Mockito.when
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Ignore}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 import org.scalatest.concurrent.{Signaler, TimeLimits}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.time._
@@ -34,8 +34,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-// Waiting for the fix of https://github.com/NVIDIA/spark-rapids/issues/12194
-@Ignore
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
@@ -351,8 +349,9 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       // put RMM back for other tests to use
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-    // 1 GiB
-    PinnedMemoryPool.initialize(1 * 1024 * 1024 * 1024)
+    // less than 1 GiB, see more background at:
+    // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
+    PinnedMemoryPool.initialize(500 * 1024 * 1024)
     HostAlloc.initialize(-1)
   }
 
