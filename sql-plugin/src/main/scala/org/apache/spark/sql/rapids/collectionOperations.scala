@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
+import com.nvidia.spark.rapids.GpuListUtils
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
@@ -1566,29 +1567,74 @@ case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with N
   private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
   override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = child.dataType
+
+  private def normalizeNaNs(input: ColumnView, elementType: DataType): ColumnVector = {
+    withResource(input.isNan()) { isNaN =>
+      val canonicalNaN = if (elementType == FloatType) {
+        Scalar.fromFloat(Float.NaN)
+      } else {
+        Scalar.fromDouble(Double.NaN)
+      }
+      withResource(canonicalNaN) { canonicalNaN =>
+        isNaN.ifElse(canonicalNaN, input)
+      }
+    }
+  }
+
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val baseColumn = input.getBase
-    
-    // Reinterpret float/doubles as 
-    baseColumn.DType match {
-      case DType.FLOAT32 =>
-        // Reinterpret float bits as ints for deduplication
-        withResource(baseColumn.bitCastTo(DType.INT32)) { intColumn =>
-          withResource(intColumn.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
-          { distinctIntArray =>
-              distinctIntArray.bitCastTo(DType.FLOAT32).copyToColumnVector()
+    val elementType = childDataType.elementType
+    elementType match {
+      case FloatType =>
+        // For Array[Float], bitCast to Array[Int32], perform distinct, then cast back
+        withResource(input.getBase.getChildColumnView(0)) { arrayElements =>
+          withResource(normalizeNaNs(arrayElements, FloatType).bitCastTo(DType.INT32))
+          { castedArrayElements =>
+            withResource(GpuListUtils.replaceListDataColumnAsView(input.getBase,
+             castedArrayElements)) { castedColumnView =>
+              withResource(castedColumnView.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
+              { arrayDistinctColumnView =>
+                withResource(arrayDistinctColumnView.getChildColumnView(0))
+                { arrayDistinctElements =>
+                  withResource(arrayDistinctElements.bitCastTo(DType.FLOAT32))
+                  { floatArrayDistinctElements =>
+                    withResource(GpuListUtils.replaceListDataColumnAsView(arrayDistinctColumnView,
+                     floatArrayDistinctElements)) { resultView =>
+                      resultView.copyToColumnVector()
+                    }
+                  }
+                }
+              }
+            }
           }
         }
-      case DType.FLOAT64 =>
-        // Reinterpret double bits as longs for deduplication
-        withResource(baseColumn.bitCastTo(DType.INT64)) { longColumn =>
-          withResource(longColumn.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
-          { distinctLongArray =>
-              distinctLongArray.bitCastTo(DType.FLOAT64).copyToColumnVector()
+      case DoubleType =>
+        // For Array[Double], bitCast to Array[Int64], perform distinct, then cast back
+        withResource(input.getBase.getChildColumnView(0)) { arrayElements =>
+          withResource(normalizeNaNs(arrayElements, DoubleType).bitCastTo(DType.INT64))
+          { castedArrayElements =>
+            withResource(GpuListUtils.replaceListDataColumnAsView(input.getBase,
+             castedArrayElements))
+            { castedColumnView =>
+              withResource(castedColumnView.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST))
+              { arrayDistinctColumnView =>
+                withResource(arrayDistinctColumnView.getChildColumnView(0))
+                { arrayDistinctElements =>
+                  withResource(arrayDistinctElements.bitCastTo(DType.FLOAT64))
+                  { doubleArrayDistinctElements =>
+                    withResource(GpuListUtils.replaceListDataColumnAsView(arrayDistinctColumnView,
+                     doubleArrayDistinctElements))
+                    { resultView =>
+                      resultView.copyToColumnVector()
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       case _ =>
-        baseColumn.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
+        // For all other array types, use the normal implementation
+        input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
     }
   }
 }
