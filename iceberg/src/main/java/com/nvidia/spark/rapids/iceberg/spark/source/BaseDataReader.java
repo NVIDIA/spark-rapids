@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,27 +16,25 @@
 
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.util.Utf8;
-import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.Partitioning;
+import org.apache.iceberg.ScanTask;
+import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.encryption.EncryptedFiles;
 import org.apache.iceberg.encryption.EncryptedInputFile;
-import org.apache.iceberg.io.CloseableIterator;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
@@ -46,36 +44,32 @@ import org.apache.iceberg.types.Types.NestedField;
 import org.apache.iceberg.types.Types.StructType;
 import org.apache.iceberg.util.ByteBuffers;
 import org.apache.iceberg.util.PartitionUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.spark.sql.connector.read.PartitionReader;
+import org.apache.spark.sql.vectorized.ColumnarBatch;
 
-import org.apache.spark.rdd.InputFileBlockHolder;
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.unsafe.types.UTF8String;
 
 /**
  * Base class of Spark readers.
- * Derived from Apache Spark's BaseDataReader class.
- *
- * @param <T> is the Java class returned by this reader whose objects contain one or more rows.
+ * Derived from Apache Spark's BaseReader class.
  */
-abstract class BaseDataReader<T> implements Closeable {
-  private static final Logger LOG = LoggerFactory.getLogger(BaseDataReader.class);
+public abstract class BaseDataReader implements PartitionReader<ColumnarBatch> {
 
   private final Table table;
-  private final Iterator<FileScanTask> tasks;
-  private final Map<String, InputFile> inputFiles;
+  protected final List<FileScanTask> tasks;
+  protected final Map<String, InputFile> inputFiles;
 
-  private CloseableIterator<T> currentIterator;
-  private T current = null;
-  private FileScanTask currentTask = null;
-
-  BaseDataReader(Table table, CombinedScanTask task) {
+  BaseDataReader(Table table, ScanTaskGroup<? extends ScanTask> task) {
     this.table = table;
-    this.tasks = task.files().iterator();
+    this.tasks = task.tasks()
+        .stream()
+        .map(ScanTask::asFileScanTask)
+        .collect(Collectors.toList());
     Map<String, ByteBuffer> keyMetadata = Maps.newHashMap();
-    task.files().stream()
+    this.tasks
+        .stream()
         .flatMap(fileScanTask -> Stream.concat(Stream.of(fileScanTask.file()), fileScanTask.deletes().stream()))
         .forEach(file -> keyMetadata.put(file.path().toString(), file.keyMetadata()));
     Stream<EncryptedInputFile> encrypted = keyMetadata.entrySet().stream()
@@ -84,57 +78,13 @@ abstract class BaseDataReader<T> implements Closeable {
     // decrypt with the batch call to avoid multiple RPCs to a key server, if possible
     Iterable<InputFile> decryptedFiles = table.encryption().decrypt(encrypted::iterator);
 
-    Map<String, InputFile> files = Maps.newHashMapWithExpectedSize(task.files().size());
+    Map<String, InputFile> files = Maps.newHashMapWithExpectedSize(this.tasks.size());
     decryptedFiles.forEach(decrypted -> files.putIfAbsent(decrypted.location(), decrypted));
     this.inputFiles = ImmutableMap.copyOf(files);
-
-    this.currentIterator = CloseableIterator.empty();
   }
 
   protected Table table() {
     return table;
-  }
-
-  public boolean next() throws IOException {
-    try {
-      while (true) {
-        if (currentIterator.hasNext()) {
-          this.current = currentIterator.next();
-          return true;
-        } else if (tasks.hasNext()) {
-          this.currentIterator.close();
-          this.currentTask = tasks.next();
-          this.currentIterator = open(currentTask);
-        } else {
-          this.currentIterator.close();
-          return false;
-        }
-      }
-    } catch (IOException | RuntimeException e) {
-      if (currentTask != null && !currentTask.isDataTask()) {
-        LOG.error("Error reading file: {}", getInputFile(currentTask).location(), e);
-      }
-      throw e;
-    }
-  }
-
-  public T get() {
-    return current;
-  }
-
-  abstract CloseableIterator<T> open(FileScanTask task);
-
-  @Override
-  public void close() throws IOException {
-    InputFileBlockHolder.unset();
-
-    // close the current iterator
-    this.currentIterator.close();
-
-    // exhaust the task iterator
-    while (tasks.hasNext()) {
-      tasks.next();
-    }
   }
 
   protected InputFile getInputFile(FileScanTask task) {
@@ -147,6 +97,10 @@ abstract class BaseDataReader<T> implements Closeable {
   }
 
   protected Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema) {
+    return constantsMap(task, readSchema, table);
+  }
+
+  public static Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table) {
     if (readSchema.findField(MetadataColumns.PARTITION_COLUMN_ID) != null) {
       StructType partitionType = Partitioning.partitionType(table);
       return PartitionUtil.constantsMap(task, partitionType, BaseDataReader::convertConstant);

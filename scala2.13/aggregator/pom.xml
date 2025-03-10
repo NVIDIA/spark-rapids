@@ -139,6 +139,10 @@
                             <pattern>org.roaringbitmap</pattern>
                             <shadedPattern>${rapids.shade.package}.org.roaringbitmap</shadedPattern>
                         </relocation>
+                        <relocation>
+                            <pattern>org.apache.iceberg.parquet</pattern>
+                            <shadedPattern>${rapids.shade.package}.org.apache.iceberg.parquet</shadedPattern>
+                        </relocation>
                     </relocations>
                     <filters>
                         <filter>

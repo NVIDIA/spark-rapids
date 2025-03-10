@@ -16,52 +16,47 @@
 
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
-import java.io.Serializable;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.GpuScanWrapper;
-import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.spark.SparkUtil;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.iceberg.CombinedScanTask;
-import org.apache.iceberg.FileFormat;
-import org.apache.iceberg.FileScanTask;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.SchemaParser;
-import org.apache.iceberg.Snapshot;
-import org.apache.iceberg.SnapshotSummary;
-import org.apache.iceberg.Table;
+import com.nvidia.spark.rapids.iceberg.spark.source.metrics.*;
+import org.apache.iceberg.*;
 import org.apache.iceberg.expressions.Expression;
-import org.apache.iceberg.hadoop.HadoopInputFile;
-import org.apache.iceberg.hadoop.Util;
+import org.apache.iceberg.metrics.ScanReport;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.base.Strings;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PropertyUtil;
+import org.apache.iceberg.util.SnapshotUtil;
+import org.apache.iceberg.util.TableScanUtil;
+import org.apache.spark.sql.connector.expressions.FieldReference;
+import org.apache.spark.sql.connector.expressions.NamedReference;
+import org.apache.spark.sql.connector.metric.CustomMetric;
+import org.apache.spark.sql.connector.metric.CustomTaskMetric;
+import org.apache.spark.sql.connector.read.colstats.ColumnStatistics;
+import org.apache.spark.sql.internal.SQLConf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.read.Batch;
-import org.apache.spark.sql.connector.read.InputPartition;
-import org.apache.spark.sql.connector.read.PartitionReader;
-import org.apache.spark.sql.connector.read.PartitionReaderFactory;
 import org.apache.spark.sql.connector.read.Scan;
 import org.apache.spark.sql.connector.read.Statistics;
 import org.apache.spark.sql.connector.read.SupportsReportStatistics;
 import org.apache.spark.sql.connector.read.streaming.MicroBatchStream;
 import org.apache.spark.sql.types.StructType;
-import org.apache.spark.sql.vectorized.ColumnarBatch;
-import org.apache.spark.util.SerializableConfiguration;
 
 /**
  * GPU-accelerated Iceberg Scan.
@@ -70,13 +65,19 @@ import org.apache.spark.util.SerializableConfiguration;
 abstract class GpuSparkScan extends GpuScanWrapper
     implements Scan, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(GpuSparkScan.class);
+  private static final String NDV_KEY = "ndv";
 
   private final JavaSparkContext sparkContext;
   private final Table table;
+  private final SparkSession spark;
   private final SparkReadConf readConf;
   private final boolean caseSensitive;
   private final Schema expectedSchema;
   private final List<Expression> filterExpressions;
+  private final String branch;
+  private final Supplier<ScanReport> scanReportSupplier;
+
+  // rapids specific
   private final boolean readTimestampWithoutZone;
   private final RapidsConf rapidsConf;
   private final boolean queryUsesInputFile;
@@ -84,18 +85,28 @@ abstract class GpuSparkScan extends GpuScanWrapper
   // lazy variables
   private StructType readSchema = null;
 
-  GpuSparkScan(SparkSession spark, Table table, SparkReadConf readConf,
-               Schema expectedSchema, List<Expression> filters,
-               RapidsConf rapidsConf, boolean queryUsesInputFile) {
+  GpuSparkScan(
+      SparkSession spark,
+      Table table,
+      SparkReadConf readConf,
+      Schema expectedSchema,
+      List<Expression> filters,
+      Supplier<ScanReport> scanReportSupplier,
+      RapidsConf rapidsConf,
+      boolean queryUsesInputFile) {
+    Schema snapshotSchema = SnapshotUtil.schemaFor(table, readConf.branch());
+    SparkSchemaUtil.validateMetadataColumnReferences(snapshotSchema, expectedSchema);
 
-    SparkSchemaUtil.validateMetadataColumnReferences(table.schema(), expectedSchema);
-
+    this.spark = spark;
     this.sparkContext = JavaSparkContext.fromSparkContext(spark.sparkContext());
     this.table = table;
     this.readConf = readConf;
     this.caseSensitive = readConf.caseSensitive();
     this.expectedSchema = expectedSchema;
     this.filterExpressions = filters != null ? filters : Collections.emptyList();
+    this.branch = readConf.branch();
+    this.scanReportSupplier = scanReportSupplier;
+
     this.readTimestampWithoutZone = readConf.handleTimestampWithoutZone();
     this.rapidsConf = rapidsConf;
     this.queryUsesInputFile = queryUsesInputFile;
@@ -105,12 +116,8 @@ abstract class GpuSparkScan extends GpuScanWrapper
     return table;
   }
 
-  protected SparkReadConf readConf() {
-    return readConf;
-  }
-
-  protected RapidsConf rapidsConf() {
-    return rapidsConf;
+  protected String branch() {
+    return branch;
   }
 
   protected boolean caseSensitive() {
@@ -125,16 +132,33 @@ abstract class GpuSparkScan extends GpuScanWrapper
     return filterExpressions;
   }
 
-  protected abstract List<CombinedScanTask> tasks();
-
-  boolean queryUsesInputFile() {
-    return queryUsesInputFile;
+  protected Types.StructType groupingKeyType() {
+    return Types.StructType.of();
   }
+
+  protected abstract List<? extends ScanTaskGroup<?>> taskGroups();
 
   @Override
   public Batch toBatch() {
-    return new SparkBatch(sparkContext, table, readConf, tasks(), expectedSchema,
-        rapidsConf, this);
+    List<? extends ScanTaskGroup<?>> tasks = taskGroups();
+    if (tasks.stream()
+        .flatMap(t -> t.tasks().stream())
+        .anyMatch(t -> t.isFileScanTask() && !t.asFileScanTask().deletes().isEmpty())) {
+      // TODO: We should consider falling back to the CPU implementation if deletes are present
+      //  or support deletion in the GPU implementation. We currently choose to fail fast to
+      //  align with existing behavior.
+      throw new UnsupportedOperationException("Delete filter is not supported");
+    }
+    return new GpuSparkBatch(
+        sparkContext,
+        table,
+        readConf,
+        groupingKeyType(),
+        taskGroups(),
+        expectedSchema,
+        hashCode(),
+        rapidsConf,
+        this);
   }
 
   @Override
@@ -154,269 +178,191 @@ abstract class GpuSparkScan extends GpuScanWrapper
 
   @Override
   public Statistics estimateStatistics() {
-    return estimateStatistics(table.currentSnapshot());
+    return estimateStatistics(SnapshotUtil.latestSnapshot(table, branch));
   }
 
+  @SuppressWarnings("rawtypes")
   protected Statistics estimateStatistics(Snapshot snapshot) {
     // its a fresh table, no data
     if (snapshot == null) {
-      return new Stats(0L, 0L);
+      return new Stats(0L, 0L, Collections.emptyMap());
     }
 
-    // estimate stats using snapshot summary only for partitioned tables (metadata tables are unpartitioned)
-    if (!table.spec().isUnpartitioned() && filterExpressions.isEmpty()) {
-      LOG.debug("using table metadata to estimate table statistics");
-      long totalRecords = PropertyUtil.propertyAsLong(snapshot.summary(),
-          SnapshotSummary.TOTAL_RECORDS_PROP, Long.MAX_VALUE);
-      return new Stats(
-          SparkSchemaUtil.estimateSize(readSchema(), totalRecords),
-          totalRecords);
-    }
+    boolean cboEnabled =
+        Boolean.parseBoolean(spark.conf().get(SQLConf.CBO_ENABLED().key(), "false"));
+    Map<NamedReference, ColumnStatistics> colStatsMap = Collections.emptyMap();
+    if (readConf.reportColumnStats() && cboEnabled) {
+      colStatsMap = Maps.newHashMap();
+      List<StatisticsFile> files = table.statisticsFiles();
+      if (!files.isEmpty()) {
+        List<BlobMetadata> metadataList = (files.get(0)).blobMetadata();
 
-    long numRows = 0L;
+        Map<Integer, List<BlobMetadata>> groupedByField =
+            metadataList.stream()
+                .collect(
+                    Collectors.groupingBy(
+                        metadata -> metadata.fields().get(0), Collectors.toList()));
 
-    for (CombinedScanTask task : tasks()) {
-      for (FileScanTask file : task.files()) {
-        // TODO: if possible, take deletes also into consideration.
-        double fractionOfFileScanned = ((double) file.length()) / file.file().fileSizeInBytes();
-        numRows += (fractionOfFileScanned * file.file().recordCount());
+        for (Map.Entry<Integer, List<BlobMetadata>> entry : groupedByField.entrySet()) {
+          String colName = table.schema().findColumnName(entry.getKey());
+          NamedReference ref = FieldReference.column(colName);
+          Long ndv = null;
+
+          for (BlobMetadata blobMetadata : entry.getValue()) {
+            if (blobMetadata
+                .type()
+                .equals(org.apache.iceberg.puffin.StandardBlobTypes.APACHE_DATASKETCHES_THETA_V1)) {
+              String ndvStr = blobMetadata.properties().get(NDV_KEY);
+              if (!Strings.isNullOrEmpty(ndvStr)) {
+                ndv = Long.parseLong(ndvStr);
+              } else {
+                LOG.debug("{} is not set in BlobMetadata for column {}", NDV_KEY, colName);
+              }
+            } else {
+              LOG.debug("Blob type {} is not supported yet", blobMetadata.type());
+            }
+          }
+          ColumnStatistics colStats =
+              new SparkColumnStatistics(ndv, null, null, null, null, null, null);
+
+          colStatsMap.put(ref, colStats);
+        }
       }
     }
 
-    long sizeInBytes = SparkSchemaUtil.estimateSize(readSchema(), numRows);
-    return new Stats(sizeInBytes, numRows);
+    // estimate stats using snapshot summary only for partitioned tables
+    // (metadata tables are unpartitioned)
+    if (!table.spec().isUnpartitioned() && filterExpressions.isEmpty()) {
+      LOG.debug(
+          "Using snapshot {} metadata to estimate statistics for table {}",
+          snapshot.snapshotId(),
+          table.name());
+      long totalRecords = totalRecords(snapshot);
+      return new Stats(
+          SparkSchemaUtil.estimateSize(readSchema(), totalRecords), totalRecords, colStatsMap);
+    }
+
+    long rowsCount = taskGroups().stream().mapToLong(ScanTaskGroup::estimatedRowsCount).sum();
+    long sizeInBytes = SparkSchemaUtil.estimateSize(readSchema(), rowsCount);
+    return new Stats(sizeInBytes, rowsCount, colStatsMap);
+  }
+
+  private long totalRecords(Snapshot snapshot) {
+    Map<String, String> summary = snapshot.summary();
+    return PropertyUtil.propertyAsLong(summary, SnapshotSummary.TOTAL_RECORDS_PROP, Long.MAX_VALUE);
   }
 
   @Override
   public String description() {
-    String filters = filterExpressions.stream().map(Spark3Util::describe).collect(Collectors.joining(", "));
-    return String.format("%s [filters=%s]", table, filters);
+    String groupingKeyFieldNamesAsString =
+        groupingKeyType().fields().stream()
+            .map(Types.NestedField::name)
+            .collect(Collectors.joining(", "));
+
+    return String.format(
+        "%s (branch=%s) [filters=%s, groupedBy=%s]",
+        table(), branch(), Spark3Util.describe(filterExpressions), groupingKeyFieldNamesAsString);
   }
 
-  static class ReaderFactory implements PartitionReaderFactory {
-    private final scala.collection.immutable.Map<String, GpuMetric> metrics;
-    private final scala.collection.immutable.Set<String> allCloudSchemes;
-    private final boolean canUseParquetMultiThread;
-    private final boolean canUseParquetCoalescing;
-    private final boolean isParquetPerFileReadEnabled;
-    private final boolean queryUsesInputFile;
+  @Override
+  public CustomTaskMetric[] reportDriverMetrics() {
+    ScanReport scanReport = scanReportSupplier != null ? scanReportSupplier.get() : null;
 
-    public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics,
-                         RapidsConf rapidsConf, boolean queryUsesInputFile) {
-      this.metrics = metrics;
-      this.allCloudSchemes = rapidsConf.getCloudSchemes().toSet();
-      this.isParquetPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled();
-      this.canUseParquetMultiThread = rapidsConf.isParquetMultiThreadReadEnabled();
-      // Here ignores the "ignoreCorruptFiles" comparing to the code in
-      // "GpuParquetMultiFilePartitionReaderFactory", since "ignoreCorruptFiles" is
-      // not honored by Iceberg.
-      this.canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled() &&
-          !queryUsesInputFile;
-      this.queryUsesInputFile = queryUsesInputFile;
+    if (scanReport == null) {
+      return new CustomTaskMetric[0];
     }
 
-    @Override
-    public PartitionReader<InternalRow> createReader(InputPartition partition) {
-      throw new IllegalStateException("non-columnar read");
-    }
+    List<CustomTaskMetric> driverMetrics = Lists.newArrayList();
 
-    @Override
-    public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition partition) {
-      if (partition instanceof ReadTask) {
-        ReadTask rTask = (ReadTask) partition;
-        scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
-        boolean canAccelerateRead = ret._1();
-        if (canAccelerateRead) {
-          boolean isMultiThread = ret._2();
-          FileFormat ff = ret._3();
-          return new MultiFileBatchReader(rTask, isMultiThread, ff, metrics, queryUsesInputFile);
-        } else {
-          return new BatchReader(rTask, metrics);
-        }
-      } else {
-        throw new UnsupportedOperationException("Incorrect input partition type: " + partition);
-      }
-    }
+    // common
+    driverMetrics.add(TaskTotalPlanningDuration.from(scanReport));
 
-    @Override
-    public boolean supportColumnarReads(InputPartition partition) {
-      return true;
-    }
+    // data manifests
+    driverMetrics.add(TaskTotalDataManifests.from(scanReport));
+    driverMetrics.add(TaskScannedDataManifests.from(scanReport));
+    driverMetrics.add(TaskSkippedDataManifests.from(scanReport));
 
-    /**
-     * Return a tuple as (canAccelerateRead, isMultiThread, fileFormat).
-     *   - "canAccelerateRead" Whether the input read task can be accelerated by
-     *     multi-threaded or coalescing reading.
-     *   - "isMultiThread" Whether to use the multi-threaded reading.
-     *   - "fileFormat" The file format of this combined task. Acceleration requires
-     *     all the files in a combined task have the same format.
-     */
-    private scala.Tuple3<Boolean, Boolean, FileFormat> multiFileReadCheck(ReadTask readTask) {
-      Collection<FileScanTask> scans = readTask.files();
-      boolean isSingleFormat = false, isPerFileReadEnabled = false;
-      boolean canUseMultiThread = false, canUseCoalescing = false;
-      FileFormat ff = null;
-      // Require all the files in a partition have the same file format.
-      if (scans.stream().allMatch(t -> t.file().format().equals(FileFormat.PARQUET))) {
-        // Now only Parquet is supported.
-        canUseMultiThread = canUseParquetMultiThread;
-        canUseCoalescing = canUseParquetCoalescing;
-        isPerFileReadEnabled = isParquetPerFileReadEnabled;
-        isSingleFormat = true;
-        ff = FileFormat.PARQUET;
-      }
-      boolean canAccelerateRead = !isPerFileReadEnabled && isSingleFormat;
-      String[] files = scans.stream().map(f -> f.file().path().toString())
-          .toArray(String[]::new);
-      // Get the final decision for the subtype of the Rapids reader.
-      boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(
-          canUseCoalescing, canUseMultiThread, files, allCloudSchemes);
-      return scala.Tuple3.apply(canAccelerateRead, useMultiThread, ff);
-    }
+    // data files
+    driverMetrics.add(TaskResultDataFiles.from(scanReport));
+    driverMetrics.add(TaskSkippedDataFiles.from(scanReport));
+    driverMetrics.add(TaskTotalDataFileSize.from(scanReport));
+
+    // delete manifests
+    driverMetrics.add(TaskTotalDeleteManifests.from(scanReport));
+    driverMetrics.add(TaskScannedDeleteManifests.from(scanReport));
+    driverMetrics.add(TaskSkippedDeleteManifests.from(scanReport));
+
+    // delete files
+    driverMetrics.add(TaskTotalDeleteFileSize.from(scanReport));
+    driverMetrics.add(TaskResultDeleteFiles.from(scanReport));
+    driverMetrics.add(TaskEqualityDeleteFiles.from(scanReport));
+    driverMetrics.add(TaskIndexedDeleteFiles.from(scanReport));
+    driverMetrics.add(TaskPositionalDeleteFiles.from(scanReport));
+    driverMetrics.add(TaskSkippedDeleteFiles.from(scanReport));
+
+    return driverMetrics.toArray(new CustomTaskMetric[0]);
   }
 
-  private static class MultiFileBatchReader
-      extends GpuMultiFileBatchReader implements PartitionReader<ColumnarBatch> {
-    MultiFileBatchReader(ReadTask task, boolean useMultiThread, FileFormat ff,
-                         scala.collection.immutable.Map<String, GpuMetric> metrics,
-                         boolean queryUsesInputFile) {
-      super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
-          task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(), task.getMaxGpuColumnSizeBytes(), task.useChunkedReader(),
-          task.maxChunkedReaderMemoryUsageSizeBytes(),
-          task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
-          task.getNumThreads(), task.getMaxNumFileProcessed(),
-          useMultiThread, ff, metrics, queryUsesInputFile);
+  @Override
+  public CustomMetric[] supportedCustomMetrics() {
+    return new CustomMetric[] {
+        // task metrics
+        new NumSplits(),
+        new NumDeletes(),
+
+        // common
+        new TotalPlanningDuration(),
+
+        // data manifests
+        new TotalDataManifests(),
+        new ScannedDataManifests(),
+        new SkippedDataManifests(),
+
+        // data files
+        new ResultDataFiles(),
+        new SkippedDataFiles(),
+        new TotalDataFileSize(),
+
+        // delete manifests
+        new TotalDeleteManifests(),
+        new ScannedDeleteManifests(),
+        new SkippedDeleteManifests(),
+
+        // delete files
+        new TotalDeleteFileSize(),
+        new ResultDeleteFiles(),
+        new EqualityDeleteFiles(),
+        new IndexedDeleteFiles(),
+        new PositionalDeleteFiles(),
+        new SkippedDeleteFiles()
+    };
+  }
+
+  protected long adjustSplitSize(List<? extends ScanTask> tasks, long splitSize) {
+    if (readConf.splitSizeOption() == null && readConf.adaptiveSplitSizeEnabled()) {
+      long scanSize = tasks.stream().mapToLong(ScanTask::sizeBytes).sum();
+      int parallelism = readConf.parallelism();
+      return TableScanUtil.adjustSplitSize(scanSize, parallelism, splitSize);
+    } else {
+      return splitSize;
     }
   }
 
-  private static class BatchReader extends GpuBatchDataReader implements PartitionReader<ColumnarBatch> {
-    BatchReader(ReadTask task, scala.collection.immutable.Map<String, GpuMetric> metrics) {
-      super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
-          task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(), task.useChunkedReader(), task.maxChunkedReaderMemoryUsageSizeBytes(),
-          task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(), metrics);
-    }
+
+  /// Following are spark-rapids specific
+  protected Supplier<ScanReport> scanReportSupplier() {
+    return scanReportSupplier;
   }
 
-  static class ReadTask implements InputPartition, Serializable {
-    private final CombinedScanTask task;
-    private final Broadcast<Table> tableBroadcast;
-    private final String expectedSchemaString;
-    private final boolean caseSensitive;
-    private final boolean useChunkedReader;
-    private final long maxChunkedReaderMemoryUsageSizeBytes;
-    private final Broadcast<SerializableConfiguration> confBroadcast;
-    private final int maxBatchSizeRows;
-    private final long maxBatchSizeBytes;
+  protected SparkReadConf readConf() {
+    return readConf;
+  }
 
-    private final long targetBatchSizeBytes;
-    private final long maxGpuColumnSizeBytes;
-    private final scala.Option<String> parquetDebugDumpPrefix;
-    private final boolean parquetDebugDumpAlways;
-    private final int numThreads;
-    private final int maxNumFileProcessed;
+  protected RapidsConf rapidsConf() {
+    return rapidsConf;
+  }
 
-    private transient Schema expectedSchema = null;
-    private transient String[] preferredLocations = null;
-
-    ReadTask(CombinedScanTask task, Broadcast<Table> tableBroadcast, String expectedSchemaString,
-             boolean caseSensitive, boolean localityPreferred, RapidsConf rapidsConf,
-             Broadcast<SerializableConfiguration> confBroadcast) {
-      this.task = task;
-      this.tableBroadcast = tableBroadcast;
-      this.expectedSchemaString = expectedSchemaString;
-      this.caseSensitive = caseSensitive;
-      if (localityPreferred) {
-        Table table = tableBroadcast.value();
-        this.preferredLocations = Util.blockLocations(table.io(), task);
-      } else {
-        this.preferredLocations = HadoopInputFile.NO_LOCATION_PREFERENCE;
-      }
-      this.confBroadcast = confBroadcast;
-      this.maxBatchSizeRows = rapidsConf.maxReadBatchSizeRows();
-      this.maxBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes();
-      this.targetBatchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes();
-      this.maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes();
-      this.parquetDebugDumpPrefix = rapidsConf.parquetDebugDumpPrefix();
-      this.parquetDebugDumpAlways = rapidsConf.parquetDebugDumpAlways();
-      this.numThreads = rapidsConf.multiThreadReadNumThreads();
-      this.maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel();
-      this.useChunkedReader = rapidsConf.chunkedReaderEnabled();
-      if(rapidsConf.limitChunkedReaderMemoryUsage()) {
-        double limitRatio = rapidsConf.chunkedReaderMemoryUsageRatio();
-        this.maxChunkedReaderMemoryUsageSizeBytes = (long)(limitRatio * this.targetBatchSizeBytes);
-      } else {
-        this.maxChunkedReaderMemoryUsageSizeBytes = 0L;
-      }
-    }
-
-    @Override
-    public String[] preferredLocations() {
-      return preferredLocations;
-    }
-
-    public Collection<FileScanTask> files() {
-      return task.files();
-    }
-
-    public Table table() {
-      return tableBroadcast.value();
-    }
-
-    public boolean isCaseSensitive() {
-      return caseSensitive;
-    }
-
-    public Configuration getConfiguration() {
-      return confBroadcast.value().value();
-    }
-
-    public int getMaxBatchSizeRows() {
-      return maxBatchSizeRows;
-    }
-
-    public long getMaxBatchSizeBytes() {
-      return maxBatchSizeBytes;
-    }
-
-    public long getTargetBatchSizeBytes() {
-      return targetBatchSizeBytes;
-    }
-
-    public long getMaxGpuColumnSizeBytes() {
-      return maxGpuColumnSizeBytes;
-    }
-
-    public scala.Option<String> getParquetDebugDumpPrefix() {
-      return parquetDebugDumpPrefix;
-    }
-
-    public boolean getParquetDebugDumpAlways() {
-      return parquetDebugDumpAlways;
-    }
-
-    public int getNumThreads() {
-      return numThreads;
-    }
-
-    public int getMaxNumFileProcessed() {
-      return maxNumFileProcessed;
-    }
-
-    private Schema expectedSchema() {
-      if (expectedSchema == null) {
-        this.expectedSchema = SchemaParser.fromJson(expectedSchemaString);
-      }
-      return expectedSchema;
-    }
-
-    public boolean useChunkedReader() {
-      return useChunkedReader;
-    }
-
-    public long maxChunkedReaderMemoryUsageSizeBytes() {
-      return maxChunkedReaderMemoryUsageSizeBytes;
-    }
+  protected boolean queryUsesInputFile() {
+    return queryUsesInputFile;
   }
 }

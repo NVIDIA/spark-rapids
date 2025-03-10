@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,10 @@ import scala.util.{Failure, Success, Try}
 import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.read.Scan
 
-class IcebergProviderImpl extends IcebergProvider {
+class IcebergProviderImpl extends IcebergProvider with Logging {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     val cpuIcebergScanClass = ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)
     Seq(new ScanRule[Scan](
@@ -57,7 +58,10 @@ class IcebergProviderImpl extends IcebergProvider {
           }
 
           convertedScan match {
-            case Failure(e) => willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
+            case Failure(e) => {
+              logWarning("Conversion to GPU scan failed", e)
+              willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
+            }
             case _ =>
           }
         }
