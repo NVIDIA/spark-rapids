@@ -46,8 +46,7 @@ def test_json_tuple(json_str_pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "a", "email", "owner", "b", "b$", "b$$")'),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @pytest.mark.parametrize('json_int_dict_pattern', json_int_dict_patterns, ids=idfn)
 def test_int_dict_json(json_int_dict_pattern):
@@ -55,8 +54,7 @@ def test_int_dict_json(json_int_dict_pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "1", "2", "-45", "3.-45")'),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @pytest.mark.parametrize('json_whitespace_pattern', json_whitespace_patterns, ids=idfn)
 def test_whitespace_json(json_whitespace_pattern):
@@ -64,8 +62,7 @@ def test_whitespace_json(json_whitespace_pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "\\r\\n", "fish", "fried\\nchicken", "cheddar\\rcheese")'),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @pytest.mark.parametrize('json_eol_garbage_pattern', json_eol_garbage_patterns, ids=idfn)
 def test_json_eol_garbage_json(json_eol_garbage_pattern):
@@ -73,8 +70,7 @@ def test_json_eol_garbage_json(json_eol_garbage_pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "store", "email", "1", "cheddar\\rcheese")'),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 def test_json_tuple_select_non_generator_col():
     gen = StringGen(pattern="{\"Zipcode\":\"abc\",\"ZipCodeType\":\"STANDARD\",\"City\":\"PARC PARQUE\",\"State\":\"PR\"}")
@@ -82,8 +78,7 @@ def test_json_tuple_select_non_generator_col():
         lambda spark : gen_df(spark, [('a', gen)]),
             'table',
             'select a, json_tuple(a, \"Zipcode\", \"ZipCodeType\", \"City\", \"State\") from table',
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @allow_non_gpu('GenerateExec', 'JsonTuple')
 @pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
@@ -97,8 +92,7 @@ def test_json_tuple_with_large_number_of_fields_fallback(json_str_pattern):
                            "location", "city", "country", "zip", "code", "region", "state", "street", "block", "loc", \
                            "height", "h", "author", "title", "price", "isbn", "book", "rating", "score", "popular")'),
         "JsonTuple",
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
 def test_json_tuple_with_special_characters(json_str_pattern):
@@ -108,8 +102,7 @@ def test_json_tuple_with_special_characters(json_str_pattern):
         assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
                 'json_tuple(a, "a", "a' + special_character + '")'),
-            conf={'spark.sql.parser.escapedStringLiterals': 'true',
-                'spark.rapids.sql.expression.JsonTuple': 'true'})
+            conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 def test_json_tuple_with_slash_backslash():
     schema = StructType([StructField("jsonStr", StringType())])
@@ -120,5 +113,4 @@ def test_json_tuple_with_slash_backslash():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data, schema).selectExpr(
             'json_tuple(jsonStr, "url", "info")'),
-        conf={'spark.sql.parser.escapedStringLiterals': 'true',
-            'spark.rapids.sql.expression.JsonTuple': 'true'})
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
