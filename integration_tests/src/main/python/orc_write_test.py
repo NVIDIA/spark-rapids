@@ -120,6 +120,41 @@ def test_write_with_stripe_size_rows(spark_tmp_path, orc_gen, orc_impl):
         orc_file = orc.ORCFile(f)
         assert orc_file.nstripes == 2, f"Expecting 2 stripes in the ORC file, but found {orc_file.nstripes} stripes"
 
+@pytest.mark.parametrize('orc_gen', [
+    BooleanGen(nullable=False),
+    pytest.param(BooleanGen(nullable=True), marks=pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/6763'))], ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_allow)
+def test_write_round_trip_boolean_two_row_groups(spark_tmp_path, orc_gen, orc_impl):
+    gen_list = [('_c0', orc_gen)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # Default row index stride (maximum number of rows in each row group) defined in cuDF
+    default_row_index_stride = 10000
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            # Use only one partition to avoid splitting the data
+            lambda spark, path: gen_df(spark, gen_list, default_row_index_stride + 1, num_slices=1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True,
+                  'spark.rapids.sql.format.orc.write.boolType.enabled': True})
+
+@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@allow_non_gpu(*non_utc_allow)
+def test_write_round_trip_two_stripes(spark_tmp_path, orc_gens, orc_impl):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # The minimum `orc_stripe_size_rows` that can be set is 512.
+    # See the documentation for the config `spark.rapids.sql.test.orc.write.stripeSizeRows`.
+    stripe_size_rows = 512
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            # Use only one partition to avoid splitting the data
+            lambda spark, path: gen_df(spark, gen_list, stripe_size_rows + 1, num_slices=1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True,
+                  'spark.rapids.sql.test.orc.write.stripeSizeRows': stripe_size_rows})
+
 @pytest.mark.parametrize('orc_gens', [bool_gen], ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @allow_non_gpu('ExecutedCommandExec', 'DataWritingCommandExec', 'WriteFilesExec')
