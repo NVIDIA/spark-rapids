@@ -213,14 +213,17 @@ run_delta_lake_tests() {
 }
 
 run_iceberg_tests() {
-  ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
+  ICEBERG_VERSION=${ICEBERG_VERSION:-1.6.1}
   # get the major/minor version of Spark
-  ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
-  IS_SPARK_33_OR_LATER=0
-  [[ "$(printf '%s\n' "3.3" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.3" ]] && IS_SPARK_33_OR_LATER=1
+  ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
+  IS_SPARK_35X=0
+  # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
+  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+    IS_SPARK_35X=1
+  fi
 
-  # RAPIDS-iceberg does not support Spark 3.3+ yet
-  if [[ "$IS_SPARK_33_OR_LATER" = "1" ]]; then
+  # RAPIDS-iceberg only support Spark 3.5.x yet
+  if [[ "IS_SPARK_35X" -ne "1" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
   else
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
