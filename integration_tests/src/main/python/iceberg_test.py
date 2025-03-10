@@ -17,7 +17,8 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
-from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, \
+    with_gpu_session, is_spark_35X
 
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
@@ -37,7 +38,8 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
-# pytestmark = pytest.mark.skip(reason="Skipping all iceberg tests as it's under refactoring: https://github.com/NVIDIA/spark-rapids/issues/12176")
+pytestmark = pytest.mark.skipif(is_spark_35X(),
+                                reason="Current spark-rapids only support spark 3.5.x")
 
 @allow_non_gpu("BatchScanExec")
 @iceberg
