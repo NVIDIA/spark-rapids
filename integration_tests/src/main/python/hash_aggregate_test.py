@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -2438,3 +2438,18 @@ def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled):
         conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
             'spark.rapids.sql.agg.singlePassPartialSortEnabled': True,
             kudo_enabled_conf_key: kudo_enabled})
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("gen", [
+    binary_gen,
+    ArrayGen(binary_gen),
+    ArrayGen(ArrayGen(binary_gen)),
+    StructGen([('s1', int_gen), ('b2', binary_gen)]),
+    StructGen([('s1', int_gen), ('b2', ArrayGen(ArrayGen(binary_gen)))])], ids=idfn)
+@allow_non_gpu('ShuffleExchangeExec')
+def test_group_by_binary(gen):
+    gen_list = [('c_binary', gen), ('c_int', int_gen)]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen_list),
+        "tab",
+        "select c_binary, sum(c_int) from tab group by c_binary")
