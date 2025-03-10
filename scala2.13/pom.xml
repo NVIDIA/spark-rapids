@@ -137,7 +137,7 @@
                 <buildver>321cdh</buildver>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
+                <parquet.hadoop.version>1.10.99.7.1.7.1000-141</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>
                 <cloudera.repo.enabled>true</cloudera.repo.enabled>
                 --><!-- #endif scala-2.12 -->
