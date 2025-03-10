@@ -163,7 +163,19 @@ fi
 if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_OPT="-DbloopInstall $MVN_OPT"
     MVN_PHASES="clean install"
-    export JAVA_HOME="/usr/lib/jvm/zulu17"
+    for jdk_ver in 17 11 8; do
+      if [[ $jdk_ver == 8 ]]; then
+        echo >2 "WARNING: could not find an 11+ JDK. Bloop Project might not be fully functional"
+        exit 1
+      fi
+
+      jdk_home="/usr/lib/jvm/zulu${jdk_ver}"
+      if ls $jdk_home > /dev/null; then
+        export JAVA_HOME=$jdk_home
+        break
+      fi
+    done
+
     WITH_DEFAULT_UPSTREAM_SHIM=0
 else
     MVN_PHASES="clean package"
