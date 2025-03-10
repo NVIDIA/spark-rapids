@@ -70,4 +70,4 @@ trait SplitFiles {
       }
     }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
   }
-} 
+}
