@@ -51,7 +51,11 @@ object TaskRegistryTracker {
     }
   }
 
-  def registerThreadForRetry(): Unit = synchronized {
+  /**
+   * Register the current thread with the task tracker.
+   * @return TODO
+   */
+  def registerThreadForRetry(): Boolean = synchronized {
     val tc = TaskContext.get()
     if (tc != null) {
       // If we don't have a TaskContext we are either in a test or in some other thread
@@ -69,8 +73,30 @@ object TaskRegistryTracker {
           }
         } else {
           taskToThread.get(taskId) += threadId
+          return true
         }
       }
     }
+    false
+  }
+
+  def unregisterThreadForRetry(): Boolean = synchronized {
+    val tc = TaskContext.get()
+    if (tc != null) {
+      val threadId = RmmSpark.getCurrentThreadId
+      val taskId = tc.taskAttemptId()
+      if (registeredThreads.remove(threadId)) {
+        RmmSpark.removeAllCurrentThreadAssociation()
+        if (taskToThread.containsKey(taskId)) {
+          taskToThread.get(taskId) -= threadId
+          if (taskToThread.get(taskId).isEmpty) {
+//            throw new IllegalStateException()
+//            taskIsDone(taskId)
+          }
+        }
+        return true
+      }
+    }
+    false
   }
 }

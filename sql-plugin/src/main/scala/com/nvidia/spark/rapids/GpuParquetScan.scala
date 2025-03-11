@@ -2601,6 +2601,7 @@ class MultiFileCloudParquetPartitionReader(
      */
     override def call(): HostMemoryBuffersWithMetaDataBase = {
       TrampolineUtil.setTaskContext(taskContext)
+      TrampolineUtil.isMTThread.set(true)
       try {
         doRead()
       } catch {
@@ -2619,6 +2620,7 @@ class MultiFileCloudParquetPartitionReader(
             hasInt96Timestamps = false, null, null, 0)
       } finally {
         TrampolineUtil.unsetTaskContext()
+        TrampolineUtil.isMTThread.set(false)
       }
     }
 
