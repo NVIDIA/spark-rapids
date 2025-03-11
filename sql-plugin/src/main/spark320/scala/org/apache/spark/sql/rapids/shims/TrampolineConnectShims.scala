@@ -47,6 +47,8 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.avro.Schema
+
 import org.apache.spark.sql.SparkSession
 
 object TrampolineConnectShims {
@@ -54,4 +56,14 @@ object TrampolineConnectShims {
   type SparkSession = org.apache.spark.sql.SparkSession
 
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  def getActiveSession: SparkSession = {
+    SparkSession.getActiveSession.getOrElse(
+      throw new IllegalStateException("No active SparkSession found")
+    )
+  }
+
+  def createSchemaParser(): Schema.Parser = {
+    new Schema.Parser().setValidateDefaults(false).setValidate(false)
+  }
 }
