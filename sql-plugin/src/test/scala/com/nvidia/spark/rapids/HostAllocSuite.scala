@@ -351,7 +351,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     }
     // less than 1 GiB, see more background at:
     // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
-    PinnedMemoryPool.initialize(500 * 1024 * 1024)
+    PinnedMemoryPool.initialize(2000 * 1024 * 1024)
     HostAlloc.initialize(-1)
   }
 
