@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,7 +94,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   private def testData(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       "123",
       "123456",
@@ -105,7 +105,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   private def testData2(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       null,
       "123",
@@ -114,7 +114,7 @@ class ConditionalsSuite extends SparkQueryCompareTestSuite {
   }
 
   private def testData3(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       null,
       "123",

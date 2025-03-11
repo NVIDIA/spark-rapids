@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -154,7 +154,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     CORRECTED_TIME_PARSER_POLICY) {
     df => {
       df.createOrReplaceTempView("df")
-      df.sqlContext.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
+      val spark = SparkSession.active
+      spark.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
     }
   }
 
