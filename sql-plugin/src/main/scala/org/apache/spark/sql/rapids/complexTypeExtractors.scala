@@ -383,17 +383,11 @@ case class GpuArrayPosition(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val arrayCol = lhs.getBase
     val keyCol = rhs.getBase
-    val intResult = withResource(arrayCol.listIndexOf(keyCol,
-      FindOptions.FIND_FIRST)) { zeroBasedPoses =>
-
+    withResource(arrayCol.listIndexOf(keyCol, FindOptions.FIND_FIRST)) { zeroBasedPoses =>
       withResource(Scalar.fromInt(1)) { one =>
-        zeroBasedPoses.add(one)
+        zeroBasedPoses.add(one, DType.INT64)
       }
     }
-    withResource(intResult) { _ =>
-      intResult.castTo(DType.INT64)
-    }
-  }
 }
 
 class GpuGetArrayStructFieldsMeta(
