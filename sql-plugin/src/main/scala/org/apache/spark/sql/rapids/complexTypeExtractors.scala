@@ -353,9 +353,7 @@ case class GpuArrayPosition(left: Expression, right: Expression)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
-        doColumnar(left, right)
-      }
+      doColumnar(left, rhs)
     }
   }
 
@@ -368,26 +366,29 @@ case class GpuArrayPosition(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val arrayCol = lhs.getBase
     val keyScalar = rhs.getBase
-    val intResult = withResource(arrayCol.listIndexOf(keyScalar,
-      FindOptions.FIND_FIRST)) { zeroBasedPoses =>
-
+    // 1. `listIndexOf` with `FindOptions.FIND_FIRST` returns the zero-based index of the first
+    //    occurrence of the key in each array if the key is found, otherwise returns -1.
+    // 2. If the key is null, all output are set to null.
+    // 3. If arrayCol[i] is null, output[i] is also null.
+    withResource(arrayCol.listIndexOf(keyScalar, FindOptions.FIND_FIRST)) { zeroBasedPoses =>
       withResource(Scalar.fromInt(1)) { one =>
-        zeroBasedPoses.add(one)
+        zeroBasedPoses.add(one, DType.INT64)
       }
-    }
-    withResource(intResult) { _ =>
-      intResult.castTo(DType.INT64)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val arrayCol = lhs.getBase
     val keyCol = rhs.getBase
+    // 1. `listIndexOf` with `FindOptions.FIND_FIRST` returns the zero-based index of the first
+    //    occurrence of each key in each array if the key is found, otherwise returns -1.
+    // 2. If keyCol[i] is null or arrayCol[i] is null, output[i] is also null.
     withResource(arrayCol.listIndexOf(keyCol, FindOptions.FIND_FIRST)) { zeroBasedPoses =>
       withResource(Scalar.fromInt(1)) { one =>
         zeroBasedPoses.add(one, DType.INT64)
       }
     }
+  }
 }
 
 class GpuGetArrayStructFieldsMeta(
