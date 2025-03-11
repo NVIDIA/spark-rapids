@@ -169,11 +169,6 @@ object TrampolineUtil {
   /** Remove the task context for the current thread */
   def unsetTaskContext(): Unit = TaskContext.unset()
 
-  val isMTThread: ThreadLocal[Boolean] = new ThreadLocal[Boolean] {
-    override def initialValue(): Boolean = false
-  }
-
-
   /** Add shutdown hook with priority */
   def addShutdownHook(priority: Int, runnable: Runnable): AnyRef = {
     ShutdownHookManager.addShutdownHook(priority)(() => runnable.run())

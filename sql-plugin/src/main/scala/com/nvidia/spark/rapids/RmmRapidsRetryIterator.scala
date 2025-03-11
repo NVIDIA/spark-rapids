@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, CudfColumnSizeOverflowException}
+import ai.rapids.cudf.CudfColumnSizeOverflowException
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -801,17 +801,19 @@ object RmmRapidsRetryIterator extends Logging {
    * Log memory footprint when GPU OOM or CPU OOM happens.
    */
 
-  var printed = false
-
   val BOOKKEEP_MEMORY: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
   // track the callstack for each memory allocation, don't enable it unless really needed
   val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
+  // By default, only print first time to avoid too much log
+  val BOOKKEEP_MEMORY_PRINT_ALL: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.printall")
+  var bookkeepPrinted = false
 
   private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
 
-    if (printed) {
+    if (bookkeepPrinted && !BOOKKEEP_MEMORY_PRINT_ALL) {
       return
     }
 
@@ -820,7 +822,7 @@ object RmmRapidsRetryIterator extends Logging {
 
     // print device memory bookkeeping
     // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
-    logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
 
     // print stack trace
     val sb = new StringBuilder("<<Jstack Details>>\n\n")
@@ -837,7 +839,7 @@ object RmmRapidsRetryIterator extends Logging {
     })
     logInfo(sb.toString())
 
-    printed = true
+    bookkeepPrinted = true
   }
 }
 

@@ -15,12 +15,11 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.{PrintWriter, StringWriter}
-
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.jni.RmmSpark
 import java.util
+
 import org.apache.spark.TaskContext
 
 /**
@@ -32,8 +31,7 @@ import org.apache.spark.TaskContext
  */
 object TaskRegistryTracker {
   private val taskToThread = new util.HashMap[Long, ArrayBuffer[Long]]()
-//  private val registeredThreads = new util.HashSet[Long]()
-  val registeredThreadsMap = new util.HashMap[Long, String]()
+  private val registeredThreads = new util.HashSet[Long]()
 
   /**
    * Clear the registry. This is used for tests
@@ -48,21 +46,13 @@ object TaskRegistryTracker {
   private def taskIsDone(taskId: Long): Unit = synchronized {
     val threads = taskToThread.remove(taskId)
     if (threads != null) {
-      threads.foreach(registeredThreadsMap.remove)
+      threads.foreach(registeredThreads.remove)
       RmmSpark.taskDone(taskId)
     }
   }
 
-  def stackTraceAsString(e: Throwable): String = {
-    val sw = new StringWriter()
-    val w = new PrintWriter(sw)
-    e.printStackTrace(w)
-    w.close()
-    sw.toString
-  }
   /**
-   * Register the current thread with the task tracker.
-   * @return TODO
+   * @return true if this attempt actually done registering
    */
   def registerThreadForRetry(): Boolean = synchronized {
     val tc = TaskContext.get()
@@ -73,9 +63,7 @@ object TaskRegistryTracker {
       // test code to make this work properly.
       val threadId = RmmSpark.getCurrentThreadId
       val taskId = tc.taskAttemptId()
-      if (registeredThreadsMap.putIfAbsent(
-        threadId, stackTraceAsString(new RuntimeException()))
-        == null) {
+      if (registeredThreads.add(threadId)) {
         RmmSpark.currentThreadIsDedicatedToTask(taskId)
         if (!taskToThread.containsKey(taskId)) {
           taskToThread.put(taskId, ArrayBuffer(threadId))
@@ -91,19 +79,18 @@ object TaskRegistryTracker {
     false
   }
 
+  /**
+   * @return true if this attempt actually done unregistering
+   */
   def unregisterThreadForRetry(): Boolean = synchronized {
     val tc = TaskContext.get()
     if (tc != null) {
       val threadId = RmmSpark.getCurrentThreadId
       val taskId = tc.taskAttemptId()
-      if (registeredThreadsMap.remove(threadId) != null) {
+      if (registeredThreads.remove(threadId)) {
         RmmSpark.removeAllCurrentThreadAssociation()
         if (taskToThread.containsKey(taskId)) {
           taskToThread.get(taskId) -= threadId
-          if (taskToThread.get(taskId).isEmpty) {
-//            throw new IllegalStateException()
-//            taskIsDone(taskId)
-          }
         }
         return true
       }
