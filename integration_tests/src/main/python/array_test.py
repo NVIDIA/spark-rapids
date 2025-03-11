@@ -251,6 +251,17 @@ def test_array_contains_for_nans(data_gen):
             array_contains(col('a'), lit(float('nan')).cast(data_gen.data_type))))
 
 
+@pytest.mark.parametrize('data_gen', orderable_gens + array_gens_sample + struct_gens_sample_with_decimal128, ids=idfn)
+def test_array_position(data_gen):
+    arr_gen = ArrayGen(data_gen)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(spark, arr_gen, data_gen).selectExpr(
+        'array_position(array(null), b)',
+        'array_position(array(), b)',
+        'array_position(a, b)',
+        'array_position(a, a[5])',
+        'array_position(a, null)'))
+
+
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 def test_array_slice(data_gen):
     length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])

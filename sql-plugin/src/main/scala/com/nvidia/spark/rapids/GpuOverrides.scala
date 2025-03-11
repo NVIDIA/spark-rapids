@@ -2692,6 +2692,22 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
+    expr[ArrayPosition](
+      "Returns the (1-based) index of the first matching element of the array as long, " +
+        "or 0 if no match is found.",
+      ExprChecks.binaryProject(
+        TypeSig.LONG,
+        TypeSig.LONG,
+        ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
+            + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY),
+          TypeSig.ARRAY.nested(TypeSig.orderable)),
+        ("key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY).nested(),
+          TypeSig.orderable)),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayPosition](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuArrayPosition(lhs, rhs)
+      }),
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
       ExprChecks.binaryProject(
