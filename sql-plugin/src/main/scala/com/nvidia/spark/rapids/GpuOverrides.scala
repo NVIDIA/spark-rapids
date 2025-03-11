@@ -4403,7 +4403,7 @@ object GpuOverrides extends Logging {
       "The backend for hash based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
             .withPsNote(TypeEnum.MAP,
               "not allowed for grouping expressions")
