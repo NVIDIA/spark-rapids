@@ -15,11 +15,12 @@
  */
 package com.nvidia.spark.rapids
 
+import java.io.{PrintWriter, StringWriter}
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.jni.RmmSpark
 import java.util
-
 import org.apache.spark.TaskContext
 
 /**
@@ -31,7 +32,8 @@ import org.apache.spark.TaskContext
  */
 object TaskRegistryTracker {
   private val taskToThread = new util.HashMap[Long, ArrayBuffer[Long]]()
-  private val registeredThreads = new util.HashSet[Long]()
+//  private val registeredThreads = new util.HashSet[Long]()
+  val registeredThreadsMap = new util.HashMap[Long, String]()
 
   /**
    * Clear the registry. This is used for tests
@@ -46,11 +48,18 @@ object TaskRegistryTracker {
   private def taskIsDone(taskId: Long): Unit = synchronized {
     val threads = taskToThread.remove(taskId)
     if (threads != null) {
-      threads.foreach(registeredThreads.remove)
+      threads.foreach(registeredThreadsMap.remove)
       RmmSpark.taskDone(taskId)
     }
   }
 
+  def stackTraceAsString(e: Throwable): String = {
+    val sw = new StringWriter()
+    val w = new PrintWriter(sw)
+    e.printStackTrace(w)
+    w.close()
+    sw.toString
+  }
   /**
    * Register the current thread with the task tracker.
    * @return TODO
@@ -64,7 +73,9 @@ object TaskRegistryTracker {
       // test code to make this work properly.
       val threadId = RmmSpark.getCurrentThreadId
       val taskId = tc.taskAttemptId()
-      if (registeredThreads.add(threadId)) {
+      if (registeredThreadsMap.putIfAbsent(
+        threadId, stackTraceAsString(new RuntimeException()))
+        == null) {
         RmmSpark.currentThreadIsDedicatedToTask(taskId)
         if (!taskToThread.containsKey(taskId)) {
           taskToThread.put(taskId, ArrayBuffer(threadId))
@@ -73,8 +84,8 @@ object TaskRegistryTracker {
           }
         } else {
           taskToThread.get(taskId) += threadId
-          return true
         }
+        return true
       }
     }
     false
@@ -85,7 +96,7 @@ object TaskRegistryTracker {
     if (tc != null) {
       val threadId = RmmSpark.getCurrentThreadId
       val taskId = tc.taskAttemptId()
-      if (registeredThreads.remove(threadId)) {
+      if (registeredThreadsMap.remove(threadId) != null) {
         RmmSpark.removeAllCurrentThreadAssociation()
         if (taskToThread.containsKey(taskId)) {
           taskToThread.get(taskId) -= threadId

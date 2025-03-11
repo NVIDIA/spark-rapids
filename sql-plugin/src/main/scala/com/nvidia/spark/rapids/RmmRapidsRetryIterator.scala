@@ -25,11 +25,10 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark, RmmSparkThreadState}
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RmmRapidsRetryIterator extends Logging {
 
@@ -597,9 +596,13 @@ object RmmRapidsRetryIterator extends Logging {
     }
 
     override def next(): K = {
+      var registeredByMe = false
+
       try {
         // We want to be sure that retry will work in all cases
-        TaskRegistryTracker.registerThreadForRetry()
+        // For main task thread, it was already registered upon onTaskStart,
+        // we just do it again here for background threads.
+        registeredByMe = TaskRegistryTracker.registerThreadForRetry()
 
         // this is set on the first exception, and we add suppressed if there are others
         // during the retry attempts
@@ -700,7 +703,7 @@ object RmmRapidsRetryIterator extends Logging {
         }
         result.get
       } finally {
-        if(TrampolineUtil.isMTThread.get()) {
+        if(registeredByMe) {
           TaskRegistryTracker.unregisterThreadForRetry()
         }
       }
