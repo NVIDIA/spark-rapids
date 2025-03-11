@@ -1619,8 +1619,8 @@ def test_agg_count(data_gen, count_func, kudo_enabled):
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
                'HashPartitioning', 'ShuffleExchangeExec', 'Count')
 @pytest.mark.parametrize('data_gen',
-                         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))
-                         , binary_gen], ids=idfn)
+                         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))],
+                         ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_groupby_list_types_fallback(data_gen, count_func, kudo_enabled):
