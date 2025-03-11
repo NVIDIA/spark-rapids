@@ -49,7 +49,7 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.avro.Schema
 
-import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 object TrampolineConnectShims {
 

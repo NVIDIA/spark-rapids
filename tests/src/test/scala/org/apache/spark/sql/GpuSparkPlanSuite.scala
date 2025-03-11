@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.plans.logical.Range
 
 class GpuSparkPlanSuite extends AnyFunSuite {
 
