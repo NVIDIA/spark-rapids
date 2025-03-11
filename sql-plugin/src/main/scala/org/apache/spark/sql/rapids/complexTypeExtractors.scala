@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import ai.rapids.cudf.ColumnView.FindOptions
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
@@ -342,6 +342,17 @@ case class GpuArrayContains(left: Expression, right: Expression)
   }
 
   override def prettyName: String = "array_contains"
+}
+
+class GpuArrayPositionMeta(
+    expr: ArrayPosition,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends BinaryExprMeta[ArrayPosition](expr, conf, parent, rule) {
+
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+    GpuArrayPosition(lhs, rhs)
+  }
 }
 
 case class GpuArrayPosition(left: Expression, right: Expression)

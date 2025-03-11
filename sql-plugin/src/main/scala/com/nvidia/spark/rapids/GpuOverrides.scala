@@ -2704,10 +2704,7 @@ object GpuOverrides extends Logging {
         ("key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY).nested(),
           TypeSig.orderable)),
-      (in, conf, p, r) => new BinaryExprMeta[ArrayPosition](in, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuArrayPosition(lhs, rhs)
-      }),
+      (in, conf, p, r) => new GpuArrayPositionMeta(in, conf, p, r)),
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
       ExprChecks.binaryProject(
