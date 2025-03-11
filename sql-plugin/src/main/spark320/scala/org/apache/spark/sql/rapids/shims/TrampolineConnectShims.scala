@@ -49,11 +49,12 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.avro.Schema
 
-import org.apache.spark.sql.SparkSession
-
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 object TrampolineConnectShims {
 
   type SparkSession = org.apache.spark.sql.SparkSession
+  type DataFrame = org.apache.spark.sql.DataFrame
 
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 
@@ -65,5 +66,19 @@ object TrampolineConnectShims {
 
   def createSchemaParser(): Schema.Parser = {
     new Schema.Parser().setValidateDefaults(false).setValidate(false)
+  }
+
+  def getLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
+
+  def createDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
+    Dataset.ofRows(spark, plan)
+  }
+
+  def getBuilder(): SparkSession.Builder = {
+    SparkSession.builder()
+  }
+
+  def hasActiveSession: Boolean = {
+    SparkSession.getActiveSession.isDefined
   }
 }

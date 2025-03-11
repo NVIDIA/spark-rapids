@@ -23,13 +23,29 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.avro.NameValidator
 import org.apache.avro.Schema
 
-import org.apache.spark.sql.classic.SparkSession
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.classic.{DataFrame, Dataset, SparkSession}
 
 object TrampolineConnectShims {
 
   type SparkSession = org.apache.spark.sql.classic.SparkSession
+  type DataFrame = org.apache.spark.sql.classic.DataFrame
 
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  def getLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
+
+  def createDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
+    Dataset.ofRows(spark, plan)
+  }
+
+  def getBuilder(): SparkSession.Builder = {
+    SparkSession.builder()
+  }
+
+  def hasActiveSession: Boolean = {
+    SparkSession.getActiveSession.isDefined
+  }
 
   def getActiveSession: SparkSession = {
     SparkSession.getActiveSession.getOrElse(

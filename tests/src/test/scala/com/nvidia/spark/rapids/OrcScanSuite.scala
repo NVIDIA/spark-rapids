@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.types.{DateType, IntegerType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
+import org.apache.spark.sql.types.{DateType, IntegerType, LongType, StringType, StructField, StructType}
 
 class OrcScanSuite extends SparkQueryCompareTestSuite {
 
