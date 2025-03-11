@@ -1564,67 +1564,10 @@ case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with Nu
 }
 
 case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with NullIntolerantShim {
-  private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
-  override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = child.dataType
 
-  private def normalizeNaNs(input: ColumnView, elementType: DataType): ColumnVector = {
-    withResource(input.isNan()) { isNaN =>
-      val canonicalNaN = if (elementType == FloatType) {
-        Scalar.fromFloat(Float.NaN)
-      } else {
-        Scalar.fromDouble(Double.NaN)
-      }
-      withResource(canonicalNaN) { canonicalNaN =>
-        isNaN.ifElse(canonicalNaN, input)
-      }
-    }
-  }
-
-  private def floatingPointArrayDistinct(
-      input: GpuColumnVector,
-      elementType: DataType): ColumnVector = {
-    val intermediateDType = if (elementType == FloatType) { DType.INT32 } else { DType.INT64 }
-    val originalDType = if (elementType == FloatType) { DType.FLOAT32 } else { DType.FLOAT64 }
-    val arrayElements = input.getBase.getChildColumnView(0)
-    
-    withResource(arrayElements) { _ =>
-      val normalizedElements = normalizeNaNs(arrayElements, elementType)
-      withResource(normalizedElements) { _ =>
-        val castedElements = normalizedElements.bitCastTo(intermediateDType)
-        withResource(castedElements) { _ =>
-          val replacedList = GpuListUtils.replaceListDataColumnAsView(input.getBase,
-                                                                      castedElements)
-          withResource(replacedList) { _ =>
-            val distinctList = replacedList.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
-            withResource(distinctList) { _ =>
-              val distinctElements = distinctList.getChildColumnView(0)
-              withResource(distinctElements) { _ =>
-                val convertedElements = distinctElements.bitCastTo(originalDType)
-                withResource(convertedElements) { _ =>
-                   val resultList = GpuListUtils.replaceListDataColumnAsView(distinctList,
-                                                                             convertedElements)
-                  withResource(resultList) { _ =>
-                    resultList.copyToColumnVector()
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val elementType = childDataType.elementType
-    elementType match {
-      case FloatType | DoubleType =>
-        // Floating points are treated differently due to -0.0 and +0.0 equality
-        floatingPointArrayDistinct(input, elementType)
-      case _ =>
-        input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
-    }
+    input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
   }
 }
 

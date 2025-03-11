@@ -2743,10 +2743,7 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + 
           TypeSig.ARRAY + TypeSig.STRUCT)),
-      (a, conf, p, r) => new UnaryExprMeta[ArrayDistinct](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuArrayDistinct(child)
-      }),
+      GpuArrayDistinctMeta),
     expr[Flatten](
       "Creates a single array from an array of arrays",
       ExprChecks.unaryProject(
