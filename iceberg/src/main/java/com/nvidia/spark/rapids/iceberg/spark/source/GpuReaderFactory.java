@@ -19,6 +19,10 @@ package com.nvidia.spark.rapids.iceberg.spark.source;
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
+import com.nvidia.spark.rapids.iceberg.parquet.MultiFile;
+import com.nvidia.spark.rapids.iceberg.parquet.MultiThread;
+import com.nvidia.spark.rapids.iceberg.parquet.SingleFile$;
+import com.nvidia.spark.rapids.iceberg.parquet.ThreadConf;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.ScanTask;
@@ -101,13 +105,20 @@ class GpuReaderFactory implements PartitionReaderFactory {
       GpuSparkInputPartition rTask = (GpuSparkInputPartition) partition;
       scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
       boolean canAccelerateRead = ret._1();
+      boolean isMultiThread = ret._2();
+
+      ThreadConf threadConf;
       if (canAccelerateRead) {
-        boolean isMultiThread = ret._2();
-        FileFormat ff = ret._3();
-        return createMultiFileBatchReader(rTask, isMultiThread, ff, metrics);
+        if (isMultiThread) {
+          threadConf = new MultiThread(rTask.getNumThreads(), rTask.getMaxNumFileProcessed());
+        } else {
+          threadConf = new MultiFile(rTask.getNumThreads());
+        }
       } else {
-        return createBatchReader(rTask, metrics);
+        threadConf = SingleFile$.MODULE$;
       }
+
+      return new GpuIcebergPartitionReader(rTask, threadConf, metrics);
     } else {
       throw new UnsupportedOperationException("Incorrect input partition type: " + partition);
     }
@@ -135,11 +146,13 @@ class GpuReaderFactory implements PartitionReaderFactory {
     boolean isSingleFormat = false, isPerFileReadEnabled = false;
     boolean canUseMultiThread = false, canUseCoalescing = false;
     FileFormat ff = null;
+
+    boolean hasNoDeletes = scans.stream().allMatch(t -> t.deletes().isEmpty());
     // Require all the files in a partition have the same file format.
     if (scans.stream().allMatch(t -> t.file().format().equals(FileFormat.PARQUET))) {
       // Now only Parquet is supported.
       canUseMultiThread = canUseParquetMultiThread;
-      canUseCoalescing = canUseParquetCoalescing;
+      canUseCoalescing = canUseParquetCoalescing && hasNoDeletes;
       isPerFileReadEnabled = isParquetPerFileReadEnabled;
       isSingleFormat = true;
       ff = FileFormat.PARQUET;

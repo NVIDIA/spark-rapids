@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.iceberg.spark;
 
 
-import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.iceberg.PlanningMode;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;

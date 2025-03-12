@@ -140,15 +140,15 @@ abstract class GpuSparkScan extends GpuScanWrapper
 
   @Override
   public Batch toBatch() {
-    List<? extends ScanTaskGroup<?>> tasks = taskGroups();
-    if (tasks.stream()
-        .flatMap(t -> t.tasks().stream())
-        .anyMatch(t -> t.isFileScanTask() && !t.asFileScanTask().deletes().isEmpty())) {
-      // TODO: We should consider falling back to the CPU implementation if deletes are present
-      //  or support deletion in the GPU implementation. We currently choose to fail fast to
-      //  align with existing behavior.
-      throw new UnsupportedOperationException("Delete filter is not supported");
-    }
+//    List<? extends ScanTaskGroup<?>> tasks = taskGroups();
+//    if (tasks.stream()
+//        .flatMap(t -> t.tasks().stream())
+//        .anyMatch(t -> t.isFileScanTask() && !t.asFileScanTask().deletes().isEmpty())) {
+//      // TODO: We should consider falling back to the CPU implementation if deletes are present
+//      //  or support deletion in the GPU implementation. We currently choose to fail fast to
+//      //  align with existing behavior.
+//      throw new UnsupportedOperationException("Delete filter is not supported");
+//    }
     return new GpuSparkBatch(
         sparkContext,
         table,

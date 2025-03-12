@@ -22,15 +22,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.apache.iceberg.Table;
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 
 import org.apache.spark.network.util.JavaUtils;
 import org.apache.spark.sql.RuntimeConfig;
-import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 

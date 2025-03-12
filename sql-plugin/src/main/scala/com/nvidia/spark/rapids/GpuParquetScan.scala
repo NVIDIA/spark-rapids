@@ -325,7 +325,7 @@ object GpuParquetScan {
 case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     dateRebaseMode: DateTimeRebaseMode, timestampRebaseMode: DateTimeRebaseMode,
-    hasInt96Timestamps: Boolean)
+    hasInt96Timestamps: Boolean, blocksFirstRowIndices: Seq[Long] = Seq.empty)
 
 private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
 

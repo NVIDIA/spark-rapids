@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.spark.SparkV2Filters;
-import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.iceberg.*;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.expressions.Binder;

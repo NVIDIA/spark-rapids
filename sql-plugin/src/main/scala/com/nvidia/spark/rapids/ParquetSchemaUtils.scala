@@ -589,7 +589,9 @@ object ParquetSchemaUtils {
       // as a list.
 
       val dataBuf = cv.getData
-      withResource(new ColumnView(DType.UINT8, dataBuf.getLength, Optional.of(0L),
+      withResource(new ColumnView(DType.UINT8,
+        Option(dataBuf).map(_.getLength).getOrElse(0L),
+        Optional.of(0L),
         dataBuf, null)) { data =>
         withResource(new ColumnView(DType.LIST, cv.getRowCount,
           Optional.of[java.lang.Long](cv.getNullCount),

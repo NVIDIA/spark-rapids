@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;

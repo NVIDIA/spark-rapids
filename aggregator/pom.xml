@@ -155,6 +155,10 @@
                             <pattern>org.apache.iceberg.parquet</pattern>
                             <shadedPattern>${rapids.shade.package}.org.apache.iceberg.parquet</shadedPattern>
                         </relocation>
+                        <relocation>
+                            <pattern>org.apache.iceberg.data.parquet</pattern>
+                            <shadedPattern>${rapids.shade.package}.org.apache.iceberg.data.parquet</shadedPattern>
+                        </relocation>
                     </relocations>
                     <filters>
                         <filter>

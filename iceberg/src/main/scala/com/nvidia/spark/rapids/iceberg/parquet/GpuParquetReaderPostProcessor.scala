@@ -20,8 +20,10 @@ import java.util.{Map => JMap}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
+import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, ParquetFileInfoWithBlockMeta}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil
 import java.util
@@ -30,7 +32,7 @@ import org.apache.iceberg.types.{Type, Types, TypeUtil}
 import org.apache.iceberg.types.Types.NestedField
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, LongType, StringType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /** Processes columnar batch after reading from parquet file.
@@ -40,18 +42,27 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  * files. So after reading from parquet, we need to deal with missing column, type promotion,
  * etc. And these are all handled in [[GpuParquetReaderPostProcessor]].
  *
- * @param fileReadSchema Schema passed to actual parquet reader.
+ * @param parquetInfo    Parquet file info with block metadata.
  * @param idToConstant   Constant fields.
  * @param expectedSchema Iceberg schema required by reader.
  */
 class GpuParquetReaderPostProcessor(
-    private[parquet] val fileReadSchema: MessageType,
+    private[parquet] val parquetInfo: ParquetFileInfoWithBlockMeta,
     private[parquet] val idToConstant: JMap[Integer, _],
     private[parquet] val expectedSchema: Schema
 ) {
-  require(fileReadSchema != null, "fileReadSchema cannot be null")
+  require(parquetInfo != null, "parquetInfo cannot be null")
+  require(parquetInfo.blocks.size == parquetInfo.blocksFirstRowIndices.size,
+    s"Parquet info block count ${parquetInfo.blocks.size} not matching parquet info block first " +
+      s"row index count ${parquetInfo.blocksFirstRowIndices.size}")
   require(idToConstant != null, "idToConstant cannot be null")
   require(expectedSchema != null, "expectedSchema cannot be null")
+
+  private[parquet] val fileReadSchema: MessageType = parquetInfo.schema
+  private[parquet] val filePath: String = parquetInfo.filePath.toString
+  private[parquet] var processedBlockRowCounts = 0L
+  private[parquet] var processedRowCount = 0L
+  private[parquet] var curBlockIndex = 0
 
   /**
    * Process columnar batch to match expected schema.
@@ -62,12 +73,11 @@ class GpuParquetReaderPostProcessor(
    */
   def process(originalBatch: ColumnarBatch): ColumnarBatch = {
     require(originalBatch != null, "Columnar batch can't be null")
-    require(fileReadSchema.getFieldCount == originalBatch.numCols(),
-      s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
-        s"columnar batch columns ${originalBatch.numCols()}")
 
-    withResource(new ColumnarBatchHandler(this, originalBatch)) { handler =>
-      TypeUtil.visit(expectedSchema, handler).left.get
+    withRetryNoSplit(GpuColumnVector.incRefCounts(originalBatch)) { batch =>
+      withResource(new ColumnarBatchHandler(this, batch)) { handler =>
+        TypeUtil.visit(expectedSchema, handler).left.get
+      }
     }
   }
 }
@@ -121,9 +131,17 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
         return GpuColumnVector.from(scalar, batch.numRows, `type`)
       }
     }
-    if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
-      throw new UnsupportedOperationException("ROW_POSITION meta column is not supported yet")
+
+    if (curFieldId == MetadataColumns.FILE_PATH.fieldId) {
+      withResource(GpuScalar.from(processor.filePath, StringType)) { scalar =>
+        return GpuColumnVector.from(scalar, batch.numRows, StringType)
+      }
     }
+
+    if (curFieldId == MetadataColumns.ROW_POSITION.fieldId) {
+      return processRowPos(batch.numRows)
+    }
+
     if (curFieldId == MetadataColumns.IS_DELETED.fieldId) {
       throw new UnsupportedOperationException("IS_DELETED meta column is not supported yet")
     }
@@ -143,6 +161,35 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
 
   override def close(): Unit = {
     withResource(vectorBuffer) { _ => }
+  }
+
+  private def processRowPos(numRows: Int): GpuColumnVector = {
+    val rowPoses = new Array[Long](numRows)
+    var curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
+    var curBlockRowStart = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+    var curBlockRowEnd = curBlockRowStart + curBlockRowCount
+    var curRowPos = curBlockRowStart + processor.processedRowCount -
+      processor.processedBlockRowCounts
+    for (i <- 0 until numRows) {
+      if (curRowPos >= curBlockRowEnd) {
+        // switch to next block
+        processor.curBlockIndex += 1
+        processor.processedBlockRowCounts += curBlockRowCount
+        curRowPos = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+
+        curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
+        curBlockRowStart = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+        curBlockRowEnd = curBlockRowStart + curBlockRowCount
+      }
+
+      rowPoses(i) = curRowPos
+      curRowPos += 1
+      processor.processedRowCount += 1
+    }
+
+    closeOnExcept(CudfColumnVector.fromLongs(rowPoses: _*)) { rowPosesCV =>
+      GpuColumnVector.fromChecked(rowPosesCV, LongType)
+    }
   }
 }
 

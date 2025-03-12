@@ -541,25 +541,25 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
-@iceberg
-@pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
-@pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
-    table = spark_tmp_table_factory.get()
-    tmpview = spark_tmp_table_factory.get()
-    def setup_iceberg_table(spark):
-        df = binary_op_df(spark, long_gen)
-        df.createOrReplaceTempView(tmpview)
-        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "TBLPROPERTIES('format-version' = 2, 'write.delete.mode' = 'merge-on-read') " + \
-                  "AS SELECT * FROM {}".format(tmpview))
-        spark.sql("DELETE FROM {} WHERE a < 0".format(table))
-    with_cpu_session(setup_iceberg_table)
-    assert_spark_exception(
-        lambda : with_gpu_session(
-            lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
-            conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
-        "UnsupportedOperationException: Delete filter is not supported")
+# @iceberg
+# @pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
+# @pytest.mark.parametrize('reader_type', rapids_reader_types)
+# def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
+#     table = spark_tmp_table_factory.get()
+#     tmpview = spark_tmp_table_factory.get()
+#     def setup_iceberg_table(spark):
+#         df = binary_op_df(spark, long_gen)
+#         df.createOrReplaceTempView(tmpview)
+#         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+#                   "TBLPROPERTIES('format-version' = 2, 'write.delete.mode' = 'merge-on-read') " + \
+#                   "AS SELECT * FROM {}".format(tmpview))
+#         spark.sql("DELETE FROM {} WHERE a < 0".format(table))
+#     with_cpu_session(setup_iceberg_table)
+#     assert_spark_exception(
+#         lambda : with_gpu_session(
+#             lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
+#             conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
+#         "UnsupportedOperationException: Delete filter is not supported")
 
 
 @iceberg

@@ -21,8 +21,9 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-
 import org.apache.spark.TaskContext
+
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -273,7 +274,7 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
  */
 class LazySpillableColumnarBatchImpl(
     cb: ColumnarBatch,
-    name: String) extends LazySpillableColumnarBatch {
+    name: String) extends LazySpillableColumnarBatch with Logging {
 
   private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
   private var spill: Option[SpillableColumnarBatch] = None
@@ -323,11 +324,13 @@ class LazySpillableColumnarBatchImpl(
     spill = None
   }
 
-  override def checkpoint(): Unit =
+  override def checkpoint(): Unit = {
     allowSpilling()
+  }
 
-  override def restore(): Unit =
+  override def restore(): Unit = {
     allowSpilling()
+  }
 
   override def toString: String = s"SpillableBatch $name $numCols X $numRows"
 }

@@ -31,6 +31,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.function.Function;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 /**
  * A GPU accelerated version of the Spark ColumnVector.
  * Most of the standard Spark APIs should never be called, as they assume that the data
@@ -1048,6 +1050,50 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         throw e;
       }
       return hostCols;
+    }
+  }
+
+  /**
+   * Concatenate multiple ColumnarBatches into a single ColumnarBatch.
+   * <br/>
+   * Similar to {{@link Table#concatenate(Table...)}} but for ColumnarBatches. The order of the columns
+   * is preserved.
+   *
+   * @param batches the ColumnarBatches to concatenate. Note that this method does not take
+   *                ownership of input batches, so caller is responsible for closing them.
+   */
+  public static ColumnarBatch concatenate(ColumnarBatch... batches) {
+    checkArgument(batches.length > 0, "At least one batch should be provided");
+    if (batches.length == 1) {
+      return batches[0];
+    }
+
+    DataType[] types = extractTypes(batches[0]);
+    Table[] tables = new Table[batches.length];
+
+    try {
+      tables[0] = from(batches[0]);
+      for (int i = 1; i < batches.length; i++) {
+        if (batches[i].numCols() != types.length) {
+          throw new IllegalArgumentException("All batches must have the same number of columns");
+        }
+
+        DataType[] batchTypes = extractTypes(batches[i]);
+        if (!Arrays.equals(types, batchTypes)) {
+          throw new IllegalArgumentException("All batches must have the same schema");
+        }
+
+        tables[i] = from(batches[i]);
+      }
+      try (Table concatenated = Table.concatenate(tables)) {
+        return from(concatenated, types);
+      }
+    } finally {
+      for (Table table : tables) {
+        if (table != null) {
+          table.close();
+        }
+      }
     }
   }
 

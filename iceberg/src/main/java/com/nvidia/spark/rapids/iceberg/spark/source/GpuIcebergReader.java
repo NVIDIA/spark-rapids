@@ -47,7 +47,7 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
                           Map<Integer, ?> idToConstant) {
     this.partReader = partReader;
     this.deleteFilter = deleteFilter;
-    this.postProcessor = new GpuParquetReaderPostProcessor(fileReadSchema, idToConstant,
+    this.postProcessor = new GpuParquetReaderPostProcessor(null, idToConstant,
         expectedSchema);
   }
 

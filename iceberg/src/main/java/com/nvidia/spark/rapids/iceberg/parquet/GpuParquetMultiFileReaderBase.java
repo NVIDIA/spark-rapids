@@ -41,6 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 import scala.collection.Seq;
+import scala.collection.Seq$;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -118,6 +119,7 @@ public abstract class GpuParquetMultiFileReaderBase implements CloseableIterator
   /**
    * The filter function for the Parquet multi-file reader
    */
+  @SuppressWarnings("unchecked")
   protected FilteredParquetFileInfo filterParquetBlocks(FileScanTask fst,
       String partFilePathString) {
     Map<Integer, ?> idToConstant = constantsMap(fst, conf.getExpectedSchema(), table);
@@ -157,10 +159,11 @@ public abstract class GpuParquetMultiFileReaderBase implements CloseableIterator
           InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
           DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
           DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
-          true //  hasInt96Timestamps
+          true, //  hasInt96Timestamps
+          (Seq<Object>) Seq$.MODULE$.empty()
       );
       return new FilteredParquetFileInfo(parquetBlockMeta,
-          new GpuParquetReaderPostProcessor(fileReadSchema, idToConstant,
+          new GpuParquetReaderPostProcessor(parquetBlockMeta, idToConstant,
               conf.getExpectedSchema()));
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to open file: " + inFile, e);
