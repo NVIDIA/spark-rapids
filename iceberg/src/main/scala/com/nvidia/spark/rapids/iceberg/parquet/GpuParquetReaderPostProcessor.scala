@@ -40,7 +40,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  * etc. And these are all handled in [[GpuParquetReaderPostProcessor]].
  *
  * @param fileReadSchema Schema passed to actual parquet reader.
- * @param idToConstant Constant fields.
+ * @param idToConstant   Constant fields.
  * @param expectedSchema Iceberg schema required by reader.
  */
 class GpuParquetReaderPostProcessor(
@@ -52,16 +52,21 @@ class GpuParquetReaderPostProcessor(
   require(idToConstant != null, "idToConstant cannot be null")
   require(expectedSchema != null, "expectedSchema cannot be null")
 
+  /**
+   * Process columnar batch to match expected schema.
+   *
+   * @param originalBatch Columnar batch read from parquet. Note that <b>the caller</b> should take
+   *                      care of managing ownership of it.
+   * @return Processed columnar batch.
+   */
   def process(originalBatch: ColumnarBatch): ColumnarBatch = {
     require(originalBatch != null, "Columnar batch can't be null")
     require(fileReadSchema.getFieldCount == originalBatch.numCols(),
       s"File read schema field count ${fileReadSchema.getFieldCount} doesn't match expected " +
         s"columnar batch columns ${originalBatch.numCols()}")
 
-    withResource(originalBatch) { _ =>
-      withResource(new ColumnarBatchHandler(this, originalBatch)) { handler =>
-        TypeUtil.visit(expectedSchema, handler).left.get
-      }
+    withResource(new ColumnarBatchHandler(this, originalBatch)) { handler =>
+      TypeUtil.visit(expectedSchema, handler).left.get
     }
   }
 }
