@@ -294,6 +294,11 @@ object RmmRapidsRetryIterator extends Logging {
     item
   }
 
+  /** Co-work with AutoCloseableSeqInternal to print the total size information when OOM */
+  trait SizeProvider {
+    def sizeInBytes: Long
+  }
+
   /**
    * AutoCloseable wrapper on Seq[T], returning a Seq[T] that can be closed.
    *
@@ -314,10 +319,11 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def toString(): String = {
       val totalSize = ts.map {
-        case scb: SpillableColumnarBatch => scb.sizeInBytes
+        case sp: SizeProvider => sp.sizeInBytes
         case _ => 0L
       }.sum
-      s"AutoCloseableSeqInternal totalSize:$totalSize, inner:[${ts.mkString(";")}]"
+      s"AutoCloseableSeqInternal totalSize:$totalSize with ${length} elements, inner:\n" +
+        s"[${ts.mkString("; ")}]"
     }
   }
 
