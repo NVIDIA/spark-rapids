@@ -79,9 +79,11 @@ private class ColumnarBatchHandler(private val processor: GpuParquetReaderPostPr
   private val vectorBuffer: ArrayBuffer[GpuColumnVector] = new ArrayBuffer[GpuColumnVector](
     batch.numCols())
 
+  override def schema(schema: Schema, structResult: HandlerResult): HandlerResult  = structResult
+
   override def struct(struct: Types.StructType, fieldResults: util.List[HandlerResult])
   : HandlerResult = {
-    val columns: Array[ColumnVector] = new Array[ColumnVector](fieldResults.size)
+    val columns = new Array[ColumnVector](fieldResults.size)
     for (i <- 0 until fieldResults.size) {
       columns(i) = fieldResults.get(i).right.get
     }
