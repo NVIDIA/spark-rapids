@@ -18,29 +18,16 @@ package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
-import ai.rapids.cudf.Scalar;
-import com.nvidia.spark.rapids.CastOptions$;
-import com.nvidia.spark.rapids.GpuCast;
-import com.nvidia.spark.rapids.GpuColumnVector;
-import com.nvidia.spark.rapids.GpuScalar;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
-import com.nvidia.spark.rapids.iceberg.parquet.ParquetReaderPostProcessor;
-import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
+import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.CloseableIterator;
-import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.types.Type;
-import org.apache.iceberg.types.TypeUtil;
-import org.apache.iceberg.types.Types;
 
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.connector.read.PartitionReader;
-import org.apache.spark.sql.types.DataType;
-import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
 /**
@@ -50,7 +37,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
   private final PartitionReader<ColumnarBatch> partReader;
   private final GpuDeleteFilter deleteFilter;
-  private final ParquetReaderPostProcessor postProcessor;
+  private final GpuParquetReaderPostProcessor postProcessor;
   private boolean needNext = true;
   private boolean isBatchPending;
 
@@ -60,7 +47,7 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
                           Map<Integer, ?> idToConstant) {
     this.partReader = partReader;
     this.deleteFilter = deleteFilter;
-    this.postProcessor = new ParquetReaderPostProcessor(fileReadSchema, idToConstant,
+    this.postProcessor = new GpuParquetReaderPostProcessor(fileReadSchema, idToConstant,
         expectedSchema);
   }
 
