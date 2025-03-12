@@ -26,7 +26,7 @@ import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerializat
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTableHeader, WriteInput}
 
@@ -291,7 +291,7 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
  */
 class SerializedTableColumn(
     val header: SerializedTableHeader,
-    val hostBuffer: HostMemoryBuffer) extends GpuColumnVectorBase(NullType) {
+    val hostBuffer: HostMemoryBuffer) extends GpuColumnVectorBase(NullType) with SizeProvider {
   override def close(): Unit = {
     if (hostBuffer != null) {
       hostBuffer.close()
@@ -301,6 +301,12 @@ class SerializedTableColumn(
   override def hasNull: Boolean = throw new IllegalStateException("should not be called")
 
   override def numNulls(): Int = throw new IllegalStateException("should not be called")
+
+  override def sizeInBytes: Long = if (hostBuffer == null) {
+    0L
+  } else {
+    hostBuffer.getLength
+  }
 }
 
 object SerializedTableColumn {
@@ -493,7 +499,7 @@ private class KudoSerializerInstance(
  * which should always appear in the query plan immediately after a shuffle.
  */
 case class KudoSerializedTableColumn(spillableKudoTable: SpillableKudoTable)
-  extends GpuColumnVectorBase(NullType) {
+  extends GpuColumnVectorBase(NullType) with SizeProvider {
   override def close(): Unit = {
     if (spillableKudoTable != null) {
       spillableKudoTable.close()
@@ -503,6 +509,12 @@ case class KudoSerializedTableColumn(spillableKudoTable: SpillableKudoTable)
   override def hasNull: Boolean = throw new IllegalStateException("should not be called")
 
   override def numNulls(): Int = throw new IllegalStateException("should not be called")
+
+  override def sizeInBytes: Long = if (spillableKudoTable == null) {
+    0L
+  } else {
+    spillableKudoTable.length
+  }
 }
 
 object KudoSerializedTableColumn {

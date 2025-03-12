@@ -38,13 +38,13 @@ import java.net.URI
 import com.nvidia.spark.rapids.GpuDataWritingCommand
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.{AnalysisException, Row, SaveMode}
+import org.apache.spark.sql.{AnalysisException, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.{CommandUtils, LeafRunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.{SparkSession => GpuSparkSession}
 import org.apache.spark.sql.sources.BaseRelation
 
 case class GpuCreateDataSourceTableAsSelectCommand(
@@ -79,7 +79,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
 
       saveDataIntoTable(
-        sparkSession, table, table.storage.locationUri, SaveMode.Append, tableExists = true)
+        TrampolineConnectShims.getActiveSession, table, table.storage.locationUri,
+        SaveMode.Append, tableExists = true)
     } else {
       table.storage.locationUri.foreach { p =>
         GpuDataWritingCommand.assertEmptyRootPath(p, mode, sparkSession.sessionState.newHadoopConf)
@@ -92,7 +93,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         table.storage.locationUri
       }
       val result = saveDataIntoTable(
-        sparkSession, table, tableLocation, SaveMode.Overwrite, tableExists = false)
+        TrampolineConnectShims.getActiveSession, table, tableLocation, SaveMode.Overwrite,
+        tableExists = false)
       val newTable = table.copy(
         storage = table.storage.copy(locationUri = tableLocation),
         // We will use the schema of resolved.relation as the schema of the table (instead of
@@ -112,13 +114,13 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
     }
 
-    CommandUtils.updateTableStats(sparkSession, table)
+    CommandUtils.updateTableStats(TrampolineConnectShims.getActiveSession, table)
 
     Seq.empty[Row]
   }
 
   private def saveDataIntoTable(
-      session: SparkSession,
+      session: GpuSparkSession,
       table: CatalogTable,
       tableLocation: Option[URI],
       mode: SaveMode,

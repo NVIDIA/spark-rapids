@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ import org.apache.avro.mapred.FsInput
 import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 
 private[rapids] class AvroSeekableInputStream(in: SeekableInput) extends InputStream
     with SeekableInput {
@@ -80,7 +82,7 @@ case class Header(
   @transient
   lazy val schema: Schema = {
     getMetaString(SCHEMA)
-      .map(s => new Schema.Parser().setValidateDefaults(false).setValidate(false).parse(s))
+      .map(s => TrampolineConnectShims.createSchemaParser().parse(s))
       .orNull
   }
 
