@@ -703,7 +703,7 @@ object RmmRapidsRetryIterator extends Logging {
         }
         result.get
       } finally {
-        if(registeredByMe) {
+        if (registeredByMe) {
           TaskRegistryTracker.unregisterThreadForRetry()
         }
       }
