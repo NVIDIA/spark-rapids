@@ -251,7 +251,12 @@ def test_array_contains_for_nans(data_gen):
             array_contains(col('a'), lit(float('nan')).cast(data_gen.data_type))))
 
 
-@pytest.mark.parametrize('data_gen', orderable_gens + array_gens_sample + struct_gens_sample_with_decimal128, ids=idfn)
+# When `data_gen` is `null_gen`, Databricks runtime will throw an exception:
+# [DATATYPE_MISMATCH.NULL_TYPE] Cannot resolve "array_position(array(NULL), NULL)" due to data type mismatch:
+# Null typed values cannot be used as arguments of `array_position`.
+orderable_gens_sample = orderable_gens + array_gens_sample + struct_gens_sample_with_decimal128
+@pytest.mark.parametrize('data_gen',
+    orderable_gens_sample.remove(null_gen) if is_databricks_runtime() else orderable_gens_sample, ids=idfn)
 def test_array_position(data_gen):
     arr_gen = ArrayGen(data_gen)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(spark, arr_gen, data_gen).selectExpr(
