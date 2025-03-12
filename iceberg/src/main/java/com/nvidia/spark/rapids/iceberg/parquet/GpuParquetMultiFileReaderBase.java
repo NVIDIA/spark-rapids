@@ -160,7 +160,8 @@ public abstract class GpuParquetMultiFileReaderBase implements CloseableIterator
           true //  hasInt96Timestamps
       );
       return new FilteredParquetFileInfo(parquetBlockMeta,
-          new ParquetReaderPostProcessor(fileReadSchema, idToConstant, conf.getExpectedSchema()));
+          new GpuParquetReaderPostProcessor(fileReadSchema, idToConstant,
+              conf.getExpectedSchema()));
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to open file: " + inFile, e);
     } catch (URISyntaxException ue) {
@@ -171,9 +172,9 @@ public abstract class GpuParquetMultiFileReaderBase implements CloseableIterator
 
   static class FilteredParquetFileInfo {
     private final ParquetFileInfoWithBlockMeta parquetBlockMeta;
-    private final ParquetReaderPostProcessor postProcessor;
+    private final GpuParquetReaderPostProcessor postProcessor;
 
-    FilteredParquetFileInfo(ParquetFileInfoWithBlockMeta parquetBlockMeta, ParquetReaderPostProcessor postProcessor) {
+    FilteredParquetFileInfo(ParquetFileInfoWithBlockMeta parquetBlockMeta, GpuParquetReaderPostProcessor postProcessor) {
       this.parquetBlockMeta = parquetBlockMeta;
       this.postProcessor = postProcessor;
     }
@@ -184,18 +185,18 @@ public abstract class GpuParquetMultiFileReaderBase implements CloseableIterator
   }
 
   static class IcebergParquetExtraInfo extends ParquetExtraInfo {
-    private final ParquetReaderPostProcessor postProcessor;
+    private final GpuParquetReaderPostProcessor postProcessor;
 
     IcebergParquetExtraInfo(DateTimeRebaseMode dateRebaseMode,
         DateTimeRebaseMode timestampRebaseMode,
-        boolean hasInt96Timestamps, ParquetReaderPostProcessor postProcessor) {
+        boolean hasInt96Timestamps, GpuParquetReaderPostProcessor postProcessor) {
       super(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps);
       this.postProcessor = postProcessor;
     }
   }
 
   static class ParquetMultiThreadBatchReader extends GpuParquetMultiFileReaderBase {
-    private final Map<String, ParquetReaderPostProcessor> postProcessorMap =
+    private final Map<String, GpuParquetReaderPostProcessor> postProcessorMap =
         Maps.newConcurrentMap();
 
     public ParquetMultiThreadBatchReader(Map<String, FileScanTask> files,
