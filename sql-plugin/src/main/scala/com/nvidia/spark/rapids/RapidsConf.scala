@@ -525,9 +525,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createWithDefault(false)
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
-    .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly. DEPRECATED: please use " +
-      "spark.rapids.memory.gpu.pool instead.")
+    .doc("[DEPRECATED]Should RMM act as a pooling allocator for GPU memory, or " +
+      "should it just pass through to CUDA memory allocation directly. Now this " +
+      "config is always ignored, please use 'spark.rapids.memory.gpu.pool' instead.")
     .startupOnly()
     .booleanConf
     .createWithDefault(true)

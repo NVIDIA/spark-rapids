@@ -305,6 +305,68 @@ object GpuDeviceManager extends Logging {
     }
   }
 
+  /**
+   * Parse the rmm allocation mode from the configs.
+   *
+   * There are two relevant configs, "isPooledMemEnabled" and "rmmPool".
+   * The former one is deprecated, and the later "rmmPool" is recommended. So
+   * "rmmPool" will always be respected when they conflict with each other.
+   *
+   * Return the rmm allocation mode as an Int, see "RmmAllocationMode" for
+   * supported types.
+   *
+   * (Visible for tests)
+   */
+  def rmmModeFromConf(
+      conf: RapidsConf,
+      features: Option[ArrayBuffer[String]] = None): Int = {
+    // Conflict check first
+    val poolDisabledByNewConf = "none".equalsIgnoreCase(conf.rmmPool)
+    if (conf.isPooledMemEnabled && poolDisabledByNewConf) {
+      logWarning(s"Configs conflict: '${RapidsConf.RMM_POOL.key}' is set to 'NONE', " +
+        s"but '${RapidsConf.POOLED_MEM.key}' is set to 'true'. Still disable RMM pool " +
+        s"since '${RapidsConf.POOLED_MEM.key}' is deprecated.")
+    } else if (!conf.isPooledMemEnabled && !poolDisabledByNewConf) {
+      logWarning(s"Configs conflict: '${RapidsConf.RMM_POOL.key}' is NOT set to " +
+        s"'NONE', but '${RapidsConf.POOLED_MEM.key}' is set to 'false'. Still enable RMM " +
+        s"pool since '${RapidsConf.POOLED_MEM.key}' is deprecated.")
+    }
+
+    var init = conf.rmmPool match {
+      case c if "default".equalsIgnoreCase(c) =>
+        if (Cuda.isPtdsEnabled) {
+          logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
+            "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
+            "We recommend you use the ARENA allocator when PTDS is enabled.")
+        }
+        features.foreach(_ += "POOLED")
+        RmmAllocationMode.POOL
+      case c if "arena".equalsIgnoreCase(c) =>
+        features.foreach(_ += "ARENA")
+        RmmAllocationMode.ARENA
+      case c if "async".equalsIgnoreCase(c) =>
+        features.foreach(_ += "ASYNC")
+        RmmAllocationMode.CUDA_ASYNC
+      case c if "none".equalsIgnoreCase(c) =>
+        // Pooling is disabled.
+        RmmAllocationMode.CUDA_DEFAULT
+      case c =>
+        throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
+    }
+
+    if (conf.isUvmEnabled) {
+      // Enable managed memory only if async allocator is not used.
+      if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
+        features.foreach(_ += "UVM")
+        init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
+      } else {
+        throw new IllegalArgumentException(
+          "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
+      }
+    }
+    init
+  }
+
   private def initializeRmmGpuPool(gpuId: Int, conf: RapidsConf): Unit = {
     if (!Rmm.isInitialized) {
       val poolSize = conf.chunkedPackPoolSize
@@ -322,46 +384,8 @@ object GpuDeviceManager extends Logging {
 
       val info = Cuda.memGetInfo()
       val poolAllocation = computeRmmPoolSize(conf, info)
-      var init = RmmAllocationMode.CUDA_DEFAULT
-      val features = ArrayBuffer[String]()
-      if (conf.isPooledMemEnabled) {
-        init = conf.rmmPool match {
-          case c if "default".equalsIgnoreCase(c) =>
-            if (Cuda.isPtdsEnabled) {
-              logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
-                  "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
-                  "We recommend you use the ARENA allocator when PTDS is enabled.")
-            }
-            features += "POOLED"
-            init | RmmAllocationMode.POOL
-          case c if "arena".equalsIgnoreCase(c) =>
-            features += "ARENA"
-            init | RmmAllocationMode.ARENA
-          case c if "async".equalsIgnoreCase(c) =>
-            features += "ASYNC"
-            init | RmmAllocationMode.CUDA_ASYNC
-          case c if "none".equalsIgnoreCase(c) =>
-            // Pooling is disabled.
-            init
-          case c =>
-            throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
-        }
-      } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
-        logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
-          "to false; however, this configuration is deprecated and the behavior may change in a " +
-          "future release.")
-      }
-
-      if (conf.isUvmEnabled) {
-        // Enable managed memory only if async allocator is not used.
-        if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
-          features += "UVM"
-          init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
-        } else {
-          throw new IllegalArgumentException(
-            "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
-        }
-      }
+      val features = new ArrayBuffer[String](3 /* 1.pool type, 2.uvm mode, 3.log sink */)
+      var init = rmmModeFromConf(conf, Some(features))
 
       val logConf: Rmm.LogConf = conf.rmmDebugLocation match {
         case c if "none".equalsIgnoreCase(c) => null
