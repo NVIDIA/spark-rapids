@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 
@@ -468,7 +470,9 @@ object RmmRapidsRetryIterator extends Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        val message = s"could not split inputs and retry. The current attempt: " +
+        val message = s"could not split inputs and retry. " +
+          s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+          s"The current attempt: " +
           s"{${attemptStack.head}}"
         if (isFromGpuOom) {
           throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
@@ -489,19 +493,27 @@ object RmmRapidsRetryIterator extends Logging {
           // Otherwise, some unit tests will fail due to the wrong exception type returned.
         case go: GpuRetryOOM =>
           throw new GpuRetryOOM(
-            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+            s"GPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case go: GpuSplitAndRetryOOM =>
           throw new GpuSplitAndRetryOOM(
-            s"GPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+            s"GPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case co: CpuRetryOOM =>
           throw new CpuRetryOOM(
-            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+            s"CPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(co)
         case co: CpuSplitAndRetryOOM =>
           throw new CpuSplitAndRetryOOM(
-            s"CPU OutOfMemory: Could not split the current attempt: {$attemptAsString}"
+            s"CPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(co)
       }
       // the splitted sequence needs to be inserted in reverse order
@@ -616,6 +628,7 @@ object RmmRapidsRetryIterator extends Logging {
         if (!firstAttempt) {
           // call thread block API
           try {
+            threadCountBlockedUntilReady.incrementAndGet()
             RmmSpark.blockThreadUntilReady()
           } catch {
             case _: GpuSplitAndRetryOOM =>
@@ -624,6 +637,8 @@ object RmmRapidsRetryIterator extends Logging {
             case _: CpuSplitAndRetryOOM =>
               doSplit = true
               isFromGpuOom = false
+          } finally {
+            threadCountBlockedUntilReady.decrementAndGet()
           }
         }
         firstAttempt = false
@@ -800,6 +815,8 @@ object RmmRapidsRetryIterator extends Logging {
   // track the callstack for each memory allocation, don't enable it unless really needed
   val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
+
+  val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
 
   private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
 
