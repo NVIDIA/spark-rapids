@@ -23,6 +23,7 @@ import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.sys.process._
 import scala.util.Try
 
@@ -39,6 +40,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -134,11 +136,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.02.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-25.04.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-25.02.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.04.0-cuda11.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-25.02.0-cuda11.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-25.04.0-cuda11.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -352,20 +354,29 @@ object RapidsPluginUtils extends Logging {
     val resourceName = "spark-rapids-extra-plugins"
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
     val resourceUrls = classLoader.getResources(resourceName)
-    val resourceUrlArray = resourceUrls.asScala.toArray
+    // Somehow, it is possible that the definition of same Plugin occurs multiple times in the
+    // resourceUrls. Therefore, deduplication work is essential in case of loading some plugins
+    // repeatedly.
+    val distinctResources = mutable.HashSet.empty[URL]
+    while (resourceUrls.hasMoreElements) {
+      val url = resourceUrls.nextElement()
+      if (distinctResources.contains(url)) {
+        logWarning(s"Found duplicated definition of ExtraPlugin: $url! Discarded it.")
+      } else {
+        distinctResources.add(url)
+      }
+    }
 
-    if (resourceUrlArray.isEmpty) {
+    if (distinctResources.isEmpty) {
       logDebug(s"Could not find file $resourceName in the classpath, not loading extra plugins")
       Seq.empty
     } else {
-      val plugins = scala.collection.mutable.ListBuffer[SparkPlugin]()
-      for (resourceUrl <- resourceUrlArray) {
+      distinctResources.iterator.flatMap { resourceUrl =>
         val source = scala.io.Source.fromURL(resourceUrl)
         val pluginClasses = source.getLines().toList
         source.close()
-        plugins ++= loadExtensions(classOf[SparkPlugin], pluginClasses)
-      }
-      plugins.toSeq
+        loadExtensions(classOf[SparkPlugin], pluginClasses)
+      }.toList
     }
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,6 +172,9 @@ abstract class GpuShuffleExchangeExecBase(
   import GpuMetric._
 
   private lazy val useKudo = RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf)
+  private lazy val kudoBufferCopyMeasurementEnabled = RapidsConf
+    .SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED
+    .get(child.conf)
 
   private lazy val useGPUShuffle = {
     gpuOutputPartitioning match {
@@ -223,7 +226,7 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    allMetrics, sparkTypes, useKudo)
+    allMetrics, sparkTypes, useKudo, kudoBufferCopyMeasurementEnabled)
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -289,10 +292,6 @@ object GpuShuffleExchangeExecBase {
   val METRIC_DESC_SHUFFLE_WRITE_IO_TIME = "RAPIDS shuffle shuffle write io time"
   val METRIC_SHUFFLE_READ_TIME = "rapidsShuffleReadTime"
   val METRIC_DESC_SHUFFLE_READ_TIME = "RAPIDS shuffle shuffle read time"
-  val METRIC_SHUFFLE_SER_CALC_HEADER_TIME = "rapidsShuffleSerializationCalcHeaderTime"
-  val METRIC_DESC_SHUFFLE_SER_CALC_HEADER_TIME = "RAPIDS shuffle serialization calc header time"
-  val METRIC_SHUFFLE_SER_COPY_HEADER_TIME = "rapidsShuffleSerializationCopyHeaderTime"
-  val METRIC_DESC_SHUFFLE_SER_COPY_HEADER_TIME = "RAPIDS shuffle serialization copy header time"
   val METRIC_SHUFFLE_SER_COPY_BUFFER_TIME = "rapidsShuffleSerializationCopyBufferTime"
   val METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME = "RAPIDS shuffle serialization copy buffer time"
 
@@ -318,10 +317,6 @@ object GpuShuffleExchangeExecBase {
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_WRITE_IO_TIME),
     METRIC_SHUFFLE_READ_TIME ->
         gpu.createNanoTimingMetric(ESSENTIAL_LEVEL, METRIC_DESC_SHUFFLE_READ_TIME),
-    METRIC_SHUFFLE_SER_CALC_HEADER_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_CALC_HEADER_TIME),
-    METRIC_SHUFFLE_SER_COPY_HEADER_TIME ->
-        gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_HEADER_TIME),
     METRIC_SHUFFLE_SER_COPY_BUFFER_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL, METRIC_DESC_SHUFFLE_SER_COPY_BUFFER_TIME)
   )

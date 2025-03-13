@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -294,6 +294,11 @@ object RmmRapidsRetryIterator extends Logging {
     item
   }
 
+  /** Co-work with AutoCloseableSeqInternal to print the total size information when OOM */
+  trait SizeProvider {
+    def sizeInBytes: Long
+  }
+
   /**
    * AutoCloseable wrapper on Seq[T], returning a Seq[T] that can be closed.
    *
@@ -314,10 +319,11 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def toString(): String = {
       val totalSize = ts.map {
-        case scb: SpillableColumnarBatch => scb.sizeInBytes
+        case sp: SizeProvider => sp.sizeInBytes
         case _ => 0L
       }.sum
-      s"AutoCloseableSeqInternal totalSize:$totalSize, inner:[${ts.mkString(";")}]"
+      s"AutoCloseableSeqInternal totalSize:$totalSize with ${length} elements, inner:\n" +
+        s"[${ts.mkString("; ")}]"
     }
   }
 
@@ -622,6 +628,9 @@ object RmmRapidsRetryIterator extends Logging {
         }
         firstAttempt = false
         if (doSplit) {
+          if (BOOKKEEP_MEMORY) {
+            logMemoryBookkeeping()
+          }
           attemptIter.split(isFromGpuOom)
         }
         doSplit = false
@@ -780,6 +789,41 @@ object RmmRapidsRetryIterator extends Logging {
   def splitTargetSizeInHalfCpu: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
     (target: AutoCloseableTargetSize) => {
       splitTargetSizeInHalfInternal(target, false)
+  }
+
+  /**
+   * Log memory footprint when GPU OOM or CPU OOM happens.
+   */
+
+  val BOOKKEEP_MEMORY: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
+  // track the callstack for each memory allocation, don't enable it unless really needed
+  val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
+
+  private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
+
+    // print host memory bookkeeping
+    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+
+    // print device memory bookkeeping
+    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+
+    // print stack trace
+    val sb = new StringBuilder("<<Jstack Details>>\n\n")
+    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+    => {
+      // Print the thread name and its state
+      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+        s"- Thread ID: ${thread.getId}\n")
+      // Print the stack trace for this thread
+      for (element <- stackTrace) {
+        sb.append(s"\tat $element")
+      }
+      sb.append("\n\n")
+    })
+    logInfo(sb.toString())
   }
 }
 

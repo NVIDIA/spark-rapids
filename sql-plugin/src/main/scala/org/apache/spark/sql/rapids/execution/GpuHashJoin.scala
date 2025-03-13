@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,7 +128,10 @@ object GpuHashJoin {
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
+  }
 
+  // This is used by sort join and broadcast join
+  def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide): Unit = {
     buildSide match {
       case GpuBuildLeft if !canBuildLeft(joinType) =>
         meta.willNotWorkOnGpu(s"$joinType does not support left-side build")

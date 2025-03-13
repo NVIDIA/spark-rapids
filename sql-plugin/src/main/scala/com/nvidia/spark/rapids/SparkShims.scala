@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession => SqlSparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, Pa
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 
 trait SparkShims {
@@ -65,6 +66,7 @@ trait SparkShims {
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+  def getPartitionings: Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Map.empty
   def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
     DataWritingCommandRule[_ <: DataWritingCommand]]
   def getRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]]
@@ -74,7 +76,7 @@ trait SparkShims {
       newPlan: SparkPlan): BroadcastQueryStageExec
 
   def getFileScanRDD(
-      sparkSession: SparkSession,
+      sparkSession: SqlSparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,

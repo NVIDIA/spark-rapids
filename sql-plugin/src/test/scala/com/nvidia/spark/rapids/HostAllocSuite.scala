@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -349,8 +349,9 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       // put RMM back for other tests to use
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-    // 1 GiB
-    PinnedMemoryPool.initialize(1 * 1024 * 1024 * 1024)
+    // less than 1 GiB, see more background at:
+    // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
+    PinnedMemoryPool.initialize(500 * 1024 * 1024)
     HostAlloc.initialize(-1)
   }
 

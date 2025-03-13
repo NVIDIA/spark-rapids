@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.rapids.shims.TrampolineUtilShim
 
 object SparkSessionHolder extends Logging {
   private var spark = createSparkSession()
@@ -39,7 +40,7 @@ object SparkSessionHolder extends Logging {
   }
 
   private def createSparkSession(): SparkSession = {
-    SparkSession.cleanupAnyExistingSession()
+    TrampolineUtilShim.cleanupAnyExistingSession()
 
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     Locale.setDefault(Locale.US)
@@ -114,7 +115,7 @@ trait SparkTestBase extends AnyFunSuite with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     super.afterAll()
-    SparkSession.cleanupAnyExistingSession()
+    TrampolineUtilShim.cleanupAnyExistingSession()
   }
 
   def assertSame(expected: Any, actual: Any, epsilon: Double = 0.0,

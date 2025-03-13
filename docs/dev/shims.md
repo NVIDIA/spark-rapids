@@ -40,6 +40,16 @@ for conflicting Shim implementations.
 
 ### Compile-time issues
 
+#### Methods added in new versions
+
+If the base class or trait in the new version just adds new methods on top of previous versions and can be implemented
+with default behavior, they can be added directly to the unshimmed class. For methods introduced
+in newer versions that do not exist in older versions, removing the override keyword ensures that
+these methods are treated as new additions rather than overrides. This allows the same class to work
+across different Spark versions.
+
+#### Different parent class signatures
+
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
@@ -68,17 +78,17 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 Spark 3.0.2's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-25.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-25.02.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-25.02.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-25.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-25.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-25.04.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-25.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-25.02.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-25.02.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-25.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-25.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-25.04.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes

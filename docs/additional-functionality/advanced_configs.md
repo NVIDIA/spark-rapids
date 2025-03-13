@@ -78,12 +78,12 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.csv.enabled"></a>spark.rapids.sql.format.csv.enabled|When set to false disables all csv input and output acceleration. (only input is currently supported anyways)|true|Runtime
 <a name="sql.format.csv.read.enabled"></a>spark.rapids.sql.format.csv.read.enabled|When set to false disables csv input acceleration|true|Runtime
 <a name="sql.format.delta.write.enabled"></a>spark.rapids.sql.format.delta.write.enabled|When set to false disables Delta Lake output acceleration.|true|Runtime
-<a name="sql.format.hive.text.enabled"></a>spark.rapids.sql.format.hive.text.enabled|When set to false disables Hive text table acceleration|true|Runtime
+<a name="sql.format.hive.text.enabled"></a>spark.rapids.sql.format.hive.text.enabled|When set to false disables Hive text table acceleration. Array/Struct/Map columns are unsupported for acceleration.|true|Runtime
 <a name="sql.format.hive.text.read.decimal.enabled"></a>spark.rapids.sql.format.hive.text.read.decimal.enabled|Hive text file reading is not 100% compatible when reading decimals. Hive has more limitations on what is valid compared to the GPU implementation in some corner cases. See https://github.com/NVIDIA/spark-rapids/issues/7246|true|Runtime
 <a name="sql.format.hive.text.read.double.enabled"></a>spark.rapids.sql.format.hive.text.read.double.enabled|Hive text file reading is not 100% compatible when reading doubles.|true|Runtime
-<a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration|true|Runtime
+<a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration. Array/Struct/Map columns are unsupported for read acceleration.|true|Runtime
 <a name="sql.format.hive.text.read.float.enabled"></a>spark.rapids.sql.format.hive.text.read.float.enabled|Hive text file reading is not 100% compatible when reading floats.|true|Runtime
-<a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration|false|Runtime
+<a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration. Array/Struct/Map columns are unsupported for write acceleration.|true|Runtime
 <a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
 <a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|true|Runtime
@@ -200,6 +200,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Atanh"></a>spark.rapids.sql.expression.Atanh|`atanh`|Inverse hyperbolic tangent|true|None|
 <a name="sql.expression.AttributeReference"></a>spark.rapids.sql.expression.AttributeReference| |References an input column|true|None|
 <a name="sql.expression.BRound"></a>spark.rapids.sql.expression.BRound|`bround`|Round an expression to d decimal places using HALF_EVEN rounding mode|true|None|
+<a name="sql.expression.Bin"></a>spark.rapids.sql.expression.Bin|`bin`|Returns the string representation of the long value `expr` represented in binary|true|None|
 <a name="sql.expression.BitLength"></a>spark.rapids.sql.expression.BitLength|`bit_length`|The bit length of string data|true|None|
 <a name="sql.expression.BitwiseAnd"></a>spark.rapids.sql.expression.BitwiseAnd|`&`|Returns the bitwise AND of the operands|true|None|
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
@@ -344,6 +345,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Sin"></a>spark.rapids.sql.expression.Sin|`sin`|Sine|true|None|
 <a name="sql.expression.Sinh"></a>spark.rapids.sql.expression.Sinh|`sinh`|Hyperbolic sine|true|None|
 <a name="sql.expression.Size"></a>spark.rapids.sql.expression.Size|`cardinality`, `size`|The size of an array or a map|true|None|
+<a name="sql.expression.Slice"></a>spark.rapids.sql.expression.Slice|`slice`|Subsets array x starting from index start (array indices start at 1, or starting from the end if start is negative) with the specified length.|true|None|
 <a name="sql.expression.SortArray"></a>spark.rapids.sql.expression.SortArray|`sort_array`|Returns a sorted array with the input array and the ascending / descending order|true|None|
 <a name="sql.expression.SortOrder"></a>spark.rapids.sql.expression.SortOrder| |Sort order|true|None|
 <a name="sql.expression.SparkPartitionID"></a>spark.rapids.sql.expression.SparkPartitionID|`spark_partition_id`|Returns the current partition id|true|None|

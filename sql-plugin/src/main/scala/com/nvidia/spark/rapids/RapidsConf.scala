@@ -65,7 +65,7 @@ object ConfHelper {
       s.trim.toDouble
     } catch {
       case _: IllegalArgumentException =>
-        throw new IllegalArgumentException(s"$key should be integer, but was $s")
+        throw new IllegalArgumentException(s"$key should be double, but was $s")
     }
   }
 
@@ -1276,6 +1276,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val TEST_ORC_STRIPE_SIZE_ROWS = conf("spark.rapids.sql.test.orc.write.stripeSizeRows")
+    .doc("Only to be used in tests. When set to a valid value(no less than 512, as specified " +
+      "in cudf), the ORC writer will use this value as the maximum number of rows per stripe. " +
+      "Additionally, the ORC writer rounds the number of elements in each stripe " +
+      "(except the last) to a multiple of 8 to efficiently encode the validity masks. " +
+      "If not set, the ORC writer will use the default value 1,000,000.")
+    .internal()
+    .integerConf
+    .checkValue(v => v >= 512, "The stripe size rows must be no less than 512.")
+    .createOptional
+
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
       "Pre-projection leverages the tiered projection to evaluate expressions that " +
@@ -1483,21 +1494,24 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
-      .doc("When set to false disables Hive text table acceleration")
+      .doc("When set to false disables Hive text table acceleration. " +
+           "Array/Struct/Map columns are unsupported for acceleration.")
       .booleanConf
       .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.read.enabled")
-      .doc("When set to false disables Hive text table read acceleration")
+      .doc("When set to false disables Hive text table read acceleration. " +
+           "Array/Struct/Map columns are unsupported for read acceleration.")
       .booleanConf
       .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_WRITE: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.write.enabled")
-      .doc("When set to false disables Hive text table write acceleration")
+      .doc("When set to false disables Hive text table write acceleration. " +
+           "Array/Struct/Map columns are unsupported for write acceleration.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
       .doc("Hive text file reading is not 100% compatible when reading floats.")
@@ -1739,13 +1753,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.parquet.useHybridReader")
+  val HYBRID_PARQUET_READER = conf("spark.rapids.sql.hybrid.parquet.enabled")
     .doc("Use HybridScan to read Parquet data using CPUs. The underlying implementation " +
-        "leverages both Gluten and Velox. Supports Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 " +
-        "as Gluten does, also supports other versions but not fully tested.")
+      "leverages both Gluten and Velox. Supports Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1 " +
+      "as Gluten does, also supports other versions but not fully tested.")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val HYBRID_PARQUET_PRELOAD_CAP = conf("spark.rapids.sql.hybrid.parquet.numPreloadedBatches")
+    .doc("Preloading capacity of HybridParquetScan. If > 0, will enable preloading" +
+      " the result of HybridParquetScan asynchronously in a separate thread")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
 
   // This config name is the same as HybridPluginWrapper in Hybrid jar,
   // can not refer to Hybrid jar because of the jar is optional.
@@ -1755,6 +1776,28 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .startupOnly()
     .booleanConf
     .createWithDefault(false)
+
+  object HybridFilterPushdownType extends Enumeration {
+    val CPU, GPU, OFF = Value
+  }
+
+  val PUSH_DOWN_FILTERS_TO_HYBRID = conf("spark.rapids.sql.hybrid.parquet.filterPushDown")
+    .doc("Push down all supported filters to CPU if set to CPU. " +
+      "If set to GPU, no filters will be pushed down so all filters are on the GPU. " +
+      "If set to OFF, filters will be both pushed down and keeped on the GPU. " +
+      "OFF is to make the behavior same as before.")
+    .internal()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(HybridFilterPushdownType.values.map(_.toString))
+    .createWithDefault(HybridFilterPushdownType.CPU.toString)
+
+  val HYBRID_EXPRS_WHITELIST = conf("spark.rapids.sql.hybrid.whitelistExprs")
+    .doc("White list of expressions that can be pushed down to CPU. " +
+      "The expressions are separated by comma.")
+    .internal()
+    .stringConf
+    .createWithDefault("")
 
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
@@ -2025,6 +2068,15 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
+    conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
+    .doc("Enable or disable measuring buffer copy time when using Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -2269,23 +2321,40 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .createWithDefault(10L*1024*1024)
 
   val CHUNKED_PACK_BOUNCE_BUFFER_SIZE = conf("spark.rapids.sql.chunkedPack.bounceBufferSize")
-      .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
+      .doc("Amount of GPU memory (in bytes) to set aside at startup per chunked pack " +
           "bounce buffer, needed during spill from GPU to host memory. ")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .checkValue(v => v >= 1L*1024*1024,
         "The chunked pack bounce buffer must be at least 1MB in size")
-      .createWithDefault(128L * 1024 * 1024)
+      .createWithDefault(32L * 1024 * 1024)
+
+  val CHUNKED_PACK_BOUNCE_BUFFER_COUNT = conf("spark.rapids.sql.chunkedPack.bounceBuffers")
+    .doc("Number of chunked pack bounce buffers, needed during spill from GPU to host memory. ")
+    .internal()
+    .integerConf
+    .checkValue(v => v >= 1,
+      "The chunked pack bounce buffer count must be at least 1")
+    .createWithDefault(4)
 
   val SPILL_TO_DISK_BOUNCE_BUFFER_SIZE =
     conf("spark.rapids.memory.host.spillToDiskBounceBufferSize")
       .doc("Amount of host memory (in bytes) to set aside at startup for the " +
-          "bounce buffer used for gpu to disk spill that bypasses the host store.")
+        "bounce buffer used for gpu to disk spill that bypasses the host store.")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .checkValue(v => v >= 1,
         "The gpu to disk spill bounce buffer must have a positive size")
-      .createWithDefault(128L * 1024 * 1024)
+      .createWithDefault(32L * 1024 * 1024)
+
+  val SPILL_TO_DISK_BOUNCE_BUFFER_COUNT =
+    conf("spark.rapids.memory.host.spillToDiskBounceBuffers")
+      .doc("Number of bounce buffers used for gpu to disk spill that bypasses the host store.")
+      .internal()
+      .integerConf
+      .checkValue(v => v >= 1,
+        "The gpu to disk spill bounce buffer count must be positive")
+      .createWithDefault(4)
 
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
@@ -2347,6 +2416,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} ")
     .booleanConf
     .createWithDefault(false)
+
+  val ENABLE_HASH_FUNCTION_IN_PARTITIONING =
+    conf("spark.rapids.sql.partitioning.hashFunction.enabled")
+      .doc("When false, Only Murmur3Hash is used for GPU hash partitioning to " +
+        "align with the regular Spark. When enabled, GPU will try to infer the hash " +
+        "function from the CPU hash partitioning and use the same one. This is for " +
+        "a customized Spark supporting multiple hash functions in hash partitioning. " +
+        "So far only 'HiveHash' and 'Murmur3Hash' are supported on GPU. This requires " +
+        s"'${INCOMPATIBLE_OPS.key}' to also be set to true.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val TAG_LORE_ID_ENABLED = conf("spark.rapids.sql.lore.tag.enabled")
     .doc("Enable add a LORE id to each gpu plan node")
@@ -2450,7 +2531,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2847,7 +2928,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val useHybridParquetReader: Boolean = get(HYBRID_PARQUET_READER)
 
+  lazy val hybridParquetPreloadBatches: Int = get(HYBRID_PARQUET_PRELOAD_CAP)
+
   lazy val loadHybridBackend: Boolean = get(LOAD_HYBRID_BACKEND)
+
+  lazy val pushDownFiltersToHybrid: String = get(PUSH_DOWN_FILTERS_TO_HYBRID)
+
+  lazy val hybridExprsWhitelist: String = get(HYBRID_EXPRS_WHITELIST)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
@@ -2990,6 +3077,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
+  lazy val testOrcStripeSizeRows: Option[Integer] = get(TEST_ORC_STRIPE_SIZE_ROWS)
+
   lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
@@ -3112,6 +3201,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoSerializerEnabled: Boolean = get(SHUFFLE_KUDO_SERIALIZER_ENABLED)
 
+  lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
+    get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
+
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.UCX
@@ -3230,7 +3322,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
 
+  lazy val chunkedPackBounceBufferCount: Int = get(CHUNKED_PACK_BOUNCE_BUFFER_COUNT)
+
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
+
+  lazy val spillToDiskBounceBufferCount: Int = get(SPILL_TO_DISK_BOUNCE_BUFFER_COUNT)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
@@ -3241,6 +3337,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val isHashFuncPartitioningEnabled: Boolean = get(ENABLE_HASH_FUNCTION_IN_PARTITIONING)
 
   lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
 

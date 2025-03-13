@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -63,8 +63,6 @@ source jenkins/databricks/setup.sh
 source jenkins/databricks/common_vars.sh
 
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
-SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${BASE_SPARK_VERSION//./}db}
-SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM//\-SNAPSHOT/}
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 
 IS_SPARK_321_OR_LATER=0
@@ -74,9 +72,7 @@ IS_SPARK_321_OR_LATER=0
 # --packages in distributed setups, should be fixed by
 # https://github.com/NVIDIA/spark-rapids/pull/5646
 
-# Enable event log for qualification & profiling tools testing
-export PYSP_TEST_spark_eventLog_enabled=true
-mkdir -p /tmp/spark-events
+export PYSP_TEST_spark_rapids_shims_spark350db143_enabled=${PYSP_TEST_spark_rapids_shims_spark350db143_enabled:-true}
 
 rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
@@ -86,7 +82,7 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SPARK_SHIM_VER.RapidsShuffleManager \
     SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
     bash integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }

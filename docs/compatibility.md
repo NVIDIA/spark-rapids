@@ -634,6 +634,7 @@ guaranteed to produce the same results as the CPU:
 - `dd/MM/yyyy`
 - `yyyy/MM/dd`
 - `yyyy-MM-dd`
+- `yyyy-mm-dd`
 - `yyyyMMdd`
 - `yyyymmdd`
 - `yyyy/MM/dd HH:mm:ss`
@@ -647,6 +648,8 @@ LEGACY timeParserPolicy support has the following limitations when running on th
   that Spark uses in legacy mode
 - When format is/contains `yyyyMMdd` or `yyyymmdd`, GPU only supports 8 digit strings for these formats.
   Spark supports like 7 digit `2024101` string while GPU does not support. Only tested `UTC` and
+  `Asia/Shanghai` timezones.
+- When format is `yyyy-mm-dd`, only supports 2 digit `mm` and 2 digit `dd`. Only tested `UTC` and
   `Asia/Shanghai` timezones.
 
 ## Formatting dates and timestamps as strings

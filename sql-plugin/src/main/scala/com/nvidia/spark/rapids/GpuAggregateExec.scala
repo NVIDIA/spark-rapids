@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatches}
+import com.nvidia.spark.rapids.GpuAggregateIterator.{computeAggregateAndClose, computeAggregateWithoutPreprocessAndClose, concatenateBatchesWithRetry}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -134,7 +134,7 @@ object AggregateUtils extends Logging {
    * @param batches batches to concatenate and merge aggregate
    * @return lazy spillable batch which has NOT been marked spillable
    */
-  def concatenateAndMerge(
+  def concatenateAndMergeWithRetry(
       batches: mutable.ArrayBuffer[SpillableColumnarBatch],
       metrics: GpuHashAggregateMetrics,
       concatAndMergeHelper: AggHelper): SpillableColumnarBatch = {
@@ -142,10 +142,8 @@ object AggregateUtils extends Logging {
     //   of batches for the partial aggregate case. This would be done in case
     //   a retry failed a certain number of times.
     val concatBatch = withResource(batches) { _ =>
-      val concatSpillable = concatenateBatches(metrics, batches.toSeq)
-      withResource(concatSpillable) {
-        _.getColumnarBatch()
-      }
+      val concatSpillable = concatenateBatchesWithRetry(metrics, batches.toSeq)
+      withRetryNoSplit(concatSpillable)(_.getColumnarBatch())
     }
     computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
   }
@@ -178,7 +176,7 @@ object AggregateUtils extends Logging {
                 aggregatedBatches.next
                 return nextBatch
               }
-              val merged = concatenateAndMerge(stagingBatches, metrics, helper)
+              val merged = concatenateAndMergeWithRetry(stagingBatches, metrics, helper)
               stagingBatches.clear
               currentSize = 0L
               if (merged.sizeInBytes < configuredTargetBatchSize * 0.5) {
@@ -197,7 +195,7 @@ object AggregateUtils extends Logging {
           if (stagingBatches.size == 1) {
             return stagingBatches.head
           }
-          concatenateAndMerge(stagingBatches, metrics, helper)
+          concatenateAndMergeWithRetry(stagingBatches, metrics, helper)
         }
         }
       }
@@ -237,11 +235,7 @@ object AggregateUtils extends Logging {
         NvtxColor.CYAN, metrics.repartitionTime)) { _ =>
 
         withResource(new GpuBatchSubPartitioner(
-          Seq(batch).map(batch => {
-            withResource(batch) { _ =>
-              batch.getColumnarBatch()
-            }
-          }).iterator,
+          Iterator(withRetryNoSplit(batch)(_.getColumnarBatch())),
           hashKeys, hashBucketNum, hashSeed, "aggRepartition")) {
           partitioner => {
             (0 until partitioner.partitionsCount).foreach { id =>
@@ -525,7 +519,7 @@ class AggHelper(
     // We need to merge the aggregated batches into 1 before calling post process,
     // if the aggregate code had to split on a retry
     if (aggregatedSeq.size > 1) {
-      val concatted = concatenateBatches(metrics, aggregatedSeq)
+      val concatted = concatenateBatchesWithRetry(metrics, aggregatedSeq)
       withRetryNoSplit(concatted) { attempt =>
         withResource(attempt.getColumnarBatch()) { cb =>
           SpillableColumnarBatch(
@@ -707,7 +701,7 @@ object GpuAggregateIterator extends Logging {
    * @param toConcat spillable batches to concatenate
    * @return concatenated batch result
    */
-  def concatenateBatches(
+  def concatenateBatchesWithRetry(
       metrics: GpuHashAggregateMetrics,
       toConcat: Seq[SpillableColumnarBatch]): SpillableColumnarBatch = {
     if (toConcat.size == 1) {
@@ -973,10 +967,9 @@ class GpuMergeAggregateIterator(
           return generateEmptyReductionBatch()
         } else {
           hasReductionOnlyBatch = false
-          val concat = AggregateUtils.concatenateAndMerge(batches, metrics, concatAndMergeHelper)
-          return withResource(concat) { cb =>
-            cb.getColumnarBatch()
-          }
+          val concat =
+            AggregateUtils.concatenateAndMergeWithRetry(batches, metrics, concatAndMergeHelper)
+          return withRetryNoSplit(concat)(_.getColumnarBatch())
         }
       }
 
@@ -1069,10 +1062,8 @@ class GpuMergeAggregateIterator(
           spillCbs += tmp
         }
 
-        val concat = GpuAggregateIterator.concatenateBatches(metrics, spillCbs.toSeq)
-        withResource(concat) { _ =>
-          concat.getColumnarBatch()
-        }
+        val concat = concatenateBatchesWithRetry(metrics, spillCbs.toSeq)
+        withRetryNoSplit(concat)(_.getColumnarBatch())
       }
     }
   }
@@ -1104,7 +1095,7 @@ class GpuMergeAggregateIterator(
                 }
               }
 
-              AggregateUtils.concatenateAndMerge(
+              AggregateUtils.concatenateAndMergeWithRetry(
                 toAggregateBuckets.flatMap(_.data), metrics, concatAndMergeHelper)
           }
         }
@@ -1389,8 +1380,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       val estimatedInputSize = gpuChild.output.map { attr =>
         GpuBatchUtils.estimateGpuMemory(attr.dataType, attr.nullable, numRowsForEstimate)
       }.sum
-      val estimatedOutputSize = preProcessAggHelper.preStepBound.outputTypes.map { dt =>
-        GpuBatchUtils.estimateGpuMemory(dt, true, numRowsForEstimate)
+      val estimatedOutputSize = preProcessAggHelper.preStepBound.outputExprs.map { e =>
+        GpuBatchUtils.estimateGpuMemory(e.dataType, true, numRowsForEstimate)
       }.sum
       if (estimatedInputSize == 0 && estimatedOutputSize == 0) {
         1.0
@@ -2088,7 +2079,7 @@ class DynamicGpuPartialAggregateIterator(
     skipAggPassReductionRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
-  private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
+  private[this] val isReductionOnly = boundGroupExprs.outputExprs.isEmpty
 
   // When doing a reduction we don't have the aggIter setup for the very first time
   // so we have to match what happens for the normal reduction operations.
@@ -2108,18 +2099,22 @@ class DynamicGpuPartialAggregateIterator(
       helper: AggHelper): (Iterator[ColumnarBatch], Boolean) = {
     // we need to decide if we are going to sort the data or not, so the very
     // first thing we need to do is get a batch and make a choice.
-    val cb = cbIter.next()
     withResource(new NvtxWithMetrics("dynamic sort heuristic", NvtxColor.BLUE,
       metrics.opTime, metrics.heuristicTime)) { _ =>
-      lazy val estimatedGrowthAfterAgg: Double = closeOnExcept(cb) { cb =>
-        val numRows = cb.numRows()
-        val cardinality = estimateCardinality(cb)
-        val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
-          helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-        (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
-      }
-      val wrappedIter = Seq(cb).toIterator ++ cbIter
-      (wrappedIter, estimatedGrowthAfterAgg > 1.0)
+
+        withRetryNoSplit(SpillableColumnarBatch(cbIter.next(),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            val numRows = cb.numRows()
+            val cardinality = estimateCardinality(cb)
+            val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
+              helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+            val estimatedGrowthAfterAgg =
+              (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
+            val wrappedIter = Seq(GpuColumnVector.incRefCounts(cb)).toIterator ++ cbIter
+            (wrappedIter, estimatedGrowthAfterAgg > 1.0)
+          }
+        }
     }
   }
 
@@ -2143,8 +2138,7 @@ class DynamicGpuPartialAggregateIterator(
     // After sorting we want to split the input for the project so that
     // we don't get ourselves in trouble.
     val sortedSplitIter = new PreProjectSplitIterator(sortedIter,
-      inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
-      metrics.opTime, metrics.numPreSplits)
+      preProcessAggHelper.preStepBound, metrics.opTime, metrics.numPreSplits)
 
     val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper,
       metrics)
@@ -2162,8 +2156,7 @@ class DynamicGpuPartialAggregateIterator(
     // We still want to split the input, because the heuristic may not be perfect and
     //  this is relatively light weight
     val splitInputIter = new PreProjectSplitIterator(inputIter,
-      inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
-      metrics.opTime, metrics.numPreSplits)
+      preProcessAggHelper.preStepBound, metrics.opTime, metrics.numPreSplits)
 
     val localInputRowsMetrics = new LocalGpuMetric
 

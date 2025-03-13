@@ -73,6 +73,7 @@ Atanh,4
 AttributeReference,4
 Average,4
 BRound,4
+Bin,4
 BitLength,4
 BitwiseAnd,4
 BitwiseNot,4
@@ -240,6 +241,7 @@ Signum,4
 Sin,4
 Sinh,4
 Size,4
+Slice,4
 SortArray,4
 SortOrder,4
 SparkPartitionID,4

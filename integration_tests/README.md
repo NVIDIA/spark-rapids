@@ -263,7 +263,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-25.02.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-25.02.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-25.04.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-25.04.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -286,7 +286,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -384,6 +384,19 @@ non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is
 test_my_new_added_case_for_sequence_operator()
 ```
 
+### Running with Hybrid execution
+The hybrid tests require extra jars. To enable hybrid tests, the following prerequisites are required::
+- Build Gluten bundle jar, Gluten thirdparty jar, refer to [link](../docs/dev/hybrid-execution.md#build)
+- Download Hybrid jar, refer to [link](../docs/dev/hybrid-execution.md#download-rapids-hybrid-jar-from-maven-repo)
+
+Execute the following command to run Hybrid tests:
+```shell
+$ LOAD_HYBRID_BACKEND=1 \
+  HYBRID_BACKEND_JARS=/path/to/${GLUTEN_BUNDLE_JAR},/path/to/${GLUTEN_THIRD_PARTY_JAR},/path/to/HYBRID_JAR \
+  ./integration_tests/run_pyspark_from_build.sh -m hybrid_test
+```
+For more information about Hybrid feature, refer to [link](../docs/dev/hybrid-execution.md)
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
@@ -443,7 +456,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-25.02.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.02.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-25.04.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
