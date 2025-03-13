@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -26,6 +26,7 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.DataOutputStream
 import java.net.Socket
 
+import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -68,6 +69,15 @@ class GpuGroupUDFArrowPythonRunner(
       partitionIndex: Int,
       context: TaskContext): WriterThread = {
     new WriterThread(env, worker, inputIterator, partitionIndex, context) {
+
+      override def run(): Unit = Utils.logUncaughtExceptions {
+        TaskContext.setTaskContext(context)
+        // For writer thread, it is essentially a split of the original task, so we want to
+        // treat it exactly like the main task thread, e.g. being registered for its whole lifecycle
+        TaskRegistryTracker.registerThreadForRetry()
+        RmmSpark.bindPropagateThreads(RmmSpark.getCurrentThreadId, readerNativeThreadId)
+        super.run()
+      }
 
       val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, maxBatchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {

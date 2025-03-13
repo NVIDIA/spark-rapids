@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -21,6 +21,7 @@ package org.apache.spark.sql.rapids.execution.python
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.GpuColumnVector
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.python.shims.GpuBasePythonRunner
@@ -43,4 +44,6 @@ trait GpuPythonRunnerCommon { _: GpuBasePythonRunner[_] =>
     bufferSize >= 4,
     "Pandas execution requires more than 4 bytes. Please set higher buffer. " +
       s"Please change '${SQLConf.PANDAS_UDF_BUFFER_SIZE.key}'.")
+
+  val readerNativeThreadId = RmmSpark.getCurrentThreadId
 }
