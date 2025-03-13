@@ -159,8 +159,7 @@ case class GpuShuffledHashJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     readOption: CoalesceReadOption,
-    override val isSkewJoin: Boolean
-    )(
+    override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
   with GpuSubPartitionHashJoin {
