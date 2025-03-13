@@ -1622,8 +1622,8 @@ def test_agg_count(data_gen, count_func, kudo_enabled):
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
                'HashPartitioning', 'ShuffleExchangeExec', 'Count')
 @pytest.mark.parametrize('data_gen',
-                         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))
-                         , binary_gen], ids=idfn)
+                         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))],
+                         ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_groupby_list_types_fallback(data_gen, count_func, kudo_enabled):
@@ -2441,6 +2441,58 @@ def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled):
         conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
             'spark.rapids.sql.agg.singlePassPartialSortEnabled': True,
             kudo_enabled_conf_key: kudo_enabled})
+
+@ignore_order(local=True)
+def test_kudo_serializer_debug_dump(spark_tmp_path):
+    dump_prefix = spark_tmp_path + "/kudo_dump/"
+    conf = {
+        kudo_enabled_conf_key: "true",
+        "spark.rapids.shuffle.kudo.serializer.debug.mode": "ALWAYS",
+        "spark.rapids.shuffle.kudo.serializer.debug.dump.prefix": dump_prefix
+    }
+
+    def shuffle_operation(spark):
+        df = gen_df(spark, [('id', int_gen)])
+        return df.groupBy(df.id % 10).agg(
+            f.count("*").alias("count"),
+            f.sum("id").alias("sum")
+        )
+    
+    assert_gpu_and_cpu_are_equal_collect(shuffle_operation, conf=conf)
+
+    assert os.path.exists(dump_prefix)
+    assert os.path.isdir(dump_prefix)
+    assert len(os.listdir(dump_prefix)) > 0
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("gen", [
+    binary_gen,
+    ArrayGen(binary_gen),
+    ArrayGen(ArrayGen(binary_gen)),
+    StructGen([('s1', int_gen), ('b2', binary_gen)]),
+    StructGen([('s1', int_gen), ('b2', ArrayGen(ArrayGen(binary_gen)))])], ids=idfn)
+@allow_non_gpu('ShuffleExchangeExec')
+def test_group_by_binary(gen):
+    gen_list = [('c_binary', gen), ('c_int', int_gen)]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen_list),
+        "tab",
+        "select c_binary, sum(c_int) from tab group by c_binary")
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("gen", [
+    binary_gen,
+    ArrayGen(binary_gen),
+    ArrayGen(ArrayGen(binary_gen)),
+    StructGen([('s1', int_gen), ('b2', binary_gen)]),
+    StructGen([('s1', int_gen), ('b2', ArrayGen(ArrayGen(binary_gen)))])], ids=idfn)
+@allow_non_gpu('ShuffleExchangeExec')
+def test_group_by_binary(gen):
+    gen_list = [('c_binary', gen), ('c_int', int_gen)]
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen_list),
+        "tab",
+        "select c_binary, sum(c_int) from tab group by c_binary")
 
 @ignore_order(local=True)
 def test_kudo_serializer_debug_dump(spark_tmp_path):

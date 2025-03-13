@@ -20,7 +20,7 @@ import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession => SqlSparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, Pa
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 
 trait SparkShims {
@@ -75,7 +76,7 @@ trait SparkShims {
       newPlan: SparkPlan): BroadcastQueryStageExec
 
   def getFileScanRDD(
-      sparkSession: SparkSession,
+      sparkSession: SqlSparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,

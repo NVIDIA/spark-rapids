@@ -20,26 +20,9 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.avro.NameValidator
-import org.apache.avro.Schema
-
 import org.apache.spark.sql.classic.SparkSession
 
-object TrampolineConnectShims {
+object TrampolineUtilShim {
 
-  type SparkSession = org.apache.spark.sql.classic.SparkSession
-
-  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
-
-  def getActiveSession: SparkSession = {
-    SparkSession.getActiveSession.getOrElse(
-      throw new IllegalStateException("No active SparkSession found")
-    )
-  }
-
-  def createSchemaParser(): Schema.Parser = {
-    // Spark-4.0+ depends on Avro-1.12.0 where validate() is removed and we need to use
-    // NameValidator interface instead of validate() method.
-    new Schema.Parser(NameValidator.NO_VALIDATION).setValidateDefaults(false)
-  }
+  def cleanupAnyExistingSession() = SparkSession.cleanupAnyExistingSession()
 }

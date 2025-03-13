@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350db143"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -32,7 +32,7 @@ object PartitionedFileUtilsShim extends PartitionedFileUtilsShimBase {
                  isSplitable: Boolean,
                  maxSplitBytes: Long,
                  partitionValues: InternalRow): Seq[PartitionedFile] = {
-    PartitionedFileUtil.splitFiles(file, isSplitable, maxSplitBytes, partitionValues)
+    PartitionedFileUtil.splitFiles(file, file.getPath, isSplitable, maxSplitBytes, partitionValues)
   }
 
 } // object PartitionFileUtilsShim;
