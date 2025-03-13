@@ -43,7 +43,6 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     // pool allocation here is less than the default minimum
     val minPoolFraction = 0.01
     val conf = new SparkConf()
-        .set(RapidsConf.POOLED_MEM.key, "true")
         .set(RapidsConf.RMM_POOL.key, "ARENA")
         .set(RapidsConf.RMM_ALLOC_FRACTION.key, poolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MIN_FRACTION.key, minPoolFraction.toString)
@@ -86,7 +85,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
 
   test("RMM mode pool enabled with deprecated conf being false") {
     val rapidsConf = new RapidsConf(Map(
-      RapidsConf.POOLED_MEM.key -> "false",
+      "spark.rapids.memory.gpu.pooling.enabled" -> "false",
       RapidsConf.RMM_POOL.key -> "ARENA"))
     val mode = GpuDeviceManager.rmmModeFromConf(rapidsConf)
     val isPoolEnabled = (mode & RmmAllocationMode.ARENA) != RmmAllocationMode.CUDA_DEFAULT
@@ -96,7 +95,7 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
 
   test("RMM mode pool disabled with deprecated conf being true") {
     val rapidsConf = new RapidsConf(Map(
-      RapidsConf.POOLED_MEM.key -> "true",
+      "spark.rapids.memory.gpu.pooling.enabled" -> "true",
       RapidsConf.RMM_POOL.key -> "NONE"))
     val mode = GpuDeviceManager.rmmModeFromConf(rapidsConf)
     val isPoolDisabled =

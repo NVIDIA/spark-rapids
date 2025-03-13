@@ -320,16 +320,11 @@ object GpuDeviceManager extends Logging {
   def rmmModeFromConf(
       conf: RapidsConf,
       features: Option[ArrayBuffer[String]] = None): Int = {
-    // Conflict check first
-    val poolDisabledByNewConf = "none".equalsIgnoreCase(conf.rmmPool)
-    if (conf.isPooledMemEnabled && poolDisabledByNewConf) {
-      logWarning(s"Configs conflict: '${RapidsConf.RMM_POOL.key}' is set to 'NONE', " +
-        s"but '${RapidsConf.POOLED_MEM.key}' is set to 'true'. Still disable RMM pool " +
-        s"since '${RapidsConf.POOLED_MEM.key}' is deprecated.")
-    } else if (!conf.isPooledMemEnabled && !poolDisabledByNewConf) {
-      logWarning(s"Configs conflict: '${RapidsConf.RMM_POOL.key}' is NOT set to " +
-        s"'NONE', but '${RapidsConf.POOLED_MEM.key}' is set to 'false'. Still enable RMM " +
-        s"pool since '${RapidsConf.POOLED_MEM.key}' is deprecated.")
+    // Old config warning
+    val oldPoolConfKey = "spark.rapids.memory.gpu.pooling.enabled"
+    if (conf.rapidsConfMap.containsKey(oldPoolConfKey)) {
+      logWarning(s"Found '$oldPoolConfKey' is being used, but it will be ignored " +
+        s"since it is completely dropped now.")
     }
 
     var init = conf.rmmPool match {
