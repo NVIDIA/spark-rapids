@@ -634,8 +634,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark350db143</spark.version.classifier>
                 <spark.version>${spark350db143.version}</spark.version>
                 <spark.test.version>${spark350db143.version}</spark.test.version>
@@ -872,6 +870,7 @@
                                 <configuration>
                                     <!-- Metals looks at the repo root. so to accomodate scala 2.13  define -->
                                     <bloopConfigDir>${bloop.configDirectory}</bloopConfigDir>
+                                    <downloadSources>true</downloadSources>
                                 </configuration>
                             </execution>
                         </executions>
@@ -974,10 +973,10 @@
         <spark353.version>3.5.3</spark353.version>
         <spark354.version>3.5.4</spark354.version>
         <spark355.version>3.5.5</spark355.version>
-        <spark400.version>4.0.0-SNAPSHOT</spark400.version>
+        <spark400.version>4.0.1-SNAPSHOT</spark400.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
-        <scala.plugin.version>4.9.1</scala.plugin.version>
+        <scala.plugin.version>4.9.2</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
         <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
@@ -1624,7 +1623,7 @@ This will force full Scala code rebuild in downstream modules.
             <plugin>
                 <groupId>ch.epfl.scala</groupId>
                 <artifactId>bloop-maven-plugin</artifactId>
-                <version>2.0.0</version>
+                <version>2.0.1</version>
                 <executions>
                     <execution>
                         <id>default-cli</id>

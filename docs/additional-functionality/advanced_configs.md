@@ -78,12 +78,12 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.csv.enabled"></a>spark.rapids.sql.format.csv.enabled|When set to false disables all csv input and output acceleration. (only input is currently supported anyways)|true|Runtime
 <a name="sql.format.csv.read.enabled"></a>spark.rapids.sql.format.csv.read.enabled|When set to false disables csv input acceleration|true|Runtime
 <a name="sql.format.delta.write.enabled"></a>spark.rapids.sql.format.delta.write.enabled|When set to false disables Delta Lake output acceleration.|true|Runtime
-<a name="sql.format.hive.text.enabled"></a>spark.rapids.sql.format.hive.text.enabled|When set to false disables Hive text table acceleration|true|Runtime
+<a name="sql.format.hive.text.enabled"></a>spark.rapids.sql.format.hive.text.enabled|When set to false disables Hive text table acceleration. Array/Struct/Map columns are unsupported for acceleration.|true|Runtime
 <a name="sql.format.hive.text.read.decimal.enabled"></a>spark.rapids.sql.format.hive.text.read.decimal.enabled|Hive text file reading is not 100% compatible when reading decimals. Hive has more limitations on what is valid compared to the GPU implementation in some corner cases. See https://github.com/NVIDIA/spark-rapids/issues/7246|true|Runtime
 <a name="sql.format.hive.text.read.double.enabled"></a>spark.rapids.sql.format.hive.text.read.double.enabled|Hive text file reading is not 100% compatible when reading doubles.|true|Runtime
-<a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration|true|Runtime
+<a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration. Array/Struct/Map columns are unsupported for read acceleration.|true|Runtime
 <a name="sql.format.hive.text.read.float.enabled"></a>spark.rapids.sql.format.hive.text.read.float.enabled|Hive text file reading is not 100% compatible when reading floats.|true|Runtime
-<a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration|false|Runtime
+<a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration. Array/Struct/Map columns are unsupported for write acceleration.|true|Runtime
 <a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
 <a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|true|Runtime
