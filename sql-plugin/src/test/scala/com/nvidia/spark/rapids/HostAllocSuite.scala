@@ -128,7 +128,10 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       setDaemon(true)
       start()
       val waitForStart = doIt(new TaskThreadOp[Void]() {
-        override def doIt(): Void = null
+        override def doIt(): Void = {
+          TaskRegistryTracker.registerThreadForRetry()
+          null
+        }
 
         override def toString: String = s"INIT TASK $name TASK $taskId"
       })
