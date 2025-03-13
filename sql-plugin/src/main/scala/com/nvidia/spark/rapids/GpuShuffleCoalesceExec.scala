@@ -23,12 +23,14 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.FileUtils.createTempFile
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoHostMergeResult, KudoSerializer}
+import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoHostMergeResult, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
+import org.apache.hadoop.conf.Configuration
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -83,15 +85,19 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 }
 
 /** A case class to pack some options. Now it has only one, but may have more in the future */
-case class CoalesceReadOption private(kudoEnabled: Boolean)
+case class CoalesceReadOption private(kudoEnabled: Boolean, kudoDebugMode: String, kudoDebugDumpPrefix: String)
 
 object CoalesceReadOption {
   def apply(conf: SQLConf): CoalesceReadOption = {
-    CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf))
+    CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf),
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf))
   }
 
   def apply(conf: RapidsConf): CoalesceReadOption = {
-    CoalesceReadOption(conf.shuffleKudoSerializerEnabled)
+    CoalesceReadOption(conf.shuffleKudoSerializerEnabled,
+      conf.shuffleKudoSerializerDebugMode,
+      conf.shuffleKudoSerializerDebugDumpPrefix)
   }
 }
 
@@ -121,7 +127,7 @@ object GpuShuffleCoalesceUtils {
       metricsMap: Map[String, GpuMetric],
       prefetchFirstBatch: Boolean = false): Iterator[ColumnarBatch] = {
     val hostIter = if (readOption.kudoEnabled) {
-      new KudoHostShuffleCoalesceIterator(iter, targetSize, metricsMap, dataTypes)
+      new KudoHostShuffleCoalesceIterator(iter, targetSize, metricsMap, dataTypes, readOption)
     } else {
       new HostShuffleCoalesceIterator(iter, targetSize, metricsMap)
     }
@@ -233,7 +239,7 @@ case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
   override def close(): Unit = {}
 }
 
-class KudoTableOperator(kudo: Option[KudoSerializer])
+class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOption)
   extends SerializedTableOperator[KudoSerializedTableColumn] {
   require(kudo != null, "kudo serializer should not be null")
 
@@ -245,7 +251,24 @@ class KudoTableOperator(kudo: Option[KudoSerializer])
     column.spillableKudoTable.header
     .getNumRows
 
+  private def buildMergeOptions(): MergeOptions = {
+    println(s"readOption.kudoDebugMode: ${readOption.kudoDebugMode}")
+    println(s"readOption.kudoDebugDumpPrefix: ${readOption.kudoDebugDumpPrefix}")
+    val dumpOption = readOption.kudoDebugMode match {
+      case "NEVER" => DumpOption.Never
+      case "ALWAYS" => DumpOption.Always
+      case "ONFAILURE" => DumpOption.OnFailure
+    }
+    if (dumpOption != DumpOption.Never) {
+      val (out, path) = createTempFile(new Configuration(), readOption.kudoDebugDumpPrefix, ".bin")
+      new MergeOptions(dumpOption, out, path.toString)
+    } else {
+      new MergeOptions(dumpOption, null, null)
+    }
+  }
+
   override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
+    println(s"concatOnHost columns: ${columns.length}")
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
@@ -254,7 +277,7 @@ class KudoTableOperator(kudo: Option[KudoSerializer])
     } else {
       // "lock" all input tables in memory before merge
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
-        val result = kudo.get.mergeOnHost(kudoTables)
+        val result = kudo.get.mergeOnHost(kudoTables, buildMergeOptions())
         KudoHostMergeResultWrapper(result)
       }
     }
@@ -377,7 +400,9 @@ class KudoHostShuffleCoalesceIterator(
     iter: Iterator[ColumnarBatch],
     targetBatchSize: Long,
     metricsMap: Map[String, GpuMetric],
-    dataTypes: Array[DataType])
+    dataTypes: Array[DataType],
+    readOption: CoalesceReadOption
+    )
   extends HostCoalesceIteratorBase[KudoSerializedTableColumn](iter, targetBatchSize, metricsMap) {
   override protected def tableOperator = {
     val kudoSer = if (dataTypes.nonEmpty) {
@@ -385,7 +410,7 @@ class KudoHostShuffleCoalesceIterator(
     } else {
       None
     }
-    new KudoTableOperator(kudoSer)
+    new KudoTableOperator(kudoSer, readOption)
   }
 }
 

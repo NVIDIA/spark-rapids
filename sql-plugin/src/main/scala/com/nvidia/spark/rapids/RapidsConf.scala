@@ -2076,6 +2076,25 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE = conf("spark.rapids.shuffle.kudo.serializer.debug.mode")
+    .doc("Debug mode for Kudo serializer for the shuffle. If Always, it will dump the " +
+      "kudo tables data to the local directory. If Never, it will not dump the " +
+      "kudo tables data. If OnFailure, it will only dump the kudo tables " +
+      "data when the shuffle fails.")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(Set("ALWAYS", "NEVER", "ONFAILURE"))
+    .createWithDefault("NEVER")
+
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
+    conf("spark.rapids.shuffle.kudo.serializer.debug.dump.prefix")
+    .doc("The prefix to use for the kudo tables when using Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault("")
 
   // USER FACING DEBUG CONFIGS
 
@@ -3203,6 +3222,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
+
+  lazy val shuffleKudoSerializerDebugMode: String = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
+
+  lazy val shuffleKudoSerializerDebugDumpPrefix: String = 
+    get(SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode

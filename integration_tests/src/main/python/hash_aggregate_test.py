@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
 
 import math
 import pytest
+import os
+import tempfile
+import shutil
 
 from asserts import *
 from conftest import is_databricks_runtime, spark_jvm
@@ -2438,3 +2441,25 @@ def test_hash_agg_force_pre_sort(cast_key_to, kudo_enabled):
         conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
             'spark.rapids.sql.agg.singlePassPartialSortEnabled': True,
             kudo_enabled_conf_key: kudo_enabled})
+
+@ignore_order(local=True)
+def test_kudo_serializer_debug_dump(spark_tmp_path):
+    dump_prefix = spark_tmp_path + "/kudo_dump/"
+    conf = {
+        kudo_enabled_conf_key: "true",
+        "spark.rapids.shuffle.kudo.serializer.debug.mode": "ALWAYS",
+        "spark.rapids.shuffle.kudo.serializer.debug.dump.prefix": dump_prefix
+    }
+
+    def shuffle_operation(spark):
+        df = gen_df(spark, [('id', int_gen)])
+        return df.groupBy(df.id % 10).agg(
+            f.count("*").alias("count"),
+            f.sum("id").alias("sum")
+        )
+    
+    assert_gpu_and_cpu_are_equal_collect(shuffle_operation, conf=conf)
+
+    assert os.path.exists(dump_prefix)
+    assert os.path.isdir(dump_prefix)
+    assert len(os.listdir(dump_prefix)) > 0
