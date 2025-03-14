@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,12 +62,13 @@ case class GpuBroadcastToRowExec(
     SQLExecution.withThreadLocalCaptured[Broadcast[Any]](
       session, GpuBroadcastToRowExec.executionContext) {
       val broadcastBatch = child.executeBroadcast[Any]()
-      val result: Any = broadcastBatch.value match {
+      val rows: Array[InternalRow] = broadcastBatch.value match {
         case b: SerializeConcatHostBuffersDeserializeBatch => projectSerializedBatch(b)
         case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
         case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
       }
 
+      val result = SparkShimImpl.broadcastModeTransform(broadcastMode, rows)
       val broadcasted = sparkContext.broadcast(result)
       promise.trySuccess(broadcasted)
       broadcasted
@@ -80,7 +81,7 @@ case class GpuBroadcastToRowExec(
   }
 
   private def projectSerializedBatch(
-      serBatch: SerializeConcatHostBuffersDeserializeBatch): Any = {
+      serBatch: SerializeConcatHostBuffersDeserializeBatch): Array[InternalRow] = {
     val beforeCollect = System.nanoTime()
 
     // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
@@ -97,7 +98,7 @@ case class GpuBroadcastToRowExec(
     gpuLongMetric("dataSize") += serBatch.dataSize
     gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
 
-    SparkShimImpl.broadcastModeTransform(broadcastMode, result)
+    result
   }
 
   protected[sql] override def doExecute(): RDD[InternalRow] = {
