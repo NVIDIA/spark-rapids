@@ -107,8 +107,7 @@ case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
     extends GpuAggregateFunction with Serializable {
 
   // Consistent with Spark
-  private lazy val precision: Int =
-    Math.ceil(2.0d * Math.log(1.106d / relativeSD) / Math.log(2.0d)).toInt;
+  private lazy val precision: Int = GpuHyperLogLogPlusPlus.computePrecision(relativeSD)
 
   private lazy val numRegistersPerSketch: Int = 1 << precision;
 
@@ -189,4 +188,9 @@ case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
   override def prettyName: String = "approx_count_distinct"
 
   override def children: Seq[Expression] = Seq(childExpr)
+}
+
+object GpuHyperLogLogPlusPlus {
+  private def computePrecision(relativeSD: Double): Int =
+    Math.ceil(2.0d * Math.log(1.106d / relativeSD) / Math.log(2.0d)).toInt;
 }
