@@ -60,7 +60,7 @@ object PythonConfEntries {
     .doc("Should RMM in Python workers act as a pooling allocator for GPU memory, or" +
       " should it just pass through to CUDA memory allocation directly. When not specified," +
       s" It will honor the value of config '${RMM_POOL.key}', but now only 'DEFAULT' and" +
-      " 'NONE' is supported. If 'ASYNC' or 'ARENA' is specified, it will fall back to" +
+      " 'NONE' are supported. If 'ASYNC' or 'ARENA' is specified, it will fall back to" +
       " 'DEFAULT'.")
     .booleanConf
     .createOptional
