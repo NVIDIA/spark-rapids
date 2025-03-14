@@ -29,14 +29,13 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {

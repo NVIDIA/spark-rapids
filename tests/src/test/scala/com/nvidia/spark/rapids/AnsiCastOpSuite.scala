@@ -24,11 +24,11 @@ import scala.util.Random
 import com.nvidia.spark.rapids.shims.{CastingConfigShim, SparkShimImpl}
 
 import org.apache.spark.{SparkConf, SparkException}
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
