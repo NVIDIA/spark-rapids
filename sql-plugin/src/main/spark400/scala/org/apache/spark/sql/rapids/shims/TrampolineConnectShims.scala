@@ -34,8 +34,6 @@ object TrampolineConnectShims {
 
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 
-  def getLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
-
   def createDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
     Dataset.ofRows(spark, plan)
   }

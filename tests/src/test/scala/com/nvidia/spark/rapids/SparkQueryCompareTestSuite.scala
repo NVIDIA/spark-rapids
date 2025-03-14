@@ -29,13 +29,13 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {
@@ -79,7 +79,7 @@ object SparkSessionHolder extends Logging {
     // Add Locale setting
     Locale.setDefault(Locale.US)
 
-    val builder = TrampolineConnectShims.getBuilder()
+    val builder = getBuilder()
         .master("local[1]")
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
@@ -109,14 +109,14 @@ object SparkSessionHolder extends Logging {
   }
 
   def sparkSession: SparkSession = {
-    if (!TrampolineConnectShims.hasActiveSession) {
+    if (!hasActiveSession) {
       reinitSession()
     }
     spark
   }
 
   def resetSparkSessionConf(): Unit = {
-    if (!TrampolineConnectShims.hasActiveSession) {
+    if (!hasActiveSession) {
       reinitSession()
     } else {
       setAllConfs(origConf.toArray)

@@ -23,6 +23,6 @@ object TestTrampolineUtil {
   def toLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
 
   def toDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
-    Dataset.ofRows(spark, plan)
+    createDataFrame(spark, plan)
   }
 }

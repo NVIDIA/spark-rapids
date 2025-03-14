@@ -20,9 +20,10 @@ import org.scalatest.Ignore
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.{col, lower, upper}
 import org.apache.spark.sql.rapids.GpuRegExpUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
  /*
  * Different versions of Java support different versions of Unicode.

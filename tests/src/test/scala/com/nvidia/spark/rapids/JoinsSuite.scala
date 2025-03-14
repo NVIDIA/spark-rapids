@@ -17,12 +17,11 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.classic.DataFrame
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.ExistenceJoin
 import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
 import org.apache.spark.sql.rapids.TestTrampolineUtil
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.BooleanType
 
 class JoinsSuite extends SparkQueryCompareTestSuite {

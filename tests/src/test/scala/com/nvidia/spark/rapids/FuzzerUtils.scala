@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import scala.util.Random
 
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval

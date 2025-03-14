@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 import java.nio.charset.Charset
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
