@@ -85,7 +85,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 }
 
 /** A case class to pack some options. Now it has only one, but may have more in the future */
-case class CoalesceReadOption private(kudoEnabled: Boolean, kudoDebugMode: String, kudoDebugDumpPrefix: String)
+case class CoalesceReadOption private(kudoEnabled: Boolean, kudoDebugMode: Mode, kudoDebugDumpPrefix: String)
 
 object CoalesceReadOption {
   def apply(conf: SQLConf): CoalesceReadOption = {

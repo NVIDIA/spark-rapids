@@ -2089,8 +2089,8 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .createWithDefault("NEVER")
 
   val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
-    conf("spark.rapids.shuffle.kudo.serializer.debug.dump.prefix")
-    .doc("The prefix to use for the kudo tables when using Kudo serializer for the shuffle.")
+    conf("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix")
+    .doc("The path prefix to use for the kudo tables when using Kudo serializer for the shuffle.")
     .internal()
     .startupOnly()
     .stringConf
