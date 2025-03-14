@@ -25,7 +25,8 @@ import scala.util.Random
 
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval

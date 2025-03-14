@@ -30,6 +30,7 @@ object TrampolineConnectShims {
 
   type SparkSession = org.apache.spark.sql.classic.SparkSession
   type DataFrame = org.apache.spark.sql.classic.DataFrame
+  type Dataset = org.apache.spark.sql.classic.Dataset[org.apache.spark.sql.Row]
 
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 

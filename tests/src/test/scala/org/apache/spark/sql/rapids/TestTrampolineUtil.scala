@@ -16,21 +16,13 @@
 
 package org.apache.spark.sql.rapids
 
-import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 object TestTrampolineUtil {
-  def toLogicalPlan(df: DataFrame): LogicalPlan = {
-    // Use the shim method and handle type casting internally
-    val shimDf = df.asInstanceOf[TrampolineConnectShims.DataFrame]
-    TrampolineConnectShims.getLogicalPlan(shimDf)
-  }
+  def toLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
 
-  def toDataFrame(spark: Any, plan: LogicalPlan): DataFrame = {
-    // Use the shim method and handle type casting internally
-    TrampolineConnectShims.createDataFrame(
-      spark.asInstanceOf[TrampolineConnectShims.SparkSession],
-      plan).asInstanceOf[DataFrame]
+  def toDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
+    Dataset.ofRows(spark, plan)
   }
 }
