@@ -53,7 +53,7 @@ the Rapids hybrid jar) in the classpath by specifying:
 ## Limitations
 - Only supports CPU architecture: x86_64
 - Only supports OS: Ubuntu 20.04, Ubuntu 22.04
-- Only supports Java versions: 8, 11, 17
+- Only tested Java versions: 8, 11, 17
 - Only supports V1 Parquet data source.
 - Only supports Scala 2.12, do not support Scala 2.13.
 - Support Spark 3.2.2, 3.3.1, 3.4.2, and 3.5.1, matching [Gluten](https://github.com/apache/incubator-gluten/releases/tag/v1.2.0).
