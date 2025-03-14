@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, RmmAllocationMode}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.BeforeAndAfter
 import org.scalatest.funsuite.AnyFunSuite
@@ -81,26 +81,5 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     } finally {
       GpuDeviceManager.shutdown()
     }
-  }
-
-  test("RMM mode pool enabled with deprecated conf being false") {
-    val rapidsConf = new RapidsConf(Map(
-      "spark.rapids.memory.gpu.pooling.enabled" -> "false",
-      RapidsConf.RMM_POOL.key -> "ARENA"))
-    val mode = GpuDeviceManager.rmmModeFromConf(rapidsConf)
-    val isPoolEnabled = (mode & RmmAllocationMode.ARENA) != RmmAllocationMode.CUDA_DEFAULT
-    assert(isPoolEnabled,
-      s"RMM pool should be enabled when ${RapidsConf.RMM_POOL.key} is not 'NONE'")
-  }
-
-  test("RMM mode pool disabled with deprecated conf being true") {
-    val rapidsConf = new RapidsConf(Map(
-      "spark.rapids.memory.gpu.pooling.enabled" -> "true",
-      RapidsConf.RMM_POOL.key -> "NONE"))
-    val mode = GpuDeviceManager.rmmModeFromConf(rapidsConf)
-    val isPoolDisabled =
-      (mode & ~RmmAllocationMode.CUDA_MANAGED_MEMORY) == RmmAllocationMode.CUDA_DEFAULT
-    assert(isPoolDisabled,
-      s"RMM pool should be disabled when ${RapidsConf.RMM_POOL.key} is 'NONE'")
   }
 }
