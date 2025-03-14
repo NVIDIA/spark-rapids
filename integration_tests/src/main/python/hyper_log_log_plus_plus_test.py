@@ -36,3 +36,38 @@ def test_hllpp_reduction(data_gen):
         lambda spark: unary_op_df(spark, data_gen),
         "tab",
         "select APPROX_COUNT_DISTINCT(a) from tab")
+
+# precision = Math.ceil(2.0d * Math.log(1.106d / relativeSD) / Math.log(2.0d)).toInt
+_relativeSD = [
+    0.3,   #  precision 4
+    0.25,  #  precision 5
+    0.15,  #  precision 6
+    0.1,   #  precision 7
+    0.08,  #  precision 8
+    0.05,  #  precision 9
+    0.04,  #  precision 10
+    0.03,  #  precision 11
+    0.02,  #  precision 12
+    0.015, #  precision 13
+    0.01,  #  precision 14
+    0.008, #  precision 15
+    0.005, #  precision 16
+    0.004, #  precision 17
+    0.003, #  precision 18
+]
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('relativeSD', _relativeSD, ids=idfn)
+def test_hllpp_precisions_reduce(relativeSD):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: unary_op_df(spark, int_gen),
+        "tab",
+        f"select APPROX_COUNT_DISTINCT(a, {relativeSD}) from tab")
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('relativeSD', _relativeSD, ids=idfn)
+def test_hllpp_precisions_groupby(relativeSD):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, [("c1", int_gen), ("c2", int_gen)]),
+        "tab",
+        f"select c1, APPROX_COUNT_DISTINCT(c2, {relativeSD}) from tab group by c1")
