@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import java.sql.Timestamp
 import com.nvidia.spark.rapids.{GpuFilterExec, RapidsConf, SparkQueryCompareTestSuite}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
 class OrcFilterSuite extends SparkQueryCompareTestSuite {
 
-  private def checkPredicatePushDown(spark: SparkSession, filepath: String, numRows: Int, 
+  private def checkPredicatePushDown(spark: SparkSession, filepath: String, numRows: Int,
       predicate: String): Unit = {
     val df = spark.read.orc(filepath).where(predicate)
     val schema = df.schema
