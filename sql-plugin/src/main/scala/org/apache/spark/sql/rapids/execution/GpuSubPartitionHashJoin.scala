@@ -457,7 +457,7 @@ class GpuSubPartitionPairIterator(
     val realNumPartitions = computeNumPartitions(bigBuildBatches)
     // build partitioner
     val buildIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigBuildBatches.toSeq)
-      .map(_.getColumnarBatch())
+      .map(scb => withResource(scb){_.getColumnarBatch()})
     bigBuildBatches.clear()
     buildSubPartitioner.safeClose(new Exception())
     buildSubPartitioner = new GpuBatchSubPartitioner(buildIt, boundBuildKeys,
@@ -466,7 +466,7 @@ class GpuSubPartitionPairIterator(
 
     // stream partitioner
     val streamIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigStreamBatches.toSeq)
-      .map(_.getColumnarBatch())
+      .map(scb => withResource(scb){_.getColumnarBatch()})
     bigStreamBatches.clear()
     streamSubPartitioner.safeClose(new Exception())
     streamSubPartitioner = new GpuBatchSubPartitioner(streamIt, boundStreamKeys,
