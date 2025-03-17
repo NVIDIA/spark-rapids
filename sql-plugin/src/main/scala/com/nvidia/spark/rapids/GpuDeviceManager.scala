@@ -306,15 +306,8 @@ object GpuDeviceManager extends Logging {
   }
 
   /**
-   * Parse the rmm allocation mode from the configs.
-   *
-   * There are two relevant configs, "isPooledMemEnabled" and "rmmPool".
-   * The former one is deprecated, and the later "rmmPool" is recommended. So
-   * "rmmPool" will always be respected when they conflict with each other.
-   *
-   * Return the rmm allocation mode as an Int, see "RmmAllocationMode" for
-   * supported types.
-   *
+   * Parse the rmm allocation mode from the config, and return it as an Int,
+   * see "RmmAllocationMode" for supported types.
    * (Visible for tests)
    */
   def rmmModeFromConf(
