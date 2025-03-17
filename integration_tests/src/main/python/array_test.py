@@ -257,7 +257,7 @@ def test_array_contains_for_nans(data_gen):
 orderable_gens_sample = orderable_gens + array_gens_sample + struct_gens_sample_with_decimal128
 orderable_gens_sample_no_null = [g for g in orderable_gens_sample if g != null_gen]
 @pytest.mark.parametrize('data_gen',
-    orderable_gens_sample_no_null if is_databricks_runtime() else orderable_gens_sample, ids=idfn)
+    orderable_gens_sample_no_null if is_spark_340_or_later() or is_databricks_runtime() else orderable_gens_sample, ids=idfn)
 def test_array_position(data_gen):
     arr_gen = ArrayGen(data_gen)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(spark, arr_gen, data_gen).selectExpr(
