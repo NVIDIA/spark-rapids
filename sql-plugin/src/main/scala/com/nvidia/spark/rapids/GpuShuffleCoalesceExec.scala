@@ -29,8 +29,8 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoHostMergeResult, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
-
 import org.apache.hadoop.conf.Configuration
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -85,7 +85,8 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 }
 
 /** A case class to pack some options. Now it has only one, but may have more in the future */
-case class CoalesceReadOption private(kudoEnabled: Boolean, kudoDebugMode: Mode, kudoDebugDumpPrefix: String)
+case class CoalesceReadOption private(
+  kudoEnabled: Boolean, kudoDebugMode: String, kudoDebugDumpPrefix: String)
 
 object CoalesceReadOption {
   def apply(conf: SQLConf): CoalesceReadOption = {
@@ -260,8 +261,9 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
       case "ONFAILURE" => DumpOption.OnFailure
     }
     if (dumpOption != DumpOption.Never) {
-      val (out, path) = createTempFile(new Configuration(), readOption.kudoDebugDumpPrefix, ".bin")
-      new MergeOptions(dumpOption, out, path.toString)
+      lazy val (out, path) = 
+        createTempFile(new Configuration(), readOption.kudoDebugDumpPrefix, ".bin")
+      new MergeOptions(dumpOption, () => out, path.toString)
     } else {
       new MergeOptions(dumpOption, null, null)
     }

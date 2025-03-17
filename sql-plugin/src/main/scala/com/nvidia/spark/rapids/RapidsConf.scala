@@ -23,6 +23,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
+import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
@@ -2076,6 +2077,9 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  // ["NEVER", "ALWAYS", "ONFAILURE"]
+  val kudoDebugMode = DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
+
   val SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE = conf("spark.rapids.shuffle.kudo.serializer.debug.mode")
     .doc("Debug mode for Kudo serializer for the shuffle. If Always, it will dump the " +
       "kudo tables data to a file in spark.rapids.shuffle.kudo.serializer.debug.dump.prefix. " +
@@ -2085,7 +2089,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(Set("ALWAYS", "NEVER", "ONFAILURE"))
+    .checkValues(kudoDebugMode)
     .createWithDefault("NEVER")
 
   val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
