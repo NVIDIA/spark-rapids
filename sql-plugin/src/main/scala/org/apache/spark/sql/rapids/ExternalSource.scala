@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,8 +57,9 @@ object ExternalSource extends Logging {
   lazy val avroProvider = ShimLoaderTemp.newAvroProvider()
 
   private lazy val hasIcebergJar = {
-    Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
-        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
+    false
+//    Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
+//        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
   }
 
   private lazy val icebergProvider = IcebergProvider()
