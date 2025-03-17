@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import pytest
-import glob
 import pyarrow as pa
 import pyarrow.orc as orc
 
@@ -22,6 +21,7 @@ from spark_session import is_before_spark_320, is_databricks_version_or_later, i
 from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
+from hdfs_utils import glob
 from marks import *
 from pyspark.sql.functions import col, lit
 from pyspark.sql.types import *

@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import os
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run, is_not_utc
 from data_gen import copy_and_update, non_utc_allow
+from hdfs_utils import glob
 from marks import allow_non_gpu
 from pathlib import Path
 import pytest
@@ -72,39 +73,6 @@ if is_spark_350_or_later():
 else:
     _error_files["lz4_raw_compressed.parquet"] = "Exception"
     _error_files["lz4_raw_compressed_larger.parquet"] = "Exception"
-
-def hdfs_glob(path_str, pattern):
-    """
-    Finds hdfs files by checking the input path with glob pattern
-
-    :param path_str: hdfs path to check 
-    :type path_str: str
-    :return: generator of matched files
-    """
-    from spark_init_internal import get_spark_i_know_what_i_am_doing
-    full_pattern = os.path.join(path_str, pattern)
-    sc = get_spark_i_know_what_i_am_doing().sparkContext
-    config = sc._jsc.hadoopConfiguration()
-    fs_path = sc._jvm.org.apache.hadoop.fs.Path(full_pattern)
-    fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(fs_path.toUri(), config)
-    statuses = fs.globStatus(fs_path)
-    for status in statuses:
-        yield status.getPath().toString()
-
-def glob(path_str, pattern):
-    """
-    Finds files by checking the input path with glob pattern.
-    Support local file system and hdfs
-
-    :param path_str: input path to check 
-    :type path_str: str
-    :return: generator of matched files
-    """
-    if not path_str.startswith('hdfs:'):
-        path_list = Path(path_str).glob(pattern)
-        return [path.as_posix() for path in path_list]
-
-    return hdfs_glob(path_str, pattern)
 
 def locate_parquet_testing_files():
     """
