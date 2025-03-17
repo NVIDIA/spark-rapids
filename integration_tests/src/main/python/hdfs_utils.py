@@ -45,3 +45,5 @@ def glob(path_str, pattern):
     if not path_str.startswith('hdfs:'):
         path_list = Path(path_str).glob(pattern)
         return [path.as_posix() for path in path_list]
+
+    return hdfs_glob(path_str, pattern)
