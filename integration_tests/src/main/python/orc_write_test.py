@@ -113,7 +113,7 @@ def test_write_with_stripe_size_rows(spark_tmp_path, orc_gen, orc_impl):
         lambda spark: gen_df(spark, gen_list, stripe_size_rows + 1, num_slices=1).write.orc(data_path),
         conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True,
               'spark.rapids.sql.test.orc.write.stripeSizeRows': stripe_size_rows})
-    files = glob.glob(f"{data_path}/*.orc")
+    files = glob(data_path, "*.orc")
     assert len(files) == 1, f"Expecting 1 ORC file, but found {len(files)} files"
     # Verify the number of stripes in the written ORC file
     with pa.OSFile(files[0], 'rb') as f:
