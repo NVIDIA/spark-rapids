@@ -33,6 +33,6 @@ object GpuDeltaParquetFileFormat {
 
   def convertToGpu(relation: HadoopFsRelation): GpuDeltaParquetFileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    GpuDeltaParquetFileFormat(format.columnMappingMode, format.referenceSchema)
+    GpuDeltaParquetFileFormat(fmt.columnMappingMode, fmt.referenceSchema)
   }
 }
