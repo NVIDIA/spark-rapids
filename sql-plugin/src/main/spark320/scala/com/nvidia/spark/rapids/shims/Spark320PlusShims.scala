@@ -77,6 +77,7 @@ import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -94,8 +95,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
-  override final def sessionFromPlan(plan: SparkPlan): SparkSession = {
-    plan.session
+  def sessionFromPlan(plan: SparkPlan): SparkSession = {
+    SparkSessionUtils.sessionFromPlan(plan)
   }
 
   override def isEmptyRelation(relation: Any): Boolean = relation match {
@@ -147,8 +148,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def shouldFailDivOverflow(): Boolean = SQLConf.get.ansiEnabled
 
-  override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
-    Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
+  def leafNodeDefaultParallelism(ss: SparkSession): Int = {
+    SparkSessionUtils.leafNodeDefaultParallelism(ss)
   }
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
