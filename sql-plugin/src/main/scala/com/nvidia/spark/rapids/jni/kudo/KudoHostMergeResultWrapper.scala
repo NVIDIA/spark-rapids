@@ -51,9 +51,9 @@ case class KudoHostMergeResultWrapper(
 
 object KudoHostMergeResultWrapper {
   def apply(inner: KudoHostMergeResult): KudoHostMergeResultWrapper = {
-    KudoHostMergeResultWrapper(inner.schema, inner.columnInfoList,
-      SpillableHostBuffer(inner.hostBuf,
-        inner.hostBuf.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY
+    KudoHostMergeResultWrapper(inner.getSchema, inner.getColumnInfoList,
+      SpillableHostBuffer(inner.getHostBuf,
+        inner.getHostBuf.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY
       )
     )
   }
