@@ -185,6 +185,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.ArrayJoin"></a>spark.rapids.sql.expression.ArrayJoin|`array_join`|Concatenates the elements of the given array using the delimiter and an optional string to replace nulls. If no value is set for nullReplacement, any null value is filtered.|true|None|
 <a name="sql.expression.ArrayMax"></a>spark.rapids.sql.expression.ArrayMax|`array_max`|Returns the maximum value in the array|true|None|
 <a name="sql.expression.ArrayMin"></a>spark.rapids.sql.expression.ArrayMin|`array_min`|Returns the minimum value in the array|true|None|
+<a name="sql.expression.ArrayPosition"></a>spark.rapids.sql.expression.ArrayPosition|`array_position`|Returns the (1-based) index of the first matching element of the array as long, or 0 if no match is found.|true|None|
 <a name="sql.expression.ArrayRemove"></a>spark.rapids.sql.expression.ArrayRemove|`array_remove`|Returns the array after removing all elements that equal to the input element (right) from the input array (left)|true|None|
 <a name="sql.expression.ArrayRepeat"></a>spark.rapids.sql.expression.ArrayRepeat|`array_repeat`|Returns the array containing the given input value (left) count (right) times|true|None|
 <a name="sql.expression.ArrayTransform"></a>spark.rapids.sql.expression.ArrayTransform|`transform`|Transform elements in an array using the transform function. This is similar to a `map` in functional programming|true|None|
