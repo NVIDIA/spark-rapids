@@ -524,14 +524,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
-    .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly. DEPRECATED: please use " +
-      "spark.rapids.memory.gpu.pool instead.")
-    .startupOnly()
-    .booleanConf
-    .createWithDefault(true)
-
   val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
     .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", " +
       "\"ASYNC\", and \"NONE\". With \"DEFAULT\", the RMM pool allocator is used; with " +
@@ -2833,8 +2825,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuCoreDumpCompressionCodec: String = get(GPU_COREDUMP_COMPRESSION_CODEC)
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
-
-  lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
 
   lazy val rmmPool: String = {
     var pool = get(RMM_POOL)
