@@ -110,6 +110,7 @@ def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
                               "ExecutedCommandExec", disable_conf)
 
+@allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), \
