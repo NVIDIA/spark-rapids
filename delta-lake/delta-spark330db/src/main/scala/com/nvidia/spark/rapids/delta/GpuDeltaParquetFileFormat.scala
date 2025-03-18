@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParque
 import com.nvidia.spark.rapids.SparkPlanMeta
 
 import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.types.StructType
 
 case class GpuDeltaParquetFileFormat(
@@ -30,7 +31,8 @@ case class GpuDeltaParquetFileFormat(
 object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {}
 
-  def convertToGpu(format: DeltaParquetFileFormat): GpuDeltaParquetFileFormat = {
+  def convertToGpu(relation: HadoopFsRelation): GpuDeltaParquetFileFormat = {
+    val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     GpuDeltaParquetFileFormat(format.columnMappingMode, format.referenceSchema)
   }
 }
