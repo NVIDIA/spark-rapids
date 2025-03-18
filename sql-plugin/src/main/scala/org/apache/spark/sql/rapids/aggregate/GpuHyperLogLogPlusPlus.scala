@@ -191,6 +191,6 @@ case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
 }
 
 object GpuHyperLogLogPlusPlus {
-  private def computePrecision(relativeSD: Double): Int =
+  def computePrecision(relativeSD: Double): Int =
     Math.ceil(2.0d * Math.log(1.106d / relativeSD) / Math.log(2.0d)).toInt;
 }
