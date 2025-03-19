@@ -4043,12 +4043,14 @@ object GpuOverrides extends Logging {
                 "5: Map counts: 2 + max(depthOf(key), depthOf(value)); "
             )
           }
+          // Spark guarantee the precision is bigger or equal to 4
           val precision = GpuHyperLogLogPlusPlus.computePrecision(a.relativeSD)
-          if (precision > 18) {
-            // Spark guarantee the precision is bigger or equal to 4
+          // Spark-Rapids only supports precision <= 15
+          // https://github.com/NVIDIA/spark-rapids/issues/12347
+          if (precision > 15) {
             // cuCollection only supports precision range [4, 18]
             willNotWorkOnGpu(s"The precision $precision from relativeSD ${a.relativeSD} is bigger" +
-              s" than 18, GPU only supports precision is less or equal to 18.")
+              s" than 15, GPU only supports precision is less or equal to 15.")
           }
         }
 
