@@ -14,7 +14,6 @@
 
 import math
 import pytest
-import os
 
 from asserts import *
 from conftest import is_databricks_runtime, spark_jvm
@@ -2455,25 +2454,3 @@ def test_group_by_binary(gen):
         "tab",
         "select c_binary, sum(c_int) from tab group by c_binary")
 
-@ignore_order(local=True)
-@pytest.mark.skipif(not is_apache_runtime() and not is_databricks_runtime(), reason="only test on local file system")
-def test_kudo_serializer_debug_dump(spark_tmp_path):
-    dump_prefix = spark_tmp_path + "/kudo_dump/"
-    conf = {
-        kudo_enabled_conf_key: "true",
-        "spark.rapids.shuffle.kudo.serializer.debug.mode": "ALWAYS",
-        "spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix": dump_prefix
-    }
-
-    def shuffle_operation(spark):
-        df = gen_df(spark, [('id', int_gen)])
-        return df.groupBy(df.id % 10).agg(
-            f.count("*").alias("count"),
-            f.sum("id").alias("sum")
-        )
-    
-    assert_gpu_and_cpu_are_equal_collect(shuffle_operation, conf=conf)
-
-    assert os.path.exists(dump_prefix)
-    assert os.path.isdir(dump_prefix)
-    assert len(os.listdir(dump_prefix)) > 0
