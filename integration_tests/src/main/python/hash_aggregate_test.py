@@ -2453,4 +2453,3 @@ def test_group_by_binary(gen):
         lambda spark: gen_df(spark, gen_list),
         "tab",
         "select c_binary, sum(c_int) from tab group by c_binary")
-
