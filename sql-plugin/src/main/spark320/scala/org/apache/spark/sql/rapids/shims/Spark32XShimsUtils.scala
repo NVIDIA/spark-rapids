@@ -47,14 +47,9 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, DayTimeIntervalType, IntegerType, TimestampNTZType, TimestampType, YearMonthIntervalType}
 
 object Spark32XShimsUtils {
-
-  def leafNodeDefaultParallelism(ss: SparkSession): Int = {
-    ss.leafNodeDefaultParallelism
-  }
 
   def isValidRangeFrameType(orderSpecType: DataType, ft: DataType): Boolean = {
     (orderSpecType, ft) match {

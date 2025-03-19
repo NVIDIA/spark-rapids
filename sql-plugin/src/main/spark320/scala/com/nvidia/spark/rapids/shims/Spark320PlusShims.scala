@@ -77,6 +77,7 @@ import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
