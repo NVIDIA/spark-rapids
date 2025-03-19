@@ -114,6 +114,7 @@ def pytest_sessionstart(session):
         findspark_init()
 
     import pyspark
+    from py4j.java_gateway import java_import
 
     # Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
@@ -147,7 +148,15 @@ def pytest_sessionstart(session):
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
+
+    # Set up a listener to cancel hung Spark actions
+    java_import(_s._jvm, 'com.nvidia.spark.rapids.tests.TimeoutSparkListener')
+    # TODO make timeout configurable and overridable per test
+    hung_job_listener = _s._jvm.com.nvidia.spark.rapids.tests.TimeoutSparkListener(30, _s._jsc)
+    hung_job_listener.register()
+
     global _spark
+
     _spark = _s
 
 
