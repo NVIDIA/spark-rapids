@@ -41,44 +41,72 @@ object HybridExecutionUtils extends PredicateHelper {
       case e: ClassNotFoundException => throw new RuntimeException(
         "Hybrid jar is not in the classpath, Please add Hybrid jar into the class path, or " +
             "Please disable Hybrid feature by setting " +
-            "spark.rapids.sql.parquet.useHybridReader=false", e)
+            "spark.rapids.sql.hybrid.parquet.enabled=false", e)
     }
   }
 
-    // Determines whether using HybridScan or GpuScan
+  /**
+   * Determine if the given FileSourceScanExec is supported by HybridScan.
+   */
   def useHybridScan(conf: RapidsConf, fsse: FileSourceScanExec): Boolean = {
-    val isEnabled = if (conf.useHybridParquetReader) {
-      require(conf.loadHybridBackend,
-        "Hybrid backend was NOT loaded during the launch of spark-rapids plugin")
-      true
-    } else {
-      false
+    if (!conf.useHybridParquetReader) {
+      return false
     }
+    require(conf.loadHybridBackend,
+      "Hybrid backend was NOT loaded during the launch of spark-rapids plugin")
+    logDebug(s"HybridScan is enabled, checking if ${fsse.nodeName} can be handled by HybridScan")
+
     // Currently, only support reading Parquet
-    val isParquet = fsse.relation.fileFormat.getClass == classOf[ParquetFileFormat]
+    if (fsse.relation.fileFormat.getClass != classOf[ParquetFileFormat]) {
+      logWarning(s"Fallback to GpuScan because the file format is not Parquet: " +
+        s"${fsse.relation.fileFormat.getClass}")
+      return false
+    }
+
     // Fallback to GpuScan over the `select count(1)` cases
-    val nonEmptySchema = fsse.output.nonEmpty && fsse.requiredSchema.nonEmpty
+    if (fsse.output.isEmpty || fsse.requiredSchema.isEmpty) {
+      logWarning("Fallback to GpuScan over the `select count(1)` cases")
+      return false
+    }
+
     // Check if data types of all fields are supported by HybridParquetReader
-    lazy val allSupportedTypes = !fsse.requiredSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, {
+    fsse.requiredSchema.foreach { field =>
+      val canNotSupport = TrampolineUtil.dataTypeExistsRecursively(fsse.requiredSchema, {
         // Currently, under some circumstance, the native backend may return incorrect results
         // over MapType nested by nested types. To guarantee the correctness, disable this pattern
         // entirely.
         // TODO: figure out the root cause and support it
-        case ArrayType(_: MapType, _) => true
-        case MapType(_: MapType, _, _) | MapType(_, _: MapType, _) => true
-        case st: StructType if st.exists(_.dataType.isInstanceOf[MapType]) => true
+        case ArrayType(_: MapType, _) =>
+          logWarning(s"Fallback to GpuScan because Array of Map is not supported: $field")
+          true
+        case MapType(_: MapType, _, _) | MapType(_, _: MapType, _) =>
+          logWarning(s"Fallback to GpuScan because Map of Map is not supported: $field")
+          true
+        case st: StructType if st.exists(_.dataType.isInstanceOf[MapType]) =>
+          logWarning(s"Fallback to GpuScan because Struct of Map is not supported: $field")
+          true
         // TODO: support DECIMAL with negative scale
-        case dt: DecimalType if dt.scale < 0 => true
+        case dt: DecimalType if dt.scale < 0 =>
+          logWarning(
+            s"Fallback to GpuScan because Decimal of negative scale is not supported: $field")
+          true
         // TODO: support DECIMAL128
-        case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION => true
+        case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
+          logWarning(s"Fallback to GpuScan because Decimal128 is not supported: $field")
+          true
         // TODO: support BinaryType
-        case _: BinaryType => true
-        case _ => false
+        case _: BinaryType =>
+          logWarning(s"Fallback to GpuScan because BinaryType is not supported: $field")
+          true
+        case _ =>
+          false
       })
+      if (canNotSupport) {
+        return false
+      }
     }
 
-    isEnabled && isParquet && nonEmptySchema && allSupportedTypes
+    true
   }
 
   /**
