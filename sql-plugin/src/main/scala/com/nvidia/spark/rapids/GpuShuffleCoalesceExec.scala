@@ -253,8 +253,6 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     .getNumRows
 
   private def buildMergeOptions(): MergeOptions = {
-    println(s"readOption.kudoDebugMode: ${readOption.kudoDebugMode}")
-    println(s"readOption.kudoDebugDumpPrefix: ${readOption.kudoDebugDumpPrefix}")
     val dumpOption = readOption.kudoDebugMode match {
       case "NEVER" => DumpOption.Never
       case "ALWAYS" => DumpOption.Always
@@ -270,7 +268,6 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
   }
 
   override def concatOnHost(columns: Array[KudoSerializedTableColumn]): CoalescedHostResult = {
-    println(s"concatOnHost columns: ${columns.length}")
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {

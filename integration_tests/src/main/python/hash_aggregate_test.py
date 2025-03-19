@@ -2456,12 +2456,13 @@ def test_group_by_binary(gen):
         "select c_binary, sum(c_int) from tab group by c_binary")
 
 @ignore_order(local=True)
+@pytest.mark.skipif(not is_apache_runtime() and not is_databricks_runtime(), reason="only test on local file system")
 def test_kudo_serializer_debug_dump(spark_tmp_path):
     dump_prefix = spark_tmp_path + "/kudo_dump/"
     conf = {
         kudo_enabled_conf_key: "true",
         "spark.rapids.shuffle.kudo.serializer.debug.mode": "ALWAYS",
-        "spark.rapids.shuffle.kudo.serializer.debug.dump.prefix": dump_prefix
+        "spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix": dump_prefix
     }
 
     def shuffle_operation(spark):
