@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.tests;
+package org.apache.spark.rapids.tests;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,17 +63,20 @@ public class TimeoutSparkListener extends SparkListener {
   }
 
   public void onJobStart(SparkListenerJobStart jobStart) {
-    LOG.debug("JobStart: registering timeout for Job {}", jobStart.jobId());
+    final int jobId = jobStart.jobId();
+    LOG.debug("JobStart: registering timeout for Job {}", jobId);
     final ScheduledFuture<?> scheduledFuture = runner.schedule(() -> {
-      LOG.error("Job {} has timed out, cancelling!!!", jobStart.jobId());
-      sparkContext.sc().cancelJob(jobStart.jobId());
+      final String message = "Job " + jobId + " exceeded the timeout of " + 
+        timeoutSeconds + " seconds, cancelling!!!";
+      sparkContext.sc().cancelJob(jobId, message);
     }, timeoutSeconds, TimeUnit.SECONDS);
-    cancelJobMap.put(jobStart.jobId(), scheduledFuture);
+    cancelJobMap.put(jobId, scheduledFuture);
   }
 
   public void onJobEnd(SparkListenerJobEnd jobEnd) {
-    LOG.debug("JobEnd: cancelling timeout for Job {}", jobEnd.jobId());
-    final ScheduledFuture<?> cancelFuture = cancelJobMap.remove(jobEnd.jobId());
+    final int jobId = jobEnd.jobId();
+    LOG.debug("JobEnd: cancelling timeout for Job {}", jobId);
+    final ScheduledFuture<?> cancelFuture = cancelJobMap.remove(jobId);
     cancelFuture.cancel(false);
   }
 

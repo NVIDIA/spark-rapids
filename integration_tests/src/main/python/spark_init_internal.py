@@ -150,9 +150,11 @@ def pytest_sessionstart(session):
     _s.sparkContext.setLogLevel("WARN")
 
     # Set up a listener to cancel hung Spark actions
-    java_import(_s._jvm, 'com.nvidia.spark.rapids.tests.TimeoutSparkListener')
+    java_import(_s._jvm, 'org.apache.spark.rapids.tests.TimeoutSparkListener')
     # TODO make timeout configurable and overridable per test
-    hung_job_listener = _s._jvm.com.nvidia.spark.rapids.tests.TimeoutSparkListener(240, _s._jsc)
+    hung_job_listener = (
+      _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(_s._jsc, 240, True)
+    ) 
     hung_job_listener.register()
 
     global _spark
