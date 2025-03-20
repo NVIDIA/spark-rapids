@@ -50,7 +50,7 @@ _relativeSD = [
     0.02,  #  precision 12
     0.015, #  precision 13
     0.01,  #  precision 14
-    0.008, #  precision 15
+    # 0.008, #  precision 15 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
     # 0.005, #  precision 16 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
     # 0.004, #  precision 17 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
     # 0.003, #  precision 18 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347

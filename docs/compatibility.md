@@ -867,7 +867,7 @@ But this is not something that can be done generically and requires inner knowle
 what can trigger a side effect.
 
 ## HyperLogLogPlusPlus(approx_count_distinct)
-The maximum supported precision is 15. The formula of precision is:
+The maximum supported precision is 14. The formula of precision is:
 ```scala
 Math.ceil(2.0d * Math.log(1.106d / rsd) / Math.log(2.0d)).toInt
 ```
