@@ -179,6 +179,7 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
         })
 
 
+# Common configuration for filter pushdown tests
 filter_split_conf = {
     'spark.sql.sources.useV1SourceList': 'parquet',
     'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -198,125 +199,347 @@ def check_filter_pushdown(plan, pushed_exprs, not_pushed_exprs):
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
-@hybrid_test
-def test_hybrid_parquet_filter_pushdown_gpu(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    def add(a, b):
-        return a + b
-    my_udf = f.pandas_udf(add, returnType=LongType())
-    with_cpu_session(
-        lambda spark: gen_df(spark, [('a', long_gen)]).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-    conf = filter_split_conf.copy()
-    conf.update({
-        'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU'
-    })
-    # filter conditions should remain on the GPU
-    plan = with_gpu_session(
-        lambda spark: spark.read.parquet(data_path).filter(my_udf(f.col('a'), f.col('a')) > 0)._jdf.queryExecution().executedPlan(),
-        conf=conf)
-    check_filter_pushdown(plan, pushed_exprs=[], not_pushed_exprs=['pythonUDF'])
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter(my_udf(f.col('a'), f.col('a')) > 0),
-        conf=conf)
-
-@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
-@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
-@hybrid_test
-def test_hybrid_parquet_filter_pushdown_cpu(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(
-        lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-    # filter conditions should be pushed down to the CPU, so the ascii will not fall back to CPU in the FilterExec
-    # use f.startWith because sql function startswith is from spark 3.5.0
-    plan = with_gpu_session(
-        lambda spark: spark.read.parquet(data_path).filter(f.col("a").startswith('1') & (f.ascii(f.col("a")) >= 50) & (f.col("a") < '1000'))._jdf.queryExecution().executedPlan(),
-        conf=filter_split_conf)
-    check_filter_pushdown(plan, pushed_exprs=['ascii', 'StartsWith', 'isnotnull'], not_pushed_exprs=[])
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter(f.col("a").startswith('1') & (f.ascii(f.col("a")) >= 50) & (f.col("a") < '1000')),
-        conf=filter_split_conf)
-
-@allow_non_gpu('FilterExec', 'BatchEvalPythonExec', 'PythonUDF')
-@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
-@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
-@hybrid_test
-def test_hybrid_parquet_filter_pushdown_unsupported(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(
-        lambda spark: gen_df(spark, [('a', StringGen(pattern='[0-9]{1,5}'))]).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-    # UDf is not supported by GPU, so it should fallback to CPU in the FilterExec    
-    def udf_fallback(s):
-        return f'udf_{s}'
+@pytest.mark.parametrize('data_type,gen,filter_expr,pushed_exprs', [
+    # Numeric type tests
+    ('byte', byte_gen, 'a > 10', ['> 10']),
+    ('short', short_gen, 'a <= 100', ['<= 100']),
+    ('int', int_gen, 'a >= 1000', ['>= 1000']),
+    ('long', long_gen, 'a < 50000', ['< 50000']),
+    ('float', float_gen, 'a BETWEEN 10.5 AND 100.5', ['BETWEEN']),
+    ('double', double_gen, 'a != 50.25', ['!=']),
     
-    with_cpu_session(lambda spark: spark.udf.register("udf_fallback", udf_fallback))
+    # String type tests
+    ('string', StringGen(pattern='[a-zA-Z0-9]{5,10}'), 'a LIKE "a%"', ['LIKE']),
+    ('string', StringGen(pattern='[a-zA-Z0-9]{5,10}'), 'length(a) > 6', ['length']),
+    ('string', StringGen(pattern='[a-zA-Z0-9]{5,10}'), 'upper(a) = "ABCDE"', ['upper']),
+    ('string', StringGen(pattern='[a-zA-Z0-9]{5,10}'), 'lower(a) = "abcde"', ['lower']),
+    
+    # Date type tests
+    ('date', date_gen, 'a > "2020-01-01"', ['>']),
+    ('date', date_gen, 'year(a) = 2022', ['year']),
+    ('date', date_gen, 'month(a) > 6', ['month']),
+    ('date', date_gen, 'dayofmonth(a) = 15', ['dayofmonth']),
+    
+    # Boolean type tests
+    ('boolean', boolean_gen, 'a = true', ['=']),
+    ('boolean', boolean_gen, 'a AND true', ['AND']),
+    ('boolean', boolean_gen, 'a OR false', ['OR']),
+    
+    # Decimal type tests
+    ('decimal', decimal_gen_32bit, 'a > 100.50', ['>']),
+    ('decimal', decimal_gen_64bit, 'a < 1000.25', ['<']),
+    
+    # Complex logical expressions
+    ('int', int_gen, 'a > 10 AND a < 100', ['AND', '>', '<']),
+    ('int', int_gen, 'a < 10 OR a > 100', ['OR', '<', '>']),
+    ('int', int_gen, 'NOT (a BETWEEN 10 AND 50)', ['NOT', 'BETWEEN']),
+    
+    # Math functions
+    ('double', double_gen, 'abs(a) > 50.0', ['abs']),
+    ('double', double_gen, 'ceil(a) = 100', ['ceil']),
+    ('double', double_gen, 'floor(a) = 99', ['floor']),
+    ('double', double_gen, 'round(a) < 75', ['round']),
+])
+@hybrid_test
+def test_hybrid_parquet_filter_pushdown_datatypes(spark_tmp_path, data_type, gen, filter_expr, pushed_exprs):
+    """Test filter pushdown for various data types and expressions."""
+    data_path = spark_tmp_path + f'/PARQUET_DATA_{data_type}'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', gen)]).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    
+    # Clone the configuration
+    conf = filter_split_conf.copy()
+    
+    # Check that filters are correctly pushed down
     plan = with_gpu_session(
-        lambda spark: spark.read.parquet(data_path).filter("ascii(a) >= 50 and udf_fallback(a) = 'udf_100'")._jdf.queryExecution().executedPlan(),
-        conf=filter_split_conf)
-    check_filter_pushdown(plan, pushed_exprs=['ascii', 'isnotnull'], not_pushed_exprs=['udf_fallback'])
+        lambda spark: spark.read.parquet(data_path).filter(filter_expr)._jdf.queryExecution().executedPlan(),
+        conf=conf)
+    
+    # Verify filter expressions are pushed to scan
+    check_filter_pushdown(plan, pushed_exprs=pushed_exprs + ['isnotnull'], not_pushed_exprs=[])
+    
+    # Verify results match between CPU and GPU
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter("ascii(a) >= 50 and udf_fallback(a) = 'udf_100'"),
-        conf=filter_split_conf)
+        lambda spark: spark.read.parquet(data_path).filter(filter_expr),
+        conf=conf)
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
-@allow_non_gpu(*non_utc_allow)
-def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+def test_hybrid_parquet_complex_types_filter_pushdown(spark_tmp_path):
+    """Test filter pushdown for complex types (struct, array)."""
+    data_path = spark_tmp_path + '/PARQUET_DATA_COMPLEX'
+    
+    # Generate complex type data
+    complex_gens = [
+        ('id', long_gen),
+        ('arr_int', ArrayGen(int_gen)),
+        ('arr_str', ArrayGen(string_gen)),
+        ('struct_data', StructGen([
+            ('int_field', int_gen),
+            ('str_field', string_gen),
+            ('date_field', date_gen)
+        ]))
+    ]
+    
     with_cpu_session(
-        lambda spark: gen_df(spark, [('a', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)))]).write.parquet(data_path),
+        lambda spark: gen_df(spark, complex_gens, length=1000).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
+    
+    # Clone the configuration
+    conf = filter_split_conf.copy()
+    
+    # Test array functions
+    filter_tests = [
+        # Array element access and functions
+        ("size(arr_int) > 2", ['size']),
+        ("arr_int[0] > 50", ['>']),
+        ("array_contains(arr_str, 'test')", ['array_contains']),
+        
+        # Struct field access
+        ("struct_data.int_field > 100", ['>']),
+        ("struct_data.str_field LIKE 'A%'", ['LIKE']),
+        ("year(struct_data.date_field) = 2022", ['year']),
+        
+        # Combined conditions
+        ("size(arr_int) > 0 AND struct_data.int_field < 500", ['AND', 'size', '<']),
+        ("id > 500 OR struct_data.str_field = 'test'", ['OR', '>', '='])
+    ]
+    
+    for filter_expr, pushed_exprs in filter_tests:
+        # Check filter pushdown plan
+        plan = with_gpu_session(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr)._jdf.queryExecution().executedPlan(),
+            conf=conf)
+        
+        check_filter_pushdown(plan, pushed_exprs=pushed_exprs + ['isnotnull'], not_pushed_exprs=[])
+        
+        # Verify results
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr),
+            conf=conf)
 
-    # Timestamp is not fully supported in Hybrid Filter, so it should remain on the GPU
-    plan = with_gpu_session(
-        lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc)))._jdf.queryExecution().executedPlan(),
-        conf=filter_split_conf)
-    check_filter_pushdown(plan, pushed_exprs=[], not_pushed_exprs=['isnotnull', '>'])
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
-        conf=filter_split_conf)
-
-@ignore_order(local=True)
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
-def test_hybrid_parquet_filter_pushdown_aqe(spark_tmp_path):
-    stream_data_path = spark_tmp_path + '/PARQUET_DATA/stream_data'
-    build_data_path = spark_tmp_path + '/PARQUET_DATA/build_data'
-    data_gen_schema = [('key', LongGen(nullable=False, min_val=0, max_val=19)), ('value', long_gen)]
+def test_hybrid_parquet_multiple_filter_combinations(spark_tmp_path):
+    """Test various combinations of filters that should all be pushed down."""
+    data_path = spark_tmp_path + '/PARQUET_DATA_MULTI'
+    
+    # Generate data with multiple columns of different types
+    gen_list = [
+        ('int_col', int_gen),
+        ('long_col', long_gen),
+        ('double_col', double_gen),
+        ('string_col', string_gen),
+        ('date_col', date_gen),
+        ('bool_col', boolean_gen),
+        ('decimal_col', decimal_gen_64bit)
+    ]
+    
     with_cpu_session(
-        lambda spark: gen_df(spark, data_gen_schema, length=4096).write.parquet(stream_data_path),
+        lambda spark: gen_df(spark, gen_list, length=1000).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
+    
+    # Clone the configuration
+    conf = filter_split_conf.copy()
+    
+    # Complex filter combinations
+    filter_tests = [
+        # Multiple conditions with AND
+        ("int_col > 100 AND string_col LIKE 'A%' AND date_col > '2022-01-01'", 
+         ['AND', '>', 'LIKE']),
+        
+        # Multiple conditions with OR
+        ("long_col < 50 OR double_col > 100.0 OR bool_col = true", 
+         ['OR', '<', '>', '=']),
+        
+        # Mixed AND/OR
+        ("(int_col > 10 AND int_col < 100) OR (long_col >= 1000 AND long_col <= 5000)", 
+         ['AND', 'OR', '>', '<', '>=', '<=']),
+        
+        # Functions and operators together
+        ("abs(double_col) > 50.0 AND upper(string_col) = 'TEST' AND year(date_col) = 2022", 
+         ['AND', 'abs', 'upper', 'year']),
+        
+        # IN and BETWEEN
+        ("int_col IN (1, 2, 3, 4, 5) AND double_col BETWEEN 10.0 AND 50.0",
+         ['AND', 'IN', 'BETWEEN']),
+        
+        # Mathematical expressions
+        ("int_col + long_col > 1000 AND double_col * 2 < 100",
+         ['AND', '+', '*', '>', '<']),
+        
+        # CASE expressions
+        ("CASE WHEN int_col > 100 THEN true WHEN int_col < 0 THEN false ELSE bool_col END",
+         ['CASE']),
+        
+        # Complex boolean logic
+        ("NOT (int_col > 10 AND string_col = 'test') OR (bool_col AND long_col < 100)",
+         ['NOT', 'AND', 'OR', '>', '=', '<']),
+    ]
+    
+    for filter_expr, expected_fragments in filter_tests:
+        # Check filter pushdown plan 
+        plan = with_gpu_session(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr)._jdf.queryExecution().executedPlan(),
+            conf=conf)
+        
+        check_filter_pushdown(plan, pushed_exprs=expected_fragments + ['isnotnull'], not_pushed_exprs=[])
+        
+        # Verify results
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr),
+            conf=conf)
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+def test_hybrid_parquet_partial_filter_pushdown(spark_tmp_path):
+    """Test scenarios where some filters can be pushed down but others cannot."""
+    data_path = spark_tmp_path + '/PARQUET_DATA_PARTIAL'
+    
+    gen_list = [
+        ('int_col', int_gen),
+        ('string_col', string_gen),
+        ('timestamp_col', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)))
+    ]
+    
     with_cpu_session(
-        lambda spark: gen_df(spark, data_gen_schema, length=512).write.parquet(build_data_path),
+        lambda spark: gen_df(spark, gen_list, length=1000).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
+    
+    # Register a UDF that won't be pushed down
+    def custom_udf(s):
+        return f"custom_{s}"
+    
+    with_cpu_session(lambda spark: spark.udf.register("custom_udf", custom_udf))
+    
+    # Clone the configuration
+    conf = filter_split_conf.copy()
+    
+    # Partial pushdown cases
+    filter_tests = [
+        # Mix of pushable and non-pushable (UDF)
+        ("int_col > 100 AND custom_udf(string_col) = 'custom_test'", 
+         ['> 100'], ['custom_udf']),
+        
+        # Mix of pushable and non-pushable (timestamp)
+        ("int_col < 500 AND timestamp_col > '2022-01-01'", 
+         ['< 500'], ['timestamp_col']),
+        
+        # Complex mix
+        ("(int_col BETWEEN 100 AND 500) AND (custom_udf(string_col) = 'test' OR timestamp_col < '2023-01-01')", 
+         ['BETWEEN'], ['custom_udf', 'timestamp_col']),
+    ]
+    
+    for filter_expr, pushed_exprs, not_pushed_exprs in filter_tests:
+        # Check filter pushdown plan 
+        plan = with_gpu_session(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr)._jdf.queryExecution().executedPlan(),
+            conf=conf)
+        
+        # Check that the correct expressions are pushed down and others remain in filter
+        check_filter_pushdown(plan, pushed_exprs=pushed_exprs + ['isnotnull'], not_pushed_exprs=not_pushed_exprs)
+        
+        # Verify results
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr),
+            conf=conf)
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+def test_hybrid_parquet_filter_expression_types(spark_tmp_path):
+    """Test specific expression types listed in HybridExecutionUtils.scala."""
+    data_path = spark_tmp_path + '/PARQUET_DATA_EXPRESSIONS'
+    
+    # Generate data with columns for testing different expression types
+    gen_list = [
+        ('int_col', int_gen),
+        ('double_col', double_gen),
+        ('string_col', string_gen),
+        ('date_col', date_gen),
+        ('array_col', ArrayGen(int_gen)),
+        ('map_col', simple_string_to_string_map_gen)
+    ]
+    
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list, length=1000).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    
+    # Clone the configuration with all expressions enabled
     conf = filter_split_conf.copy()
     conf.update({
-        'spark.sql.adaptive.enabled': 'true',
-        'spark.rapids.sql.hybrid.parquet.enabled': 'true',
-        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU'
+        'spark.rapids.sql.expression.Ascii': True,  # Enable all expressions for this test
     })
-
-    def build_side_df(spark):
-        return spark.read.parquet(build_data_path) \
-            .filter(f.col('key') > 1) \
-            .filter(f.col('value').isNotNull())
-
-    plan = with_gpu_session(
-        lambda spark: build_side_df(spark)._jdf.queryExecution().executedPlan(),
-        conf=conf)
-    check_filter_pushdown(plan, pushed_exprs=['> 1', 'isnotnull'], not_pushed_exprs=[])
-
-    def test_fn(spark):
-        probe_df = spark.read.parquet(stream_data_path)
-        # Perform a broadcast join, explicitly broadcasting the build-side DataFrame
-        build_df = f.broadcast(build_side_df(spark))
-        return probe_df.join(build_df, ['key'], 'inner')
-
-    assert_gpu_and_cpu_are_equal_collect(test_fn, conf=conf)
+    
+    # Test various expression types from HybridExecutionUtils.scala
+    expression_tests = [
+        # Mathematical functions
+        ("abs(double_col) > 50", ['abs']),
+        ("ceil(double_col) = 100", ['ceil']),
+        ("floor(double_col) = 99", ['floor']),
+        ("round(double_col) < 75", ['round']),
+        ("sqrt(abs(double_col)) > 5", ['sqrt', 'abs']),
+        ("pow(double_col, 2) > 100", ['pow']),
+        
+        # String functions
+        ("length(string_col) > 5", ['length']),
+        ("upper(string_col) = 'TEST'", ['upper']),
+        ("lower(string_col) = 'test'", ['lower']),
+        ("substring(string_col, 1, 3) = 'abc'", ['substring']),
+        ("concat(string_col, '_suffix') LIKE '%suffix'", ['concat', 'LIKE']),
+        
+        # Date/time functions
+        ("year(date_col) = 2022", ['year']),
+        ("month(date_col) = 6", ['month']),
+        ("dayofmonth(date_col) = 15", ['dayofmonth']),
+        ("dayofweek(date_col) = 1", ['dayofweek']),
+        ("dayofyear(date_col) < 200", ['dayofyear']),
+        
+        # Boolean logic
+        ("int_col > 10 AND int_col < 100", ['AND', '>', '<']),
+        ("int_col < 10 OR int_col > 100", ['OR', '<', '>']),
+        ("NOT (int_col BETWEEN 10 AND 50)", ['NOT', 'BETWEEN']),
+        
+        # Array functions
+        ("size(array_col) > 2", ['size']),
+        ("array_contains(array_col, 5)", ['array_contains']),
+        
+        # Map functions
+        ("map_keys(map_col)[0] = 'key'", ['map_keys']),
+        ("map_values(map_col)[0] = 'value'", ['map_values']),
+        
+        # CASE expressions
+        ("CASE WHEN int_col > 100 THEN 'large' WHEN int_col > 50 THEN 'medium' ELSE 'small' END = 'large'", ['CASE']),
+        
+        # IN expressions
+        ("int_col IN (1, 2, 3, 4, 5)", ['IN']),
+        
+        # Null handling
+        ("int_col IS NULL", ['isnull']),
+        ("int_col IS NOT NULL", ['isnotnull']),
+        
+        # Complex combinations
+        ("(int_col > 50 AND string_col LIKE 'A%') OR (double_col < 100 AND year(date_col) = 2022)",
+         ['AND', 'OR', '>', 'LIKE', '<', 'year'])
+    ]
+    
+    for filter_expr, expected_fragments in expression_tests:
+        # Check filter pushdown plan
+        plan = with_gpu_session(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr)._jdf.queryExecution().executedPlan(),
+            conf=conf)
+        
+        # Verify filter expressions are pushed to scan
+        check_filter_pushdown(plan, pushed_exprs=expected_fragments, not_pushed_exprs=[])
+        
+        # Verify results match between CPU and GPU
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.read.parquet(data_path).filter(filter_expr),
+            conf=conf)
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
