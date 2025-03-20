@@ -865,3 +865,10 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
+
+## HyperLogLogPlusPlus(approx_count_distinct)
+The maximum supported precision is 15. The formula of precision is:
+```scala
+Math.ceil(2.0d * Math.log(1.106d / rsd) / Math.log(2.0d)).toInt
+```
+The `rsd` is abbreviation of relative standard deviation.

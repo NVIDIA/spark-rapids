@@ -60,9 +60,7 @@ _relativeSD = [
 @pytest.mark.parametrize('relativeSD', _relativeSD, ids=idfn)
 def test_hllpp_precisions_reduce(relativeSD):
     assert_gpu_and_cpu_are_equal_sql(
-        # use length=550 because of large precision will use more memory for the sketch.
-        # num of registers in a sketch = 2^precision
-        lambda spark: unary_op_df(spark, int_gen, length=550),
+        lambda spark: unary_op_df(spark, int_gen),
         "tab",
         f"select APPROX_COUNT_DISTINCT(a, {relativeSD}) from tab")
 
@@ -70,6 +68,6 @@ def test_hllpp_precisions_reduce(relativeSD):
 @pytest.mark.parametrize('relativeSD', _relativeSD, ids=idfn)
 def test_hllpp_precisions_groupby(relativeSD):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: gen_df(spark, [("c1", int_gen), ("c2", int_gen)], length=550),
+        lambda spark: gen_df(spark, [("c1", int_gen), ("c2", int_gen)]),
         "tab",
         f"select c1, APPROX_COUNT_DISTINCT(c2, {relativeSD}) from tab group by c1")
