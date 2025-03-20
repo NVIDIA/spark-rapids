@@ -279,7 +279,16 @@ object GpuShuffledSizedHashJoinExec {
         metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
       val concatMetrics = getConcatMetrics(metrics)
       GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(
-        queue.iterator ++ remainingIter,
+        new Iterator[ColumnarBatch]() {
+          override def hasNext: Boolean = queue.nonEmpty || remainingIter.hasNext
+          override def next(): ColumnarBatch = {
+            if (queue.nonEmpty) {
+              queue.dequeue()
+            } else {
+              remainingIter.next()
+            }
+          }
+        },
         gpuBatchSizeBytes,
         batchTypes,
         readOption,
@@ -856,9 +865,10 @@ object GpuShuffledAsymmetricHashJoinExec {
           // We should provide the actual buildSize instead of the truncated one.
           // By calling fetchProbeTargetSize again, we'll move all batches to the queue, and
           // at the same time we'll get the actual buildSize.
-          val (_, remainingBytes) =
+          val (_, remainingBytes) = closeOnExcept(buildQueue) { _ =>
             fetchProbeTargetSize(probeBuildIter, buildQueue, gpuBatchSizeBytes,
               truncateIfNecessary = false)
+          }
           val buildIter = addNullFilterIfNecessary(baseBuildIter, exprs.boundBuildKeys,
             exprs.buildSideNeedsNullFilter, metrics)
           JoinInfo(joinType, buildSide, buildIter, mayTruncatedBuildSize + remainingBytes
