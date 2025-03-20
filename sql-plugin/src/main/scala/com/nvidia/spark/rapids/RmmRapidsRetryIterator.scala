@@ -26,6 +26,7 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.SplitReason.SplitReason
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark, RmmSparkThreadState}
 
 import org.apache.spark.TaskContext
@@ -375,10 +376,9 @@ object RmmRapidsRetryIterator extends Logging {
      * splitting a collection of batches into smaller collections to be attempted separately,
      * likely reducing GPU memory that needs to be manifested while calling `.next`.
      *
-     * @param isFromGpuOom true if the split happened because of a GPU OOM. Otherwise it was a
-     *                     CPU off heap OOM.
+     * @param splitReason the reason for the split
      */
-    def split(isFromGpuOom: Boolean): Unit
+    def split(splitReason: SplitReason): Unit
 
     override def next(): K
 
@@ -397,11 +397,15 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = !wasCalledSuccessfully
 
-    override def split(isFromGpuOom: Boolean): Unit = {
-      if (isFromGpuOom) {
-        throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
-      } else {
-        throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+    override def split(splitReason: SplitReason): Unit = {
+      splitReason match {
+        case SplitReason.CPU_OOM =>
+          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+        case SplitReason.GPU_OOM =>
+          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+        case SplitReason.OTHER =>
+          throw new IllegalStateException("Non OOM State Machine reason caused split, but current "
+            + "spliterator does not support splitting.")
       }
     }
 
@@ -465,7 +469,7 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
 
-    override def split(isFromGpuOom: Boolean): Unit = {
+    override def split(splitReason: SplitReason): Unit = {
       // If `split` OOMs, we are already the last thread standing
       // there is likely not much we can do, and for now we don't handle
       // this OOM
@@ -474,10 +478,12 @@ object RmmRapidsRetryIterator extends Logging {
           s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
           s"The current attempt: " +
           s"{${attemptStack.head}}"
-        if (isFromGpuOom) {
-          throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
-        } else {
-          throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
+        splitReason match {
+          case SplitReason.GPU_OOM => throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
+          case SplitReason.CPU_OOM => throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
+          case SplitReason.OTHER =>
+            throw new IllegalStateException("Non OOM State Machine reason caused split," +
+              " but splitPolicy not set")
         }
       }
       val curAttempt = attemptStack.pop()
@@ -621,7 +627,8 @@ object RmmRapidsRetryIterator extends Logging {
       var lastException: Throwable = null
       var firstAttempt: Boolean = true
       var result: Option[K] = None
-      var doSplit = false
+      var doSplitForStateMachineReasons = false
+      var doSplitForNonStateMachineReasons = false
       var isFromGpuOom = true
       while (result.isEmpty && attemptIter.hasNext) {
         RetryStateTracker.setCurThreadRetrying(!firstAttempt)
@@ -632,23 +639,32 @@ object RmmRapidsRetryIterator extends Logging {
             RmmSpark.blockThreadUntilReady()
           } catch {
             case _: GpuSplitAndRetryOOM =>
-              doSplit = true
+              doSplitForStateMachineReasons = true
               isFromGpuOom = true
             case _: CpuSplitAndRetryOOM =>
-              doSplit = true
+              doSplitForStateMachineReasons = true
               isFromGpuOom = false
           } finally {
             threadCountBlockedUntilReady.decrementAndGet()
           }
         }
         firstAttempt = false
-        if (doSplit) {
+        if (doSplitForStateMachineReasons || doSplitForNonStateMachineReasons) {
           if (BOOKKEEP_MEMORY) {
             logMemoryBookkeeping()
           }
-          attemptIter.split(isFromGpuOom)
+          if (doSplitForStateMachineReasons) {
+            attemptIter.split(if (isFromGpuOom) {
+              SplitReason.GPU_OOM
+            } else {
+              SplitReason.CPU_OOM
+            })
+          } else if (doSplitForNonStateMachineReasons) {
+            attemptIter.split(SplitReason.OTHER)
+          }
         }
-        doSplit = false
+        doSplitForStateMachineReasons = false
+        doSplitForNonStateMachineReasons = false
         try {
           // call the user's function
           config.foreach {
@@ -677,7 +693,11 @@ object RmmRapidsRetryIterator extends Logging {
           case ex: Throwable =>
             // handle a retry as the top-level exception
             val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
-            doSplit = topLevelIsSplit
+            doSplitForStateMachineReasons = topLevelIsSplit
+            if (doSplitForStateMachineReasons) {
+              logInfo("doSplitForStateMachineReasons is set " +
+                "to true because topLevelIsSplit is true", ex)
+            }
             isFromGpuOom = isGpuOom
 
             // handle any retries that are wrapped in a different top-level exception
@@ -685,7 +705,13 @@ object RmmRapidsRetryIterator extends Logging {
             if (!topLevelIsRetry) {
               val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
               causedByRetry = cbRetry
-              doSplit = doSplit || cbSplit
+              if (!doSplitForStateMachineReasons) {
+                doSplitForStateMachineReasons = doSplitForStateMachineReasons || cbSplit
+                if (doSplitForStateMachineReasons) {
+                  logInfo(s"doSplitForStateMachineReasons is set to true because " +
+                    s"cbSplit is ${cbSplit}", ex)
+                }
+              }
               isFromGpuOom = isGpuOom
             }
 
@@ -700,7 +726,9 @@ object RmmRapidsRetryIterator extends Logging {
             if (!topLevelIsRetry && !causedByRetry) {
               if (isOrCausedByColumnSizeOverflow(ex)) {
                 // CUDF column size overflow? Attempt split-retry.
-                doSplit = true
+                doSplitForNonStateMachineReasons = true
+                logInfo(s"doSplitForNonStateMachineReasons is set to true because " +
+                  s"isOrCausedByColumnSizeOverflow", ex)
               } else {
                 // we want to throw early here, since we got an exception
                 // we were not prepared to handle
@@ -871,4 +899,9 @@ object RetryStateTracker {
   def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
 
   def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
+}
+
+object SplitReason extends Enumeration {
+  type SplitReason = Value
+  val GPU_OOM, CPU_OOM, OTHER = Value
 }
