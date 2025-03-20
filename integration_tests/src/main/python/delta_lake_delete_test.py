@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
+from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from delta_lake_utils import *
 from marks import *
@@ -109,6 +109,34 @@ def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
 
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
                               "ExecutedCommandExec", disable_conf)
+
+@allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), \
+    reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
+def test_delta_deletion_vector(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                                use_cdf=False, enable_deletion_vectors=True)
+    def write_func(path):
+        delete_sql="DELETE FROM delta.`{}` where a = 0".format(path)
+        def delete_func(spark):
+            spark.sql(delete_sql)
+        return delete_func
+
+    def read_parquet_sql(data_path):
+        return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
+
+    disable_conf = copy_and_update(delta_delete_enabled_conf,
+        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+
+    with_cpu_session(setup_tables)
+    with_cpu_session(write_func(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path))
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
