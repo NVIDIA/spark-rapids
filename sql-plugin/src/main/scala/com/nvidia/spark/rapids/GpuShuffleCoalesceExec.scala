@@ -86,12 +86,17 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
 /** A case class to pack some options. Now it has only one, but may have more in the future */
 case class CoalesceReadOption private(
-  kudoEnabled: Boolean, kudoDebugMode: String, kudoDebugDumpPrefix: String)
+  kudoEnabled: Boolean, kudoDebugMode: DumpOption, kudoDebugDumpPrefix: Option[String])
 
 object CoalesceReadOption {
   def apply(conf: SQLConf): CoalesceReadOption = {
+    val dumpOption = RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf) match {
+      case "NEVER" => DumpOption.Never
+      case "ALWAYS" => DumpOption.Always
+      case "ONFAILURE" => DumpOption.OnFailure
+    }
     CoalesceReadOption(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(conf),
-      RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.get(conf),
+      dumpOption,
       RapidsConf.SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX.get(conf))
   }
 
@@ -253,14 +258,13 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     .getNumRows
 
   private def buildMergeOptions(): MergeOptions = {
-    val dumpOption = readOption.kudoDebugMode match {
-      case "NEVER" => DumpOption.Never
-      case "ALWAYS" => DumpOption.Always
-      case "ONFAILURE" => DumpOption.OnFailure
-    }
-    if (dumpOption != DumpOption.Never) {
-      lazy val (out, path) = 
-        createTempFile(new Configuration(), readOption.kudoDebugDumpPrefix, ".bin")
+    val dumpOption = readOption.kudoDebugMode
+    val dumpPrefix = readOption.kudoDebugDumpPrefix
+    if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
+      lazy val stageId = TaskContext.get().stageId()
+      lazy val taskId = TaskContext.get().taskAttemptId()
+      lazy val updatedPrefix = s"${dumpPrefix.get}_stage_${stageId}_task_${taskId}"
+      lazy val (out, path) = createTempFile(new Configuration(), updatedPrefix, ".bin")
       new MergeOptions(dumpOption, () => out, path.toString)
     } else {
       new MergeOptions(dumpOption, null, null)

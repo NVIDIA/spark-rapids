@@ -2078,7 +2078,8 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .createWithDefault(false)
 
   // ["NEVER", "ALWAYS", "ONFAILURE"]
-  private val KudoDebugModes = DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
+  private val KudoDebugModes = 
+    DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
 
   val SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE = conf("spark.rapids.shuffle.kudo.serializer.debug.mode")
     .doc("Debug mode for Kudo serializer for the shuffle. If Always, it will dump the " +
@@ -2089,7 +2090,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .startupOnly()
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(kudoDebugMode)
+    .checkValues(KudoDebugModes)
     .createWithDefault("NEVER")
 
   val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
@@ -2098,7 +2099,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .internal()
     .startupOnly()
     .stringConf
-    .createOptional()
+    .createOptional
 
   // USER FACING DEBUG CONFIGS
 
@@ -3227,11 +3228,44 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
 
-  lazy val shuffleKudoSerializerDebugMode: DumpOption = 
-DumpOption.valueOf(get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE))
+  lazy val shuffleKudoSerializerDebugMode: DumpOption = {
+    val mode = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
+    mode match {
+      case "NEVER" => DumpOption.Never
+      case "ALWAYS" => DumpOption.Always
+      case "ONFAILURE" => DumpOption.OnFailure
+      case _ => {
+        logWarning(s"Invalid value for ${SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.key}: $mode. " +
+          "Using default value: Never")
+        DumpOption.Never
+      }
+    }
+  }
 
-  lazy val shuffleKudoSerializerDebugDumpPrefix: String = 
-    get(SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX)
+  lazy val shuffleKudoSerializerDebugDumpPrefix: Option[String] = {
+    val prefix = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX)
+    shuffleKudoSerializerDebugMode match {
+      case DumpOption.Never => prefix
+      case _ => {
+        prefix match {
+          case None => {
+            logWarning("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix is not set, " +
+              "so Kudo serializer debug will not be enabled")
+            None
+          }
+          case Some(p) => {
+            if (p.isEmpty) {
+              logWarning("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix is empty, " +
+                "so Kudo serializer debug will not be enabled")
+              Some("")
+            } else {
+              Some(p)
+            }
+          }
+        }
+      }
+    }
+  }
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
