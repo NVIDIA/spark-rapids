@@ -16,21 +16,18 @@
 
 package com.nvidia.spark.rapids.tests;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
 
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.scheduler.SparkListener;
 import org.apache.spark.scheduler.SparkListenerApplicationEnd;
 import org.apache.spark.scheduler.SparkListenerJobEnd;
 import org.apache.spark.scheduler.SparkListenerJobStart;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +36,14 @@ public class TimeoutSparkListener extends SparkListener {
   private final Logger LOG = LoggerFactory.getLogger(TimeoutSparkListener.class);
   private final JavaSparkContext sparkContext;
   private final int timeoutSeconds;
-  private final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1);
+  private final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1,
+    runnable -> {
+      final Thread t = new Thread(runnable);
+      t.setDaemon(true);
+      t.setName("spark-job-timeout-thread-" + t.hashCode());
+      return t;
+    }
+  );
   private final Map<Integer,ScheduledFuture<?>> cancelJobMap = new ConcurrentHashMap<>();
   
   boolean registered;
@@ -74,15 +78,7 @@ public class TimeoutSparkListener extends SparkListener {
   }
 
   public void onApplicationEnd(SparkListenerApplicationEnd applicationEnd) {
-    for (
-      final Iterator<Entry<Integer,ScheduledFuture<?>>> it = cancelJobMap.entrySet().iterator(); 
-      it.hasNext(); 
-    ) {
-      final Entry<Integer,ScheduledFuture<?>> cancelEntry = it.next();
-      LOG.debug("ApplicationEnd: cancelling pending Spark job {}", cancelEntry.getKey());
-      cancelEntry.getValue().cancel(false);
-      it.remove();
-    }
+    runner.shutdownNow();
   }
 }
 
