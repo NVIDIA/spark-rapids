@@ -30,15 +30,11 @@ case class KudoHostMergeResultWrapper(
   /** Convert itself to a GPU batch */
   override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
     RmmRapidsRetryIterator.withRetryNoSplit {
-      val buf = spillableHostBuffer.getHostBuffer()
-      try {
-        withResource(
-          KudoHostMergeResult.toTableStatic(buf, schema, columnInfoList)
-        ) { cudfTable =>
-          GpuColumnVector.from(cudfTable, dataTypes)
-        }
-      } finally {
-        buf.close()
+      val table = withResource(spillableHostBuffer.getHostBuffer()) { buf =>
+        KudoHostMergeResult.toTableStatic(buf, schema, columnInfoList)
+      }
+      withResource(table) { _ =>
+        GpuColumnVector.from(table, dataTypes)
       }
     }
   }
