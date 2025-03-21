@@ -71,6 +71,25 @@ A typical directory hierarchy would look like this:
       - batch-0.parquet
 ```
 
+## How to replay dumped data
+
+Currently we don't provide a tool to replay the dumped data, but it's simple to replay the 
+dumped data with our api. Here is an example:
+
+```scala
+GpuColumnarToRowExec(
+   GpuLore.restoreGpuExec(
+      new Path(s"${TEST_FILES_ROOT.getAbsolutePath}/loreId-$loreId"), 
+      spark))
+        .executeCollect()
+        .foreach(println)
+```
+
+Above code will replay the operator with LORE id `loreId` in local environment, and print the 
+restored data to console.
+
+
+
 # Limitations
 
 1. Currently, the LORE id is missed when the RDD of a `DataFrame` is used directly.
