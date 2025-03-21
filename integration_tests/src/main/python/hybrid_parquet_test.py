@@ -59,7 +59,9 @@ parquet_gens_fallback_lists = [
     # Decimal128 is NOT supported
     [decimal_gen_128bit],
     # Decimal with negative scale is NOT supported
-    [DecimalGen(precision=10, scale=-3)],
+    pytest.param([DecimalGen(precision=10, scale=-3)],
+                 marks=pytest.mark.xfail(
+                     reason='GpuParquetScan cannot read decimal with negative scale')),
     # BinaryType is NOT supported
     [BinaryGen()],
     # MapType wrapped by NestedType is NOT fully supported
