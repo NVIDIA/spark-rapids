@@ -69,6 +69,13 @@ public class TimeoutSparkListener extends SparkListener {
     }
   }
 
+  public synchronized void unregister() {
+    if (registered) {
+      sparkContext.sc().removeSparkListener(this);
+      registered = false;
+    }
+  }
+
   public void onJobStart(SparkListenerJobStart jobStart) {
     final int jobId = jobStart.jobId();
     LOG.debug("JobStart: registering timeout for Job {}", jobId);

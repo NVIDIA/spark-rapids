@@ -148,15 +148,7 @@ def pytest_sessionstart(session):
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
-
-    # Set up a listener to cancel hung Spark actions
     java_import(_s._jvm, 'org.apache.spark.rapids.tests.TimeoutSparkListener')
-    # TODO make timeout configurable and overridable per test
-    hung_job_listener = (
-      _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(_s._jsc, 240, True)
-    ) 
-    hung_job_listener.register()
-
     global _spark
     _spark = _s
 
@@ -264,3 +256,30 @@ def spark_version():
 @pytest.fixture(scope='function', autouse=_use_worker_logs())
 def log_test_name(request):
     logger.info("Running test '{}'".format(request.node.nodeid))
+
+@pytest.fixture(scope="function", autouse=True)
+def set_spark_job_timeout(request):
+    logger.debug("set_spark_job_timeout: BEFORE TEST\n")
+    tm = request.node.get_closest_marker("spark_job_timeout")
+    if tm:
+        spark_timeout = tm.kwargs.get('seconds', 30)
+        dump_threads = tm.kwargs.get('dump_threads', True)
+    else:
+        spark_timeout = 30
+        dump_threads = True
+
+    # before the test
+    hung_job_listener = (
+      _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(
+          _spark._jsc, 
+          spark_timeout, 
+          dump_threads)
+    ) 
+    hung_job_listener.register()
+    
+    yield # test
+
+    # after the test
+    logger.debug("set_spark_job_timeout: AFTER TEST\n")
+
+    hung_job_listener.unregister()
