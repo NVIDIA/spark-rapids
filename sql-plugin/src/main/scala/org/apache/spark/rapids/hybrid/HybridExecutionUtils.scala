@@ -65,13 +65,13 @@ object HybridExecutionUtils extends PredicateHelper {
 
     // Fallback to GpuScan over the `select count(1)` cases
     if (fsse.output.isEmpty || fsse.requiredSchema.isEmpty) {
-      logWarning("Fallback to GpuScan over the `select count(1)` cases")
+      logWarning(s"Fallback to GpuScan over the `select count(1)` cases: ${fsse.nodeName}")
       return false
     }
 
     // Check if data types of all fields are supported by HybridParquetReader
     fsse.requiredSchema.foreach { field =>
-      val canNotSupport = TrampolineUtil.dataTypeExistsRecursively(fsse.requiredSchema, {
+      val canNotSupport = TrampolineUtil.dataTypeExistsRecursively(field.dataType, {
         // Currently, under some circumstance, the native backend may return incorrect results
         // over MapType nested by nested types. To guarantee the correctness, disable this pattern
         // entirely.

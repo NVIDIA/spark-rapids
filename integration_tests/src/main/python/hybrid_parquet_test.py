@@ -52,12 +52,14 @@ parquet_gens_list = [
      MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
      MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
      ],
-    decimal_gens,
+    [decimal_gen_32bit, decimal_gen_64bit],
 ]
 
 parquet_gens_fallback_lists = [
-    # Decimal128 inside nested types is NOT supported
-    [MapGen(StringGen(pattern='key_[0-9]', nullable=False), decimal_gen_128bit)],
+    # Decimal128 is NOT supported
+    [decimal_gen_128bit],
+    # Decimal with negative scale is NOT supported
+    [DecimalGen(precision=10, scale=-3)],
     # BinaryType is NOT supported
     [BinaryGen()],
     # MapType wrapped by NestedType is NOT fully supported
@@ -68,6 +70,7 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", simple_string_to_string_map_gen]])],
     [StructGen([["c0", ArrayGen(simple_string_to_string_map_gen)]])],
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
+    # empty schema is NOT supported (select count(1))
     [],
 ]
 
@@ -84,8 +87,10 @@ def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
         lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -113,8 +118,10 @@ def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
         lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -168,8 +175,10 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
         lambda spark: gen_df(spark, gen_list, length=4096).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
