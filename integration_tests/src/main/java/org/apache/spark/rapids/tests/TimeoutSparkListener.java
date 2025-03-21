@@ -16,6 +16,9 @@
 
 package org.apache.spark.rapids.tests;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -33,9 +36,10 @@ import org.slf4j.LoggerFactory;
 
 
 public class TimeoutSparkListener extends SparkListener {
-  private final Logger LOG = LoggerFactory.getLogger(TimeoutSparkListener.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TimeoutSparkListener.class);
   private final JavaSparkContext sparkContext;
   private final int timeoutSeconds;
+  private final boolean shouldDumpThreads;
   private final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1,
     runnable -> {
       final Thread t = new Thread(runnable);
@@ -45,13 +49,16 @@ public class TimeoutSparkListener extends SparkListener {
     }
   );
   private final Map<Integer,ScheduledFuture<?>> cancelJobMap = new ConcurrentHashMap<>();
-  
+
   boolean registered;
 
-  public TimeoutSparkListener(int timeoutSeconds, JavaSparkContext sparkContext) {
+  public TimeoutSparkListener(JavaSparkContext sparkContext,
+    int timeoutSeconds,
+    boolean shouldDumpThreads) {
     super();
-    this.timeoutSeconds = timeoutSeconds;
     this.sparkContext = sparkContext;
+    this.timeoutSeconds = timeoutSeconds;
+    this.shouldDumpThreads = shouldDumpThreads;
   }
 
   public synchronized void register() {
@@ -66,8 +73,12 @@ public class TimeoutSparkListener extends SparkListener {
     final int jobId = jobStart.jobId();
     LOG.debug("JobStart: registering timeout for Job {}", jobId);
     final ScheduledFuture<?> scheduledFuture = runner.schedule(() -> {
-      final String message = "Job " + jobId + " exceeded the timeout of " + 
+      final String message = "RAPIDS Integration Test Job " + jobId + " exceeded the timeout of " +
         timeoutSeconds + " seconds, cancelling!!!";
+      if (shouldDumpThreads) {
+        LOG.error(message + " Driver thread dump follows");
+        dumpThreads();
+      }
       sparkContext.sc().cancelJob(jobId, message);
     }, timeoutSeconds, TimeUnit.SECONDS);
     cancelJobMap.put(jobId, scheduledFuture);
@@ -82,6 +93,13 @@ public class TimeoutSparkListener extends SparkListener {
 
   public void onApplicationEnd(SparkListenerApplicationEnd applicationEnd) {
     runner.shutdownNow();
+  }
+
+  private static void dumpThreads() {
+    final ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+    for (ThreadInfo threadInfo : threadMXBean.dumpAllThreads(true, true)) {
+      LOG.warn(threadInfo.toString());
+    }
   }
 }
 
