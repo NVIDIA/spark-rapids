@@ -31,7 +31,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Use KudoHostMergeResultWrapper.apply(KudoHostMergeResult) to construct
  * a KudoHostMergeResultWrapper.
  */
-case class KudoHostMergeResultWrapper(
+case class KudoHostMergeResultWrapper private(
     schema: Schema, columnInfoList: Array[ColumnViewInfo], spillableHostBuffer: SpillableHostBuffer)
   extends CoalescedHostResult {
 
