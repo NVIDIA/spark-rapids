@@ -23,6 +23,14 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * KudoHostMergeResultWrapper is a replacement for KudoHostMergeResult, because it:
+ * 1. Implements the CoalescedHostResult interface
+ * 2. Make the host buffer in KudoHostMergeResult spillable
+ *
+ * Use KudoHostMergeResultWrapper.apply(KudoHostMergeResult) to construct
+ * a KudoHostMergeResultWrapper.
+ */
 case class KudoHostMergeResultWrapper(
     schema: Schema, columnInfoList: Array[ColumnViewInfo], spillableHostBuffer: SpillableHostBuffer)
   extends CoalescedHostResult {
