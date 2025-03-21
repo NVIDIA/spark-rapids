@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import com.google.common.base.Charsets
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRelation}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
@@ -34,6 +33,7 @@ import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types._
 
 class HiveProviderImpl extends HiveProviderCmdShims {
@@ -253,7 +253,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
               }
             }
 
-            val sparkSession = SparkShimImpl.sessionFromPlan(wrapped)
+            val sparkSession = SparkSessionUtils.sessionFromPlan(wrapped)
             val hadoopConf = sparkSession.sessionState.newHadoopConf()
             lazy val hasBooleans = wrapped.output.exists { att =>
               TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == BooleanType)
