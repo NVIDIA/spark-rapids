@@ -627,9 +627,7 @@ object RmmRapidsRetryIterator extends Logging {
       var lastException: Throwable = null
       var firstAttempt: Boolean = true
       var result: Option[K] = None
-      var doSplitForStateMachineReasons = false
-      var doSplitForNonStateMachineReasons = false
-      var isFromGpuOom = true
+      var splitReason = SplitReason.NONE
       while (result.isEmpty && attemptIter.hasNext) {
         RetryStateTracker.setCurThreadRetrying(!firstAttempt)
         if (!firstAttempt) {
@@ -639,32 +637,21 @@ object RmmRapidsRetryIterator extends Logging {
             RmmSpark.blockThreadUntilReady()
           } catch {
             case _: GpuSplitAndRetryOOM =>
-              doSplitForStateMachineReasons = true
-              isFromGpuOom = true
+              splitReason = SplitReason.GPU_OOM
             case _: CpuSplitAndRetryOOM =>
-              doSplitForStateMachineReasons = true
-              isFromGpuOom = false
+              splitReason = SplitReason.CPU_OOM
           } finally {
             threadCountBlockedUntilReady.decrementAndGet()
           }
         }
         firstAttempt = false
-        if (doSplitForStateMachineReasons || doSplitForNonStateMachineReasons) {
+        if (splitReason != SplitReason.NONE) {
           if (BOOKKEEP_MEMORY) {
             logMemoryBookkeeping()
           }
-          if (doSplitForStateMachineReasons) {
-            attemptIter.split(if (isFromGpuOom) {
-              SplitReason.GPU_OOM
-            } else {
-              SplitReason.CPU_OOM
-            })
-          } else if (doSplitForNonStateMachineReasons) {
-            attemptIter.split(SplitReason.OTHER)
-          }
+          attemptIter.split(splitReason)
         }
-        doSplitForStateMachineReasons = false
-        doSplitForNonStateMachineReasons = false
+        splitReason = SplitReason.NONE
         try {
           // call the user's function
           config.foreach {
@@ -693,26 +680,34 @@ object RmmRapidsRetryIterator extends Logging {
           case ex: Throwable =>
             // handle a retry as the top-level exception
             val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
-            doSplitForStateMachineReasons = topLevelIsSplit
-            if (doSplitForStateMachineReasons) {
-              logInfo("doSplitForStateMachineReasons is set " +
-                "to true because topLevelIsSplit is true", ex)
+            if (topLevelIsSplit) {
+              if (isGpuOom) {
+                splitReason = SplitReason.GPU_OOM
+              } else {
+                splitReason = SplitReason.CPU_OOM
+              }
+              logInfo("splitReason is set " +
+                s"to ${splitReason} after checking isRetryOrSplitAndRetry", ex)
             }
-            isFromGpuOom = isGpuOom
 
             // handle any retries that are wrapped in a different top-level exception
             var causedByRetry = false
             if (!topLevelIsRetry) {
               val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
               causedByRetry = cbRetry
-              if (!doSplitForStateMachineReasons) {
-                doSplitForStateMachineReasons = doSplitForStateMachineReasons || cbSplit
-                if (doSplitForStateMachineReasons) {
-                  logInfo(s"doSplitForStateMachineReasons is set to true because " +
-                    s"cbSplit is ${cbSplit}", ex)
+              if (!(splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM)) {
+                if (cbSplit) {
+                  if (isGpuOom) {
+                    splitReason = SplitReason.GPU_OOM
+                  } else {
+                    splitReason = SplitReason.CPU_OOM
+                  }
+                }
+                if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
+                  logInfo(s"splitReason is set to ${splitReason} after checking " +
+                    s"causedByRetryOrSplit", ex)
                 }
               }
-              isFromGpuOom = isGpuOom
             }
 
             clearInjectedOOMIfNeeded()
@@ -726,8 +721,8 @@ object RmmRapidsRetryIterator extends Logging {
             if (!topLevelIsRetry && !causedByRetry) {
               if (isOrCausedByColumnSizeOverflow(ex)) {
                 // CUDF column size overflow? Attempt split-retry.
-                doSplitForNonStateMachineReasons = true
-                logInfo(s"doSplitForNonStateMachineReasons is set to true because " +
+                splitReason = SplitReason.OTHER
+                logInfo(s"splitReason is set to ${splitReason} after checking " +
                   s"isOrCausedByColumnSizeOverflow", ex)
               } else {
                 // we want to throw early here, since we got an exception
@@ -903,5 +898,5 @@ object RetryStateTracker {
 
 object SplitReason extends Enumeration {
   type SplitReason = Value
-  val GPU_OOM, CPU_OOM, OTHER = Value
+  val GPU_OOM, CPU_OOM, OTHER, NONE = Value
 }
