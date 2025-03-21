@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,19 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
-{"spark": "341db"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.classic.SparkSession
+import org.apache.spark.sql.execution.SparkPlan
 
-object DeltaLakeUtils {
-  /* Check for _databricks_internal when running on Databricks */
-  def isDatabricksDeltaLakeScan(f: FileSourceScanExec): Boolean = {
-    f.requiredSchema.fields.exists(_.name.startsWith("_databricks_internal"))
+object SparkSessionUtils {
+  def sessionFromPlan(plan: SparkPlan): SparkSession = {
+    plan.session
+  }
+
+  def leafNodeDefaultParallelism(ss: SparkSession): Int = {
+    ss.leafNodeDefaultParallelism
   }
 }
