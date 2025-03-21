@@ -483,7 +483,7 @@ object RmmRapidsRetryIterator extends Logging {
           case SplitReason.CPU_OOM => throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
           case SplitReason.OTHER =>
             throw new IllegalStateException("Non OOM State Machine reason caused split," +
-              " but splitPolicy not set")
+              s" but splitPolicy not set. The current attempt: ${attemptStack.head}")
         }
       }
       val curAttempt = attemptStack.pop()
