@@ -166,6 +166,9 @@ object GpuShuffledSizedHashJoinExec {
 
     /**
      * Build an iterator in preparation for using it for sub-joins.
+     * Implementations should consider the case where the queue is modified after this
+     * call. That said, implementations should not make a snapshot of the input queue,
+     * or directly save a iterator from the queue at the time of this call.
      *
      * @param queue a possibly empty queue of data that has already been fetched from the underlying
      *              iterator as part of probing sizes of the join inputs
