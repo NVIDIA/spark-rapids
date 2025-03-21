@@ -372,6 +372,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   def right: SparkPlan
   def isGpuShuffle: Boolean
   def gpuBatchSizeBytes: Long
+  def partitionNumAmplification: Double
   def isSkewJoin: Boolean
   def cpuLeftKeys: Seq[Expression]
   def cpuRightKeys: Seq[Expression]
@@ -452,7 +453,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
           doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
         }
       } else {
-        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
+        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
       }
       val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
       val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
@@ -522,8 +523,9 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   private def doBigBuildJoin(
       info: JoinInfo,
       gpuBatchSizeBytes: Long,
+      partitionNumAmplification: Double,
       metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
-    new BigSizedJoinIterator(info, gpuBatchSizeBytes, metricsMap)
+    new BigSizedJoinIterator(info, gpuBatchSizeBytes, partitionNumAmplification, metricsMap)
   }
 
   /**
@@ -771,6 +773,7 @@ case class GpuShuffledSymmetricHashJoinExec(
     override val right: SparkPlan,
     override val isGpuShuffle: Boolean,
     override val gpuBatchSizeBytes: Long,
+    override val partitionNumAmplification: Double,
     override val readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     override val cpuLeftKeys: Seq[Expression],
@@ -1079,6 +1082,7 @@ case class GpuShuffledAsymmetricHashJoinExec(
     override val right: SparkPlan,
     override val isGpuShuffle: Boolean,
     override val gpuBatchSizeBytes: Long,
+    override val partitionNumAmplification: Double,
     override val readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     override val cpuLeftKeys: Seq[Expression],
@@ -1584,11 +1588,13 @@ class StreamSidePartitioner(
 class BigSizedJoinIterator(
     info: JoinInfo,
     gpuBatchSizeBytes: Long,
+    partitionNumAmplification: Double,
     metrics: Map[String, GpuMetric])
   extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
   private val buildPartitioner = {
-    val numPartitions = (info.buildSize / gpuBatchSizeBytes) + 1
+    val numPartitions =
+      (((info.buildSize / gpuBatchSizeBytes) + 1) * partitionNumAmplification).toLong
     require(numPartitions <= Int.MaxValue, "too many build partitions")
     new BuildSidePartitioner(info.joinType, numPartitions.toInt, info.buildIter,
       info.exprs.buildTypes, info.exprs.boundBuildKeys, gpuBatchSizeBytes, metrics)

@@ -110,6 +110,7 @@ class GpuShuffledHashJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          conf.sizedJoinPartitionAmplification,
           readOpt,
           isSkewJoin = false)(
           join.leftKeys,
@@ -125,6 +126,7 @@ class GpuShuffledHashJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          conf.sizedJoinPartitionAmplification,
           readOpt,
           isSkewJoin = false)(
           join.leftKeys,
