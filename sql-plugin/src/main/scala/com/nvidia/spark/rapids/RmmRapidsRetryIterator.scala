@@ -687,7 +687,7 @@ object RmmRapidsRetryIterator extends Logging {
                 splitReason = SplitReason.CPU_OOM
               }
               logInfo("splitReason is set " +
-                s"to ${splitReason} after checking isRetryOrSplitAndRetry", ex)
+                s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:", ex)
             }
 
             // handle any retries that are wrapped in a different top-level exception
@@ -705,7 +705,7 @@ object RmmRapidsRetryIterator extends Logging {
                 }
                 if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
                   logInfo(s"splitReason is set to ${splitReason} after checking " +
-                    s"causedByRetryOrSplit", ex)
+                    s"causedByRetryOrSplit, related exception:", ex)
                 }
               }
             }
@@ -723,7 +723,7 @@ object RmmRapidsRetryIterator extends Logging {
                 // CUDF column size overflow? Attempt split-retry.
                 splitReason = SplitReason.OTHER
                 logInfo(s"splitReason is set to ${splitReason} after checking " +
-                  s"isOrCausedByColumnSizeOverflow", ex)
+                  s"isOrCausedByColumnSizeOverflow, related exception:", ex)
               } else {
                 // we want to throw early here, since we got an exception
                 // we were not prepared to handle
