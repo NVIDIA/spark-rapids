@@ -267,7 +267,6 @@ def set_spark_job_timeout(request):
     else:
         spark_timeout = 30
         dump_threads = True
-
     # before the test
     hung_job_listener = (
       _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(
@@ -276,10 +275,8 @@ def set_spark_job_timeout(request):
           dump_threads)
     ) 
     hung_job_listener.register()
-    
-    yield # test
-
+    # yield for test
+    yield 
     # after the test
     logger.debug("set_spark_job_timeout: AFTER TEST\n")
-
     hung_job_listener.unregister()

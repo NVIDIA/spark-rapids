@@ -27,7 +27,7 @@ import warnings
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
 pytestmark = [
     pytest.mark.premerge_ci_1,
-    pytest.mark.spark_job_timeout(seconds=300, dump_threads=True)
+    pytest.mark.spark_job_timeout(seconds=300)
 ]
 
 _grpkey_longs_with_no_nulls = [

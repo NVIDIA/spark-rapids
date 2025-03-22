@@ -28,7 +28,7 @@ from spark_session import is_databricks104_or_later, with_cpu_session, is_before
 
 pytestmark = [
     pytest.mark.nightly_resource_consuming_test,
-    pytest.mark.spark_job_timeout(seconds=300, dump_threads=True)
+    pytest.mark.spark_job_timeout(seconds=300)
 ]
 
 _float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',

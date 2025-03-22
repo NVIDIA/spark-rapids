@@ -81,7 +81,8 @@ public class TimeoutSparkListener extends SparkListener {
     LOG.debug("JobStart: registering timeout for Job {}", jobId);
     final ScheduledFuture<?> scheduledFuture = runner.schedule(() -> {
       final String message = "RAPIDS Integration Test Job " + jobId + " exceeded the timeout of " +
-        timeoutSeconds + " seconds, cancelling!!!";
+        timeoutSeconds + " seconds, cancelling.\n" + 
+        "Adjust using the marker pytest.mark.spark_job_timeout(seconds,dump_threads)";
       if (shouldDumpThreads) {
         LOG.error(message + " Driver thread dump follows");
         dumpThreads();

@@ -23,7 +23,10 @@ import pyspark.sql.functions as f
 from spark_session import is_before_spark_340
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
-pytestmark = pytest.mark.premerge_ci_1
+pytestmark = [
+  pytest.mark.premerge_ci_1,
+  pytest.mark.spark_job_timeout(seconds=300)
+]
 
 # Many Spark versions have issues sorting decimals.
 # https://issues.apache.org/jira/browse/SPARK-40089
@@ -88,7 +91,7 @@ def test_single_orderby_fallback_for_array_of_struct(data_gen, order):
     pytest.param(1),
     pytest.param(200)
 ])
-@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
     pytest.param(StructGen([['child0', decimal_gen_128bit]])),
@@ -321,13 +324,7 @@ def test_single_nested_orderby_with_skew(data_gen, stable_sort):
 # should see around 64 batches of data. So this is the most valid if there are less than 64 tasks
 # in the cluster, but it should still work even then.
 @pytest.mark.parametrize('data_gen', [long_gen, StructGen([('child0', long_gen)]), ArrayGen(byte_gen)], ids=idfn)
-@pytest.mark.parametrize(
-    'stable_sort', [
-        'STABLE',
-        pytest.param('OUTOFCORE', marks=[
-            pytest.mark.spark_job_timeout(seconds=300, dump_threads=True)
-        ])
-     ], ids=idfn)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 def test_large_orderby(data_gen, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen, length=1024*128)\
