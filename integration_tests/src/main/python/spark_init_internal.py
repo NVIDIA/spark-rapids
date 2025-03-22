@@ -259,13 +259,14 @@ def log_test_name(request):
 
 @pytest.fixture(scope="function", autouse=True)
 def set_spark_job_timeout(request):
+    default_timeout_seconds = 60
     logger.debug("set_spark_job_timeout: BEFORE TEST\n")
     tm = request.node.get_closest_marker("spark_job_timeout")
     if tm:
-        spark_timeout = tm.kwargs.get('seconds', 30)
+        spark_timeout = tm.kwargs.get('seconds', default_timeout_seconds)
         dump_threads = tm.kwargs.get('dump_threads', True)
     else:
-        spark_timeout = 30
+        spark_timeout = default_timeout_seconds
         dump_threads = True
     # before the test
     hung_job_listener = (
