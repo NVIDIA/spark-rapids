@@ -25,7 +25,10 @@ from spark_session import is_before_spark_320, is_databricks113_or_later, is_dat
 import warnings
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
-pytestmark = [pytest.mark.premerge_ci_1]
+pytestmark = [
+    pytest.mark.premerge_ci_1,
+    pytest.mark.spark_job_timeout(seconds=300, dump_threads=True)
+]
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
