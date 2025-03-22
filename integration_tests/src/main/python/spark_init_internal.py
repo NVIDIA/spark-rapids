@@ -280,3 +280,4 @@ def set_spark_job_timeout(request):
     # after the test
     logger.debug("set_spark_job_timeout: AFTER TEST\n")
     hung_job_listener.unregister()
+
