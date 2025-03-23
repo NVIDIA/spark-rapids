@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,17 +15,15 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, \
-    assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect
+    assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+import pyspark.sql.utils
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later
-
-pytestmark = [
-    pytest.mark.spark_job_timeout(seconds=900)
-]
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 

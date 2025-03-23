@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,10 +20,7 @@ from marks import allow_non_gpu, ignore_order
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-pytestmark = [
-  pytest.mark.nightly_resource_consuming_test,
-  pytest.mark.spark_job_timeout(seconds=300)
-]
+pytestmark = pytest.mark.nightly_resource_consuming_test
 
 explode_gens = all_gen + [binary_gen]
 arrays_with_binary = [ArrayGen(BinaryGen(max_length=5))]

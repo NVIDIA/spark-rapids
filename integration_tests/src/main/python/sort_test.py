@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,10 +23,7 @@ import pyspark.sql.functions as f
 from spark_session import is_before_spark_340
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
-pytestmark = [
-  pytest.mark.premerge_ci_1,
-  pytest.mark.spark_job_timeout(seconds=900)
-]
+pytestmark = pytest.mark.premerge_ci_1
 
 # Many Spark versions have issues sorting decimals.
 # https://issues.apache.org/jira/browse/SPARK-40089
@@ -91,7 +88,7 @@ def test_single_orderby_fallback_for_array_of_struct(data_gen, order):
     pytest.param(1),
     pytest.param(200)
 ])
-@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
     pytest.param(StructGen([['child0', decimal_gen_128bit]])),

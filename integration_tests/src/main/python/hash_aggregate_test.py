@@ -26,10 +26,7 @@ from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330
 
-pytestmark = [
-    pytest.mark.nightly_resource_consuming_test,
-    pytest.mark.spark_job_timeout(seconds=300)
-]
+pytestmark = pytest.mark.nightly_resource_consuming_test
 
 _float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                'spark.rapids.sql.castStringToFloat.enabled': 'true'}
