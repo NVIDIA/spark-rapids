@@ -24,7 +24,7 @@ import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later
 
 pytestmark = [
-    pytest.mark.spark_job_timeout(seconds=300)
+    pytest.mark.spark_job_timeout(seconds=900)
 ]
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }

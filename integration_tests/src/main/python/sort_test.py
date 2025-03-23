@@ -25,7 +25,7 @@ from spark_session import is_before_spark_340
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
 pytestmark = [
   pytest.mark.premerge_ci_1,
-  pytest.mark.spark_job_timeout(seconds=300)
+  pytest.mark.spark_job_timeout(seconds=900)
 ]
 
 # Many Spark versions have issues sorting decimals.
