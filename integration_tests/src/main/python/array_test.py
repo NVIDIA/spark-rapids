@@ -319,12 +319,14 @@ def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
             f"slice(a, {zero_start}, {valid_length})"))
+    error = "The value of parameter(s) `start` in `slice` is invalid: Expects a positive or a negative value for `start`, but got" if is_databricks143_or_later() \
+            else "Unexpected value for start in function slice: SQL array indices start at 1."
     # start can not be zero
     assert_gpu_and_cpu_error(
         lambda spark: three_col_df(spark, data_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
             f"slice(a, {zero_start}, {valid_length})").collect(),
         conf={},
-        error_message='Unexpected value for start in function slice: SQL array indices start at 1.')
+        error_message=error)
 
 
 @pytest.mark.parametrize('valid_start', [5, 'b'], ids=idfn)
@@ -336,12 +338,14 @@ def test_array_slice_with_negative_length(data_gen, valid_start, negative_length
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
             f"slice(a, {valid_start}, {negative_length})"))
+    error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0" if is_databricks143_or_later() \
+            else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
     # length can not be negative
     assert_gpu_and_cpu_error(
         lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
             f"slice(a, {valid_start}, {negative_length})").collect(),
         conf={},
-        error_message='Unexpected value for length in function slice: length must be greater than or equal to 0.')
+        error_message=error)
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
