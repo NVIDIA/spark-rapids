@@ -367,9 +367,14 @@ class SpillableHostBufferHandle private (
       }
     }
     if (materialized == null) {
-      materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
-        diskHandle.materializeToHostMemoryBuffer(hmb)
-        hmb
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      try {
+        materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
+          diskHandle.materializeToHostMemoryBuffer(hmb)
+          hmb
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -524,9 +529,14 @@ class SpillableDeviceBufferHandle private (
     // state, as we are not allowing unspill, and we don't need
     // to hold locks while we copy back from here.
     if (materialized == null) {
-      materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      try {
+        materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -618,16 +628,21 @@ class SpillableColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
-      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
-      }
-      val cb = withResource(devBuffer) { _ =>
-        withResource(Table.fromPackedTable(meta.get, devBuffer)) { tbl =>
-          GpuColumnVector.from(tbl, dt)
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
         }
+        val cb = withResource(devBuffer) { _ =>
+          withResource(Table.fromPackedTable(meta.get, devBuffer)) { tbl =>
+            GpuColumnVector.from(tbl, dt)
+          }
+        }
+        materialized = cb
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
-      materialized = cb
     }
     materialized
   }
@@ -757,16 +772,21 @@ class SpillableColumnarBatchFromBufferHandle private (
       }
     }
     if (materialized == null) {
-      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
-      }
-      val cb = withResource(devBuffer) { _ =>
-        withResource(Table.fromPackedTable(meta.get.packedMetaAsByteBuffer(), devBuffer)) { tbl =>
-          GpuColumnVector.from(tbl, dt)
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
         }
+        val cb = withResource(devBuffer) { _ =>
+          withResource(Table.fromPackedTable(meta.get.packedMetaAsByteBuffer(), devBuffer)) { tbl =>
+            GpuColumnVector.from(tbl, dt)
+          }
+        }
+        materialized = cb
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
-      materialized = cb
     }
     materialized
   }
@@ -865,12 +885,17 @@ class SpillableCompressedColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
-      val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
-        hostHandle.materializeToDeviceMemoryBuffer(dmb)
-        dmb
-      }
-      materialized = withResource(devBuffer) { _ =>
-        GpuCompressedColumnVector.from(devBuffer, meta.get)
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
+          hostHandle.materializeToDeviceMemoryBuffer(dmb)
+          dmb
+        }
+        materialized = withResource(devBuffer) { _ =>
+          GpuCompressedColumnVector.from(devBuffer, meta.get)
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -971,12 +996,17 @@ class SpillableHostColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
-      materialized = diskHandle.withInputWrappedStream { inputStream =>
-        val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(inputStream)
-        val hostCols = withResource(hostBuffer) { _ =>
-          SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      try {
+        materialized = diskHandle.withInputWrappedStream { inputStream =>
+          val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(inputStream)
+          val hostCols = withResource(hostBuffer) { _ =>
+            SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+          }
+          new ColumnarBatch(hostCols.toArray, numRows)
         }
-        new ColumnarBatch(hostCols.toArray, numRows)
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
       }
     }
     materialized
@@ -1224,10 +1254,15 @@ trait SpillableStore[T <: SpillableHandle]
       0L
     } else {
       withResource(spillNvtxRange) { _ =>
-        val plan = makeSpillPlan(spillNeeded)
-        val amountSpilled = plan.trySpill()
-        postSpill(plan)
-        amountSpilled
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+        try {
+          val plan = makeSpillPlan(spillNeeded)
+          val amountSpilled = plan.trySpill()
+          postSpill(plan)
+          amountSpilled
+        } finally {
+          com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
+        }
       }
     }
   }
