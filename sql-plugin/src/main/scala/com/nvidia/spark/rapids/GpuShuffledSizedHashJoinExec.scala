@@ -518,6 +518,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
    * @param info join information from the probing phase
    * @param gpuBatchSizeBytes target GPU batch size
    * @param metricsMap metrics to update
+   * @param partitionNumAmplification boost number of partitions for build size by this times
    * @return iterator to produce the results of the join
    */
   private def doBigBuildJoin(
@@ -1583,6 +1584,7 @@ class StreamSidePartitioner(
  *
  * @param info join information from input probing phase
  * @param gpuBatchSizeBytes target GPU batch size
+ * @param partitionNumAmplification boost number of partitions for build size by this times
  * @param metrics metrics to update
  */
 class BigSizedJoinIterator(
