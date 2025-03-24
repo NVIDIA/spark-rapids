@@ -52,15 +52,15 @@ case class CudfHLLPP(override val dataType: DataType,
       }
     }
   override lazy val groupByAggregate: GroupByAggregation = {
-      val hll =new HyperLogLogPlusPlusHostUDF(AggregationType.GroupBy, precision)
-      GroupByAggregation.hostUDF(hll)
-    }
+    val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.GroupBy, precision)
+    GroupByAggregation.hostUDF(hll)
+  }
   override val name: String = "CudfHyperLogLogPlusPlus"
 }
 
 case class CudfMergeHLLPP(override val dataType: DataType,
     precision: Int)
-    extends CudfAggregate {
+  extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (input: cudf.ColumnVector) => {
       val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.ReductionMerge, precision)
@@ -68,9 +68,9 @@ case class CudfMergeHLLPP(override val dataType: DataType,
     }
 
   override lazy val groupByAggregate: GroupByAggregation = {
-      val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.GroupByMerge, precision)
-      GroupByAggregation.hostUDF(hll)
-    }
+    val hll = new HyperLogLogPlusPlusHostUDF(AggregationType.GroupByMerge, precision)
+    GroupByAggregation.hostUDF(hll)
+  }
 
   override val name: String = "CudfMergeHyperLogLogPlusPlus"
 }
@@ -81,7 +81,7 @@ case class CudfMergeHLLPP(override val dataType: DataType,
  */
 case class GpuHyperLogLogPlusPlusEvaluation(childExpr: Expression,
     precision: Int)
-    extends GpuExpression with ShimExpression {
+  extends GpuExpression with ShimExpression {
   override def dataType: DataType = LongType
 
   override def nullable: Boolean = false
@@ -104,7 +104,7 @@ case class GpuHyperLogLogPlusPlusEvaluation(childExpr: Expression,
  * Spark APPROX_COUNT_DISTINCT on NULLs returns zero
  */
 case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
-    extends GpuAggregateFunction with Serializable {
+  extends GpuAggregateFunction with Serializable {
 
   // Consistent with Spark
   private lazy val precision: Int = GpuHyperLogLogPlusPlus.computePrecision(relativeSD)
