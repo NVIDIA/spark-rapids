@@ -39,7 +39,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter}
+import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -2601,6 +2601,7 @@ class MultiFileCloudParquetPartitionReader(
      */
     override def call(): HostMemoryBuffersWithMetaDataBase = {
       TrampolineUtil.setTaskContext(taskContext)
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         doRead()
       } catch {
@@ -2618,6 +2619,7 @@ class MultiFileCloudParquetPartitionReader(
             DateTimeRebaseLegacy, DateTimeRebaseLegacy,
             hasInt96Timestamps = false, null, null, 0)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }

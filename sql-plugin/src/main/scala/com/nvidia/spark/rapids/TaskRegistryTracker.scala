@@ -51,12 +51,12 @@ object TaskRegistryTracker {
     }
   }
 
-  /**
-   * @return true if this attempt actually done registering
-   */
-  def registerThreadForRetry(): Boolean = synchronized {
+  def registerThreadForRetry(): Unit = synchronized {
     val tc = TaskContext.get()
-    if (tc != null) {
+    if (
+      tc != null &&
+        !RmmSpark.isThreadWorkingOnTaskAsPoolThread // check if the thread is a pool thread
+    ) {
       // If we don't have a TaskContext we are either in a test or in some other thread
       // If it is some other thread, then they are responsible to amke sure things are
       // registered properly themselves. If it is a test, well you need to update your
@@ -73,28 +73,7 @@ object TaskRegistryTracker {
         } else {
           taskToThread.get(taskId) += threadId
         }
-        return true
       }
     }
-    false
-  }
-
-  /**
-   * @return true if this attempt actually done unregistering
-   */
-  def unregisterThreadForRetry(): Boolean = synchronized {
-    val tc = TaskContext.get()
-    if (tc != null) {
-      val threadId = RmmSpark.getCurrentThreadId
-      val taskId = tc.taskAttemptId()
-      if (registeredThreads.remove(threadId)) {
-        RmmSpark.removeAllCurrentThreadAssociation()
-        if (taskToThread.containsKey(taskId)) {
-          taskToThread.get(taskId) -= threadId
-        }
-        return true
-      }
-    }
-    false
   }
 }

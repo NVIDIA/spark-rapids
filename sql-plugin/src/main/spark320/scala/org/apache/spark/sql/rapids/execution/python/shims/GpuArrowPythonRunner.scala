@@ -46,8 +46,7 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.DataOutputStream
 import java.net.Socket
 
-import com.nvidia.spark.rapids.{GpuSemaphore, TaskRegistryTracker}
-import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.ChainedPythonFunctions
@@ -88,15 +87,6 @@ class GpuArrowPythonRunner(
       }
       val isInputNonEmpty = inputIterator.nonEmpty
       lazy val arrowSchema = ArrowUtilsShim.toArrowSchema(pythonInSchema, timeZoneId)
-
-      override def run(): Unit = Utils.logUncaughtExceptions {
-        TaskContext.setTaskContext(context)
-        // For writer thread, it is essentially a split of the original task, so we want to
-        // treat it exactly like the main task thread, e.g. being registered for its whole lifecycle
-        TaskRegistryTracker.registerThreadForRetry()
-        RmmSpark.bindPropagateThreads(RmmSpark.getCurrentThreadId, readerNativeThreadId)
-        super.run()
-      }
 
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
         arrowWriter.writeCommand(dataOut, conf)

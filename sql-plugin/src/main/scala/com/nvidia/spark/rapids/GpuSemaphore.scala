@@ -345,6 +345,8 @@ private final class GpuSemaphore() extends Logging {
   private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
 
   def tryAcquire(context: TaskContext): TryAcquireResult = {
+    // Make sure that the thread/task is registered before we try and block
+    TaskRegistryTracker.registerThreadForRetry()
     val taskAttemptId = context.taskAttemptId()
     val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
       onTaskCompletion(context, completeTask)
@@ -366,6 +368,8 @@ private final class GpuSemaphore() extends Logging {
   }
 
   def acquireIfNecessary(context: TaskContext): Unit = {
+    // Make sure that the thread/task is registered before we try and block
+    TaskRegistryTracker.registerThreadForRetry()
     GpuTaskMetrics.get.semWaitTime {
       val taskAttemptId = context.taskAttemptId()
       val taskInfo = tasks.computeIfAbsent(taskAttemptId, _ => {
