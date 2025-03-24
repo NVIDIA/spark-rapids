@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.FileUtils.createTempFile
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoHostMergeResult, KudoSerializer, MergeOptions}
+import com.nvidia.spark.rapids.jni.kudo.{DumpOption, KudoHostMergeResultWrapper, KudoSerializer, MergeOptions}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
 
@@ -167,7 +167,7 @@ object GpuShuffleCoalesceUtils {
 /**
  * A trait representing the shuffle coalesced result by the Shuffle coalesce iterator.
  */
-sealed trait CoalescedHostResult extends AutoCloseable {
+trait CoalescedHostResult extends AutoCloseable {
   /** Convert itself to a GPU batch */
   def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch
 
@@ -216,23 +216,6 @@ class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] 
     }
     new JCudfCoalescedHostResult(ret)
   }
-}
-
-case class KudoHostMergeResultWrapper(inner: KudoHostMergeResult) extends CoalescedHostResult {
-
-  /** Convert itself to a GPU batch */
-  override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
-    RmmRapidsRetryIterator.withRetryNoSplit {
-      withResource(inner.toTable) { cudfTable =>
-        GpuColumnVector.from(cudfTable, dataTypes)
-      }
-    }
-  }
-
-  /** Get the data size */
-  override def getDataSize: Long = inner.getDataLength
-
-  override def close(): Unit = inner.close()
 }
 
 case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
