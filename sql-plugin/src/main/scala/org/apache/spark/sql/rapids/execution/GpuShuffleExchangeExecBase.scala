@@ -39,6 +39,7 @@ import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.createAdditionalExchangeMetrics
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
@@ -90,7 +91,7 @@ abstract class GpuShuffleMetaBase(
 
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning
-        if SparkShimImpl.sessionFromPlan(shuffle).sessionState.conf
+        if SparkSessionUtils.sessionFromPlan(shuffle).sessionState.conf
             .sortBeforeRepartition =>
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig +
             TypeSig.ARRAY.nested(GpuOverrides.gpuCommonTypes)

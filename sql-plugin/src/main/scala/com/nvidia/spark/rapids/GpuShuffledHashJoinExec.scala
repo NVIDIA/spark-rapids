@@ -138,6 +138,7 @@ class GpuShuffledHashJoinMeta(
           joinCondition,
           left,
           right,
+          readOpt,
           isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys)
@@ -157,6 +158,7 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
+    readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
@@ -238,7 +240,7 @@ case class GpuShuffledHashJoinExec(
         val (buildData, maybeBufferedStreamIter) =
           GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(buildIter,
             new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
-            realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics)
+            realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics, readOption)
 
         buildData match {
           case Left(singleBatch) =>
@@ -308,7 +310,8 @@ object GpuShuffledHashJoinExec extends Logging {
       buildOutput: Seq[Attribute],
       buildGoal: CoalesceSizeGoal,
       subPartConf: Option[Boolean],
-      coalesceMetrics: Map[String, GpuMetric]):
+      coalesceMetrics: Map[String, GpuMetric],
+      readOption: CoalesceReadOption):
   (Either[ColumnarBatch, Iterator[ColumnarBatch]], Iterator[ColumnarBatch]) = {
     val buildTime = coalesceMetrics(GpuMetric.BUILD_TIME)
     val buildDataType = buildOutput.map(_.dataType).toArray
@@ -317,7 +320,7 @@ object GpuShuffledHashJoinExec extends Logging {
       var isBuildSerialized = false
       // Batches type detection
       val coalesceBuiltIter = getHostShuffleCoalesceIterator(
-        bufBuildIter, buildDataType, targetSize, coalesceMetrics).map { iter =>
+        bufBuildIter, buildDataType, targetSize, readOption, coalesceMetrics).map { iter =>
         isBuildSerialized = true
         iter
       }.getOrElse(bufBuildIter)
@@ -492,13 +495,14 @@ object GpuShuffledHashJoinExec extends Logging {
       iter: BufferedIterator[ColumnarBatch],
       dataTypes: Array[DataType],
       targetSize: Long,
+      readOption: CoalesceReadOption,
       coalesceMetrics: Map[String, GpuMetric]): Option[Iterator[CoalescedHostResult]] = {
     var retIter: Option[Iterator[CoalescedHostResult]] = None
     if (iter.hasNext && iter.head.numCols() == 1) {
       iter.head.column(0) match {
         case _: KudoSerializedTableColumn =>
           retIter = Some(new KudoHostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics,
-            dataTypes))
+            dataTypes, readOption))
         case _: SerializedTableColumn =>
           retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics))
         case _ => // should be gpu batches

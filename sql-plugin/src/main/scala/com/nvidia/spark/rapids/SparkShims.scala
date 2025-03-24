@@ -34,7 +34,6 @@ import org.apache.spark.sql.execution.datasources.{FileFormat, FilePartition, Pa
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types._
 
 trait SparkShims {
@@ -125,8 +124,6 @@ trait SparkShims {
 
   def getDateFormatter(): DateFormatter
 
-  def sessionFromPlan(plan: SparkPlan): SparkSession
-
   def isCustomReaderExec(x: SparkPlan): Boolean
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
@@ -171,8 +168,6 @@ trait SparkShims {
    * to bypass the check for those.
    */
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
-
-  def leafNodeDefaultParallelism(ss: SparkSession): Int
 
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 

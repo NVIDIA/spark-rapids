@@ -59,7 +59,9 @@ parquet_gens_fallback_lists = [
     # Decimal128 is NOT supported
     [decimal_gen_128bit],
     # Decimal with negative scale is NOT supported
-    [DecimalGen(precision=10, scale=-3)],
+    pytest.param([DecimalGen(precision=10, scale=-3)],
+                 marks=pytest.mark.xfail(
+                     reason='GpuParquetScan cannot read decimal with negative scale')),
     # BinaryType is NOT supported
     [BinaryGen()],
     # MapType wrapped by NestedType is NOT fully supported
@@ -175,8 +177,10 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
         lambda spark: gen_df(spark, gen_list, length=4096).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
