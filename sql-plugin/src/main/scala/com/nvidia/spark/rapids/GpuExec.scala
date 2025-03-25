@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
@@ -30,6 +29,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuTaskMetrics
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -46,7 +46,7 @@ trait GpuExec extends SparkPlan {
   import GpuMetric._
 
   def sparkSession: SparkSession = {
-    SparkShimImpl.sessionFromPlan(this)
+    SparkSessionUtils.sessionFromPlan(this)
   }
 
   /**

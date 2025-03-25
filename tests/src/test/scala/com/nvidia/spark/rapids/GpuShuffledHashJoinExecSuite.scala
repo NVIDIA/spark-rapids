@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,12 +56,13 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
       (verifyBuiltData: Either[ColumnarBatch, Iterator[ColumnarBatch]] => Unit): Unit = {
     val mockStreamIter = mock[Iterator[ColumnarBatch]]
     when(mockStreamIter.hasNext).thenReturn(true)
+    val conf = new RapidsConf(new SparkConf())
     val (builtData, _) = GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(
       buildIter,
       mockStreamIter,
       targetSize,
       buildAttrs,
-      buildGoal, None, metricMap)
+      buildGoal, None, metricMap, CoalesceReadOption(conf))
 
     verifyBuiltData(builtData)
     // build iterator should be drained
