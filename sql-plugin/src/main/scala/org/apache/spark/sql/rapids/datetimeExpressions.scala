@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.ZoneId
+import java.time.{LocalDateTime, ZoneId, ZoneOffset}
 import java.util.concurrent.TimeUnit
 
 import scala.concurrent.duration.DAYS
@@ -909,7 +909,6 @@ abstract class GpuToTimestamp
             if (GpuOverrides.isUTCTimezone(zoneId)) {
               lhs.getBase.asTimestampMicroseconds()
             } else {
-              assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
               withResource(lhs.getBase.asTimestampMicroseconds) { tsInMs =>
                 GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId)
               }
@@ -1120,9 +1119,6 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
           timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
-          if (!GpuTimeZoneDB.isSupportedTimeZone(timezoneId)) {
-            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-          }
         }
     }
   }
@@ -1149,10 +1145,23 @@ case class GpuFromUTCTimestamp(
   override def right: Expression = timezone
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
   override def dataType: DataType = TimestampType
+  private def lastCachedYear: Integer = 1900
+  private def maxCachedTimestamp: Long = LocalDateTime.of(lastCachedYear+1, 1, 1, 0, 0)
+                                                          toEpochSecond(ZoneOffset.UTC)
+
+  def validTimestamps(input: GpuColumnVector): BOOL8 {
+    val comparisonResults = input.binaryOp(BinaryOp.GREATER, maxCachedTimestamp, DType.BOOL8);
+    withResource(comparisonResults) { _=>
+      comparisonResults.any().getBoolean()
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (rhs.getBase.isValid) {
-      if (GpuOverrides.isUTCTimezone(zoneId)) {
+      if (!validTimestamps(lhs)) {
+        // add spark fallback
+      }
+      else if (GpuOverrides.isUTCTimezone(zoneId)) {
         // For UTC timezone, just a no-op bypassing GPU computation.
         lhs.getBase.incRefCount()
       } else {

@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 import java.time.ZoneId
 import scala.collection.mutable
@@ -384,18 +383,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
-  def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
-    // Both of the Spark session time zone and JVM's default time zone should be UTC.
-    if (!TimeZoneDB.isSupportedTimezone(sessionZoneId)) {
-      willNotWorkOnGpu("Not supported zone id. " +
-        s"Actual session local zone id: $sessionZoneId")
-    }
-
-    val defaultZoneId = ZoneId.systemDefault()
-    if (!TimeZoneDB.isSupportedTimezone(defaultZoneId)) {
-      willNotWorkOnGpu(s"Not supported zone id. Actual default zone id: $defaultZoneId")
-    }
-  }
 
   /**
    * Create a string representation of this in append.
@@ -1125,12 +1112,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
     // Level 2 check
     if (!isTimeZoneSupported) return checkUTCTimezone(this, getZoneId())
-
-    // Level 3 check
-    val zoneId = getZoneId()
-    if (!GpuTimeZoneDB.isSupportedTimeZone(zoneId)) {
-      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(zoneId.toString))
-    }
   }
 
   protected def getZoneId(): ZoneId = {

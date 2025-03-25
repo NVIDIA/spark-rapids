@@ -36,17 +36,6 @@ object TimeZoneDB {
     DateTimeUtils.getZoneId(formattedZoneId)
   }
 
-  // Support fixed offset or no transition rule case
-  def isSupportedTimeZone(timezoneId: String): Boolean = {
-    val rules = getZoneId(timezoneId).getRules
-    rules.isFixedOffset || rules.getTransitionRules.isEmpty
-  }
-
-  def isSupportedTimezone(timezoneId: ZoneId): Boolean = {
-    val rules = timezoneId.getRules
-    rules.isFixedOffset || rules.getTransitionRules.isEmpty
-  }
-
   def nonUTCTimezoneNotSupportedStr(exprName: String): String = {
     s"$exprName is not supported with timezone settings: (JVM:" +
       s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
