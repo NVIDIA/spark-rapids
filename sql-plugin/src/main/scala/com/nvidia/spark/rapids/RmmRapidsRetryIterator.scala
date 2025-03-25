@@ -403,8 +403,8 @@ object RmmRapidsRetryIterator extends Logging {
           throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
         case SplitReason.GPU_OOM =>
           throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
-        case SplitReason.OTHER =>
-          throw new IllegalStateException("Non OOM State Machine reason caused split, but current "
+        case SplitReason.CUDF_OVERFLOW =>
+          throw new IllegalStateException("CUDF String column overflow caused split, but current "
             + "spliterator does not support splitting.")
       }
     }
@@ -481,8 +481,8 @@ object RmmRapidsRetryIterator extends Logging {
         splitReason match {
           case SplitReason.GPU_OOM => throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
           case SplitReason.CPU_OOM => throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
-          case SplitReason.OTHER =>
-            throw new IllegalStateException("Non OOM State Machine reason caused split," +
+          case SplitReason.CUDF_OVERFLOW =>
+            throw new IllegalStateException("CUDF String column overflow caused split," +
               s" but splitPolicy not set. The current attempt: ${attemptStack.head}")
         }
       }
@@ -721,7 +721,7 @@ object RmmRapidsRetryIterator extends Logging {
             if (!topLevelIsRetry && !causedByRetry) {
               if (isOrCausedByColumnSizeOverflow(ex)) {
                 // CUDF column size overflow? Attempt split-retry.
-                splitReason = SplitReason.OTHER
+                splitReason = SplitReason.CUDF_OVERFLOW
                 logInfo(s"splitReason is set to ${splitReason} after checking " +
                   s"isOrCausedByColumnSizeOverflow, related exception:", ex)
               } else {
@@ -898,5 +898,5 @@ object RetryStateTracker {
 
 object SplitReason extends Enumeration {
   type SplitReason = Value
-  val GPU_OOM, CPU_OOM, OTHER, NONE = Value
+  val GPU_OOM, CPU_OOM, CUDF_OVERFLOW, NONE = Value
 }
