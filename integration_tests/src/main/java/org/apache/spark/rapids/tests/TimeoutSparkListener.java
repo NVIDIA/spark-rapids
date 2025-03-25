@@ -34,7 +34,21 @@ import org.apache.spark.scheduler.SparkListenerJobStart;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
+/**
+ * This code helps acceelrate root cause investigations for pipeline hangs
+ * and prevents other failures from being masked by the hangs in the meantime.
+ *
+ * This class implements a SparkListner to keep track of Spark Actions (Jobs)
+ * taking longer than expected / hanging perpetually leading to the CI pipeline
+ * holding on to expensive Compute Cloud resources. Stuck Spark actions are killed
+ * and with the diagnostic message and a thread dump.
+ *
+ * Without this class, the pipeline is eventually killed by CI without sufficient diagnostics.
+ * One needs to parse the log to keep track which
+ * tests are scheduled to run but do not have the corresponding FAILED/SUCCEEDED
+ * messages. Out of these tests most pytest items might be false positives because
+ * xdist assigns them in batches to workers that become blocked by only one of them
+ */
 public class TimeoutSparkListener extends SparkListener {
   private static final Logger LOG = LoggerFactory.getLogger(TimeoutSparkListener.class);
   private final JavaSparkContext sparkContext;
@@ -81,8 +95,10 @@ public class TimeoutSparkListener extends SparkListener {
     LOG.debug("JobStart: registering timeout for Job {}", jobId);
     final ScheduledFuture<?> scheduledFuture = runner.schedule(() -> {
       final String message = "RAPIDS Integration Test Job " + jobId + " exceeded the timeout of " +
-        timeoutSeconds + " seconds, cancelling.\n" + 
-        "Adjust using the marker pytest.mark.spark_job_timeout(seconds,dump_threads)";
+        timeoutSeconds + " seconds, cancelling. " +
+        "Look into fixing the test or reducing its execution time. " +
+        "If necessary, adjust the timeout using the marker " +
+        "pytest.mark.spark_job_timeout(seconds,dump_threads)";
       if (shouldDumpThreads) {
         LOG.error(message + " Driver thread dump follows");
         dumpThreads();

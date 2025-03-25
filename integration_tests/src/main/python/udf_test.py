@@ -20,6 +20,8 @@ from spark_session import is_before_spark_330, is_before_spark_331, is_before_sp
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
+# TODO undo once we fix 400 and 350db143
+# https://github.com/NVIDIA/spark-rapids/pull/12383
 pytestmark = [
     pytest.mark.spark_job_timeout(seconds=30)
 ]
