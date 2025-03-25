@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
@@ -31,9 +29,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.shims.GpuGroupedPythonRunnerFactory
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuGroupedPythonRunnerFactory, PythonArgumentUtils}
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -116,23 +114,10 @@ case class GpuAggregateInPandasExec(
 
     // Filter child output attributes down to only those that are UDF inputs.
     // Also eliminate duplicate UDF inputs.
-    val allInputs = new ArrayBuffer[Expression]
-    val dataTypes = new ArrayBuffer[DataType]
-    val argOffsets = inputs.map { input =>
-      input.map { e =>
-        val pos = allInputs.indexWhere(_.semanticEquals(e))
-        if (pos >= 0) {
-          pos
-        } else {
-          allInputs += e
-          dataTypes += e.dataType
-          allInputs.length - 1
-        }
-      }.toArray
-    }.toArray
+    val udfArgs = PythonArgumentUtils.flatten(inputs)
 
     // Schema of input rows to the python runner
-    val aggInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
+    val aggInputSchema = StructType(udfArgs.flattenedTypes.zipWithIndex.map { case (dt, i) =>
       StructField(s"_$i", dt)
     }.toArray)
 
@@ -149,7 +134,7 @@ case class GpuAggregateInPandasExec(
       // necessary for the following processes.
       // Doing this can reduce the data size to be split, probably getting a better performance.
       val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions, childOutput)
-      val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs.toSeq, childOutput)
+      val pyInputRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
         mNumInputRows += batch.numRows()
@@ -159,7 +144,8 @@ case class GpuAggregateInPandasExec(
       }
 
       // Second splits into separate group batches.
-      val miniAttrs = (gpuGroupingExpressions ++ allInputs).asInstanceOf[Seq[Attribute]]
+      val miniAttrs =
+        (gpuGroupingExpressions ++ udfArgs.flattenedArgs).asInstanceOf[Seq[Attribute]]
       val keyConverter = (groupedBatch: ColumnarBatch) => {
         // No `safeMap` because here does not increase the ref count.
         // (`Seq.indices.map()` is NOT lazy, so it is safe to be used to slice the columns.)
@@ -202,9 +188,9 @@ case class GpuAggregateInPandasExec(
         }
       }
 
-      val runnerFactory = GpuGroupedPythonRunnerFactory(conf, pyFuncs, argOffsets,
+      val runnerFactory = GpuGroupedPythonRunnerFactory(conf, pyFuncs, udfArgs.argOffsets,
         aggInputSchema, DataTypeUtilsShim.fromAttributes(pyOutAttributes),
-        PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF)
+        PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF, udfArgs.argNames)
 
       // Third, sends to Python to execute the aggregate and returns the result.
       if (pyInputIter.hasNext) {
