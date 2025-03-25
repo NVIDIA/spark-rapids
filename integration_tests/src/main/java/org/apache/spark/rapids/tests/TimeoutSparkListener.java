@@ -35,10 +35,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This code helps acceelrate root cause investigations for pipeline hangs
+ * This code helps accelerate root cause investigations for pipeline hangs
  * and prevents other failures from being masked by the hangs in the meantime.
  *
- * This class implements a SparkListner to keep track of Spark Actions (Jobs)
+ * This class implements a SparkListener to keep track of Spark Actions (Jobs)
  * taking longer than expected / hanging perpetually leading to the CI pipeline
  * holding on to expensive Compute Cloud resources. Stuck Spark actions are killed
  * with the diagnostic message and a thread dump.
