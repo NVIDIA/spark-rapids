@@ -367,6 +367,10 @@ class SpillableHostBufferHandle private (
       }
     }
     if (materialized == null) {
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
       com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
       try {
         materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
@@ -529,6 +533,10 @@ class SpillableDeviceBufferHandle private (
     // state, as we are not allowing unspill, and we don't need
     // to hold locks while we copy back from here.
     if (materialized == null) {
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
       com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
       try {
         materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
@@ -628,6 +636,10 @@ class SpillableColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
       com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
       try {
         val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
@@ -772,6 +784,10 @@ class SpillableColumnarBatchFromBufferHandle private (
       }
     }
     if (materialized == null) {
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
       com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
       try {
         val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
@@ -885,6 +901,10 @@ class SpillableCompressedColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
       com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
       try {
         val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
@@ -996,6 +1016,10 @@ class SpillableHostColumnarBatchHandle private (
       }
     }
     if (materialized == null) {
+      // Note that we are using a try finally here. This is to reduce the amount
+      // of garbage collection that needs to happen. We could use a lot of
+      // syntactic sugar to make the code look cleaner, but I don't want to
+      // add more overhead for only a handful of places in the code.
       com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
       try {
         materialized = diskHandle.withInputWrappedStream { inputStream =>
@@ -1254,6 +1278,10 @@ trait SpillableStore[T <: SpillableHandle]
       0L
     } else {
       withResource(spillNvtxRange) { _ =>
+        // Note that we are using a try finally here. This is to reduce the amount
+        // of garbage collection that needs to happen. We could use a lot of
+        // syntactic sugar to make the code look cleaner, but I don't want to
+        // add more overhead for only a handful of places in the code.
         com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
         try {
           val plan = makeSpillPlan(spillNeeded)

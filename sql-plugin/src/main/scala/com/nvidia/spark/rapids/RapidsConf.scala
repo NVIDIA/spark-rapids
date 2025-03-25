@@ -539,9 +539,10 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("Set the initial number of tasks that can execute concurrently per GPU. " +
         "By default the number of tasks allowed on the GPU will adjust dynamically " +
         "to try and provide optimal performance. This sets the starting point for each " +
-        "stage")
+        "stage. If this is not set the amount of GPU memory will be used to come up " +
+        "with a starting estimate.")
       .integerConf
-      .createWithDefault(2)
+      .createOptional
 
   val DYNAMIC_CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks.dynamic")
       .doc("Set to false if the system should not dynamically adjust the concurrent task " +
@@ -2772,7 +2773,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
-  lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
+  lazy val concurrentGpuTasks: Option[Integer] = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 

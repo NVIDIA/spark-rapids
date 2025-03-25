@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util
 import java.util.Map
-import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -65,7 +65,9 @@ class GpuTaskMemoryEstimator(val stageId: Int,
   private var maxMemory: Long = 0
 
   def update(timeLost: Long, memory: Long): Unit = {
+    // timeLost and maxMemory are not reset when they are read
     totalTimeLost = timeLost
+    // Taking a max here, just to be cautious, but it should be a noop
     maxMemory = math.max(memory, maxMemory)
   }
 
@@ -132,7 +134,7 @@ class GpuStageMemoryEstimator(val stageId: Int,
                               private val defaultEstimate: Long, 
                               val allowDynamicUpdate: Boolean) {
   private val stats = new StatEstimator(4, defaultEstimate.toDouble)
-  private val activeTasks = new ConcurrentHashMap[Long, GpuTaskMemoryEstimator]()
+  private val activeTasks = new util.HashMap[Long, GpuTaskMemoryEstimator]()
 
   override def toString: String = synchronized {
     s"Stage $stageId Estimator ${activeTasks.keySet()}"
@@ -281,10 +283,10 @@ object GpuSemaphore {
 
   private def computeDefaultMemory(conf: SQLConf): Long = {
     val totalMemory = GpuDeviceManager.getMemorySize
-    val concurrentStr = conf.getConfString(RapidsConf.CONCURRENT_GPU_TASKS.key, null)
-    val concurrentInt = Option(concurrentStr)
-      .map(ConfHelper.toInteger(_, RapidsConf.CONCURRENT_GPU_TASKS.key))
-      .getOrElse(RapidsConf.CONCURRENT_GPU_TASKS.defaultValue)
+    val concurrentInt: Integer = RapidsConf.CONCURRENT_GPU_TASKS.get(conf).getOrElse {
+      val batchBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+      math.max(1, math.min(4, totalMemory / (4 * batchBytes))).toInt
+    }
 
     // Just to be cautious we are going to ask for at least 1 byte as the default
     // This should never happen in practice, but we want to be safe
@@ -408,7 +410,6 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
               lastReleased, taskAttemptId)
           synchronized {
             permitsUsed = used
-            //System.err.println(s"SEM ACQUIRED $stageId:$taskAttemptId $permitsUsed")
             // We now own the semaphore so we need to wake up all of the other tasks that are
             // waiting.
             hasSemaphore = true
@@ -495,11 +496,14 @@ private final class GpuSemaphore() extends Logging {
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
-  private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
+  private val tasks = new util.HashMap[Long, SemaphoreTaskInfo]
   private val stageEstimators = {
     val lru = new util.LinkedHashMap[Int, GpuStageMemoryEstimator]() {
       override def removeEldestEntry(entry: Map.Entry[Int, GpuStageMemoryEstimator]): Boolean = {
-        //System.err.println(s"SHOULD REMOVE??? $size > 100? FOR STAGE ${entry.getKey}")
+        // We don't get a callback when a stage completes, and in theory if there is a retry
+        // a stage might run again. So for now we are going to keep around at most
+        // 100 stages. This should be a small amount of memory because there is a limit
+        // on the number of active tasks. But it should be enough most of the time.
         size > 100
       }
     }
@@ -577,16 +581,12 @@ private final class GpuSemaphore() extends Logging {
     GpuTaskMetrics.get.updateRetry(taskAttemptId)
     GpuTaskMetrics.get.updateMaxMemory(taskAttemptId)
     GpuTaskMetrics.get.updateFootprint(taskAttemptId)
-    //System.err.println(s"TASK $taskAttemptId REPORTED AS DONE")
     val refs = tasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")
     }
     refs.releaseSemaphore(semaphore)
-    //System.err.println(s"TASK $taskAttemptId FOUND AS A PART OF ${refs.stageId} IN " +
-    //  s"$stageEstimators")
     val estimator = stageEstimators.get(refs.stageId)
-    //System.err.println(s"ESTIMATOR IS $estimator")
     if (estimator != null) {
       estimator.taskDone(refs.taskAttemptId)
     }
