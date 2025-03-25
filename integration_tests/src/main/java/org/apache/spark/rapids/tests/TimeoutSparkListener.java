@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory;
  * This class implements a SparkListner to keep track of Spark Actions (Jobs)
  * taking longer than expected / hanging perpetually leading to the CI pipeline
  * holding on to expensive Compute Cloud resources. Stuck Spark actions are killed
- * and with the diagnostic message and a thread dump.
+ * with the diagnostic message and a thread dump.
  *
  * Without this class, the pipeline is eventually killed by CI without sufficient diagnostics.
  * One needs to parse the log to keep track which
