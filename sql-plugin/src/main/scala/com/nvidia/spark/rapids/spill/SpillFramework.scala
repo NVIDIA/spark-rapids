@@ -1741,11 +1741,21 @@ object SpillFramework extends Logging {
   }
 
   def getHostStoreSpillableSummary: String = {
-    stores.hostStore.spillableSummary()
+    try {
+      stores.hostStore.spillableSummary()
+    } catch {
+      case _: IllegalStateException =>
+        "Could not log spill summary, spill framework not initialized"
+    }
   }
 
   def getDeviceStoreSpillableSummary: String = {
-    stores.deviceStore.spillableSummary()
+    try {
+      stores.deviceStore.spillableSummary()
+    } catch {
+      case _: IllegalStateException =>
+        "Could not log spill summary, spill framework not initialized"
+    }
   }
 
   def shutdown(): Unit = {
