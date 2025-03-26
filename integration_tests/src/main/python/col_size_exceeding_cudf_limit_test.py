@@ -70,6 +70,7 @@ if os.environ.get('INCLUDE_SPARK_AVRO_JAR', 'false') == 'true':
 
 conf = {
     'spark.rapids.sql.columnSizeBytes': 1000,
+    'spark.rapids.sql.format.parquet.reader.type': 'AUTO',
     'spark.sql.orc.impl': 'hive',  # null type column is not supported on native
     'spark.rapids.sql.format.avro.enabled': 'true',
     'spark.rapids.sql.format.avro.read.enabled': 'true'
