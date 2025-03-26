@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import scala.collection.immutable.Seq
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, GroupByAggregation, ReductionAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.jni.HyperLogLogPlusPlusHostUDF
 import com.nvidia.spark.rapids.jni.HyperLogLogPlusPlusHostUDF.AggregationType
@@ -88,10 +88,10 @@ case class GpuHyperLogLogPlusPlusEvaluation(childExpr: Expression,
 
   override def prettyName: String = "HyperLogLogPlusPlus_evaluation"
 
-  override def children: scala.Seq[Expression] = Seq(childExpr)
+  override def children: Seq[Expression] = Seq(childExpr)
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    withResourceIfAllowed(childExpr.columnarEval(batch)) { sketches =>
+    withResource(childExpr.columnarEval(batch)) { sketches =>
       val distinctValues = HyperLogLogPlusPlusHostUDF.estimateDistinctValueFromSketches(
         sketches.getBase, precision)
       GpuColumnVector.from(distinctValues, LongType)
