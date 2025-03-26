@@ -139,6 +139,18 @@
                             <pattern>org.roaringbitmap</pattern>
                             <shadedPattern>${rapids.shade.package}.org.roaringbitmap</shadedPattern>
                         </relocation>
+                        <!--
+                        This package is introduced by iceberg-parquet. We need to shade it
+                        because it conflicts with iceberg-spark-runtime. When running
+                        spark-rapids with iceberg support, we require user to provide
+                        iceberg-spark-runtime jar, which also contains the iceberg-parquet
+                        package, but relocated parquet classes, see https://github
+                        .com/apache/iceberg/blob/10fc04b639136af7e5bf6720e89b00637109374c/spark/v3.5/build.gradle#L255.
+                        If we don't do this shading, at runtime for classes in iceberg-parquet,
+                        there will be two versions in the classpath, one from
+                        iceberg-spark-runtime, another from iceberg-parquet, but they have
+                        different class definitions, which will cause runtime linkage errors.
+                         -->
                         <relocation>
                             <pattern>org.apache.iceberg.parquet</pattern>
                             <shadedPattern>${rapids.shade.package}.org.apache.iceberg.parquet</shadedPattern>
