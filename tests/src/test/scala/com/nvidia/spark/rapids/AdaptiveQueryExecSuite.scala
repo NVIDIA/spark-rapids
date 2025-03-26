@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{Dataset, Row, SaveMode}
 import org.apache.spark.sql.execution.{LocalTableScanExec, PartialReducerPartitionSpec, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
@@ -32,6 +32,7 @@ import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, GpuFileSourceScanExec}
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuJoinExec}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
 class AdaptiveQueryExecSuite
@@ -500,7 +501,7 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
-      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "50")
+      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")

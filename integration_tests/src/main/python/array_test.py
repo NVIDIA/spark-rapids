@@ -251,6 +251,23 @@ def test_array_contains_for_nans(data_gen):
             array_contains(col('a'), lit(float('nan')).cast(data_gen.data_type))))
 
 
+# When `data_gen` is `null_gen`, Spark 3.4.0+ and Databricks runtime will throw an exception:
+# [DATATYPE_MISMATCH.NULL_TYPE] Cannot resolve "array_position(array(NULL), NULL)" due to data type mismatch:
+# Null typed values cannot be used as arguments of `array_position`.
+orderable_gens_sample = orderable_gens + array_gens_sample + struct_gens_sample_with_decimal128
+orderable_gens_sample_no_null = [g for g in orderable_gens_sample if g != null_gen]
+@pytest.mark.parametrize('data_gen',
+    orderable_gens_sample_no_null if is_spark_340_or_later() or is_databricks_runtime() else orderable_gens_sample, ids=idfn)
+def test_array_position(data_gen):
+    arr_gen = ArrayGen(data_gen)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(spark, arr_gen, data_gen).selectExpr(
+        'array_position(array(null), b)',
+        'array_position(array(), b)',
+        'array_position(a, b)',
+        'array_position(a, a[5])',
+        'array_position(a, null)'))
+
+
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 def test_array_slice(data_gen):
     length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])
@@ -290,6 +307,45 @@ def test_array_slice(data_gen):
             'slice(array(array(1, null, 2), array(1), array(null)), -100, c)',
             'slice(array(array(1, null, 2), array(1), array(null)), NULL, c)',
             'slice(array(array(1, null, 2), array(1), array(null)), NULL, NULL)'))
+
+
+@pytest.mark.parametrize('zero_start', [0, 'b'], ids=idfn)
+@pytest.mark.parametrize('valid_length', [5, 'c'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
+def test_array_slice_with_zero_start(data_gen, zero_start, valid_length):
+    zero_start_gen = IntegerGen(nullable=False, min_val=0, max_val=0, special_cases=[])
+    valid_length_gen = IntegerGen(min_val=0, max_val=100, special_cases=[None])
+    # When the list column is all null, the result is also all null regardless of the start and length
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
+            f"slice(a, {zero_start}, {valid_length})"))
+    error = "The value of parameter(s) `start` in `slice` is invalid: Expects a positive or a negative value for `start`, but got" if is_databricks143_or_later() \
+            else "Unexpected value for start in function slice: SQL array indices start at 1."
+    # start can not be zero
+    assert_gpu_and_cpu_error(
+        lambda spark: three_col_df(spark, data_gen, zero_start_gen, valid_length_gen, length=5).selectExpr(
+            f"slice(a, {zero_start}, {valid_length})").collect(),
+        conf={},
+        error_message=error)
+
+
+@pytest.mark.parametrize('valid_start', [5, 'b'], ids=idfn)
+@pytest.mark.parametrize('negative_length', [-5, 'c'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen)], ids=idfn)
+def test_array_slice_with_negative_length(data_gen, valid_start, negative_length):
+    negative_length_gen = IntegerGen(nullable=False, min_val=-25, max_val=-1, special_cases=[])
+    # When the list column is all null, the result is also all null regardless of the start and length
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, array_all_null_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, {valid_start}, {negative_length})"))
+    error = "The value of parameter(s) `length` in `slice` is invalid: Expects `length` greater than or equal to 0" if is_databricks143_or_later() \
+            else 'Unexpected value for length in function slice: length must be greater than or equal to 0.'
+    # length can not be negative
+    assert_gpu_and_cpu_error(
+        lambda spark: three_col_df(spark, data_gen, array_no_zero_index_gen, negative_length_gen, length=5).selectExpr(
+            f"slice(a, {valid_start}, {negative_length})").collect(),
+        conf={},
+        error_message=error)
 
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)

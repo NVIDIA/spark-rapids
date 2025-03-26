@@ -20,7 +20,7 @@ import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession => SqlSparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -75,7 +75,7 @@ trait SparkShims {
       newPlan: SparkPlan): BroadcastQueryStageExec
 
   def getFileScanRDD(
-      sparkSession: SparkSession,
+      sparkSession: SqlSparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
@@ -124,8 +124,6 @@ trait SparkShims {
 
   def getDateFormatter(): DateFormatter
 
-  def sessionFromPlan(plan: SparkPlan): SparkSession
-
   def isCustomReaderExec(x: SparkPlan): Boolean
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
@@ -170,8 +168,6 @@ trait SparkShims {
    * to bypass the check for those.
    */
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
-
-  def leafNodeDefaultParallelism(ss: SparkSession): Int
 
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 

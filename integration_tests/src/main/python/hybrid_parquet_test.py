@@ -52,12 +52,16 @@ parquet_gens_list = [
      MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
      MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
      ],
-    decimal_gens,
+    [decimal_gen_32bit, decimal_gen_64bit],
 ]
 
 parquet_gens_fallback_lists = [
-    # Decimal128 inside nested types is NOT supported
-    [MapGen(StringGen(pattern='key_[0-9]', nullable=False), decimal_gen_128bit)],
+    # Decimal128 is NOT supported
+    [decimal_gen_128bit],
+    # Decimal with negative scale is NOT supported
+    pytest.param([DecimalGen(precision=10, scale=-3)],
+                 marks=pytest.mark.xfail(
+                     reason='GpuParquetScan cannot read decimal with negative scale')),
     # BinaryType is NOT supported
     [BinaryGen()],
     # MapType wrapped by NestedType is NOT fully supported
@@ -68,6 +72,7 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", simple_string_to_string_map_gen]])],
     [StructGen([["c0", ArrayGen(simple_string_to_string_map_gen)]])],
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
+    # empty schema is NOT supported (select count(1))
     [],
 ]
 
@@ -84,8 +89,10 @@ def test_hybrid_parquet_read_round_trip(spark_tmp_path, parquet_gens, gen_rows):
         lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -113,8 +120,10 @@ def test_hybrid_parquet_read_round_trip_multiple_batches(spark_tmp_path,
         lambda spark: gen_df(spark, gen_list, length=gen_rows).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -168,8 +177,10 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
         lambda spark: gen_df(spark, gen_list, length=4096).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf={
             'spark.sql.sources.useV1SourceList': 'parquet',
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -278,3 +289,71 @@ def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
         conf=filter_split_conf)
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+def test_hybrid_parquet_filter_pushdown_aqe(spark_tmp_path):
+    stream_data_path = spark_tmp_path + '/PARQUET_DATA/stream_data'
+    build_data_path = spark_tmp_path + '/PARQUET_DATA/build_data'
+    data_gen_schema = [('key', LongGen(nullable=False, min_val=0, max_val=19)), ('value', long_gen)]
+    with_cpu_session(
+        lambda spark: gen_df(spark, data_gen_schema, length=4096).write.parquet(stream_data_path),
+        conf=rebase_write_corrected_conf)
+    with_cpu_session(
+        lambda spark: gen_df(spark, data_gen_schema, length=512).write.parquet(build_data_path),
+        conf=rebase_write_corrected_conf)
+    conf = filter_split_conf.copy()
+    conf.update({
+        'spark.sql.adaptive.enabled': 'true',
+        'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU'
+    })
+
+    def build_side_df(spark):
+        return spark.read.parquet(build_data_path) \
+            .filter(f.col('key') > 1) \
+            .filter(f.col('value').isNotNull())
+
+    plan = with_gpu_session(
+        lambda spark: build_side_df(spark)._jdf.queryExecution().executedPlan(),
+        conf=conf)
+    check_filter_pushdown(plan, pushed_exprs=['> 1', 'isnotnull'], not_pushed_exprs=[])
+
+    def test_fn(spark):
+        probe_df = spark.read.parquet(stream_data_path)
+        # Perform a broadcast join, explicitly broadcasting the build-side DataFrame
+        build_df = f.broadcast(build_side_df(spark))
+        return probe_df.join(build_df, ['key'], 'inner')
+
+    assert_gpu_and_cpu_are_equal_collect(test_fn, conf=conf)
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
+@hybrid_test
+def test_hybrid_parquet_bucket_read(parquet_gens, spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_BUCKET_DATA'
+    
+    gen_list = [('id', long_gen)] + [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    num_buckets = 8
+    table_name = spark_tmp_table_factory.get()
+    
+    with_cpu_session(lambda spark: 
+        gen_df(spark, gen_list, length=10000)
+            .write
+            .bucketBy(num_buckets, "id")
+            .sortBy("id")
+            .option("path", data_path)
+            .saveAsTable(table_name),
+        conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.table(table_name).filter("id > 5000"),
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+            'spark.sql.sources.bucketing.enabled': 'true',
+            'spark.sql.sources.bucketing.autoBucketedScan.enabled': 'false'
+        })

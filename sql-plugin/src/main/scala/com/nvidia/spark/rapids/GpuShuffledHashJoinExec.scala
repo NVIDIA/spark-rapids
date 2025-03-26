@@ -28,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -56,9 +56,36 @@ class GpuShuffledHashJoinMeta(
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
+  // This is used by shuffled hash join
+  def tagBuildSide(meta: SparkPlanMeta[_], joinType: JoinType, buildSide: GpuBuildSide): Unit = {
+    buildSide match {
+      case GpuBuildLeft if !canBuildLeft(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support left-side build")
+      case GpuBuildRight if !canBuildRight(joinType) =>
+        meta.willNotWorkOnGpu(s"$joinType does not support right-side build")
+      case _ =>
+    }
+  }
+
+  /** Determine if this type of join supports using the right side of the join as the build side. */
+  // supports right outer join when build right
+  def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter | LeftSemi |
+         LeftAnti | FullOuter | _: ExistenceJoin => true
+    case _ => false
+  }
+
+  /** Determine if this type of join supports using the left side of the join as the build side. */
+  // supports left outer join when build left
+  def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter | FullOuter => true
+    case _ => false
+  }
+
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       conditionMeta)
+    tagBuildSide(this, join.joinType, buildSide)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -111,6 +138,7 @@ class GpuShuffledHashJoinMeta(
           joinCondition,
           left,
           right,
+          readOpt,
           isSkewJoin = false)(
           join.leftKeys,
           join.rightKeys)
@@ -130,6 +158,7 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
+    readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
@@ -211,7 +240,7 @@ case class GpuShuffledHashJoinExec(
         val (buildData, maybeBufferedStreamIter) =
           GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(buildIter,
             new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
-            realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics)
+            realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics, readOption)
 
         buildData match {
           case Left(singleBatch) =>
@@ -281,7 +310,8 @@ object GpuShuffledHashJoinExec extends Logging {
       buildOutput: Seq[Attribute],
       buildGoal: CoalesceSizeGoal,
       subPartConf: Option[Boolean],
-      coalesceMetrics: Map[String, GpuMetric]):
+      coalesceMetrics: Map[String, GpuMetric],
+      readOption: CoalesceReadOption):
   (Either[ColumnarBatch, Iterator[ColumnarBatch]], Iterator[ColumnarBatch]) = {
     val buildTime = coalesceMetrics(GpuMetric.BUILD_TIME)
     val buildDataType = buildOutput.map(_.dataType).toArray
@@ -290,7 +320,7 @@ object GpuShuffledHashJoinExec extends Logging {
       var isBuildSerialized = false
       // Batches type detection
       val coalesceBuiltIter = getHostShuffleCoalesceIterator(
-        bufBuildIter, buildDataType, targetSize, coalesceMetrics).map { iter =>
+        bufBuildIter, buildDataType, targetSize, readOption, coalesceMetrics).map { iter =>
         isBuildSerialized = true
         iter
       }.getOrElse(bufBuildIter)
@@ -465,13 +495,14 @@ object GpuShuffledHashJoinExec extends Logging {
       iter: BufferedIterator[ColumnarBatch],
       dataTypes: Array[DataType],
       targetSize: Long,
+      readOption: CoalesceReadOption,
       coalesceMetrics: Map[String, GpuMetric]): Option[Iterator[CoalescedHostResult]] = {
     var retIter: Option[Iterator[CoalescedHostResult]] = None
     if (iter.hasNext && iter.head.numCols() == 1) {
       iter.head.column(0) match {
         case _: KudoSerializedTableColumn =>
           retIter = Some(new KudoHostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics,
-            dataTypes))
+            dataTypes, readOption))
         case _: SerializedTableColumn =>
           retIter = Some(new HostShuffleCoalesceIterator(iter, targetSize, coalesceMetrics))
         case _ => // should be gpu batches

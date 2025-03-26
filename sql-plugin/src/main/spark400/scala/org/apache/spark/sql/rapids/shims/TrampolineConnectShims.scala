@@ -20,11 +20,41 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.classic.SparkSession
+import org.apache.avro.NameValidator
+import org.apache.avro.Schema
+
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.classic.{DataFrame, Dataset, SparkSession}
 
 object TrampolineConnectShims {
 
   type SparkSession = org.apache.spark.sql.classic.SparkSession
+  type DataFrame = org.apache.spark.sql.classic.DataFrame
+  type Dataset = org.apache.spark.sql.classic.Dataset[org.apache.spark.sql.Row]
 
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  def createDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
+    Dataset.ofRows(spark, plan)
+  }
+
+  def getBuilder(): SparkSession.Builder = {
+    SparkSession.builder()
+  }
+
+  def hasActiveSession: Boolean = {
+    SparkSession.getActiveSession.isDefined
+  }
+
+  def getActiveSession: SparkSession = {
+    SparkSession.getActiveSession.getOrElse(
+      throw new IllegalStateException("No active SparkSession found")
+    )
+  }
+
+  def createSchemaParser(): Schema.Parser = {
+    // Spark-4.0+ depends on Avro-1.12.0 where validate() is removed and we need to use
+    // NameValidator interface instead of validate() method.
+    new Schema.Parser(NameValidator.NO_VALIDATION).setValidateDefaults(false)
+  }
 }

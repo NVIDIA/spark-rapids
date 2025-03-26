@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tests
 import com.nvidia.spark.rapids.FuzzerUtils._
 import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, MapType, NullType, StringType}
 
 class CacheTestSuite extends SparkQueryCompareTestSuite {

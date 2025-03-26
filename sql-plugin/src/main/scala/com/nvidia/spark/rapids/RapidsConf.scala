@@ -23,6 +23,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
+import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
@@ -65,7 +66,7 @@ object ConfHelper {
       s.trim.toDouble
     } catch {
       case _: IllegalArgumentException =>
-        throw new IllegalArgumentException(s"$key should be integer, but was $s")
+        throw new IllegalArgumentException(s"$key should be double, but was $s")
     }
   }
 
@@ -523,14 +524,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .startupOnly()
     .booleanConf
     .createWithDefault(false)
-
-  val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
-    .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly. DEPRECATED: please use " +
-      "spark.rapids.memory.gpu.pool instead.")
-    .startupOnly()
-    .booleanConf
-    .createWithDefault(true)
 
   val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
     .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", " +
@@ -1118,7 +1111,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(RapidsReaderType.values.map(_.toString))
-    .createWithDefault(RapidsReaderType.AUTO.toString)
+    .createWithDefault(
+      ShimLoader.getShimVersion match {
+        case DatabricksShimVersion(3, 5, 0, "14.3") => RapidsReaderType.PERFILE.toString
+        case _ => RapidsReaderType.AUTO.toString
+      })
 
   val PARQUET_DECOMPRESS_CPU =
     conf("spark.rapids.sql.format.parquet.decompressCpu")
@@ -1275,6 +1272,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  val TEST_ORC_STRIPE_SIZE_ROWS = conf("spark.rapids.sql.test.orc.write.stripeSizeRows")
+    .doc("Only to be used in tests. When set to a valid value(no less than 512, as specified " +
+      "in cudf), the ORC writer will use this value as the maximum number of rows per stripe. " +
+      "Additionally, the ORC writer rounds the number of elements in each stripe " +
+      "(except the last) to a multiple of 8 to efficiently encode the validity masks. " +
+      "If not set, the ORC writer will use the default value 1,000,000.")
+    .internal()
+    .integerConf
+    .checkValue(v => v >= 512, "The stripe size rows must be no less than 512.")
+    .createOptional
 
   val ENABLE_EXPAND_PREPROJECT = conf("spark.rapids.sql.expandPreproject.enabled")
     .doc("When set to false disables the pre-projection for GPU Expand. " +
@@ -1483,21 +1491,24 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
-      .doc("When set to false disables Hive text table acceleration")
+      .doc("When set to false disables Hive text table acceleration. " +
+           "Array/Struct/Map columns are unsupported for acceleration.")
       .booleanConf
       .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.read.enabled")
-      .doc("When set to false disables Hive text table read acceleration")
+      .doc("When set to false disables Hive text table read acceleration. " +
+           "Array/Struct/Map columns are unsupported for read acceleration.")
       .booleanConf
       .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_WRITE: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.write.enabled")
-      .doc("When set to false disables Hive text table write acceleration")
+      .doc("When set to false disables Hive text table write acceleration. " +
+           "Array/Struct/Map columns are unsupported for write acceleration.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
       .doc("Hive text file reading is not 100% compatible when reading floats.")
@@ -2052,7 +2063,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .internal()
     .startupOnly()
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
     conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
@@ -2062,6 +2073,29 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  // ["NEVER", "ALWAYS", "ONFAILURE"]
+  private val KudoDebugModes = 
+    DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
+
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE = conf("spark.rapids.shuffle.kudo.serializer.debug.mode")
+    .doc("Debug mode for Kudo serializer for the shuffle. If Always, it will dump the " +
+      "kudo tables to a file in spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix. " +
+      "If Never, it will not dump the kudo tables data. If OnFailure, it will only dump the " +
+      "kudo tables data when the shuffle fails.")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(KudoDebugModes)
+    .createWithDefault("NEVER")
+
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
+    conf("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix")
+    .doc("The path prefix to use for the kudo tables when using Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createOptional
 
   // USER FACING DEBUG CONFIGS
 
@@ -2402,6 +2436,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       s"${DELTA_LOW_SHUFFLE_MERGE_DEL_VECTOR_BROADCAST_THRESHOLD.key} ")
     .booleanConf
     .createWithDefault(false)
+
+  val ENABLE_HASH_FUNCTION_IN_PARTITIONING =
+    conf("spark.rapids.sql.partitioning.hashFunction.enabled")
+      .doc("When false, Only Murmur3Hash is used for GPU hash partitioning to " +
+        "align with the regular Spark. When enabled, GPU will try to infer the hash " +
+        "function from the CPU hash partitioning and use the same one. This is for " +
+        "a customized Spark supporting multiple hash functions in hash partitioning. " +
+        "So far only 'HiveHash' and 'Murmur3Hash' are supported on GPU. This requires " +
+        s"'${INCOMPATIBLE_OPS.key}' to also be set to true.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val TAG_LORE_ID_ENABLED = conf("spark.rapids.sql.lore.tag.enabled")
     .doc("Enable add a LORE id to each gpu plan node")
@@ -2808,8 +2854,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
-  lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
-
   lazy val rmmPool: String = {
     var pool = get(RMM_POOL)
     if ("ASYNC".equalsIgnoreCase(pool)) {
@@ -3051,6 +3095,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
+  lazy val testOrcStripeSizeRows: Option[Integer] = get(TEST_ORC_STRIPE_SIZE_ROWS)
+
   lazy val isOrcBoolTypeEnabled: Boolean = get(ENABLE_ORC_BOOL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
@@ -3175,6 +3221,45 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
+
+  lazy val shuffleKudoSerializerDebugMode: DumpOption = {
+    val mode = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
+    mode match {
+      case "NEVER" => DumpOption.Never
+      case "ALWAYS" => DumpOption.Always
+      case "ONFAILURE" => DumpOption.OnFailure
+      case _ => {
+        logWarning(s"Invalid value for ${SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.key}: $mode. " +
+          "Using default value: Never")
+        DumpOption.Never
+      }
+    }
+  }
+
+  lazy val shuffleKudoSerializerDebugDumpPrefix: Option[String] = {
+    val prefix = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX)
+    shuffleKudoSerializerDebugMode match {
+      case DumpOption.Never => prefix
+      case _ => {
+        prefix match {
+          case None => {
+            logWarning("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix is not set, " +
+              "so Kudo serializer debug will not be enabled")
+            None
+          }
+          case Some(p) => {
+            if (p.isEmpty) {
+              logWarning("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix is empty, " +
+                "so Kudo serializer debug will not be enabled")
+              Some("")
+            } else {
+              Some(p)
+            }
+          }
+        }
+      }
+    }
+  }
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
@@ -3309,6 +3394,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val isHashFuncPartitioningEnabled: Boolean = get(ENABLE_HASH_FUNCTION_IN_PARTITIONING)
 
   lazy val isTagLoreIdEnabled: Boolean = get(TAG_LORE_ID_ENABLED)
 
