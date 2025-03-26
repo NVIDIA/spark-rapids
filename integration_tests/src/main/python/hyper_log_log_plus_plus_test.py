@@ -83,6 +83,8 @@ _fall_back_relativeSD = [
     # 0.004, #  precision 17 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
     # 0.003, #  precision 18 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
 ]
+# met error on Databricks: Could not find HyperLogLogPlusPlus in the GPU plans, the plan is different from vanilla Spark.
+@pytest.mark.skipif(is_databricks_runtime(), reason="HyperLogLogPlusPlus does not support Databricks currently(https://github.com/NVIDIA/spark-rapids/issues/12388)")
 @allow_non_gpu("HashAggregateExec", "ShuffleExchangeExec")
 @pytest.mark.parametrize('fall_back_relativeSD', _fall_back_relativeSD, ids=idfn)
 def test_hllpp_fallback(fall_back_relativeSD):
