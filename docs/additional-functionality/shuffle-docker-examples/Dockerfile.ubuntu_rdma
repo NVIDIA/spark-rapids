@@ -14,7 +14,7 @@
 # limitations under the License.
 
 
-# Sample Dockerfile to install UCX in a Unbuntu 20.04 image with RDMA support.
+# Sample Dockerfile to install UCX in a Unbuntu 22.04 image with RDMA support.
 #
 # The parameters are: 
 #   - RDMA_CORE_VERSION: Set to 32.1 to match the rdma-core line in the latest 
@@ -24,7 +24,7 @@
 #       Used to pick a package matching a specific UCX version and
 #       CUDA runtime from the UCX github repo.
 #       See: https://github.com/openucx/ucx/releases/
-#   - UBUNTU_VER: 20.04 by default
+#   - UBUNTU_VER: 22.04 by default
 #
 # The Dockerfile first fetches and builds `rdma-core` to satisfy requirements for
 # the ucx-ib and ucx-rdma RPMs.
@@ -38,7 +38,7 @@ ARG CUDA_VER=11.8.0
 ARG UCX_VER=1.18.0
 ARG UCX_CUDA_VER=11
 ARG UCX_ARCH=x86_64
-ARG UBUNTU_VER=20.04
+ARG UBUNTU_VER=22.04
 
 # Throw away image to build rdma_core
 FROM ubuntu:${UBUNTU_VER} as rdma_core
