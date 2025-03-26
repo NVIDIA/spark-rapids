@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,19 +20,25 @@ from spark_session import is_before_spark_330, is_before_spark_331, is_before_sp
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
+# TODO undo once we fix 400 and 350db143
+# https://github.com/NVIDIA/spark-rapids/pull/12383
+pytestmark = [
+    pytest.mark.spark_job_timeout(seconds=30)
+]
+
 try:
     require_minimum_pandas_version()
 except Exception as e:
     if is_at_least_precommit_run():
         raise AssertionError("incorrect pandas version during required testing " + str(e))
-    pytestmark = pytest.mark.skip(reason=str(e))
+    pytestmark += pytest.mark.skip(reason=str(e))
 
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
     if is_at_least_precommit_run():
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
-    pytestmark = pytest.mark.skip(reason=str(e))
+    pytestmark += pytest.mark.skip(reason=str(e))
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
