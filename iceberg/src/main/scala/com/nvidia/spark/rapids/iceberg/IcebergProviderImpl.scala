@@ -59,7 +59,6 @@ class IcebergProviderImpl extends IcebergProvider with Logging {
 
           convertedScan match {
             case Failure(e) => {
-              logWarning("Conversion to GPU scan failed", e)
               willNotWorkOnGpu(s"conversion to GPU scan failed: ${e.getMessage}")
             }
             case _ =>

@@ -30,6 +30,7 @@ import org.apache.iceberg.types.{Type, Types, TypeUtil}
 import org.apache.iceberg.types.Types.NestedField
 import org.apache.parquet.schema.MessageType
 
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /** Processes columnar batch after reading from parquet file.
@@ -151,11 +152,15 @@ object GpuParquetReaderPostProcessor {
   private[parquet] def doUpCastIfNeeded(oldColumn: GpuColumnVector, targetType: Type.PrimitiveType)
   = {
     val expectedSparkType = SparkSchemaUtil.convert(targetType)
-    GpuColumnVector.from(
-      GpuCast.doCast(oldColumn.getBase,
-        oldColumn.dataType,
-        expectedSparkType,
-        CastOptions.DEFAULT_CAST_OPTIONS),
-      expectedSparkType)
+    if (DataType.equalsStructurally(oldColumn.dataType, expectedSparkType)) {
+      oldColumn.incRefCount()
+    } else {
+      GpuColumnVector.from(
+        GpuCast.doCast(oldColumn.getBase,
+          oldColumn.dataType,
+          expectedSparkType,
+          CastOptions.DEFAULT_CAST_OPTIONS),
+        expectedSparkType)
+    }
   }
 }
