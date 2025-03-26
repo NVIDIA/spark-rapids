@@ -800,34 +800,31 @@ object RmmRapidsRetryIterator extends Logging {
   var bookkeepPrinted = false
 
   private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
+    if (!bookkeepPrinted || BOOKKEEP_MEMORY_PRINT_ALL) {
+      // print host memory bookkeeping
+      logInfo(HostAlloc.getHostAllocBookkeepSummary())
 
-    if (bookkeepPrinted && !BOOKKEEP_MEMORY_PRINT_ALL) {
-      return
+      // print device memory bookkeeping
+      // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+      // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+
+      // print stack trace
+      val sb = new StringBuilder("<<Jstack Details>>\n\n")
+      Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+      => {
+        // Print the thread name and its state
+        sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+          s"- Thread ID: ${thread.getId}\n")
+        // Print the stack trace for this thread
+        for (element <- stackTrace) {
+          sb.append(s"\tat $element")
+        }
+        sb.append("\n\n")
+      })
+      logInfo(sb.toString())
+
+      bookkeepPrinted = true
     }
-
-    // print host memory bookkeeping
-    logInfo(HostAlloc.getHostAllocBookkeepSummary())
-
-    // print device memory bookkeeping
-    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
-    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
-
-    // print stack trace
-    val sb = new StringBuilder("<<Jstack Details>>\n\n")
-    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
-    => {
-      // Print the thread name and its state
-      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
-        s"- Thread ID: ${thread.getId}\n")
-      // Print the stack trace for this thread
-      for (element <- stackTrace) {
-        sb.append(s"\tat $element")
-      }
-      sb.append("\n\n")
-    })
-    logInfo(sb.toString())
-
-    bookkeepPrinted = true
   }
 }
 
