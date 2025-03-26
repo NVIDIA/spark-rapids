@@ -2735,14 +2735,10 @@ object GpuOverrides extends Logging {
     expr[ArrayDistinct](
       "Removes duplicate values from the array",
       ExprChecks.unaryProject(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + 
-          TypeSig.ARRAY + TypeSig.STRUCT),
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + 
-          TypeSig.ARRAY + TypeSig.STRUCT),
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + 
-          TypeSig.ARRAY + TypeSig.STRUCT),
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + 
-          TypeSig.ARRAY + TypeSig.STRUCT)),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
       GpuArrayDistinctMeta),
     expr[Flatten](
       "Creates a single array from an array of arrays",
