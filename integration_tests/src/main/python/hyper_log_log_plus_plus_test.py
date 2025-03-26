@@ -14,11 +14,11 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect
 from conftest import is_databricks_runtime
 from data_gen import *
 from hashing_test import xxhash_gens
-from marks import ignore_order
+from marks import allow_non_gpu, ignore_order
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="HyperLogLogPlusPlus does not support Databricks currently(https://github.com/NVIDIA/spark-rapids/issues/12388)")
 @ignore_order(local=True)
@@ -74,3 +74,21 @@ def test_hllpp_precisions_groupby(relativeSD):
         lambda spark: gen_df(spark, [("c1", int_gen), ("c2", int_gen)]),
         "tab",
         f"select c1, APPROX_COUNT_DISTINCT(c2, {relativeSD}) from tab group by c1")
+
+
+_fall_back_relativeSD = [
+    0.008, #  precision 15 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
+    # Note: the test cases of precision 16, 17, 18 spend too much time, so skip testing them
+    # 0.005, #  precision 16 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
+    # 0.004, #  precision 17 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
+    # 0.003, #  precision 18 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
+]
+@allow_non_gpu("HashAggregateExec", "ShuffleExchangeExec")
+@pytest.mark.parametrize('fall_back_relativeSD', _fall_back_relativeSD, ids=idfn)
+def test_hllpp_fallback(fall_back_relativeSD):
+    assert_gpu_sql_fallback_collect(
+        lambda spark: unary_op_df(spark, int_gen, length=2),
+        "HyperLogLogPlusPlus",
+        "tab",
+        f"select APPROX_COUNT_DISTINCT(a, {fall_back_relativeSD}) from tab")
+
