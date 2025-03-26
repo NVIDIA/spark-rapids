@@ -40,7 +40,7 @@ case class CudfHLLPP(override val dataType: DataType,
       if (input.getNullCount == input.getRowCount) {
         // For NullType column or all values are null,
         // return a struct scalar: struct(0L, 0L, ..., 0L)
-        val numCols = (1 << precision) / 10 + 1
+        val numCols = GpuHyperLogLogPlusPlus.numWords(precision)
         withResource(cudf.ColumnVector.fromLongs(0L)) { cv =>
           // Underlying uses deep-copy, so we can reuse this `cv` and fill multiple times.
           val cvs: Array[cudf.ColumnView] = Array.fill(numCols)(cv)
@@ -109,10 +109,8 @@ case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
   // Consistent with Spark
   private lazy val precision: Int = GpuHyperLogLogPlusPlus.computePrecision(relativeSD)
 
-  private lazy val numRegistersPerSketch: Int = 1 << precision;
-
   // Each long contains 10 register(max 6 bits)
-  private lazy val numWords = numRegistersPerSketch / 10 + 1
+  private lazy val numWords = GpuHyperLogLogPlusPlus.numWords(precision)
 
   // Spark agg buffer type: long array
   private lazy val sparkAggBufferAttributes: Seq[AttributeReference] = {
@@ -191,6 +189,9 @@ case class GpuHyperLogLogPlusPlus(childExpr: Expression, relativeSD: Double)
 }
 
 object GpuHyperLogLogPlusPlus {
+
+  def numWords(precision: Int): Int = (1 << precision) / 10 + 1
+
   def computePrecision(relativeSD: Double): Int =
     Math.ceil(2.0d * Math.log(1.106d / relativeSD) / Math.log(2.0d)).toInt;
 }
