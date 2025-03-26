@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
-import ai.rapids.cudf.Cuda
+import ai.rapids.cudf.{Cuda, RmmAllocationMode}
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.python.PythonConfEntries._
 
@@ -34,9 +34,23 @@ object GpuPythonHelper extends Logging {
   private lazy val gpuId = GpuDeviceManager.getDeviceId()
     .getOrElse(throw new IllegalStateException("No gpu id!"))
     .toString
-  private lazy val isPythonPooledMemEnabled = rapidsConf.get(PYTHON_POOLED_MEM)
-    .getOrElse(rapidsConf.isPooledMemEnabled)
-    .toString
+  // Visible for tests
+  lazy val isPythonPooledMemEnabled: Boolean = rapidsConf.get(PYTHON_POOLED_MEM)
+    .getOrElse {
+      val rmmMode = GpuDeviceManager.rmmModeFromConf(rapidsConf)
+      var poolMode: Option[String] = None
+      if ((rmmMode & RmmAllocationMode.CUDA_ASYNC) != 0) {
+        poolMode = Some("ASYNC")
+      } else if ((rmmMode & RmmAllocationMode.ARENA) != 0) {
+        poolMode = Some("ARENA")
+      }
+      poolMode.foreach(poolType =>
+        logWarning(s"$poolType pool is expected, but not supported by Rapids Python, " +
+          s"fallback to normal pool")
+      )
+      // Clear the uvm flag which is not relevant to memory pool
+      (rmmMode & (~RmmAllocationMode.CUDA_MANAGED_MEMORY)) != RmmAllocationMode.CUDA_DEFAULT
+    }
   private lazy val isPythonUvmEnabled = rapidsConf.get(PYTHON_UVM_ENABLED)
     .getOrElse(rapidsConf.isUvmEnabled)
     .toString
@@ -95,7 +109,7 @@ object GpuPythonHelper extends Logging {
       pyF.envVars.put("CUDA_VISIBLE_DEVICES", gpuId)
       pyF.envVars.put("RAPIDS_PYTHON_ENABLED", isPythonOnGpuEnabled.toString)
       pyF.envVars.put("RAPIDS_UVM_ENABLED", isPythonUvmEnabled)
-      pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled)
+      pyF.envVars.put("RAPIDS_POOLED_MEM_ENABLED", isPythonPooledMemEnabled.toString)
       pyF.envVars.put("RAPIDS_POOLED_MEM_SIZE", initAllocPerWorker.toString)
       pyF.envVars.put("RAPIDS_POOLED_MEM_MAX_SIZE", maxAllocPerWorker.toString)
     })

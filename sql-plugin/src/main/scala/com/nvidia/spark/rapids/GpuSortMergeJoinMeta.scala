@@ -125,6 +125,7 @@ class GpuSortMergeJoinMeta(
           joinCondition,
           left,
           right,
+          readOpt,
           join.isSkewJoin)(
           join.leftKeys,
           join.rightKeys)

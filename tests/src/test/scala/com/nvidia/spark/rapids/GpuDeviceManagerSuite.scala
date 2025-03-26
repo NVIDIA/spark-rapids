@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,6 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     // pool allocation here is less than the default minimum
     val minPoolFraction = 0.01
     val conf = new SparkConf()
-        .set(RapidsConf.POOLED_MEM.key, "true")
         .set(RapidsConf.RMM_POOL.key, "ARENA")
         .set(RapidsConf.RMM_ALLOC_FRACTION.key, poolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MIN_FRACTION.key, minPoolFraction.toString)

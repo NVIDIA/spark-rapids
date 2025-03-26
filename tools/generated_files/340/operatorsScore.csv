@@ -59,6 +59,7 @@ ArrayIntersect,4
 ArrayJoin,4
 ArrayMax,4
 ArrayMin,4
+ArrayPosition,4
 ArrayRemove,4
 ArrayRepeat,4
 ArrayTransform,4

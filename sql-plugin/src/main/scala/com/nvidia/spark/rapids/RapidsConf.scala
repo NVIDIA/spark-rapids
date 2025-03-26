@@ -23,6 +23,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
+import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
@@ -523,14 +524,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .startupOnly()
     .booleanConf
     .createWithDefault(false)
-
-  val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
-    .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly. DEPRECATED: please use " +
-      "spark.rapids.memory.gpu.pool instead.")
-    .startupOnly()
-    .booleanConf
-    .createWithDefault(true)
 
   val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
     .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", " +
@@ -1118,7 +1111,11 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(RapidsReaderType.values.map(_.toString))
-    .createWithDefault(RapidsReaderType.AUTO.toString)
+    .createWithDefault(
+      ShimLoader.getShimVersion match {
+        case DatabricksShimVersion(3, 5, 0, "14.3") => RapidsReaderType.PERFILE.toString
+        case _ => RapidsReaderType.AUTO.toString
+      })
 
   val PARQUET_DECOMPRESS_CPU =
     conf("spark.rapids.sql.format.parquet.decompressCpu")
@@ -2076,6 +2073,29 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+  // ["NEVER", "ALWAYS", "ONFAILURE"]
+  private val KudoDebugModes = 
+    DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
+
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE = conf("spark.rapids.shuffle.kudo.serializer.debug.mode")
+    .doc("Debug mode for Kudo serializer for the shuffle. If Always, it will dump the " +
+      "kudo tables to a file in spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix. " +
+      "If Never, it will not dump the kudo tables data. If OnFailure, it will only dump the " +
+      "kudo tables data when the shuffle fails.")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(KudoDebugModes)
+    .createWithDefault("NEVER")
+
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
+    conf("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix")
+    .doc("The path prefix to use for the kudo tables when using Kudo serializer for the shuffle.")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createOptional
 
   // USER FACING DEBUG CONFIGS
 
@@ -2834,8 +2854,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
-  lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
-
   lazy val rmmPool: String = {
     var pool = get(RMM_POOL)
     if ("ASYNC".equalsIgnoreCase(pool)) {
@@ -3203,6 +3221,45 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleKudoMeasureBufferCopyEnabled: Boolean =
     get(SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED)
+
+  lazy val shuffleKudoSerializerDebugMode: DumpOption = {
+    val mode = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE)
+    mode match {
+      case "NEVER" => DumpOption.Never
+      case "ALWAYS" => DumpOption.Always
+      case "ONFAILURE" => DumpOption.OnFailure
+      case _ => {
+        logWarning(s"Invalid value for ${SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE.key}: $mode. " +
+          "Using default value: Never")
+        DumpOption.Never
+      }
+    }
+  }
+
+  lazy val shuffleKudoSerializerDebugDumpPrefix: Option[String] = {
+    val prefix = get(SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX)
+    shuffleKudoSerializerDebugMode match {
+      case DumpOption.Never => prefix
+      case _ => {
+        prefix match {
+          case None => {
+            logWarning("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix is not set, " +
+              "so Kudo serializer debug will not be enabled")
+            None
+          }
+          case Some(p) => {
+            if (p.isEmpty) {
+              logWarning("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix is empty, " +
+                "so Kudo serializer debug will not be enabled")
+              Some("")
+            } else {
+              Some(p)
+            }
+          }
+        }
+      }
+    }
+  }
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
