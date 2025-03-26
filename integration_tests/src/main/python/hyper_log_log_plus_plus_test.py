@@ -15,11 +15,12 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_sql
+from conftest import is_databricks_runtime
 from data_gen import *
 from hashing_test import xxhash_gens
 from marks import ignore_order
 
-
+@pytest.mark.skipif(is_databricks_runtime(), reason="HyperLogLogPlusPlus does not support Databricks currently")
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', xxhash_gens, ids=idfn)
 def test_hllpp_groupby(data_gen):
@@ -28,7 +29,7 @@ def test_hllpp_groupby(data_gen):
         "tab",
         "select c1, APPROX_COUNT_DISTINCT(c2) from tab group by c1")
 
-
+@pytest.mark.skipif(is_databricks_runtime(), reason="HyperLogLogPlusPlus does not support Databricks currently")
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', xxhash_gens, ids=idfn)
 def test_hllpp_reduction(data_gen):
@@ -56,6 +57,7 @@ _relativeSD = [
     # 0.003, #  precision 18 Refer to bug: https://github.com/NVIDIA/spark-rapids/issues/12347
 ]
 
+@pytest.mark.skipif(is_databricks_runtime(), reason="HyperLogLogPlusPlus does not support Databricks currently")
 @ignore_order(local=True)
 @pytest.mark.parametrize('relativeSD', _relativeSD, ids=idfn)
 def test_hllpp_precisions_reduce(relativeSD):
@@ -64,6 +66,7 @@ def test_hllpp_precisions_reduce(relativeSD):
         "tab",
         f"select APPROX_COUNT_DISTINCT(a, {relativeSD}) from tab")
 
+@pytest.mark.skipif(is_databricks_runtime(), reason="HyperLogLogPlusPlus does not support Databricks currently")
 @ignore_order(local=True)
 @pytest.mark.parametrize('relativeSD', _relativeSD, ids=idfn)
 def test_hllpp_precisions_groupby(relativeSD):
