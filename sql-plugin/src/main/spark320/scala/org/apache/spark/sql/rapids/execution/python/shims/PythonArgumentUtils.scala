@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,16 @@
 {"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
+{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
+{"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "344"}
@@ -39,37 +42,33 @@
 {"spark": "353"}
 {"spark": "354"}
 {"spark": "355"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import org.apache.spark.api.python.ChainedPythonFunctions
-import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import scala.collection.mutable.ArrayBuffer
 
-case class GpuGroupedPythonRunnerFactory(
-    conf: org.apache.spark.sql.internal.SQLConf,
-    chainedFunc: Seq[(ChainedPythonFunctions, Long)],
-    argOffsets: Array[Array[Int]],
-    dedupAttrs: StructType,
-    pythonOutputSchema: StructType,
-    evalType: Int,
-    argNames: Option[Array[Array[Option[String]]]] = None) {
-  val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
+import com.nvidia.spark.rapids.python.GpuPythonArguments
 
-  def getRunner(): GpuBasePythonRunner[ColumnarBatch] = {
-    new GpuArrowPythonRunner(
-      chainedFunc,
-      evalType,
-      argOffsets,
-      dedupAttrs,
-      sessionLocalTimeZone,
-      pythonRunnerConf,
-      // The whole group data should be written in a single call, so here is unlimited
-      Int.MaxValue,
-      pythonOutputSchema,
-      argNames)
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.types.DataType
+
+object PythonArgumentUtils {
+
+  /** Flatten all the arguments as a GpuPythonArguments. Almost the same as Spark */
+  def flatten(args: Seq[Seq[Expression]]): GpuPythonArguments = {
+    val allInputs = new ArrayBuffer[Expression]
+    val dataTypes = new ArrayBuffer[DataType]
+    val argOffsets = args.map { input =>
+      input.map { e =>
+        if (allInputs.exists(_.semanticEquals(e))) {
+          allInputs.indexWhere(_.semanticEquals(e))
+        } else {
+          allInputs += e
+          dataTypes += e.dataType
+          allInputs.length - 1
+        }
+      }.toArray
+    }.toArray
+    GpuPythonArguments(allInputs.toSeq, dataTypes.toSeq, argOffsets, None)
   }
 }

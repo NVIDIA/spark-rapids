@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ case class GpuGroupedPythonRunnerFactory(
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
   pythonOutputSchema: StructType,
-  evalType: Int) {
+  evalType: Int,
+  argNames: Option[Array[Array[Option[String]]]] = None) {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
@@ -49,7 +50,8 @@ case class GpuGroupedPythonRunnerFactory(
         pythonRunnerConf,
         // The whole group data should be written in a single call, so here is unlimited
         Int.MaxValue,
-        pythonOutputSchema)
+        pythonOutputSchema,
+        argNames)
     } else {
       new GpuArrowPythonRunner(
         chainedFunc,
@@ -59,7 +61,8 @@ case class GpuGroupedPythonRunnerFactory(
         sessionLocalTimeZone,
         pythonRunnerConf,
         Int.MaxValue,
-        pythonOutputSchema)
+        pythonOutputSchema,
+        argNames)
     }
   }
 }

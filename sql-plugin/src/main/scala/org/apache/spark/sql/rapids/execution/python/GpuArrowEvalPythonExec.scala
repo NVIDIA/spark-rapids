@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -35,7 +35,7 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunner, PythonArgumentUtils}
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -405,31 +405,12 @@ case class GpuArrowEvalPythonExec(
 
       // Not sure why we are doing this in every task.  It is not going to change, but it might
       // just be less that we have to ship.
-
-      // flatten all the arguments
-      val allInputs = new ArrayBuffer[Expression]
-      // TODO eventually we should just do type checking on these, but that can get a little complex
-      // with how things are setup for replacement...
-      // perhaps it needs to be with the special, it is an gpu compatible expression, but not a
-      // gpu expression...
-      val dataTypes = new ArrayBuffer[DataType]
-      val argOffsets = inputs.map { input =>
-        input.map { e =>
-          if (allInputs.exists(_.semanticEquals(e))) {
-            allInputs.indexWhere(_.semanticEquals(e))
-          } else {
-            allInputs += e
-            dataTypes += e.dataType
-            allInputs.length - 1
-          }
-        }.toArray
-      }.toArray
-
-      val pythonInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
-        StructField(s"_$i", dt)
+      val udfArgs = PythonArgumentUtils.flatten(inputs)
+      val pythonInputSchema = StructType(
+        udfArgs.flattenedTypes.zipWithIndex.map { case (dt, i) => StructField(s"_$i", dt)
       }.toArray)
 
-      val boundReferences = GpuBindReferences.bindReferences(allInputs.toSeq, childOutput)
+      val boundReferences = GpuBindReferences.bindReferences(udfArgs.flattenedArgs, childOutput)
       val batchProducer = new BatchProducer(
         new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize, numInputRows,
           numInputBatches))
@@ -448,12 +429,13 @@ case class GpuArrowEvalPythonExec(
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           evalType,
-          argOffsets,
+          udfArgs.argOffsets,
           pythonInputSchema,
           timeZone,
           runnerConf,
           targetBatchSize,
-          pythonOutputSchema)
+          pythonOutputSchema,
+          udfArgs.argNames)
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
         new CombiningIterator(batchProducer.getBatchQueue, outputIterator, pyRunner, numOutputRows,
