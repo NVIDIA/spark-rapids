@@ -17,14 +17,14 @@ from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run, is_databricks_runtime
 from spark_session import (is_before_spark_330, is_before_spark_331, is_before_spark_350, is_spark_341,
-                           is_spark_400_or_later)
+                           is_spark_400_or_later, is_databricks143_or_later)
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
 # TODO undo once we fix 400 and 350db143
 # https://github.com/NVIDIA/spark-rapids/pull/12383
 pytestmark = [
-    pytest.mark.spark_job_timeout(seconds=30)
+    pytest.mark.spark_job_timeout(condition=is_databricks143_or_later(),  seconds=30)
 ]
 
 try:

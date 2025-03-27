@@ -98,7 +98,7 @@ public class TimeoutSparkListener extends SparkListener {
         timeoutSeconds + " seconds, cancelling. " +
         "Look into fixing the test or reducing its execution time. " +
         "If necessary, adjust the timeout using the marker " +
-        "pytest.mark.spark_job_timeout(seconds,dump_threads)";
+        "pytest.mark.spark_job_timeout(condition, seconds,dump_threads)";
       if (shouldDumpThreads) {
         LOG.error(message + " Driver thread dump follows");
         dumpThreads();
