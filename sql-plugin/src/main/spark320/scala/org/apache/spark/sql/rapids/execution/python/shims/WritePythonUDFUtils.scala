@@ -37,7 +37,6 @@
 {"spark": "343"}
 {"spark": "344"}
 {"spark": "350"}
-{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
@@ -56,6 +55,7 @@ object WritePythonUDFUtils {
       dataOut: DataOutputStream,
       funcs: Seq[(ChainedPythonFunctions, Long)],
       argOffsets: Array[Array[Int]],
+      argNames: Option[Array[Array[Option[String]]]] = None,
       profiler: Option[String] = None): Unit = {
     PythonUDFRunner.writeUDFs(dataOut, funcs.map(_._1), argOffsets)
   }

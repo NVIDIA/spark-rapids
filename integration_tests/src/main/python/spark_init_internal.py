@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -114,6 +114,7 @@ def pytest_sessionstart(session):
         findspark_init()
 
     import pyspark
+    from py4j.java_gateway import java_import
 
     # Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
@@ -147,6 +148,7 @@ def pytest_sessionstart(session):
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
+    java_import(_s._jvm, 'org.apache.spark.rapids.tests.TimeoutSparkListener')
     global _spark
     _spark = _s
 
@@ -254,3 +256,31 @@ def spark_version():
 @pytest.fixture(scope='function', autouse=_use_worker_logs())
 def log_test_name(request):
     logger.info("Running test '{}'".format(request.node.nodeid))
+
+@pytest.fixture(scope="function", autouse=True)
+def set_spark_job_timeout(request):
+    # TODO dial down after identifying all long tests
+    # and set exceptions there
+    default_timeout_seconds = 900
+    logger.debug("set_spark_job_timeout: BEFORE TEST\n")
+    tm = request.node.get_closest_marker("spark_job_timeout")
+    if tm:
+        spark_timeout = tm.kwargs.get('seconds', default_timeout_seconds)
+        dump_threads = tm.kwargs.get('dump_threads', True)
+    else:
+        spark_timeout = default_timeout_seconds
+        dump_threads = True
+    # before the test
+    hung_job_listener = (
+      _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(
+          _spark._jsc, 
+          spark_timeout, 
+          dump_threads)
+    ) 
+    hung_job_listener.register()
+    # yield for test
+    yield 
+    # after the test
+    logger.debug("set_spark_job_timeout: AFTER TEST\n")
+    hung_job_listener.unregister()
+
