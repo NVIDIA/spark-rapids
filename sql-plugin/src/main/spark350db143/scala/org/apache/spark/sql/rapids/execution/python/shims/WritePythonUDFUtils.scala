@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "400"}
+{"spark": "350db143"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -33,15 +33,15 @@ object WritePythonUDFUtils {
       argNames: Option[Array[Array[Option[String]]]] = None,
       profiler: Option[String] = None): Unit = {
     if (argNames.isDefined) {
-      // Support also send the argument name to Python from Spark 400
+      // Support also send the argument name to Python from DB 143
       val argMetas = argOffsets.zip(argNames.get).map { case (idxs, names) =>
         idxs.zip(names).map { case (idx, name) =>
           ArgumentMetadata(idx, name)
         }
       }
-      PythonUDFRunner.writeUDFs(dataOut, funcs, argMetas, profiler)
+      PythonUDFRunner.writeUDFs(dataOut, funcs.map(_._1), argMetas)
     } else {
-      PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets, profiler)
+      PythonUDFRunner.writeUDFs(dataOut, funcs.map(_._1), argOffsets)
     }
   }
 }
