@@ -272,7 +272,7 @@ def set_spark_job_timeout(request):
         spark_timeout = tm.kwargs.get('seconds', default_timeout_seconds)
         dump_threads = tm.kwargs.get('dump_threads', True)
     # before the test
-    if condition:
+    if condition is True:
         logger.info(f"timeout={spark_timeout} seconds marker is active")
         hung_job_listener = (
         _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(

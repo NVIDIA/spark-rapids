@@ -24,7 +24,7 @@ from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_mi
 # TODO undo once we fix 400 and 350db143
 # https://github.com/NVIDIA/spark-rapids/pull/12383
 pytestmark = [
-    pytest.mark.spark_job_timeout(condition=is_databricks143_or_later(),  seconds=30)
+    pytest.mark.spark_job_timeout(condition=is_databricks143_or_later(), seconds=30)
 ]
 
 try:
