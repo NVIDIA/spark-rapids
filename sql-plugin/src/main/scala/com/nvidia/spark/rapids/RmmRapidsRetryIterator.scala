@@ -660,7 +660,9 @@ object RmmRapidsRetryIterator extends Logging {
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
-              RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
+                RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              }
               val injectConf = rapidsConf.testRetryOOMInjectionMode
               if (injectConf.withSplit) {
                 RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
