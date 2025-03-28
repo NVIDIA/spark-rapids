@@ -17,6 +17,7 @@ import os
 import pytest
 import re
 import stat
+import traceback
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -180,12 +181,12 @@ def _get_driver_opts_for_worker_logs(_sb, wid):
         ' -Dlogfile={}'.format(log_file)
 
     # Set up Logging to the WORKERID_worker_logs
-    # Note: This logger is only used for logging the test name in method `log_test_name`. 
+    # Note: This logger is only used for logging the test name in method `log_test_name`.
     global logger
     logger.setLevel(logging.INFO)
     # Create file handler to output logs into corresponding worker log file
-    # This file_handler is modifying the worker_log file that the plugin will also write to 
-    # The reason for doing this is to get all test logs in one place from where we can do other analysis 
+    # This file_handler is modifying the worker_log file that the plugin will also write to
+    # The reason for doing this is to get all test logs in one place from where we can do other analysis
     # that might be needed in future to look at the execs that were used in our integration tests
     file_handler = logging.FileHandler(log_file)
     # Set the formatter for the file handler, we match the formatter from the basicConfig for consistency in logs
@@ -257,8 +258,10 @@ def spark_version():
 def log_test_name(request):
     logger.info("Running test '{}'".format(request.node.nodeid))
 
+set_spark_job_timeout_failure_logged = False
 @pytest.fixture(scope="function", autouse=True)
 def set_spark_job_timeout(request):
+    global set_spark_job_timeout_failure_logged
     # TODO dial down after identifying all long tests
     # and set exceptions there
     default_timeout_seconds = 900
@@ -271,16 +274,25 @@ def set_spark_job_timeout(request):
         spark_timeout = default_timeout_seconds
         dump_threads = True
     # before the test
-    hung_job_listener = (
-      _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(
-          _spark._jsc, 
-          spark_timeout, 
-          dump_threads)
-    ) 
-    hung_job_listener.register()
+    try:
+        hung_job_listener = (
+        _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener(
+            _spark._jsc,
+            spark_timeout,
+            dump_threads)
+        )
+        hung_job_listener.register()
+    except Exception as e:
+        hung_job_listener = None
+        if set_spark_job_timeout_failure_logged is False:
+            set_spark_job_timeout_failure_logged = True
+            logger.warning(f"set_spark_job_timeout: Ignoring exception : {e}")
+            logger.error(traceback.format_exc())
+        pass
     # yield for test
-    yield 
+    yield
     # after the test
     logger.debug("set_spark_job_timeout: AFTER TEST\n")
-    hung_job_listener.unregister()
+    if hung_job_listener is not None:
+        hung_job_listener.unregister()
 
