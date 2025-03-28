@@ -660,7 +660,9 @@ object RmmRapidsRetryIterator extends Logging {
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
-              RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
+                RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
+              }
               val injectConf = rapidsConf.testRetryOOMInjectionMode
               if (injectConf.withSplit) {
                 RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
@@ -839,36 +841,44 @@ object RmmRapidsRetryIterator extends Logging {
   // track the callstack for each memory allocation, don't enable it unless really needed
   val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
     java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
+  // By default, only print first time to avoid too much log
+  val BOOKKEEP_MEMORY_PRINT_ALL: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.printall")
+  var bookkeepPrinted = false
 
   val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
 
   private def logMemoryBookkeeping(): Unit = synchronized { // use synchronized to keep neat
+    if (!bookkeepPrinted || BOOKKEEP_MEMORY_PRINT_ALL) {
 
-    // print spillable status
-    logInfo(SpillFramework.getHostStoreSpillableSummary)
-    logInfo(SpillFramework.getDeviceStoreSpillableSummary)
+      // print spillable status
+      logInfo(SpillFramework.getHostStoreSpillableSummary)
+      logInfo(SpillFramework.getDeviceStoreSpillableSummary)
 
-    // print host memory bookkeeping
-    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+      // print host memory bookkeeping
+      logInfo(HostAlloc.getHostAllocBookkeepSummary())
 
-    // print device memory bookkeeping
-    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
-    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+      // print device memory bookkeeping
+      // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+      // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
 
-    // print stack trace
-    val sb = new StringBuilder("<<Jstack Details>>\n\n")
-    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
-    => {
-      // Print the thread name and its state
-      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
-        s"- Thread ID: ${thread.getId}\n")
-      // Print the stack trace for this thread
-      for (element <- stackTrace) {
-        sb.append(s"\tat $element")
-      }
-      sb.append("\n\n")
-    })
-    logInfo(sb.toString())
+      // print stack trace
+      val sb = new StringBuilder("<<Jstack Details>>\n\n")
+      Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+      => {
+        // Print the thread name and its state
+        sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+          s"- Thread ID: ${thread.getId}\n")
+        // Print the stack trace for this thread
+        for (element <- stackTrace) {
+          sb.append(s"\tat $element")
+        }
+        sb.append("\n\n")
+      })
+      logInfo(sb.toString())
+
+      bookkeepPrinted = true
+    }
   }
 }
 

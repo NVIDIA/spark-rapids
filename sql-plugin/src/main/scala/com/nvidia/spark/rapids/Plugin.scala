@@ -721,6 +721,10 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     startTaskNvtx(TaskContext.get)
     extraExecutorPlugins.foreach(_.onTaskStart())
     ProfilerOnExecutor.onTaskStart()
+    // Make sure that the thread/task is registered before we try and block
+    // For the task main thread, we want to make sure that it's registered in the OOM state
+    // machine throughout the task lifecycle.
+    TaskRegistryTracker.registerThreadForRetry()
   }
 
   override def onTaskSucceeded(): Unit = {
