@@ -286,7 +286,7 @@ def set_spark_job_timeout(request):
         hung_job_listener = None
         if set_spark_job_timeout_failure_logged is False:
             set_spark_job_timeout_failure_logged = True
-            logger.warning(f"set_spark_job_timeout: Ignoring exception : {e}")
+            logger.warning(f"set_spark_job_timeout: Ignoring pre-test exception : {e}")
             logger.error(traceback.format_exc())
         pass
     # yield for test
@@ -294,5 +294,12 @@ def set_spark_job_timeout(request):
     # after the test
     logger.debug("set_spark_job_timeout: AFTER TEST\n")
     if hung_job_listener is not None:
-        hung_job_listener.unregister()
+        try:
+            hung_job_listener.unregister()
+        except Exception as e:
+            if set_spark_job_timeout_failure_logged is False:
+                set_spark_job_timeout_failure_logged = True
+                logger.warning(f"set_spark_job_timeout: Ignoring post-test exception : {e}")
+                logger.error(traceback.format_exc())
+            pass
 
