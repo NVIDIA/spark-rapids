@@ -169,7 +169,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[AddMonths],
     classOf[Alias],
     classOf[And],
-    classOf[ArrayAggregate],
     classOf[ArrayContains],
     classOf[ArrayDistinct],
     classOf[ArrayExcept],
@@ -194,6 +193,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[BitLength],
     classOf[BitwiseAnd],
     classOf[BitwiseOr],
+    classOf[BitwiseXor],
     classOf[Cbrt],
     classOf[Ceil],
     classOf[Chr],
@@ -201,10 +201,11 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Cos],
     classOf[Cosh],
     classOf[Crc32],
+    classOf[CreateArray],
+    classOf[CreateMap],
     classOf[CreateNamedStruct],
     classOf[DateAdd],
     classOf[DateDiff],
-    classOf[DateFormatClass],
     classOf[DateFromUnixDate],
     classOf[DateSub],
     classOf[DayOfMonth],
@@ -218,30 +219,29 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[FindInSet],
     classOf[Flatten],
     classOf[Floor],
-    classOf[FromUTCTimestamp],
-    classOf[FromUnixTime],
     classOf[GetJsonObject],
     classOf[GetMapValue],
     classOf[GreaterThan],
     classOf[GreaterThanOrEqual],
     classOf[Greatest],
     classOf[Hex],
-    classOf[Hour],
     classOf[If],
     classOf[In],
     classOf[IsNaN],
     classOf[IsNotNull],
     classOf[IsNull],
+    classOf[LambdaFunction],
     classOf[LastDay],
     classOf[Least],
     classOf[Left],
     classOf[Length],
     classOf[LengthOfJsonArray],
     classOf[LessThan],
+    classOf[LessThanOrEqual],
     classOf[Levenshtein],
     classOf[Like],
     classOf[Literal],
-    classOf[Log],
+    classOf[Logarithm],
     classOf[Log10],
     classOf[Log2],
     classOf[Lower],
@@ -250,11 +250,9 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[MapValues],
     classOf[MapZipWith],
     classOf[Md5],
-    classOf[MicrosToTimestamp],
-    classOf[MillisToTimestamp],
-    classOf[Minute],
     classOf[MonotonicallyIncreasingID],
     classOf[Month],
+    classOf[NamedLambdaVariable],
     classOf[NaNvl],
     classOf[NextDay],
     classOf[Not],
@@ -280,7 +278,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[SoundEx],
     classOf[SparkPartitionID],
     classOf[Sqrt],
-    classOf[Stack],
     classOf[StringInstr],
     classOf[StringLPad],
     classOf[StringRPad],
@@ -296,7 +293,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Tanh],
     classOf[ToDegrees],
     classOf[ToRadians],
-    classOf[ToUnixTimestamp],
     classOf[UnaryPositive],
     classOf[Unhex],
     classOf[UnixMicros],
@@ -351,14 +347,24 @@ object HybridExecutionUtils extends PredicateHelper {
   }
 
   def isExprSupportedByHybridScan(condition: Expression, whitelistExprsName: String): Boolean = {
+    println(s"isExprSupportedByHybridScan: $condition")
+    // print which class condition belongs to
+    println(s"condition class: ${condition.getClass}")
     condition match {
-      case filter if isTimestampCondition(filter) => false // Timestamp is not fully supported in Hybrid Filter
+      case filter if isTimestampCondition(filter) => {
+        println(s"isTimestampCondition: $filter")
+        false // Timestamp is not fully supported in Hybrid Filter
+      }
       case filter if HybridExecutionUtils.supportedByHybridFilters(whitelistExprsName)
           .exists(_.isInstance(filter)) =>
+        println(s"filter supported: $filter")
         val childrenSupported = filter.children.forall(
             isExprSupportedByHybridScan(_, whitelistExprsName))
         childrenSupported
-      case _ => false
+      case _ => {
+        println(s"filter not supported.")
+        false
+      }
     }
   }
 
@@ -384,6 +390,8 @@ object HybridExecutionUtils extends PredicateHelper {
           case (fsse: FileSourceScanExec, "CPU") => {
             val (supportedConditions, notSupportedConditions) = filters.partition(
                 isExprSupportedByHybridScan(_, conf.hybridExprsWhitelist))
+            println(s"supportedConditions: $supportedConditions")
+            println(s"notSupportedConditions: $notSupportedConditions")
             notSupportedConditions match {
               case Nil =>
                 // NOTICE: it is essential to align the output to the filter's output. Otherwise,
