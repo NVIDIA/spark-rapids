@@ -181,7 +181,6 @@ object HybridExecutionUtils extends PredicateHelper {
   // scalastyle:on
   val ansiOn = Seq(
     classOf[Acos],
-    // classOf[Acosh],
     classOf[AddMonths],
     classOf[Alias],
     classOf[And],
@@ -191,7 +190,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArrayExists],
     classOf[ArrayForAll],
     classOf[ArrayIntersect],
-    // classOf[ArrayJoin],
     classOf[ArrayMax],
     classOf[ArrayMin],
     classOf[ArrayPosition],
@@ -201,7 +199,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArraysZip],
     classOf[Ascii],
     classOf[Asin],
-    // classOf[Asinh],
     classOf[Atan],
     classOf[Atan2],
     classOf[Atanh],
@@ -210,13 +207,11 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[BitwiseAnd],
     classOf[BitwiseOr],
     classOf[BitwiseXor],
-    // classOf[Cbrt],
     classOf[Ceil],
     classOf[Chr],
     classOf[Concat],
     classOf[Cos],
     classOf[Cosh],
-    // classOf[Crc32],
     classOf[CreateArray],
     classOf[CreateMap],
     classOf[CreateNamedStruct],
@@ -242,7 +237,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Greatest],
     classOf[Hex],
     classOf[If],
-    // classOf[In],
     classOf[IsNaN],
     classOf[IsNotNull],
     classOf[IsNull],
@@ -251,10 +245,8 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Least],
     classOf[Left],
     classOf[Length],
-    // classOf[LengthOfJsonArray],
     classOf[LessThan],
     classOf[LessThanOrEqual],
-    // classOf[Levenshtein],
     classOf[Like],
     classOf[Literal],
     classOf[Logarithm],
@@ -265,7 +257,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[MapKeys],
     classOf[MapValues],
     classOf[MapZipWith],
-    // classOf[Md5],
     classOf[MonotonicallyIncreasingID],
     classOf[Month],
     classOf[NamedLambdaVariable],
@@ -283,21 +274,15 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Rint],
     classOf[Round],
     classOf[Second],
-    // classOf[Sha1],
-    // classOf[Sha2],
     classOf[ShiftLeft],
     classOf[ShiftRight],
-    // classOf[Shuffle],
-    // classOf[Sin],
     classOf[Size],
     classOf[SortArray],
     classOf[SoundEx],
     classOf[SparkPartitionID],
-    // classOf[Sqrt],
     classOf[StringInstr],
     classOf[StringLPad],
     classOf[StringRPad],
-    // classOf[StringRepeat],
     classOf[StringReplace],
     classOf[StringToMap],
     classOf[StringTrim],
@@ -305,10 +290,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[StringTrimRight],
     classOf[Substring],
     classOf[SubstringIndex],
-    // classOf[Tan],
-    // classOf[Tanh],
-    // classOf[ToDegrees],
-    // classOf[ToRadians],
     classOf[UnaryPositive],
     classOf[Unhex],
     classOf[UnixMicros],
@@ -318,7 +299,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Uuid],
     classOf[WeekDay],
     classOf[WeekOfYear],
-    // classOf[WidthBucket],
     classOf[Year],
     classOf[ZipWith]
   )
@@ -365,36 +345,27 @@ object HybridExecutionUtils extends PredicateHelper {
   def isCastSupportedByHybrid(childDataType: DataType, dataType: DataType): Boolean = {
     (childDataType, dataType) match {
       case (_, BooleanType) => false
-      case (DateType, type) if type != StringType => false
+      case (DateType, StringType) => true
+      case (DateType, _) => true
       case (ArrayType(_, _), _) => false
-      case (MapType(_, _), _) => false
+      case (MapType(_, _, _), _) => false
       case (StructType(_), _) => false
       case (_, _) => true
     }
   }
 
   def isExprSupportedByHybridScan(condition: Expression, whitelistExprsName: String): Boolean = {
-    println(s"isExprSupportedByHybridScan: $condition")
-    // print which class condition belongs to
-    println(s"condition class: ${condition.getClass}")
     condition match {
-      case filter if isTimestampCondition(filter) => {
-        println(s"isTimestampCondition: $filter")
-        false // Timestamp is not fully supported in Hybrid Filter
-      }
+      case filter if isTimestampCondition(filter) => false // Timestamp is not fully supported in Hybrid Filter
       case filter if HybridExecutionUtils.supportedByHybridFilters(whitelistExprsName)
           .exists(_.isInstance(filter)) =>
-        println(s"filter supported: $filter")
         val childrenSupported = filter.children.forall(
             isExprSupportedByHybridScan(_, whitelistExprsName))
         childrenSupported
       case Cast(child, dataType, _, _) if isCastSupportedByHybrid(child.dataType, dataType) => {
         isExprSupportedByHybridScan(child, whitelistExprsName)
       }
-      case _ => {
-        println(s"filter not supported.")
-        false
-      }
+      case _ => false
     }
   }
 
@@ -420,8 +391,6 @@ object HybridExecutionUtils extends PredicateHelper {
           case (fsse: FileSourceScanExec, "CPU") => {
             val (supportedConditions, notSupportedConditions) = filters.partition(
                 isExprSupportedByHybridScan(_, conf.hybridExprsWhitelist))
-            println(s"supportedConditions: $supportedConditions")
-            println(s"notSupportedConditions: $notSupportedConditions")
             notSupportedConditions match {
               case Nil =>
                 // NOTICE: it is essential to align the output to the filter's output. Otherwise,

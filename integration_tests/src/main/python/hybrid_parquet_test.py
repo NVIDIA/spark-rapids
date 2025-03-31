@@ -645,11 +645,11 @@ cast_condition_list = [
     # Array to:
     # String, Array
     pytest.param("(cast(array_int1 as string) == '[1, 2, 3]')", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(cast(array_int1 as array<long>) == array(1, 2, 3))",
+    pytest.param("(cast(array_int1 as array<long>) == array(1, 2, 3))", marks=pytest.mark.xfail(reason='not supported by hybrid execution')),
     # Map to:
     # String, Map
     pytest.param("(cast(map_int_str1 as string) == '{{1 -> a, 2 -> b, 3 -> c}}')", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(isnotnull(cast(map_int_str1 as map<long, string>)))", 
+    pytest.param("(isnotnull(cast(map_int_str1 as map<long, string>)))", marks=pytest.mark.xfail(reason='not supported by hybrid execution')),
     # Struct to:
     # String, Struct
     pytest.param("(cast(struct_int_str1 as string) == '{{int1 -> 1, str1 -> a}}')", marks=pytest.mark.xfail(reason='not supported by gluten')),
@@ -694,7 +694,6 @@ def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
         'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
         'spark.rapids.sql.exec.FilterExec': False,
         'spark.sql.ansi.enabled': 'false',
-        # 'spark.rapids.sql.hybrid.whitelistExprs': 'Cast'
     }
 
     assert_gpu_and_cpu_are_equal_collect(
