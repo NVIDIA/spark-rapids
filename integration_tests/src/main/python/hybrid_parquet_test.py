@@ -290,9 +290,6 @@ def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
         lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
         conf=filter_split_conf)
 
-# pytest.param([], marks=pytest.mark.xfail(reason='not supported')),
-# pytest.param([], marks=pytest.mark.xfail(reason='result not correct')),
-
 condition_list = [
     # Boolean:
     # Not
