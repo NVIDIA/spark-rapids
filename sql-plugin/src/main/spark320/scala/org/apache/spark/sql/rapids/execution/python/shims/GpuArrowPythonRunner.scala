@@ -40,6 +40,7 @@
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
+{"spark": "355"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -68,6 +69,7 @@ class GpuArrowPythonRunner(
     conf: Map[String, String],
     maxBatchSize: Long,
     override val pythonOutSchema: StructType,
+    argNames: Option[Array[Array[Option[String]]]] = None,
     jobArtifactUUID: Option[String] = None)
   extends GpuBasePythonRunner[ColumnarBatch](funcs.map(_._1), evalType, argOffsets,
     jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
@@ -82,7 +84,7 @@ class GpuArrowPythonRunner(
 
       val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, maxBatchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {
-          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets)
+          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets, argNames)
         }
       }
       val isInputNonEmpty = inputIterator.nonEmpty

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "350db143"}
-{"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -28,8 +27,6 @@ import org.apache.spark.sql.execution.datasources.{FileStatusWithMetadata, Parti
 
 object PartitionedFileUtilsShim extends PartitionedFileUtilsShimBase {
 
-  // In Spark 4.0, PartitionedFileUtil.splitFiles lost its `sparkSession` parameter.
-  // This Spark-4.0+ shim ignores the `sparkSession` parameter.
   def splitFiles(sparkSession: SparkSession,
                  file: FileStatusWithMetadata,
                  isSplitable: Boolean,

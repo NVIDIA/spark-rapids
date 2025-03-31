@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
-        <version>25.02.0-SNAPSHOT</version>
+        <version>25.04.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>25.02.0-SNAPSHOT</version>
+    <version>25.04.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>sql-plugin</rapids.module>
@@ -77,20 +77,12 @@
             <artifactId>flatbuffers-java</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-bundled-guava</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-core</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>

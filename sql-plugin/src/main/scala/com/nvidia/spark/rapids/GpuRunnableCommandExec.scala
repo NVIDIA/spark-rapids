@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.{SparkSession => GpuSparkSession}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -48,7 +49,7 @@ trait GpuRunnableCommand extends RunnableCommand with ShimUnaryCommand {
     throw new UnsupportedOperationException(
       s"${getClass.getCanonicalName} does not support row-based execution")
 
-  def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
+  def runColumnar(sparkSession: GpuSparkSession, child: SparkPlan): Seq[ColumnarBatch]
 
   def gpuWriteJobStatsTracker(
       hadoopConf: Configuration): GpuWriteJobStatsTracker = {

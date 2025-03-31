@@ -38,9 +38,10 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuOverrides, GpuTransitionOverrides, SparkQueryCompareTestSuite}
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, ExprId}
 import org.apache.spark.sql.execution.{FilterExec, InSubqueryExec, LocalTableScanExec, ProjectExec, RowToColumnarExec, SparkPlan, SubqueryExec}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
 /**
  * Testing for GpuInSubqeryExec. It is difficult to build a series of DataFrame
@@ -63,7 +64,7 @@ class GpuInSubqueryExecSuite extends SparkQueryCompareTestSuite {
   }
 
   private def subqueryTable(spark: SparkSession): DataFrame = {
-    import spark.sqlContext.implicits._
+    import spark.implicits._
     Seq("400.0", "123.4").toDF("strings")
   }
 

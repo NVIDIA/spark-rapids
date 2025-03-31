@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Executors, Future, RejectedExecutionException, TimeUnit}
+import java.util.concurrent.atomic.AtomicLong
 
 import com.nvidia.spark.rapids.{GpuMetric, RapidsConf}
 import org.apache.hadoop.conf.Configuration
@@ -174,10 +175,13 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
       val runnableSubmitted = new CountDownLatch(1)
       // Latch indicating that waitingTask has been submitted to ThrottlingExecutor.
       val waitingTaskSubmitted = new CountDownLatch(1)
+      val actualWaitTimeNs = new AtomicLong(0)
       exec.submit(new Runnable {
         override def run(): Unit = {
           runnableSubmitted.countDown()
+          val before = System.nanoTime()
           executor.submit(waitingTask, 100)
+          actualWaitTimeNs.set(System.nanoTime() - before)
           waitingTaskSubmitted.countDown()
         }
       })
@@ -195,7 +199,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
 
       // Skip the check on the min throttle time as the first task never waits.
 
-      assert(TimeUnit.MILLISECONDS.toNanos(sleepTimeMs) <=
+      assert(actualWaitTimeNs.get() >=
         taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MAX_THROTTLE_TIME_KEY).value
       )
 

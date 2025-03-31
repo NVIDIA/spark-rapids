@@ -17,6 +17,10 @@ set -ex
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd "$SCRIPTPATH"
 
+# No failure message truncation in the test summary by default
+# https://github.com/NVIDIA/spark-rapids/issues/12043
+export CI=${CI:-true}
+
 if [[ $( echo ${SKIP_TESTS} | tr [:upper:] [:lower:] ) == "true" ]];
 then
     echo "PYTHON INTEGRATION TESTS SKIPPED..."
@@ -283,41 +287,6 @@ else
 
     export PYSP_TEST_spark_hadoop_hive_exec_scratchdir="$RUN_DIR/hive"
 
-    # Extract Databricks version from deployed configs.
-    # spark.databricks.clusterUsageTags.sparkVersion is set automatically on Databricks
-    # notebooks but not when running Spark manually.
-    #
-    # At the OS level the DBR version can be obtailed via
-    # 1. DATABRICKS_RUNTIME_VERSION environment set by Databricks, e.g., 11.3
-    # 2. File at /databricks/DBR_VERSION created by Databricks, e.g., 11.3
-    # 3. The value for Spark conf in file /databricks/common/conf/deploy.conf created by Databricks,
-    #    e.g. 11.3.x-gpu-ml-scala2.12
-    #
-    # For cases 1 and 2 append '.' for version matching in 3XYdb SparkShimServiceProvider
-    #
-    DBR_VERSION=/databricks/DBR_VERSION
-    DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
-    if [[ -n "${DATABRICKS_RUNTIME_VERSION}" ]]; then
-      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion="${DATABRICKS_RUNTIME_VERSION}."
-    elif [[ -f $DBR_VERSION || -f $DB_DEPLOY_CONF ]]; then
-      DB_VER="$(< ${DBR_VERSION})." || \
-        DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
-      # if we did not error out on reads we should have at least four characters "x.y."
-      if (( ${#DB_VER} < 4 )); then
-          echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
-          exit 1
-      fi
-      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
-    else
-      cat << EOF
-This node does not define
-- DATABRICKS_RUNTIME_VERSION environment,
-- Files containing version information: $DBR_VERSION, $DB_DEPLOY_CONF
-
-Proceeding assuming a non-Databricks environment.
-EOF
-
-    fi
 
     # Set spark.task.maxFailures for most schedulers.
     #
@@ -372,11 +341,9 @@ EOF
         exit 1
       fi
       export PYSP_TEST_spark_jars="${PYSP_TEST_spark_jars},${HYBRID_BACKEND_JARS//:/,}"
-      export PYSP_TEST_spark_rapids_sql_parquet_useHybridReader=true
       export PYSP_TEST_spark_rapids_sql_hybrid_loadBackend=true
       export PYSP_TEST_spark_memory_offHeap_enabled=true
       export PYSP_TEST_spark_memory_offHeap_size=512M
-      export PYSP_TEST_spark_rapids_sql_hybrid_load=true
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
 

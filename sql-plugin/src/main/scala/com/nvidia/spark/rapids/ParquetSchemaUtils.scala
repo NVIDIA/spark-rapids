@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -576,7 +576,10 @@ object ParquetSchemaUtils {
   private def evolveSchemaCasts(cv: ColumnView, dt: DataType, originalFromDt: DataType)
   : ColumnView = {
     if (needDecimalCast(cv, dt)) {
-      cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
+      val fromDecimal = originalFromDt.asInstanceOf[DecimalType]
+      val toDecimal = dt.asInstanceOf[DecimalType]
+      val ansiMode = CastOptions.DEFAULT_CAST_OPTIONS.isAnsiMode
+      GpuCast.castDecimalToDecimal(cv, fromDecimal, toDecimal, ansiMode)
     } else if (needUnsignedToSignedCast(cv, dt) || needInt32Downcast(cv, dt) ||
         needSignedUpcast(cv, dt)) {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,14 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito.{mock, spy, when}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, Literal, NamedExpression}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.tests.datagen.DataGenExprShims
 import org.apache.spark.sql.types._
-
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
@@ -226,6 +226,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val fun = (df: DataFrame) => df.withColumn("dec", df("decimals")).select("dec")
       val conf = new SparkConf()
           .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+          .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
       val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
       compareResults(false, 0.0, fromCpu, fromGpu)
     } finally {

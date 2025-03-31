@@ -30,13 +30,15 @@ import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuMultiFileReaderSuite extends AnyFunSuite {
+class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
 
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
-    val membuffers =
-      Array(SingleHMBAndMeta(
-        Array(HostMemoryBuffer.allocate(0)), 0L, 0, Seq.empty))
+    val membuffers = {
+      val singleBuf = SpillableHostBuffer(HostMemoryBuffer.allocate(0), 0,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      Array(SingleHMBAndMeta(Array(singleBuf), 0L, 0, Seq.empty))
+    }
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
