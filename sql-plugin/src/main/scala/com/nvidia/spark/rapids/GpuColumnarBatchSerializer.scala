@@ -291,10 +291,22 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
  */
 class SerializedTableColumn(
     val header: SerializedTableHeader,
-    val hostBuffer: HostMemoryBuffer) extends GpuColumnVectorBase(NullType) with SizeProvider {
+    val shb: SpillableHostBuffer) extends GpuColumnVectorBase(NullType) with SizeProvider {
   override def close(): Unit = {
-    if (hostBuffer != null) {
-      hostBuffer.close()
+    if (shb != null) {
+      shb.close()
+    }
+  }
+
+  /**
+   * Get the host buffer containing the serialized table data.
+   * @return a host buffer needs caller to close
+   */
+  def getHostBuffer: HostMemoryBuffer = {
+    if (shb == null) {
+      null
+    } else {
+      shb.getHostBuffer()
     }
   }
 
@@ -302,10 +314,10 @@ class SerializedTableColumn(
 
   override def numNulls(): Int = throw new IllegalStateException("should not be called")
 
-  override def sizeInBytes: Long = if (hostBuffer == null) {
+  override def sizeInBytes: Long = if (shb == null) {
     0L
   } else {
-    hostBuffer.getLength
+    shb.length
   }
 }
 
@@ -321,7 +333,14 @@ object SerializedTableColumn {
   def from(
       header: SerializedTableHeader,
       hostBuffer: HostMemoryBuffer = null): ColumnarBatch = {
-    val column = new SerializedTableColumn(header, hostBuffer)
+    val column =
+      if (hostBuffer == null) {
+        new SerializedTableColumn(header, null)
+      } else {
+        new SerializedTableColumn(header,
+          SpillableHostBuffer.apply(hostBuffer, hostBuffer.getLength,
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+      }
     new ColumnarBatch(Array(column), header.getNumRows)
   }
 
@@ -331,7 +350,7 @@ object SerializedTableColumn {
       val cv = batch.column(0)
       cv match {
         case serializedTableColumn: SerializedTableColumn =>
-          sum += Option(serializedTableColumn.hostBuffer).map(_.getLength).getOrElse(0L)
+          sum += Option(serializedTableColumn.shb).map(_.length).getOrElse(0L)
         case kudo: KudoSerializedTableColumn =>
           sum += Option(kudo.spillableKudoTable).map(_.length).getOrElse(0L)
         case _ =>

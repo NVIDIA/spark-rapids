@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids
 
 import java.util
 
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import ai.rapids.cudf.JCudfSerialization.HostConcatResult
+import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
+import ai.rapids.cudf.JCudfSerialization.{HostConcatResult, SerializedTableHeader}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.FileUtils.createTempFile
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -156,8 +157,8 @@ object GpuShuffleCoalesceUtils {
     cb.column(0) match {
       case col: KudoSerializedTableColumn => col.spillableKudoTable.length
       case serCol: SerializedTableColumn => {
-        val hmb = serCol.hostBuffer
-        if (hmb != null) hmb.getLength else 0L
+        val hmb = serCol.shb
+        if (hmb != null) hmb.length else 0L
       }
       case o => throw new IllegalStateException(s"unsupported type: ${o.getClass}")
     }
@@ -211,8 +212,14 @@ class JCudfTableOperator extends SerializedTableOperator[SerializedTableColumn] 
       val totalRowsNum = tables.map(getNumRows).sum
       cudf_utils.HostConcatResultUtil.rowsOnlyHostConcatResult(totalRowsNum)
     } else {
-      val (headers, buffers) = tables.map(t => (t.header, t.hostBuffer)).unzip
-      JCudfSerialization.concatToHostBuffer(headers, buffers)
+      withResource(new ArrayBuffer[HostMemoryBuffer]) { buffers =>
+        val headers = new ArrayBuffer[SerializedTableHeader]
+        tables.foreach(t => {
+          headers.append(t.header)
+          buffers.append(t.getHostBuffer)
+        })
+        JCudfSerialization.concatToHostBuffer(headers.toArray, buffers.toArray)
+      }
     }
     new JCudfCoalescedHostResult(ret)
   }
