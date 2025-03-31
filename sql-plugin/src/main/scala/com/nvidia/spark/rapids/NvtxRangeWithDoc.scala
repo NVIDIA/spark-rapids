@@ -27,18 +27,43 @@ sealed class NvtxId private(val name: String, val doc: String) {
 object NvtxId {
   val registeredRanges = new ListBuffer[NvtxId]()
 
-  private def register(nvtxId: NvtxId): Unit = registeredRanges += nvtxId
-
-  private def apply(name: String, doc: String): NvtxId = {
-    val ret = new NvtxId(name, doc)
-    register(ret)
-    ret
+  private def register(nvtxId: NvtxId): Unit = {
+    registeredRanges += nvtxId
   }
 
-  val ACQUIRE_GPU: NvtxId = NvtxId(name = "Acquire GPU", doc = "Time waiting for GPU semaphore " +
-    "to be acquired")
+  trait IdBase {
+    protected def name: String
+    protected def color: NvtxColor
+    protected def doc: String
 
-  val RELEASE_GPU: NvtxId = NvtxId(name = "Release GPU", doc = "Releasing the GPU semaphore")
+    def apply[V](block: => V): V = {
+      try {
+        NvtxRange.push(name, color)
+        block
+      } finally {
+        NvtxRange.pop()
+      }
+    }
+
+    def init(): Unit = register(new NvtxId(name, doc))
+  }
+
+  object ACQUIRE_GPU extends IdBase {
+    override protected def name = "Acquire GPU"
+    override protected def color = NvtxColor.RED
+    override protected def doc = "Time waiting for GPU semaphore to be acquired"
+  }
+
+  object RELEASE_GPU extends IdBase {
+    override protected def name = "Release GPU"
+    override protected def color = NvtxColor.RED
+    override protected def doc = "Releasing the GPU semaphore"
+  }
+
+  def init(): Unit = {
+    ACQUIRE_GPU.init()
+    RELEASE_GPU.init()
+  }
 }
 
 object NvtxRangeDocs {
@@ -67,6 +92,7 @@ object NvtxRangeDocs {
   }
 
   def main(args: Array[String]): Unit = {
+    NvtxId.init()
     val configs = new FileOutputStream(new File(args(0)))
     Console.withOut(configs) {
       Console.withErr(configs) {
@@ -78,7 +104,7 @@ object NvtxRangeDocs {
 }
 
 class NvtxRangeWithDoc(val id: NvtxId, color: NvtxColor) extends AutoCloseable {
-  private val nvtxRange: NvtxRange = new NvtxRange(id.name, color)
+  NvtxRange.push(id.name, color)
 
-  override def close(): Unit = nvtxRange.close()
+  override def close(): Unit = NvtxRange.pop()
 }

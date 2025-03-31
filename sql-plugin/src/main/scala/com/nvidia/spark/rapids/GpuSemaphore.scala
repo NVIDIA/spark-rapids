@@ -382,16 +382,13 @@ private final class GpuSemaphore() extends Logging {
   }
 
   def releaseIfNecessary(context: TaskContext): Unit = {
-    val nvtxRange = new NvtxRangeWithDoc(NvtxId.RELEASE_GPU, NvtxColor.RED)
-    try {
+    NvtxId.RELEASE_GPU {
       val taskAttemptId = context.taskAttemptId()
       GpuTaskMetrics.get.updateRetry(taskAttemptId)
       val taskInfo = tasks.get(taskAttemptId)
       if (taskInfo != null) {
         taskInfo.releaseSemaphore(semaphore)
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
