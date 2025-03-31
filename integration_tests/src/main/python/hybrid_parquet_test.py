@@ -544,13 +544,116 @@ def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
 cast_condition_list = [
     # Boolean to:
     # Byte, Short, Int, Long, Float, Double, String
-    "(cast(bool as byte) == 1)",
-    "(cast(bool as short) == 1)",
-    "(cast(bool as int) == 1)",
-    "(cast(bool as long) == 1)",
-    "(cast(bool as float) == 1.0)",
-    "(cast(bool as double) == 1.0)",
-    "(cast(bool as string) == 'true')",
+    "(cast(bool1 as byte) == 1)",
+    "(cast(bool1 as short) == 1)",
+    "(cast(bool1 as int) == 1)",
+    "(cast(bool1 as long) == 1)",
+    "(cast(bool1 as float) == 1.0)",
+    "(cast(bool1 as double) == 1.0)",
+    "(cast(bool1 as string) == 'true')",
+    # Byte to:
+    # Boolean, Short, Int, Long, Float, Double, String, Decimal
+    pytest.param("(cast(byte1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(byte1 as short) == 1)",
+    "(cast(byte1 as int) == 1)",
+    "(cast(byte1 as long) == 1)",
+    "(cast(byte1 as float) == 1.0)",
+    "(cast(byte1 as double) == 1.0)",
+    "(cast(byte1 as string) == '1')",
+    "(cast(byte1 as decimal) == 1)",
+    # Short to:
+    # Boolean, Byte, Int, Long, Float, Double, String, Decimal
+    pytest.param("(cast(short1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(short1 as byte) == 1)",
+    "(cast(short1 as int) == 1)",
+    "(cast(short1 as long) == 1)",
+    "(cast(short1 as float) == 1.0)",
+    "(cast(short1 as double) == 1.0)",
+    "(cast(short1 as string) == '1')",
+    "(cast(short1 as decimal) == 1)",
+    # Int to:
+    # Boolean, Byte, Short, Long, Float, Double, String, Decimal
+    pytest.param("(cast(int1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(int1 as byte) == 1)",
+    "(cast(int1 as short) == 1)",
+    "(cast(int1 as long) == 1)",
+    "(cast(int1 as float) == 1.0)",
+    "(cast(int1 as double) == 1.0)",
+    "(cast(int1 as string) == '1')",
+    "(cast(int1 as decimal) == 1)",
+    # Long to:
+    # Boolean, Byte, Short, Int, Float, Double, String, Decimal
+    pytest.param("(cast(long1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(long1 as byte) == 1)",
+    "(cast(long1 as short) == 1)",
+    "(cast(long1 as int) == 1)",
+    "(cast(long1 as float) == 1.0)",
+    "(cast(long1 as double) == 1.0)",
+    "(cast(long1 as string) == '1')",
+    "(cast(long1 as decimal) == 1)",
+    # Float to:
+    # Boolean, Byte, Short, Int, Long, Double, String, Decimal
+    pytest.param("(cast(float1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(float1 as byte) == 1)",
+    "(cast(float1 as short) == 1)",
+    "(cast(float1 as int) == 1)",
+    "(cast(float1 as long) == 1)",
+    "(cast(float1 as double) == 1.0)",
+    "(cast(float1 as string) == '1')",
+    "(cast(float1 as decimal) == 1)",
+    # Double to:
+    # Boolean, Byte, Short, Int, Long, Float, String, Decimal
+    pytest.param("(cast(double1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(double1 as byte) == 1)",
+    "(cast(double1 as short) == 1)",
+    "(cast(double1 as int) == 1)",
+    "(cast(double1 as long) == 1)",
+    "(cast(double1 as float) == 1.0)",
+    "(cast(double1 as string) == '1')",
+    "(cast(double1 as decimal) == 1)",
+    # Date to:
+    # Boolean, Byte, Short, Int, Long, Float, Double, String, Decimal
+    pytest.param("(cast(date1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(date1 as byte) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(date1 as short) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(date1 as int) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(date1 as long) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(date1 as float) == 1.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(date1 as double) == 1.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(date1 as string) == '1')",
+    pytest.param("(cast(date1 as decimal) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    # String to:
+    # Boolean, Byte, Short, Int, Long, Float, Double, Decimal
+    pytest.param("(cast(str1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(string_digit as byte) == 1)",
+    "(cast(string_digit as short) == 1)",
+    "(cast(string_digit as int) == 1)",
+    "(cast(string_digit as long) == 1)",
+    "(cast(string_digit as float) == 1.0)",
+    "(cast(string_digit as double) == 1.0)",
+    "(cast(string_digit as decimal) == 1)",
+    # Decimal to:
+    # Boolean, Byte, Short, Int, Long, Float, Double, String
+    pytest.param("(cast(decimal1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(decimal1 as byte) == 1)",
+    "(cast(decimal1 as short) == 1)",
+    "(cast(decimal1 as int) == 1)",
+    "(cast(decimal1 as long) == 1)",
+    "(cast(decimal1 as float) == 1.0)",
+    "(cast(decimal1 as double) == 1.0)",
+    "(cast(decimal1 as string) == '1')",
+    # Array to:
+    # String, Array
+    pytest.param("(cast(array_int1 as string) == '[1, 2, 3]')", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(cast(array_int1 as array<long>) == array(1, 2, 3))",
+    # Map to:
+    # String, Map
+    pytest.param("(cast(map_int_str1 as string) == '{{1 -> a, 2 -> b, 3 -> c}}')", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    "(isnotnull(cast(map_int_str1 as map<long, string>)))", 
+    # Struct to:
+    # String, Struct
+    pytest.param("(cast(struct_int_str1 as string) == '{{int1 -> 1, str1 -> a}}')", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(cast(struct_int_str1 as struct<col1 long, col2 string>) == struct(1, 'a'))", marks=pytest.mark.xfail(reason='not supported by gluten')),
 ]
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
@@ -559,23 +662,24 @@ cast_condition_list = [
 @pytest.mark.parametrize('condition', cast_condition_list, ids=idfn)
 def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    genlist = [('bool', BooleanGen()),
-               ('byte', ByteGen()),
-               ('short', ShortGen()),
-               ('int', IntegerGen()),
-               ('long', LongGen()),
-               ('float', FloatGen()),
-               ('double', DoubleGen()),
-               ('date', DateGen()),
+    genlist = [('bool1', BooleanGen()),
+               ('byte1', ByteGen()),
+               ('short1', ShortGen()),
+               ('int1', IntegerGen()),
+               ('long1', LongGen()),
+               ('float1', FloatGen()),
+               ('double1', DoubleGen()),
+               ('date1', DateGen()),
                # Timestamp is not supported in filter pushdown yet
-               ('string', StringGen()),
-               ('decimal', DecimalGen()),
-               ('null', NullGen()),
+               ('string1', StringGen()),
+               ('string_digit', StringGen(pattern='[0-9]{1,3}(\.[0-9]{1,3})?')),
+               ('decimal1', DecimalGen()),
+               # Null is not supported in parquet
                # Binary is not supported in hybrid execution yet
-               # CalendarInterval is not supported in spark-rapids yet
-               ('array_int', ArrayGen(IntegerGen())),
-               ('map_int_str', MapGen(IntegerGen(), StringGen())),
-               ('struct_int_str', StructGen([('int', IntegerGen()), ('str', StringGen())])),
+               # CalendarInterval is not supported in hybrid execution yet
+               ('array_int1', ArrayGen(IntegerGen())),
+               ('map_int_str1', MapGen(IntegerGen(nullable=False), StringGen())),
+               ('struct_int_str1', StructGen([('int1', IntegerGen()), ('str1', StringGen())])),
                # UDT is not supported in hybrid execution yet
                # DayTimeIntervalType is not supported in hybrid execution yet
                # YearMonthIntervalType is not supported in hybrid execution yet
@@ -590,7 +694,7 @@ def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
         'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
         'spark.rapids.sql.exec.FilterExec': False,
         'spark.sql.ansi.enabled': 'false',
-        'spark.rapids.sql.hybrid.whitelistExprs': 'Cast'
+        # 'spark.rapids.sql.hybrid.whitelistExprs': 'Cast'
     }
 
     assert_gpu_and_cpu_are_equal_collect(

@@ -98,6 +98,22 @@ object HybridExecutionUtils extends PredicateHelper {
         case _: BinaryType =>
           logWarning(s"Fallback to GpuScan because BinaryType is not supported: $field")
           true
+        // TODO: support CalendarIntervalType
+        case _: CalendarIntervalType =>
+          logWarning(s"Fallback to GpuScan because CalendarIntervalType is not supported: $field")
+          true
+        // TODO: support DayTimeIntervalType
+        case _: DayTimeIntervalType =>
+          logWarning(s"Fallback to GpuScan because DayTimeIntervalType is not supported: $field")
+          true
+        // TODO: support YearMonthIntervalType
+        case _: YearMonthIntervalType =>
+          logWarning(s"Fallback to GpuScan because YearMonthIntervalType is not supported: $field")
+          true
+        // TODO: support UDT
+        case _: UserDefinedType[_] =>
+          logWarning(s"Fallback to GpuScan because UDT is not supported: $field")
+          true
         case _ =>
           false
       })
@@ -161,11 +177,11 @@ object HybridExecutionUtils extends PredicateHelper {
 
   // scalastyle:off line.size.limit
   // from https://github.com/apache/incubator-gluten/blob/branch-1.2/docs/velox-backend-support-progress.md
-  // Only fully supported functions are listed here
+  // and test_hybrid_parquet_filter_pushdown_more_exprs.py
   // scalastyle:on
   val ansiOn = Seq(
     classOf[Acos],
-    classOf[Acosh],
+    // classOf[Acosh],
     classOf[AddMonths],
     classOf[Alias],
     classOf[And],
@@ -175,7 +191,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArrayExists],
     classOf[ArrayForAll],
     classOf[ArrayIntersect],
-    classOf[ArrayJoin],
+    // classOf[ArrayJoin],
     classOf[ArrayMax],
     classOf[ArrayMin],
     classOf[ArrayPosition],
@@ -185,7 +201,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArraysZip],
     classOf[Ascii],
     classOf[Asin],
-    classOf[Asinh],
+    // classOf[Asinh],
     classOf[Atan],
     classOf[Atan2],
     classOf[Atanh],
@@ -194,13 +210,13 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[BitwiseAnd],
     classOf[BitwiseOr],
     classOf[BitwiseXor],
-    classOf[Cbrt],
+    // classOf[Cbrt],
     classOf[Ceil],
     classOf[Chr],
     classOf[Concat],
     classOf[Cos],
     classOf[Cosh],
-    classOf[Crc32],
+    // classOf[Crc32],
     classOf[CreateArray],
     classOf[CreateMap],
     classOf[CreateNamedStruct],
@@ -226,7 +242,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Greatest],
     classOf[Hex],
     classOf[If],
-    classOf[In],
+    // classOf[In],
     classOf[IsNaN],
     classOf[IsNotNull],
     classOf[IsNull],
@@ -235,10 +251,10 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Least],
     classOf[Left],
     classOf[Length],
-    classOf[LengthOfJsonArray],
+    // classOf[LengthOfJsonArray],
     classOf[LessThan],
     classOf[LessThanOrEqual],
-    classOf[Levenshtein],
+    // classOf[Levenshtein],
     classOf[Like],
     classOf[Literal],
     classOf[Logarithm],
@@ -249,7 +265,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[MapKeys],
     classOf[MapValues],
     classOf[MapZipWith],
-    classOf[Md5],
+    // classOf[Md5],
     classOf[MonotonicallyIncreasingID],
     classOf[Month],
     classOf[NamedLambdaVariable],
@@ -267,21 +283,21 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Rint],
     classOf[Round],
     classOf[Second],
-    classOf[Sha1],
-    classOf[Sha2],
+    // classOf[Sha1],
+    // classOf[Sha2],
     classOf[ShiftLeft],
     classOf[ShiftRight],
-    classOf[Shuffle],
-    classOf[Sin],
+    // classOf[Shuffle],
+    // classOf[Sin],
     classOf[Size],
     classOf[SortArray],
     classOf[SoundEx],
     classOf[SparkPartitionID],
-    classOf[Sqrt],
+    // classOf[Sqrt],
     classOf[StringInstr],
     classOf[StringLPad],
     classOf[StringRPad],
-    classOf[StringRepeat],
+    // classOf[StringRepeat],
     classOf[StringReplace],
     classOf[StringToMap],
     classOf[StringTrim],
@@ -289,10 +305,10 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[StringTrimRight],
     classOf[Substring],
     classOf[SubstringIndex],
-    classOf[Tan],
-    classOf[Tanh],
-    classOf[ToDegrees],
-    classOf[ToRadians],
+    // classOf[Tan],
+    // classOf[Tanh],
+    // classOf[ToDegrees],
+    // classOf[ToRadians],
     classOf[UnaryPositive],
     classOf[Unhex],
     classOf[UnixMicros],
@@ -302,7 +318,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Uuid],
     classOf[WeekDay],
     classOf[WeekOfYear],
-    classOf[WidthBucket],
+    // classOf[WidthBucket],
     classOf[Year],
     classOf[ZipWith]
   )
@@ -346,6 +362,17 @@ object HybridExecutionUtils extends PredicateHelper {
     expr.references.exists(attr => attr.dataType == TimestampType)
   }
 
+  def isCastSupportedByHybrid(childDataType: DataType, dataType: DataType): Boolean = {
+    (childDataType, dataType) match {
+      case (_, BooleanType) => false
+      case (DateType, type) if type != StringType => false
+      case (ArrayType(_, _), _) => false
+      case (MapType(_, _), _) => false
+      case (StructType(_), _) => false
+      case (_, _) => true
+    }
+  }
+
   def isExprSupportedByHybridScan(condition: Expression, whitelistExprsName: String): Boolean = {
     println(s"isExprSupportedByHybridScan: $condition")
     // print which class condition belongs to
@@ -361,6 +388,9 @@ object HybridExecutionUtils extends PredicateHelper {
         val childrenSupported = filter.children.forall(
             isExprSupportedByHybridScan(_, whitelistExprsName))
         childrenSupported
+      case Cast(child, dataType, _, _) if isCastSupportedByHybrid(child.dataType, dataType) => {
+        isExprSupportedByHybridScan(child, whitelistExprsName)
+      }
       case _ => {
         println(s"filter not supported.")
         false
