@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.{LocalDateTime, ZoneId, ZoneOffset}
+import java.time.{LocalDateTime, ZoneId}
 import java.util.concurrent.TimeUnit
 
 import scala.concurrent.duration.DAYS
@@ -30,12 +30,74 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{DateTimeUtils, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimBinaryExpression, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, ToUTCTimestamp, TruncDate, TruncTimestamp}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, Second, Minute, Hour, UnixTimestamp, FromUnixTime, ToUnixTimestamp, GetTimestamp, FromUTCTimestamp, ToUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, TruncDate, TruncTimestamp}
 import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
+
+
+/**
+ * Trait containing utility functions for timestamp conversion operations
+ */
+trait TimestampConversionExpression {
+  val left: Expression = null
+  val right: Expression = null
+  val child: Expression = null
+  val timeZoneId: Option[String] = None
+  /**
+   * Verifies that all timestamps within the input vector is less than maxTimestamp
+   *
+   * @param inputVector     UTC timestamp
+   * @param max_timestamp   Maximum allowed timestamp
+   * @return true if all timestamps are valid (less than max_timestamp)
+   */
+  protected def inputIsValid(inputVector: ColumnVector, max_timestamp: Long): Boolean = {
+    val targetTimestamp = Scalar.fromLong(max_timestamp)
+    withResource(targetTimestamp) { _ =>
+      val comparisonResults = inputVector.binaryOp(BinaryOp.GREATER, targetTimestamp, DType.BOOL8);
+      withResource(comparisonResults) { _ =>
+        val result = comparisonResults.any()
+        withResource(result) { _ =>
+          // if there is anything greater than max timestamp, process on CPU
+          !result.getBoolean()
+        }
+      }
+    }
+  }
+
+  /**
+   * Get the result of evaluating this expression on the CPU side.
+   * This can be called from any point when CPU fallback is needed.
+   * @param lhs The left hand side input
+   * @param rhs The right hand side input
+   * @return A ColumnVector containing the CPU-computed results
+   */
+  protected def getCpuResult(): ColumnVector = {
+    // TODO:: Finish this CPU Stuff, get the proper conversion
+    // Get the appropriate CPU expression based on the concrete class
+    val cpuExpr = this match {
+      case _: GpuSecond => Second(child, timeZoneId)
+      case _: GpuMinute => Minute(child, timeZoneId)
+      case _: GpuHour => Hour(child, timeZoneId)
+      case _: GpuUnixTimestamp => UnixTimestamp(left, right, timeZoneId)
+      case _: GpuToUnixTimestamp => ToUnixTimestamp(left, right, timeZoneId)
+      case _: GpuGetTimestamp => GetTimestamp(left, right, timeZoneId)
+      case _: GpuFromUnixTime => FromUnixTime(left, right, timeZoneId)
+      case _: GpuFromUTCTimestamp => FromUTCTimestamp(left, right)
+      case _: GpuToUTCTimestamp => ToUTCTimestamp(left, right)
+      // to add: months between
+      case _ => throw new IllegalStateException("Unknown GpuToTimestamp type")
+    }
+    
+    // Evaluate on CPU and convert back to GPU
+    withResource(cpuExpr.eval()) { cpuResult =>
+      GpuColumnVector.from(cpuResult, dataType).getBase
+    }
+  }
+
+}
 
 trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(DateType)
@@ -876,7 +938,7 @@ abstract class GpuToTimestamp
   val timeParserPolicy = getTimeParserPolicy
 
   val failOnError: Boolean = SQLConf.get.ansiEnabled
-
+  
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val tmp = lhs.dataType match {
       case _: StringType =>
@@ -1123,7 +1185,7 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
     }
   }
 }
-
+// TODO:: FINISH max_timestamp stuff
 class FromUTCTimestampExprMeta(
     expr: FromUTCTimestamp,
     override val conf: RapidsConf,
@@ -1131,37 +1193,28 @@ class FromUTCTimestampExprMeta(
     rule: DataFromReplacementRule)
   extends ConvertUTCTimestampExprMetaBase[FromUTCTimestamp](expr, conf, parent, rule) {
 
-  override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone, timezoneId)
+  override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression = {
+    val max_timestamp = LocalDateTime.of(conf.maxTimeZoneYear+1, 1, 1, 0, 0, 0)
+      .atZone(ZoneId.of("UTC")).toEpochSecond
+    GpuFromUTCTimestamp(timestamp, timezone, timezoneId, max_timestamp)
+  }
 }
 
 case class GpuFromUTCTimestamp(
-    timestamp: Expression, timezone: Expression, zoneId: ZoneId)
+    timestamp: Expression, timezone: Expression, zoneId: ZoneId, max_timestamp: Long)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
-      with NullIntolerantShim {
+      with NullIntolerantShim
+      with TimestampConversionExpression {
 
   override def left: Expression = timestamp
   override def right: Expression = timezone
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
   override def dataType: DataType = TimestampType
-  private def lastCachedYear: Integer = 1900
-  private def maxCachedTimestamp: Long = LocalDateTime.of(lastCachedYear+1, 1, 1, 0, 0)
-                                                          toEpochSecond(ZoneOffset.UTC)
-
-  def validTimestamps(input: GpuColumnVector): BOOL8 {
-    val comparisonResults = input.binaryOp(BinaryOp.GREATER, maxCachedTimestamp, DType.BOOL8);
-    withResource(comparisonResults) { _=>
-      comparisonResults.any().getBoolean()
-    }
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (rhs.getBase.isValid) {
-      if (!validTimestamps(lhs)) {
-        // add spark fallback
-      }
-      else if (GpuOverrides.isUTCTimezone(zoneId)) {
+      if (GpuOverrides.isUTCTimezone(zoneId)) {
         // For UTC timezone, just a no-op bypassing GPU computation.
         lhs.getBase.incRefCount()
       } else {
