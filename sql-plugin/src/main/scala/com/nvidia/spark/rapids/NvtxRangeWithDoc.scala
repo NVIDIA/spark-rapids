@@ -103,14 +103,8 @@ object NvtxRangeDocs {
     Console.withOut(configs) {
       Console.withErr(configs) {
         helpCommon()
-        NvtxId.registeredRanges.foreach(_.help())
+        NvtxId.registeredRanges.values.foreach(_.help())
       }
     }
   }
-}
-
-class NvtxRangeWithDoc(val id: NvtxId, color: NvtxColor) extends AutoCloseable {
-  NvtxRange.push(id.name, color)
-
-  override def close(): Unit = NvtxRange.pop()
 }
