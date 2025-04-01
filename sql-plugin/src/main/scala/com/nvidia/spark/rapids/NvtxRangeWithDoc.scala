@@ -18,17 +18,23 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import java.io.{File, FileOutputStream}
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable
+
+import org.apache.spark.internal.Logging
 
 sealed class NvtxId private(val name: String, val doc: String) {
   def help(): Unit = println(s"$name|$doc")
 }
 
-object NvtxId {
-  val registeredRanges = new ListBuffer[NvtxId]()
+object NvtxId extends Logging {
+  val registeredRanges: mutable.Map[String, NvtxId] = mutable.Map[String, NvtxId]()
 
-  private def register(nvtxId: NvtxId): Unit = {
-    registeredRanges += nvtxId
+  private def register(id: NvtxId): Unit = {
+    if (registeredRanges.contains(id.name)) {
+      logError(s"Collision detected for key: ${id.name}")
+    } else {
+      registeredRanges += (id.name -> id)
+    }
   }
 
   trait IdBase {
