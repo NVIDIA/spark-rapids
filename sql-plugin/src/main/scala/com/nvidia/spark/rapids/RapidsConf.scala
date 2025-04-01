@@ -2328,6 +2328,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .integerConf
     .createWithDefault(16)
 
+  val SIZED_JOIN_PARTITION_AMPLIFICATION =
+    conf("spark.rapids.sql.join.sizedJoin.buildPartitionNumberAmplification")
+      .doc("In sized join, by default we'll use bytes_of_build_size/batch_size + 1 as the number " +
+        "of partitions for the build side. This config is used to amplify the number of " +
+        "partitions for the build side. The default value is 1, which means we'll use the " +
+        "default number of partitions. If the value is greater than 1, we'll amplify the " +
+        "number of partitions by this value.")
+      .internal()
+      .doubleConf
+      .checkValue(v => v >= 1, "The amplification factor must be greater than or equal to 1")
+      .createWithDefault(1)
+
   val ENABLE_AQE_EXCHANGE_REUSE_FIXUP = conf("spark.rapids.sql.aqeExchangeReuseFixup.enable")
       .doc("Option to turn on the fixup of exchange reuse when running with " +
           "adaptive query execution.")
@@ -2557,7 +2569,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2752,6 +2764,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     get(USE_SHUFFLED_ASYMMETRIC_HASH_JOIN)
 
   lazy val joinOuterMagnificationThreshold: Int = get(JOIN_OUTER_MAGNIFICATION_THRESHOLD)
+
+  lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
 

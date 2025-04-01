@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,5 +52,5 @@ PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
 $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 # Install fastparquet (and numpy as its dependency).
-echo -e "fastparquet==0.8.3;python_version=='3.8'\nfastparquet==2024.5.0;python_version>='3.9'" > fastparquet.txt
+echo -e "fsspec==2025.3.0\nfastparquet==0.8.3;python_version=='3.8'\nfastparquet==2024.5.0;python_version>='3.9'" > fastparquet.txt
 $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES -r fastparquet.txt
