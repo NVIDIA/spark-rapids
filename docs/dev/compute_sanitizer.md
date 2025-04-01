@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Compute Sanitizer
-nav_order: 9
+nav_order: 7
 parent: Developer Overview
 ---
 

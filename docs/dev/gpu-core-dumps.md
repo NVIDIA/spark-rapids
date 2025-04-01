@@ -1,7 +1,7 @@
 ---
 layout: page
 title: GPU Core Dumps
-nav_order: 11
+nav_order: 9
 parent: Developer Overview
 ---
 # GPU Core Dumps

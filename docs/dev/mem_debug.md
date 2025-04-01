@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Memory Debugging
-nav_order: 12
+nav_order: 10
 parent: Developer Overview
 ---
 
