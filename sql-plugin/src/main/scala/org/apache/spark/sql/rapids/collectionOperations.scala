@@ -19,8 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.Optional
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, ReductionAggregation, Scalar, SegmentedReductionAggregation, Table}
-import ai.rapids.cudf.ColumnView.DuplicateKeepOption
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, DuplicateKeepOption, ReductionAggregation, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
