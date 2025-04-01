@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -582,6 +582,24 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
 ], ids=idfn)
 @allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
 def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options):
+    basic_hive_text_write_test_impl(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options, hive_text_write_enabled_conf)
+
+
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text is disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
+@approximate_float
+@ignore_order(local=True)
+@pytest.mark.parametrize('mode', [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite])
+@pytest.mark.parametrize('input_dir,schema,options', [
+    ('hive-delim-text/simple-int-values', make_schema(IntegerType()), {})
+], ids=idfn)
+@allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
+def test_basic_hive_text_write_enabled_by_default(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options):
+    basic_hive_text_write_test_impl(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options, conf={})
+
+
+def basic_hive_text_write_test_impl(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options, conf):
     # Configure table options, including schema.
     if options is None:
         options = {}
@@ -615,7 +633,7 @@ def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_tabl
     assert_gpu_and_cpu_sql_writes_are_equal_collect(
         spark_tmp_table_factory,
         write_table_sql,
-        conf=hive_text_write_enabled_conf)
+        conf=conf)
 
 
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])

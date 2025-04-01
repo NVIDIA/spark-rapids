@@ -29,8 +29,6 @@ def _get_buildvers(buildvers, pom_file, logger=None):
 
     for release in releases:
         spark_version = pom.find(".//pom:spark{}.version".format(release), ns)
-        if spark_version is None:
-            continue
         if spark_version.text.endswith("SNAPSHOT"):
             snapshots.append(release)
         else:

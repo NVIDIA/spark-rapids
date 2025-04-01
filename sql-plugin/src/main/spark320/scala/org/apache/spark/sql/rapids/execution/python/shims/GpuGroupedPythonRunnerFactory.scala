@@ -38,6 +38,7 @@
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
+{"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
@@ -53,7 +54,8 @@ case class GpuGroupedPythonRunnerFactory(
     argOffsets: Array[Array[Int]],
     dedupAttrs: StructType,
     pythonOutputSchema: StructType,
-    evalType: Int) {
+    evalType: Int,
+    argNames: Option[Array[Array[Option[String]]]] = None) {
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
@@ -67,6 +69,7 @@ case class GpuGroupedPythonRunnerFactory(
       pythonRunnerConf,
       // The whole group data should be written in a single call, so here is unlimited
       Int.MaxValue,
-      pythonOutputSchema)
+      pythonOutputSchema,
+      argNames)
   }
 }

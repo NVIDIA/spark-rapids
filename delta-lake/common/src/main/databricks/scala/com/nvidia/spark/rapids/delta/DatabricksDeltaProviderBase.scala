@@ -35,7 +35,7 @@ import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrit
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
@@ -106,9 +106,8 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
     }
   }
 
-  override def getReadFileFormat(format: FileFormat): FileFormat = {
-    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
-    GpuDeltaParquetFileFormat.convertToGpu(cpuFormat)
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+    GpuDeltaParquetFileFormat.convertToGpu(relation)
   }
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {

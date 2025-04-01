@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 import java.nio.charset.Charset
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
@@ -136,7 +136,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
   }
 
   private def extractStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(String)](
       (""),
       (null),
@@ -151,7 +151,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
   }
 
   private def extractStringsLineEnd(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(String)](
       ("123\n"),
       ("123\n\u0085"),

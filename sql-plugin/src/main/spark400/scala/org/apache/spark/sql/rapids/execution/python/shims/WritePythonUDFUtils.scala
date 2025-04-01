@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.DataOutputStream
 
 import org.apache.spark.api.python.ChainedPythonFunctions
+import org.apache.spark.sql.execution.python.EvalPythonExec.ArgumentMetadata
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 
 object WritePythonUDFUtils {
@@ -29,7 +30,18 @@ object WritePythonUDFUtils {
       dataOut: DataOutputStream,
       funcs: Seq[(ChainedPythonFunctions, Long)],
       argOffsets: Array[Array[Int]],
+      argNames: Option[Array[Array[Option[String]]]] = None,
       profiler: Option[String] = None): Unit = {
-    PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets, profiler)
+    if (argNames.isDefined) {
+      // Support also send the argument name to Python from Spark 400
+      val argMetas = argOffsets.zip(argNames.get).map { case (idxs, names) =>
+        idxs.zip(names).map { case (idx, name) =>
+          ArgumentMetadata(idx, name)
+        }
+      }
+      PythonUDFRunner.writeUDFs(dataOut, funcs, argMetas, profiler)
+    } else {
+      PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets, profiler)
+    }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,12 +139,8 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
       scan = scan.asOfTime(asOfTimestamp);
     }
 
-    if (startSnapshotId != null) {
-      if (endSnapshotId != null) {
-        scan = scan.appendsBetween(startSnapshotId, endSnapshotId);
-      } else {
-        scan = scan.appendsAfter(startSnapshotId);
-      }
+    if (startSnapshotId != null || endSnapshotId != null) {
+      throw new UnsupportedOperationException("Incremental scan is not supported");
     }
 
     if (splitSize != null) {

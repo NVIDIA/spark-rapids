@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,17 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
-import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
 
 /**
  * Provides a Strategy that can implement rules for translating
  * custom logical plan nodes to physical plan nodes.
  * @note This is instantiated via reflection from ShimLoader.
  */
-class StrategyRules extends Strategy {
+class StrategyRules extends SparkStrategy {
 
-  private lazy val strategies: Seq[Strategy] = {
+  private lazy val strategies: Seq[SparkStrategy] = {
     // Currently we only have custom plan nodes that originate from
     // DeltaLake, but if we add other custom plan nodes later
     // their strategies can be appended here.

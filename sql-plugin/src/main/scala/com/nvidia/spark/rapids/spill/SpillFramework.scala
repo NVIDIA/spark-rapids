@@ -22,7 +22,7 @@ import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
 import java.util
 import java.util.UUID
-import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
+import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
 
 import scala.collection.mutable
 
@@ -1231,6 +1231,24 @@ trait SpillableStore[T <: SpillableHandle]
       }
     }
   }
+
+  def spillableSummary(): String = {
+    var spillableHandleCount = 0L
+    var spillableHandleBytes = 0L
+    var totalHandleBytes = 0L
+    handles.forEach((handle, _) => {
+      totalHandleBytes += handle.approxSizeInBytes
+      if (handle.spillable) {
+        spillableHandleCount += 1
+        spillableHandleBytes += handle.approxSizeInBytes
+      }
+    })
+    s"SpillableStore: ${this.getClass.getSimpleName}, " +
+      s"Total Handles: $numHandles, " +
+      s"Spillable Handles: $spillableHandleCount, " +
+      s"Total Handle Bytes: $totalHandleBytes, " +
+      s"Spillable Handle Bytes: $spillableHandleBytes"
+  }
 }
 
 class SpillableHostStore(val maxSize: Option[Long] = None)
@@ -1722,6 +1740,24 @@ object SpillFramework extends Logging {
     logInfo(s"Initialized SpillFramework. Host spill store max size is: $hostSpillStorageSizeStr.")
   }
 
+  def getHostStoreSpillableSummary: String = {
+    try {
+      stores.hostStore.spillableSummary()
+    } catch {
+      case _: IllegalStateException =>
+        "Could not log spill summary, spill framework not initialized"
+    }
+  }
+
+  def getDeviceStoreSpillableSummary: String = {
+    try {
+      stores.deviceStore.spillableSummary()
+    } catch {
+      case _: IllegalStateException =>
+        "Could not log spill summary, spill framework not initialized"
+    }
+  }
+
   def shutdown(): Unit = {
     if (hostSpillBounceBufferPool != null) {
       hostSpillBounceBufferPool.close()
@@ -1805,20 +1841,27 @@ private[spill] class BounceBuffer[T <: AutoCloseable](
  * Callers should synchronize before calling close on their `DeviceMemoryBuffer`s.
  */
 class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
-                                           private val bbCount: Long,
+                                           private val bbCount: Int,
                                            private val allocator: Long => T)
   extends AutoCloseable with Logging {
 
-  private val pool = new LinkedBlockingQueue[BounceBuffer[T]]
-  for (_ <- 1L to bbCount) {
+  private val pool = new ArrayBlockingQueue[BounceBuffer[T]](bbCount)
+  for (_ <- 1 to bbCount) {
     pool.offer(new BounceBuffer[T](allocator(bufSize), this))
   }
 
   def bufferSize: Long = bufSize
   def nextBuffer(): BounceBuffer[T] = synchronized {
     if (closed) {
-      logError("tried to acquire a bounce buffer after the" +
+      throw new IllegalStateException("tried to acquire a bounce buffer after the" +
         "pool has been closed!")
+    }
+    while (pool.size() <= 0) {
+      wait()
+      if (closed) {
+        throw new IllegalStateException("tried to acquire a bounce buffer after the" +
+          "pool has been closed!")
+      }
     }
     pool.take()
   }
@@ -1828,6 +1871,8 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
       buffer.release()
     } else {
       pool.offer(buffer)
+      // Wake up one thread to take the next bounce buffer
+      notify()
     }
   }
 
@@ -1842,6 +1887,8 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
 
       pool.forEach(_.release())
       pool.clear()
+      // Wake up any threads that might be waiting still...
+      notifyAll()
     }
   }
 }

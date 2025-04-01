@@ -1044,7 +1044,11 @@ object GpuOverrides extends Logging {
         }),
     expr[RowNumber](
       "Window function that returns the index for the row within the aggregation window",
-      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT),
+      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
+            TypeSig.all))),
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuRowNumber
       }),
@@ -1339,22 +1343,22 @@ object GpuOverrides extends Logging {
       }),
     expr[IsNull](
       "Checks if a value is null",
-      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProjectAndAst(TypeSig.astTypes, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalPredicateSupportedTypes).nested(),
         TypeSig.all),
-      (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[IsNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
       }),
     expr[IsNotNull](
       "Checks if a value is not null",
-      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProjectAndAst(TypeSig.astTypes, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalPredicateSupportedTypes).nested(),
         TypeSig.all),
-      (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[IsNotNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
     expr[IsNaN](
@@ -2688,6 +2692,19 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
+    expr[ArrayPosition](
+      "Returns the (1-based) index of the first matching element of the array as long, " +
+        "or 0 if no match is found.",
+      ExprChecks.binaryProject(
+        TypeSig.LONG,
+        TypeSig.LONG,
+        ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL
+            + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY),
+          TypeSig.ARRAY.nested(TypeSig.orderable)),
+        ("key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY).nested(),
+          TypeSig.orderable)),
+      (in, conf, p, r) => new GpuArrayPositionMeta(in, conf, p, r)),
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
       ExprChecks.binaryProject(
@@ -3267,6 +3284,26 @@ object GpuOverrides extends Logging {
           TypeSig.MAP.nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
+      }),
+    expr[Slice](
+      "Subsets array x starting from index start (array indices start at 1, " +
+        "or starting from the end if start is negative) with the specified length.",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          TypeSig.NULL + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("x",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.BINARY + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("start", TypeSig.INT, TypeSig.INT),
+          ParamCheck("length", TypeSig.INT, TypeSig.INT))),
+      (in, conf, p, r) => new TernaryExprMeta[Slice](in, conf, p, r) {
+        override def convertToGpu(
+            x: Expression,
+            start: Expression,
+            length: Expression): GpuExpression =
+          GpuSlice(x, start, length)
       }),
     expr[ArrayJoin](
       "Concatenates the elements of the given array using the delimiter and an optional " +
@@ -3932,7 +3969,7 @@ object GpuOverrides extends Logging {
         }
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
-    ).disabledByDefault("Experimental feature that could be unstable or have performance issues."),
+    ),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -4008,6 +4045,48 @@ object GpuOverrides extends Logging {
           GpuDynamicPruningExpression(child)
         }
       }),
+    expr[HyperLogLogPlusPlus](
+      "Aggregation approximate count distinct",
+      ExprChecks.reductionAndGroupByAgg(TypeSig.LONG, TypeSig.LONG,
+        // HyperLogLogPlusPlus depends on Xxhash64
+        // HyperLogLogPlusPlus supports all the types that Xxhash 64 supports
+        Seq(ParamCheck("input",XxHash64Shims.supportedTypes, TypeSig.all))),
+      (a, conf, p, r) => new UnaryExprMeta[HyperLogLogPlusPlus](a, conf, p, r) {
+
+        // It's the same as Xxhash64
+        override def tagExprForGpu(): Unit = {
+          val maxDepth = a.children.map(
+            c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
+          if (maxDepth > Hash.MAX_STACK_DEPTH) {
+            willNotWorkOnGpu(s"The data type requires a stack depth of $maxDepth, " +
+                s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}. " +
+                "The algorithm to calculate stack depth: " +
+                "1: Primitive type counts 1 depth; " +
+                "2: Array of Structure counts:  1  + depthOf(Structure); " +
+                "3: Array of Other counts: depthOf(Other); " +
+                "4: Structure counts: 1 + max of depthOf(child); " +
+                "5: Map counts: 2 + max(depthOf(key), depthOf(value)); "
+            )
+          }
+          // Spark already checked: precision >= 4, no need to check again.
+          val precision = GpuHyperLogLogPlusPlus.computePrecision(a.relativeSD)
+          // Spark supports precision range: [4, Infinity)
+          // Spark-Rapids only supports precision range: [4, 14]
+          if (precision > 14) {
+            //
+            // Info: cuCollection supports precision range [4, 18]
+            // Due to https://github.com/NVIDIA/spark-rapids/issues/12347, the Spark-Rapids supports
+            // fewer precisions than cuCollection: range: [4, 14]
+            willNotWorkOnGpu(s"The precision $precision from relativeSD ${a.relativeSD} is bigger" +
+              s" than 14, GPU only supports precision is less or equal to 14.")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression = {
+          GpuHyperLogLogPlusPlus(child, a.relativeSD)
+        }
+      }
+    ),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
@@ -4089,21 +4168,37 @@ object GpuOverrides extends Logging {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
 
+        private lazy val hashMode = GpuHashPartitioningBase.hashModeFromCpu(hp, this.conf)
+
         override def tagPartForGpu(): Unit = {
-          val arrayWithStructsHashing = hp.expressions.exists(e =>
-            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-              {
-                case ArrayType(_: StructType, _) => true
-                case _ => false
-              })
-          )
-          if (arrayWithStructsHashing) {
-            willNotWorkOnGpu("hashing arrays with structs is not supported")
+          this.hashMode match {
+            case HiveMode =>
+              val hh = HiveHash(hp.expressions)
+              val hfMeta = GpuOverrides.wrapExpr(hh, this.conf, None)
+              hfMeta.tagForGpu()
+              if (!hfMeta.canThisBeReplaced) {
+                willNotWorkOnGpu(s"the hash function: ${hh.getClass.getSimpleName}" +
+                  s" can not run on GPU. Details: ${hfMeta.explain(all = false)}")
+              }
+            case Murmur3Mode =>
+              val arrayWithStructsHashing = hp.expressions.exists(e =>
+                TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+                  {
+                    case ArrayType(_: StructType, _) => true
+                    case _ => false
+                  })
+              )
+              if (arrayWithStructsHashing) {
+                willNotWorkOnGpu("hashing arrays with structs is not supported")
+              }
+            case _ =>
+              willNotWorkOnGpu(s"Hash function $hashMode is not supported on GPU")
           }
         }
 
         override def convertToGpu(): GpuPartitioning =
-          GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
+          GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions,
+            this.hashMode)
       }),
     part[RangePartitioning](
       "Range partitioning",
@@ -4377,7 +4472,7 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
-            .withPsNote(Seq(TypeEnum.MAP, TypeEnum.BINARY),
+            .withPsNote(TypeEnum.MAP,
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.ARRAY,
               "not allowed for grouping expressions if containing Struct as child")
@@ -4411,8 +4506,6 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
-            .withPsNote(TypeEnum.BINARY, "not allowed for grouping expressions and " +
-              "only allowed when aggregate buffers can be converted between CPU and GPU")
             .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,

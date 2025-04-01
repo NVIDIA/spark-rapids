@@ -94,6 +94,33 @@ was decremented. With the stack traces we can walk through the code and try to l
 were supposed to go with which `INC`s and hopefully find out where something went wrong. Like a
 double free or a leak.
 
+### Bookkeeping each thread's memory allocation
+
+Sometimes we'll encounter exceptions like "com.nvidia.spark.rapids.jni.CpuSplitAndRetryOOM: 
+CPU OutOfMemory: could not split inputs and retry." This is because the CPU memory is exhausted and
+they cannot be spilled. But theoretically, we have a OOM state machine to fallback most of the
+threads to a state where everything is spillable. So such kind of exception is not indeed expected.
+In such cases, we really want to know the status of each thread's memory allocation.
+We can enable the following system property:
+
+```
+-Dai.rapids.memory.bookkeep=true
+```
+
+or 
+
+```
+-Dai.rapids.memory.bookkeep=true
+-Dai.rapids.memory.bookkeep.callstack=true
+```
+
+The first option will log how much CPU is allocated by each thread but not freed, at the time 
+when the OOM state machine decides that one of the threads need to be spitted and retried, which 
+is not very often and usually means something went wrong. The second option will take a step 
+further and log where each piece of memory is allocated. This is very useful for debugging, but 
+it will generate a lot of overhead in bookkeeping, so it's not recommended to enable it in 
+production.
+
 ## Low Level GPU Allocation Logging.
 
 The leak/double free detection and debugging is great. But it does not give us visibility into

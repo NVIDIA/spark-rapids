@@ -192,7 +192,6 @@ def test_delta_update_rows_with_dv(spark_tmp_path, use_cdf, partition_columns, e
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10025')
 @pytest.mark.parametrize("enable_deletion_vector", deletion_vector_values_with_350DB143_xfail_reasons(
                             enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
-@pytest.mark.xfail(condition=is_databricks143_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/12047")
 def test_delta_update_dataframe_api(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vector):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"

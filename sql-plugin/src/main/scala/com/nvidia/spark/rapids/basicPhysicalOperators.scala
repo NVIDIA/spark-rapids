@@ -25,6 +25,7 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DataTypeUtils.hasOffset
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.PreProjectSplitIterator.KEY_NUM_PRE_SPLIT
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
@@ -38,7 +39,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
-import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
+import org.apache.spark.sql.rapids.{GpuCreateArray, GpuCreateMap, GpuCreateNamedStruct, GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -238,12 +239,10 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
  * very special cases. If the projected size of the output is so large that it would
  * risk us not being able to split it later on if we ran into trouble.
  * @param iter the input iterator of columnar batches.
- * @param schema the schema of that input so we can make things spillable if needed
  * @param opTime metric for how long this took
  * @param numSplitsMetric metric for the number of splits that happened.
  */
 abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
-    schema: Array[DataType],
     opTime: GpuMetric,
     numSplitsMetric: GpuMetric) extends Iterator[ColumnarBatch] {
   private[this] val pending = new scala.collection.mutable.Queue[SpillableColumnarBatch]()
@@ -275,6 +274,7 @@ abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
             "About to perform cuDF table operations with a rows-only batch.")
           numSplitsMetric += numSplits - 1
           val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          val schema = sb.dataTypes
           val tables = withRetryNoSplit(sb) { sb =>
             withResource(sb.getColumnarBatch()) { cb =>
               withResource(GpuColumnVector.from(cb)) { table =>
@@ -302,49 +302,166 @@ abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
 }
 
 object PreProjectSplitIterator {
+
+  val KEY_NUM_PRE_SPLIT = "NUM_PRE_SPLITS"
+
+  def getSplitUntilSize: Long = GpuDeviceManager.getSplitUntilSize
+
   def calcMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
-    val numRows = cb.numRows()
-    boundExprs.outputTypes.zipWithIndex.map {
-      case (dataType, index) =>
-        if (GpuBatchUtils.isFixedWidth(dataType)) {
-          GpuBatchUtils.minGpuMemory(dataType, true, numRows)
-        } else {
-          boundExprs.getPassThroughIndex(index).map { inputIndex =>
-            cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize
-          }.orElse {
-            // A literal has an exact size that should be taken into account.
-            extractGpuLit(boundExprs.exprTiers.last(index)).map { gpuLit =>
-              calcSizeForLiteral(gpuLit.value, gpuLit.dataType, numRows)
-            }
+    new PreSplitOutSizeEstimator(cb, boundExprs).calcMinOutputSize
+  }
+
+  class PreSplitOutSizeEstimator(cb: ColumnarBatch, tieredProject: GpuTieredProject) {
+    assert(cb != null, "The input batch should not be null.")
+
+    def calcMinOutputSize: Long = {
+      val rows = cb.numRows()
+      tieredProject.outputExprs.map(oe =>
+        estimateExprMinSize(oe, rows, oe.nullable, Some(1))
+      ).sum
+    }
+
+    /**
+     * Estimate the size for a given expression and number of rows after a project.
+     *
+     * For some expressions of complex type, each is a union of the child columns, and its
+     * size will be the sum of its children sizes. So need to dig into its children. Now
+     * it covers only GpuCreateNamedStruct, GpuCreateNamedStruct and GpuCreateMap.
+     */
+    private def estimateExprMinSize(expr: Expression, rowsNum: Int, nullable: Boolean,
+        exprAmount: Option[Int]): Long = {
+      expr match {
+        case GpuAlias(child, _) => // Alias should be ignored
+          estimateExprMinSize(child, rowsNum, child.nullable, exprAmount)
+        case gcs: GpuCreateNamedStruct =>
+          // nullable is always false here, so no meta size is needed.
+          gcs.valExprs.map(e => estimateExprMinSize(e, rowsNum, e.nullable, exprAmount)).sum
+        case gcm: GpuCreateMap =>
+          // Map is list of struct(key, value) in cuDF, so first a offset for the top list.
+          // While CreateMap is not nullable, so no validity size.
+          //    total_size = meta_size + sum_of_children_sizes
+          val metaSize = computeMetaSize(false, true, rowsNum, exprAmount)
+          metaSize + Seq(gcm.keys, gcm.values).map { keysOrValues =>
+            val entryNullable = keysOrValues.exists(_.nullable)
+            var includeMeta = true
+            keysOrValues.map { kOrV =>
+              // Need to go through the children to accumulate the data size, but only
+              // let the first child to include the offset and/or validity size. Because
+              // all the key (or values) columns will be concatenated into one column.
+              val childAmount = if (includeMeta) Some(keysOrValues.length) else None
+              includeMeta = false
+              estimateExprMinSize(kOrV, rowsNum, entryNullable, childAmount)
+            }.sum
+          }.sum
+        case gca: GpuCreateArray =>
+          // Similar as GpuCreateMap, but with only one children set, while Map has two,
+          // keys and values.
+          val metaSize = computeMetaSize(false, true, rowsNum, exprAmount)
+          val elemNullable = gca.children.exists(_.nullable)
+          var includeMeta = true
+          metaSize + gca.children.map { elem =>
+            val childAmount = if (includeMeta) Some(gca.children.length) else None
+            includeMeta = false
+            estimateExprMinSize(elem, rowsNum, elemNullable, childAmount)
+          }.sum
+        case glit: GpuLiteral =>
+          calcSizeForLiteral(glit.value, glit.dataType, rowsNum, nullable, exprAmount)
+        case otherExpr => // other cases
+          val exprType = otherExpr.dataType
+          // Get the actual size if it is just a pass-through column
+          tieredProject.getPassThroughIndex(otherExpr).map { colId =>
+            getColumnSize(cb.column(colId).asInstanceOf[GpuColumnVector].getBase,
+              exprType, nullable, exprAmount)
           }.getOrElse {
-            GpuBatchUtils.minGpuMemory(dataType, true, numRows)
+            // minGpuMemory is not suitable for the meta size calculation here, so do it
+            // separately.
+            computeMetaSize(nullable, hasOffset(exprType), rowsNum, exprAmount) +
+              GpuBatchUtils.minGpuMemory(exprType, false, rowsNum, false)
+          }
+      }
+    }
+  }
+
+  private def computeMetaSize(hasNull: Boolean, hasOffset: Boolean, rowsNum: Int,
+      amountOpt: Option[Int]): Long = {
+    // Compute the meta size only when amountOpt is defined. This is designed for
+    // the case when calculating the size of a child of a complex type expression.
+    // e.g. GpuCreateArray. There may be multiple children in it, but meta size can
+    // be added only once for all the children. The parent expression will control
+    // which child will take this job.
+    amountOpt.map { amount =>
+      computeMetaSize(hasNull, hasOffset, amount * rowsNum)
+    }.getOrElse(0L)
+  }
+
+  private def computeMetaSize(hasNull: Boolean, hasOffset: Boolean, rowsNum: Int): Long = {
+    var metaSize = 0L
+    if (hasNull) {
+      metaSize += GpuBatchUtils.calculateValidityBufferSize(rowsNum)
+    }
+    if (hasOffset) {
+      metaSize += GpuBatchUtils.calculateOffsetBufferSize(rowsNum)
+    }
+    metaSize
+  }
+
+  private def getColumnSize(col: ColumnView, colType: DataType, nullable: Boolean,
+      colAmount: Option[Int]): Long = {
+    var colSize = 0L
+    // data size
+    if (col.getData != null) {
+      colSize += col.getData.getLength
+    } else if (colType.isInstanceOf[BinaryType]) {
+      // Binary is list of byte in cudf, so take care of it specially for data size.
+      withResource(col.getChildColumnView(0)) { dataView =>
+        if (dataView.getData != null) {
+          colSize += dataView.getData.getLength
+        }
+      }
+    }
+    // meta size
+    colSize += computeMetaSize(nullable, hasOffset(colType), col.getRowCount.toInt, colAmount)
+
+    // 3) sum of children sizes
+    // Leverage the Spark type to get the nullability info for children. Because
+    // it may be in one of the child of a complex type expression.
+    colSize += (colType match {
+      case ArrayType(elemType, hasNulElem) =>
+        withResource(col.getChildColumnView(0))( elemCol =>
+          getColumnSize(elemCol, elemType, hasNulElem, colAmount)
+        )
+      case StructType(fields) =>
+        assert(fields.length == col.getNumChildren,
+          "Fields number and children number don't match")
+        fields.zipWithIndex.map { case (f, idx) =>
+          withResource(col.getChildColumnView(idx)) { fCol =>
+            getColumnSize(fCol, f.dataType, f.nullable, colAmount)
+          }
+        }.sum
+      case MapType(keyType, valueType, hasNullValue) =>
+        withResource(col.getChildColumnView(0)) { structView =>
+          withResource(structView.getChildColumnView(0)) { keyView =>
+            getColumnSize(keyView, keyType, false, colAmount)
+          } + withResource(structView.getChildColumnView(1)) { valueView =>
+            getColumnSize(valueView, valueType, hasNullValue, colAmount)
           }
         }
-    }.sum
+      case _ => 0L
+    })
+    colSize
   }
 
-  @scala.annotation.tailrec
-  def extractGpuLit(exp: Expression): Option[GpuLiteral] = exp match {
-    case gl: GpuLiteral => Some(gl)
-    case ga: GpuAlias => extractGpuLit(ga.child)
-    case _ => None
-  }
-
-  private[rapids] def calcSizeForLiteral(litVal: Any, litType: DataType, numRows: Int): Long = {
+  private[rapids] def calcSizeForLiteral(litVal: Any, litType: DataType, valueRows: Int,
+      nullable: Boolean, litAmount: Option[Int]): Long = {
     // First calculate the meta buffers size
-    val metaSize = new LitMetaCollector(litVal, litType).collect.map { litMeta =>
-      val expandedRowsNum = litMeta.getRowsNum * numRows
-      var totalSize = 0L
-      if (litMeta.hasNull) {
-        totalSize += GpuBatchUtils.calculateValidityBufferSize(expandedRowsNum)
-      }
-      if (litMeta.hasOffset) {
-        totalSize += GpuBatchUtils.calculateOffsetBufferSize(expandedRowsNum)
-      }
-      totalSize
-    }.sum
+    val metaSize = litAmount.map { amount =>
+      val metaRows = valueRows * amount
+      new LitMetaCollector(litVal, litType, nullable).collect.map { litMeta =>
+        computeMetaSize(litMeta.hasNull, litMeta.hasOffset, litMeta.getRowsNum * metaRows)
+      }.sum
+    }.getOrElse(0L)
     // finalSize = oneLitValueSize * numRows + metadata size
-    calcLitValueSize(litVal, litType) * numRows + metaSize
+    calcLitValueSize(litVal, litType) * valueRows + metaSize
   }
 
   /**
@@ -352,26 +469,26 @@ object PreProjectSplitIterator {
    * which will be used to calculate the final metadata size after expanding
    * this literal to a column.
    */
-  private class LitMeta(val hasNull: Boolean, val hasOffset: Boolean) {
+  private class LitMeta(val hasNull: Boolean, val hasOffset: Boolean, name: String = "") {
     private var rowsNum: Int = 0
     def incRowsNum(rows: Int = 1): Unit = rowsNum += rows
     def getRowsNum: Int = rowsNum
 
     override def toString: String =
-      s"LitMeta{rowsNum: $rowsNum, hasNull: $hasNull, hasOffset: $hasOffset}"
+      s"LitMeta-$name{rowsNum: $rowsNum, hasNull: $hasNull, hasOffset: $hasOffset}"
   }
 
   /**
    * Collect the metadata information of a literal, the result also includes
    * its children for a nested type literal.
    */
-  private class LitMetaCollector(litValue: Any, litType: DataType) {
+  private class LitMetaCollector(litValue: Any, litType: DataType, nullable: Boolean) {
     private var collected = false
     private val metaInfos: ArrayBuffer[LitMeta] = ArrayBuffer.empty
 
     def collect: Seq[LitMeta] = {
       if (!collected) {
-        executeCollect(litValue, litType, litValue == null, 0)
+        executeCollect(litValue, litType, nullable, 0)
         collected = true
       }
       metaInfos.filter(_ != null).toSeq
@@ -491,23 +608,21 @@ object PreProjectSplitIterator {
  * places and not everywhere.  In the future this could be extended, but if we do that there
  * are some places where we don't want a split, like a project before a window operation.
  * @param iter the input iterator of columnar batches.
- * @param schema the schema of that input so we can make things spillable if needed
  * @param boundExprs the bound project so we can get a good idea of the output size.
  * @param opTime metric for how long this took
  * @param numSplits the number of splits that happened.
  */
 class PreProjectSplitIterator(
     iter: Iterator[ColumnarBatch],
-    schema: Array[DataType],
     boundExprs: GpuTieredProject,
     opTime: GpuMetric,
-    numSplits: GpuMetric) extends AbstractProjectSplitIterator(iter, schema, opTime, numSplits) {
+    numSplits: GpuMetric) extends AbstractProjectSplitIterator(iter, opTime, numSplits) {
 
   // We memoize this parameter here as the value doesn't change during the execution
   // of a SQL query. This is the highest level we can cache at without getting it
   // passed in from the Exec that instantiates this split iterator.
   // NOTE: this is overwritten by tests to trigger various corner cases
-  private lazy val splitUntilSize: Double = GpuDeviceManager.getSplitUntilSize.toDouble
+  private lazy val splitUntilSize: Double = PreProjectSplitIterator.getSplitUntilSize.toDouble
 
   /**
    * calcNumSplit will return the number of splits that we need for the input, in the case
@@ -539,31 +654,51 @@ case class GpuProjectExec(
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
    projectList: List[NamedExpression],
-   child: SparkPlan) extends GpuProjectExecLike {
+   child: SparkPlan,
+   enablePreSplit: Boolean = true) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
+  override def outputBatching: CoalesceGoal = if (enablePreSplit) {
+    // Pre-split will make sure the size of each output batch will not be larger
+    // than the splitUntilSize.
+    TargetSize(PreProjectSplitIterator.getSplitUntilSize)
+  } else {
+    super.outputBatching
+  }
+
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    KEY_NUM_PRE_SPLIT -> createMetric(DEBUG_LEVEL, "num pre-splits"),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
   override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
+    val numPreSplit = gpuLongMetric(KEY_NUM_PRE_SPLIT)
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
       conf)
+    val localEnablePreSplit = enablePreSplit
 
     val rdd = child.executeColumnar()
-    rdd.map { cb =>
-      val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
-        val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        //Note if this ever changes to include splitting the output we need to have an option to not
-        // do this for window to work properly.
-        boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
+    rdd.mapPartitions { iter =>
+      val maybeSplitIter = if (localEnablePreSplit) {
+        new PreProjectSplitIterator(iter, boundProjectList, opTime, numPreSplit)
+      } else {
+        iter
       }
-      numOutputBatches += 1
-      numOutputRows += ret.numRows()
-      ret
+      maybeSplitIter.map { split =>
+        val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+          val sb = SpillableColumnarBatch(split, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          // Note if this ever changes to include splitting the output we need to
+          // have an option to not do this for window to work properly.
+          // [Update 2024/12/24: "localEnablePreSplit" is introduced for this goal]
+          boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
+        }
+        numOutputBatches += 1
+        numOutputRows += ret.numRows()
+        ret
+      }
     }
   }
 }
@@ -694,13 +829,12 @@ case class GpuProjectAstExec(
 
   lazy val retryables: Seq[Retryable] = exprTiers.flatMap(GpuExpressionsUtils.collectRetryables)
 
-  lazy val outputTypes = exprTiers.last.map(_.dataType).toArray
+  lazy val outputExprs = exprTiers.last.toArray
 
   private[this] def getPassThroughIndex(tierIndex: Int,
-      expr: Expression,
-      exprIndex: Int): Option[Int] = expr match {
+      expr: Expression): Option[Int] = expr match {
     case GpuAlias(child, _) =>
-      getPassThroughIndex(tierIndex, child, exprIndex)
+      getPassThroughIndex(tierIndex, child)
     case GpuBoundReference(index, _, _) =>
       if (tierIndex <= 0) {
         // We are at the input tier so the bound attribute is good!!!
@@ -709,7 +843,7 @@ case class GpuProjectAstExec(
         // Not at the input yet
         val newTier = tierIndex - 1
         val newExpr = exprTiers(newTier)(index)
-        getPassThroughIndex(newTier, newExpr, index)
+        getPassThroughIndex(newTier, newExpr)
       }
     case _ =>
       None
@@ -722,8 +856,19 @@ case class GpuProjectAstExec(
    * @return the index of the input column that it passes through to or else None
    */
   def getPassThroughIndex(index: Int): Option[Int] = {
+    getPassThroughIndex(exprTiers.last(index))
+  }
+
+  /**
+   * Similar as "getPassThroughIndex(index: Int)", but with a given expression.
+   * The input expression is always a child of an output expression of complex type,
+   * or the output itself. e.g. GpuCreateArray, GpuCreateMap, GpuCreateStruct.
+   *
+   * Designed for the output size estimation by the pre-split iterator.
+   */
+  private[rapids] def getPassThroughIndex(expr: Expression): Option[Int] = {
     val startTier = exprTiers.length - 1
-    getPassThroughIndex(startTier, exprTiers.last(index), index)
+    getPassThroughIndex(startTier, expr)
   }
 
   private [this] def projectWithRetrySingleBatchInternal(sb: SpillableColumnarBatch,
