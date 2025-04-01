@@ -51,10 +51,7 @@ import org.slf4j.LoggerFactory;
  */
 public class TimeoutSparkListener extends SparkListener {
   private static final Logger LOG = LoggerFactory.getLogger(TimeoutSparkListener.class);
-  private final JavaSparkContext sparkContext;
-  private final int timeoutSeconds;
-  private final boolean shouldDumpThreads;
-  private final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1,
+  private static final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1,
     runnable -> {
       final Thread t = new Thread(runnable);
       t.setDaemon(true);
@@ -62,49 +59,56 @@ public class TimeoutSparkListener extends SparkListener {
       return t;
     }
   );
-  private final Map<Integer,ScheduledFuture<?>> cancelJobMap = new ConcurrentHashMap<>();
 
-  boolean registered;
+  private static final Map<Integer,ScheduledFuture<?>> cancelJobMap = new ConcurrentHashMap<>();
+  private static int timeoutSeconds;
+  private static boolean shouldDumpThreads;
+  private static JavaSparkContext sparkContext;
+  private static final TimeoutSparkListener SINGLETON = new TimeoutSparkListener();
 
-  public TimeoutSparkListener(JavaSparkContext sparkContext,
-    int timeoutSeconds,
-    boolean shouldDumpThreads) {
+
+  public TimeoutSparkListener() {
     super();
-    this.sparkContext = sparkContext;
-    this.timeoutSeconds = timeoutSeconds;
-    this.shouldDumpThreads = shouldDumpThreads;
   }
 
-  public synchronized void register() {
-    if (!registered) {
-      LOG.debug("Adding TimeoutSparkListener to kill hung jobs");
-      sparkContext.sc().addSparkListener(this);
-      registered = true;
+  public static synchronized void init(JavaSparkContext sc) {
+    if (sparkContext == null) {
+      sparkContext = sc;
+      sparkContext.sc().addSparkListener(SINGLETON);
     }
   }
 
-  public synchronized void unregister() {
-    if (registered) {
-      sparkContext.sc().removeSparkListener(this);
-      registered = false;
+  private static synchronized void unregister() {
+    if (sparkContext != null) {
+      sparkContext.sc().removeSparkListener(SINGLETON);
+      sparkContext = null;
+    }
+  }
+
+  private static synchronized void cancelJob(int jobId, String message) {
+    if (sparkContext != null) {
+      sparkContext.sc().cancelJob(jobId, message);
     }
   }
 
   public void onJobStart(SparkListenerJobStart jobStart) {
     final int jobId = jobStart.jobId();
     LOG.debug("JobStart: registering timeout for Job {}", jobId);
+    // create a task config snapshot
+    final boolean taskShouldDumpThreads = shouldDumpThreads;
+    final int taskTimeout = timeoutSeconds;
     final ScheduledFuture<?> scheduledFuture = runner.schedule(() -> {
       final String message = "RAPIDS Integration Test Job " + jobId + " exceeded the timeout of " +
         timeoutSeconds + " seconds, cancelling. " +
         "Look into fixing the test or reducing its execution time. " +
         "If necessary, adjust the timeout using the marker " +
         "pytest.mark.spark_job_timeout(seconds,dump_threads)";
-      if (shouldDumpThreads) {
+      if (taskShouldDumpThreads) {
         LOG.error(message + " Driver thread dump follows");
         dumpThreads();
       }
-      sparkContext.sc().cancelJob(jobId, message);
-    }, timeoutSeconds, TimeUnit.SECONDS);
+      cancelJob(jobId, message);
+    }, taskTimeout, TimeUnit.SECONDS);
     cancelJobMap.put(jobId, scheduledFuture);
   }
 
@@ -112,11 +116,21 @@ public class TimeoutSparkListener extends SparkListener {
     final int jobId = jobEnd.jobId();
     LOG.debug("JobEnd: cancelling timeout for Job {}", jobId);
     final ScheduledFuture<?> cancelFuture = cancelJobMap.remove(jobId);
-    cancelFuture.cancel(false);
+    if (cancelFuture != null) {
+      cancelFuture.cancel(false);
+    }
+  }
+
+  public static void setSparkJobTimeout(int ts, boolean dummpThreads) {
+    timeoutSeconds = ts;
+    shouldDumpThreads = dummpThreads;
   }
 
   public void onApplicationEnd(SparkListenerApplicationEnd applicationEnd) {
+    unregister();
+    // no new work
     runner.shutdownNow();
+    cancelJobMap.clear();
   }
 
   private static void dumpThreads() {
