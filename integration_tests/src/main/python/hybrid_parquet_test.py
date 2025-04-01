@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+import re
 
 from asserts import *
 from data_gen import *
@@ -74,6 +75,8 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
     # empty schema is NOT supported (select count(1))
     [],
+    # DayTimeIntervalType is NOT supported
+    [DayTimeIntervalGen()],
 ]
 
 
@@ -193,7 +196,7 @@ def test_hybrid_parquet_preloading(spark_tmp_path, coalesced_batch_size, preload
 filter_split_conf = {
     'spark.sql.sources.useV1SourceList': 'parquet',
     'spark.rapids.sql.hybrid.parquet.enabled': 'true',
-    'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
+    'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU',
     'spark.rapids.sql.expression.Ascii': False,
     'spark.rapids.sql.expression.StartsWith': False,
     'spark.rapids.sql.hybrid.whitelistExprs': 'StartsWith'
@@ -220,7 +223,7 @@ def test_hybrid_parquet_filter_pushdown_gpu(spark_tmp_path):
         conf=rebase_write_corrected_conf)
     conf = filter_split_conf.copy()
     conf.update({
-        'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'GPU'
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'GPU'
     })
     # filter conditions should remain on the GPU
     plan = with_gpu_session(
@@ -289,6 +292,32 @@ def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
         conf=filter_split_conf)
+
+filter_pushdown_gen_list = [('bool1', BooleanGen()),
+           ('bool2', BooleanGen()),
+           ('double1', DoubleGen()),
+           ('double2', DoubleGen()),
+           ('double3', DoubleGen()),
+           ('int1', IntegerGen()),
+           ('int2', IntegerGen()),
+           ('int3', IntegerGen()),
+           ('int4', IntegerGen()),
+           ('int_not_null', IntegerGen(nullable=False)),
+           ('date1', DateGen()),
+           ('date2', DateGen()),
+           ('timestamp', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
+           ('array_int_1', ArrayGen(IntegerGen())),
+           ('array_int_2', ArrayGen(IntegerGen())),
+           ('array_array_int_1', ArrayGen(ArrayGen(IntegerGen(),max_length=3))),
+           ('array_str_1', ArrayGen(StringGen())),
+           ('str1', StringGen()),
+           ('str2', StringGen()),
+           ('str3', StringGen(pattern='[a-z]{1,3}')),
+           ('digitstr', StringGen(pattern='[0-9]{1,5}')),
+           ('long', LongGen()),
+           ('comma_separated_str', StringGen(pattern='([0-9],){1,5}')),
+           ('json_str', StringGen(pattern=r'\{"a": "[a-z]{1,3}"\}')),
+]
 
 condition_list = [
     # Boolean:
@@ -450,14 +479,14 @@ condition_list = [
     pytest.param("(md5(str1) == 'b10a8db164e0754105b7a99be72e3fe5')", marks=pytest.mark.xfail(reason='binary type not supported yet')),
     # Long:
     # Chr
-    "(chr(100) == 'd')",
+    "(chr(int1) == 'd')",
     # No args:
     # MonotonicallyIncreasingID,Pi,Rand,SparkPartitionID,Uuid
-    "(monotonically_increasing_id() == 1)",
-    "(pi() == 3.141592653589793)",
-    "(rand() == 0.5)",
-    "(spark_partition_id() == 0)",
-    "(uuid() == 'b10a8db164e0754105b7a99be72e3fe5')",
+    "(monotonically_increasing_id() == int1)",
+    "(pi() == double1)",
+    "(rand() == double1)",
+    "(spark_partition_id() == int1)",
+    "(uuid() == str1)",
     # Special:
     # ArrayJoin,FindInSet,GetJsonObject,GetMapValue,If,In,LengthOfJsonArray,Like,
     # MapFromArrays,MapKeys,MapValues,MapZipWith,NextDay,Overlay,StringToMap,
@@ -476,10 +505,10 @@ condition_list = [
     "(isnotnull(map_zip_with(map(int1, str1, int2, str2), map(int3, str3), (k, v1, v2) -> if(k == int3, v2, v1))))",
     "(next_day(date1, 'monday') == date1)",
     "(overlay(str1, 'a', 1) == 'hallo')",
-    "(isnotnull(str_to_map(str1)))",
+    "(isnotnull(str_to_map(str3)))",
     "(substring_index(str1, 'e', 2) == 'he')",
     pytest.param("(to_unix_timestamp(timestamp) == 1717171717)", marks=pytest.mark.xfail(reason='timestamp filter not supported by gluten')),
-    "(unhex('68656c6c6f') == 'hello')",
+    "(unhex('68656c6c6f') == str1)",
     # Ansi false only:
     # Multiply, Add, Subtract, Divide, Abs, Pmod
     "(int1 * int2 == 24)",
@@ -490,52 +519,85 @@ condition_list = [
     "(pmod(double1, double2) == 1)",
 ]
 
+unsupported_condition_list = [
+    "(acosh(double1) < 1.5)",
+    "(asinh(double1) < 0.8)", 
+    "(sin(double1) > 0.1)",
+    "(sqrt(double1) < 1.6)",
+    "(tan(double1) > 0.8)",
+    "(tanh(double1) < 0.4)",
+    "(cbrt(double1) == 3.0)",
+    "(degrees(double1) == 0)",
+    "(radians(double1) == 0)",
+    "(hour(timestamp) == 1)",
+    "(minute(timestamp) == 1)",
+    "(sha1(str1) == 'b10a8db164e0754105b7a99be72e3fe5')",
+    "(width_bucket(double1, double2, double3, long) == 1)",
+    "(levenshtein(str1, str2) == 4)",
+    "(sha2(str1, 256) == 'b10a8db164e0754105b7a99be72e3fe5')",
+    "(repeat(str1, 2) == 'hellohello')",
+    "(crc32(str1) == 1041237462)",
+    "(md5(str1) == 'b10a8db164e0754105b7a99be72e3fe5')",
+    "(array_join(array_str_1, ',') == '1,2,3')",
+    "(1 in(int1, int2, int3))",
+    "(json_array_length(json_str) == 1)",
+    "(to_unix_timestamp(timestamp) == 1717171717)",
+]
+
+def adaptive_select_datagen(condition, gen_list):
+    # parse the condition to get the column names
+    get_column_names = re.findall(r'[\w\d_]+', condition)
+    return [gen for gen in gen_list if gen[0] in get_column_names]
+
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
 @pytest.mark.parametrize('condition', condition_list, ids=idfn)
 def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    genlist = [('bool1', BooleanGen()),
-               ('bool2', BooleanGen()),
-               ('double1', DoubleGen()),
-               ('double2', DoubleGen()),
-               ('double3', DoubleGen()),
-               ('int1', IntegerGen()),
-               ('int2', IntegerGen()),
-               ('int3', IntegerGen()),
-               ('int4', IntegerGen()),
-               ('int_not_null', IntegerGen(nullable=False)),
-               ('date1', DateGen()),
-               ('date2', DateGen()),
-               ('timestamp', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
-               ('array_int_1', ArrayGen(IntegerGen())),
-               ('array_int_2', ArrayGen(IntegerGen())),
-               ('array_array_int_1', ArrayGen(ArrayGen(IntegerGen(),max_length=3))),
-               ('array_str_1', ArrayGen(StringGen())),
-               ('str1', StringGen()),
-               ('str2', StringGen()),
-               ('str3', StringGen()),
-               ('digitstr', StringGen(pattern='[0-9]{1,5}')),
-               ('long', LongGen()),
-               ('comma_separated_str', StringGen(pattern='([0-9],){1,5}')),
-               ('json_str', StringGen(pattern=r'\{"a": "[a-z]{1,3}"\}')),
-    ]
+    gen_list = adaptive_select_datagen(condition, filter_pushdown_gen_list)
     with_cpu_session(
-        lambda spark: gen_df(spark, genlist).write.parquet(data_path),
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
     conf = {
         'spark.sql.sources.useV1SourceList': 'parquet',
         'spark.rapids.sql.hybrid.parquet.enabled': 'true',
-        'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU',
         'spark.rapids.sql.exec.FilterExec': False,
-        'spark.sql.ansi.enabled': 'false',
-        'spark.rapids.sql.hybrid.whitelistExprs': 'Cast'
+        'spark.sql.ansi.enabled': 'false'
     }
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).filter(condition),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
+        conf=conf)
+
+@allow_non_gpu('FilterExec')
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@hybrid_test
+@pytest.mark.parametrize('condition', unsupported_condition_list, ids=idfn)
+def test_hybrid_parquet_filter_pushdown_more_exprs_unsupported(spark_tmp_path, condition):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = adaptive_select_datagen(condition, filter_pushdown_gen_list)
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    # check if the condition is supported by hybrid execution when cannot push down
+    conf = {
+        'spark.sql.sources.useV1SourceList': 'parquet',
+        'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU',
+        'spark.sql.ansi.enabled': 'false'
+    }
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.parquet(data_path).filter(condition),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf=conf)
 
 cast_condition_list = [
@@ -653,48 +715,53 @@ cast_condition_list = [
     pytest.param("(cast(struct_int_str1 as struct<col1 long, col2 string>) == struct(1, 'a'))", marks=pytest.mark.xfail(reason='not supported by gluten')),
 ]
 
+filter_pushdown_cast_gen_list = [
+    ('bool1', BooleanGen()),
+    ('byte1', ByteGen()),
+    ('short1', ShortGen()),
+    ('int1', IntegerGen()),
+    ('long1', LongGen()),
+    ('float1', FloatGen()),
+    ('double1', DoubleGen()),
+    ('date1', DateGen()),
+    # Timestamp is not supported in filter pushdown yet
+    ('string1', StringGen()),
+    ('string_digit', StringGen(pattern='[0-9]{1,3}(\.[0-9]{1,3})?')),
+    ('decimal1', DecimalGen()),
+    # Null is not supported in parquet
+    # Binary is not supported in hybrid execution yet
+    # CalendarInterval is not supported in hybrid execution yet
+    ('array_int1', ArrayGen(IntegerGen())),
+    ('map_int_str1', MapGen(IntegerGen(nullable=False), StringGen())),
+    ('struct_int_str1', StructGen([('int1', IntegerGen()), ('str1', StringGen())])),
+    # UDT is not supported in hybrid execution yet
+    # DayTimeIntervalType is not supported in hybrid execution yet
+    # YearMonthIntervalType is not supported in hybrid execution yet
+]
+
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
 @pytest.mark.parametrize('condition', cast_condition_list, ids=idfn)
 def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    genlist = [('bool1', BooleanGen()),
-               ('byte1', ByteGen()),
-               ('short1', ShortGen()),
-               ('int1', IntegerGen()),
-               ('long1', LongGen()),
-               ('float1', FloatGen()),
-               ('double1', DoubleGen()),
-               ('date1', DateGen()),
-               # Timestamp is not supported in filter pushdown yet
-               ('string1', StringGen()),
-               ('string_digit', StringGen(pattern='[0-9]{1,3}(\.[0-9]{1,3})?')),
-               ('decimal1', DecimalGen()),
-               # Null is not supported in parquet
-               # Binary is not supported in hybrid execution yet
-               # CalendarInterval is not supported in hybrid execution yet
-               ('array_int1', ArrayGen(IntegerGen())),
-               ('map_int_str1', MapGen(IntegerGen(nullable=False), StringGen())),
-               ('struct_int_str1', StructGen([('int1', IntegerGen()), ('str1', StringGen())])),
-               # UDT is not supported in hybrid execution yet
-               # DayTimeIntervalType is not supported in hybrid execution yet
-               # YearMonthIntervalType is not supported in hybrid execution yet
-    ]
+    gen_list = adaptive_select_datagen(condition, filter_pushdown_cast_gen_list)
     with_cpu_session(
-        lambda spark: gen_df(spark, genlist).write.parquet(data_path),
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=rebase_write_corrected_conf)
 
     conf = {
         'spark.sql.sources.useV1SourceList': 'parquet',
         'spark.rapids.sql.hybrid.parquet.enabled': 'true',
-        'spark.rapids.sql.parquet.pushDownFiltersToHybrid': 'CPU',
+        'spark.rapids.sql.hybrid.parquet.filterPushDown': 'CPU',
         'spark.rapids.sql.exec.FilterExec': False,
         'spark.sql.ansi.enabled': 'false',
     }
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).filter(condition),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
         conf=conf)
 
 @ignore_order(local=True)
