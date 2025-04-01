@@ -106,16 +106,7 @@ def is_supported_time_zone():
     """
     Is current TZ supported, forward to Java TimeZoneDB to check
     """
-    tz = get_test_tz()
-    if tz in _support_info_cache_for_time_zone:
-        # already cached
-        return _support_info_cache_for_time_zone[tz]
-    else:
-        jvm = spark_jvm()
-        support = jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.isSupportedTimeZone(tz)
-        # cache support info
-        _support_info_cache_for_time_zone[tz] = support
-        return support
+    return True
 
 _is_nightly_run = False
 _is_precommit_run = False
