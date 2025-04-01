@@ -38,6 +38,7 @@
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
+{"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -101,7 +102,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
       wrapped.relation.partitionSchema,
       wrapped.relation.dataSchema,
       wrapped.relation.bucketSpec,
-      GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+      GpuFileSourceScanExec.convertFileFormat(wrapped.relation),
       options)(sparkSession)
 
     GpuFileSourceScanExec(

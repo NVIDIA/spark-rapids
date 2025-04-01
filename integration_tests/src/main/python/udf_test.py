@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@ import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run, is_databricks_runtime
-from spark_session import is_before_spark_330, is_before_spark_331, is_before_spark_350, is_spark_341
+from spark_session import (is_before_spark_330, is_before_spark_331, is_before_spark_350, is_spark_341,
+                           is_spark_400_or_later)
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -25,14 +26,14 @@ try:
 except Exception as e:
     if is_at_least_precommit_run():
         raise AssertionError("incorrect pandas version during required testing " + str(e))
-    pytestmark = pytest.mark.skip(reason=str(e))
+    pytestmark += pytest.mark.skip(reason=str(e))
 
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
     if is_at_least_precommit_run():
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
-    pytestmark = pytest.mark.skip(reason=str(e))
+    pytestmark += pytest.mark.skip(reason=str(e))
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
@@ -67,7 +68,7 @@ def test_pandas_math_udf(data_gen):
     my_udf = f.pandas_udf(add, returnType=LongType())
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
-                my_udf(f.col('a') - 3, f.col('b'))),
+                my_udf(f.col('a'), f.col('b'))),
             conf=arrow_udf_conf)
 
 
@@ -392,8 +393,9 @@ def test_map_arrow_apply_udf(data_gen):
         conf=conf)
 
 
+map_in_pandas_node_name = 'MapInArrowExec' if is_spark_400_or_later() else 'PythonMapInArrowExec'
 @pytest.mark.parametrize('data_type', ['string', 'binary'], ids=idfn)
-@allow_non_gpu('PythonMapInArrowExec')
+@allow_non_gpu(map_in_pandas_node_name)
 @pytest.mark.skipif(is_before_spark_350(), reason='spark.sql.execution.arrow.useLargeVarTypes is introduced in Pyspark 3.5.0')
 def test_map_arrow_large_var_types_fallback(data_type):
     def filter_func(iterator):
@@ -414,7 +416,7 @@ def test_map_arrow_large_var_types_fallback(data_type):
     assert_gpu_fallback_collect(
         lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
             .mapInArrow(filter_func, schema=f"a {data_type}, b {data_type}"),
-        "PythonMapInArrowExec",
+        map_in_pandas_node_name,
         conf=conf)
 
 

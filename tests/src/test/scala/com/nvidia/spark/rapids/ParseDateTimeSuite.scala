@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,12 +27,13 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.REMOVE_WHITESPACE_FROM_MONTH_DAY
 import org.apache.spark.sql.rapids.RegexReplace
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
 
@@ -154,7 +155,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     CORRECTED_TIME_PARSER_POLICY) {
     df => {
       df.createOrReplaceTempView("df")
-      df.sqlContext.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
+      val spark = getActiveSession
+      spark.sql("SELECT c0, to_unix_timestamp(c0, 'yyyy/MM') FROM df")
     }
   }
 

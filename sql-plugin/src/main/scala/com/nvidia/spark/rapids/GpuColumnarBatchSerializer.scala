@@ -26,8 +26,9 @@ import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerializat
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTable, KudoTableHeader, WriteInput}
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTableHeader, WriteInput}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
@@ -290,7 +291,7 @@ private class GpuColumnarBatchSerializerInstance(metrics: Map[String, GpuMetric]
  */
 class SerializedTableColumn(
     val header: SerializedTableHeader,
-    val hostBuffer: HostMemoryBuffer) extends GpuColumnVectorBase(NullType) {
+    val hostBuffer: HostMemoryBuffer) extends GpuColumnVectorBase(NullType) with SizeProvider {
   override def close(): Unit = {
     if (hostBuffer != null) {
       hostBuffer.close()
@@ -300,6 +301,12 @@ class SerializedTableColumn(
   override def hasNull: Boolean = throw new IllegalStateException("should not be called")
 
   override def numNulls(): Int = throw new IllegalStateException("should not be called")
+
+  override def sizeInBytes: Long = if (hostBuffer == null) {
+    0L
+  } else {
+    hostBuffer.getLength
+  }
 }
 
 object SerializedTableColumn {
@@ -326,7 +333,7 @@ object SerializedTableColumn {
         case serializedTableColumn: SerializedTableColumn =>
           sum += Option(serializedTableColumn.hostBuffer).map(_.getLength).getOrElse(0L)
         case kudo: KudoSerializedTableColumn =>
-          sum += Option(kudo.kudoTable.getBuffer).map(_.getLength).getOrElse(0L)
+          sum += Option(kudo.spillableKudoTable).map(_.length).getOrElse(0L)
         case _ =>
           throw new IllegalStateException(s"Unexpected column type: ${cv.getClass}" )
       }
@@ -354,8 +361,6 @@ private class KudoSerializerInstance(
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
-    private[this] val dOut: DataOutputStream =
-      new DataOutputStream(new BufferedOutputStream(out))
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
@@ -391,7 +396,7 @@ private class KudoSerializerInstance(
           withResource(new NvtxRange("Serialize Batch", NvtxColor.YELLOW)) { _ =>
             val writeInput = WriteInput.builder
               .setColumns(columns)
-              .setOutputStream(dOut)
+              .setOutputStream(out)
               .setNumRows(numRows)
               .setRowOffset(startRow)
               .setMeasureCopyBufferTime(measureBufferCopyTime)
@@ -408,7 +413,7 @@ private class KudoSerializerInstance(
           }
         } else {
           withResource(new NvtxRange("Serialize Row Only Batch", NvtxColor.YELLOW)) { _ =>
-            dataSize += KudoSerializer.writeRowCountToStream(dOut, numRows)
+            dataSize += KudoSerializer.writeRowCountToStream(out, numRows)
           }
         }
         this
@@ -433,11 +438,11 @@ private class KudoSerializerInstance(
     }
 
     override def flush(): Unit = {
-      dOut.flush()
+      out.flush()
     }
 
     override def close(): Unit = {
-      dOut.close()
+      out.close()
     }
   }
 
@@ -493,16 +498,23 @@ private class KudoSerializerInstance(
  * This appears in a `ColumnarBatch` to pass serialized tables to [[GpuShuffleCoalesceExec]]
  * which should always appear in the query plan immediately after a shuffle.
  */
-case class KudoSerializedTableColumn(kudoTable: KudoTable) extends GpuColumnVectorBase(NullType) {
+case class KudoSerializedTableColumn(spillableKudoTable: SpillableKudoTable)
+  extends GpuColumnVectorBase(NullType) with SizeProvider {
   override def close(): Unit = {
-    if (kudoTable != null) {
-      kudoTable.close()
+    if (spillableKudoTable != null) {
+      spillableKudoTable.close()
     }
   }
 
   override def hasNull: Boolean = throw new IllegalStateException("should not be called")
 
   override def numNulls(): Int = throw new IllegalStateException("should not be called")
+
+  override def sizeInBytes: Long = if (spillableKudoTable == null) {
+    0L
+  } else {
+    spillableKudoTable.length
+  }
 }
 
 object KudoSerializedTableColumn {
@@ -510,12 +522,14 @@ object KudoSerializedTableColumn {
    * Build a `ColumnarBatch` consisting of a single [[KudoSerializedTableColumn]] describing
    * the specified serialized table.
    *
-   * @param kudoTable Serialized kudo table.
+   * @param header the header of the kudo table
+   * @param hostBuffer the buffer for the kudo table
    * @return columnar batch to be passed to [[GpuShuffleCoalesceExec]]
    */
-  def from(kudoTable: KudoTable): ColumnarBatch = {
+  def from(header: KudoTableHeader, hostBuffer: HostMemoryBuffer): ColumnarBatch = {
+    val kudoTable = SpillableKudoTable(header, hostBuffer)
     val column = new KudoSerializedTableColumn(kudoTable)
-    new ColumnarBatch(Array(column), kudoTable.getHeader.getNumRows)
+    new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
 }
 
@@ -557,15 +571,22 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
       val header = nextHeader.get
       nextHeader = None
       if (header.getNumColumns > 0) {
-        // This buffer will later be concatenated into another host buffer before being
-        // sent to the GPU, so no need to use pinned memory for these buffers.
-        closeOnExcept(HostMemoryBuffer.allocate(header.getTotalDataLen, false)) { hostBuffer =>
-          hostBuffer.copyFromStream(0, dIn, header.getTotalDataLen)
-          val kudoTable = new KudoTable(header, hostBuffer)
-          KudoSerializedTableColumn.from(kudoTable)
+
+        // When allocation fails, will roll back to the beginning of this withRetryNoSplit,
+        // with previous batches saved in HostCoalesceIteratorBase.serializedTables.
+        // The previous batches should be able to be spilled by itself.
+        val buffer = withRetryNoSplit[HostMemoryBuffer] (
+          // This buffer will later be concatenated into another host buffer before being
+          // sent to the GPU, so no need to use pinned memory for these buffers.
+          HostMemoryBuffer.allocate(header.getTotalDataLen, false)
+        )
+
+        closeOnExcept(buffer) { _ =>
+          buffer.copyFromStream(0, dIn, header.getTotalDataLen)
+          KudoSerializedTableColumn.from(header, buffer)
         }
       } else {
-        KudoSerializedTableColumn.from(new KudoTable(header, null))
+        KudoSerializedTableColumn.from(header, null)
       }
     }
   }

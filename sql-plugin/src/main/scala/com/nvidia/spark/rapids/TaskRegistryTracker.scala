@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,10 @@ object TaskRegistryTracker {
 
   def registerThreadForRetry(): Unit = synchronized {
     val tc = TaskContext.get()
-    if (tc != null) {
+    if (
+      tc != null &&
+        !RmmSpark.isThreadWorkingOnTaskAsPoolThread // check if the thread is a pool thread
+    ) {
       // If we don't have a TaskContext we are either in a test or in some other thread
       // If it is some other thread, then they are responsible to amke sure things are
       // registered properly themselves. If it is a test, well you need to update your

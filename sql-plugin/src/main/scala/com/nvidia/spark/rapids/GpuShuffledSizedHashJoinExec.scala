@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.GpuShuffledSizedHashJoinExec.JoinInfo
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.jni.kudo.{KudoTable, KudoTableHeader}
+import com.nvidia.spark.rapids.jni.kudo.KudoTableHeader
 import com.nvidia.spark.rapids.shims.GpuHashPartitioning
 
 import org.apache.spark.rdd.RDD
@@ -37,6 +37,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.rapids.{GpuHashExpression, GpuMurmur3Hash}
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -371,6 +372,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
   def right: SparkPlan
   def isGpuShuffle: Boolean
   def gpuBatchSizeBytes: Long
+  def partitionNumAmplification: Double
   def isSkewJoin: Boolean
   def cpuLeftKeys: Seq[Expression]
   def cpuRightKeys: Seq[Expression]
@@ -451,7 +453,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
           doSmallBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
         }
       } else {
-        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, localMetrics)
+        doBigBuildJoin(joinInfo, localGpuBatchSizeBytes, partitionNumAmplification, localMetrics)
       }
       val numOutputRows = localMetrics(NUM_OUTPUT_ROWS)
       val numOutputBatches = localMetrics(NUM_OUTPUT_BATCHES)
@@ -516,13 +518,15 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
    * @param info join information from the probing phase
    * @param gpuBatchSizeBytes target GPU batch size
    * @param metricsMap metrics to update
+   * @param partitionNumAmplification boost number of partitions for build size by this times
    * @return iterator to produce the results of the join
    */
   private def doBigBuildJoin(
       info: JoinInfo,
       gpuBatchSizeBytes: Long,
+      partitionNumAmplification: Double,
       metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
-    new BigSizedJoinIterator(info, gpuBatchSizeBytes, metricsMap)
+    new BigSizedJoinIterator(info, gpuBatchSizeBytes, partitionNumAmplification, metricsMap)
   }
 
   /**
@@ -770,6 +774,7 @@ case class GpuShuffledSymmetricHashJoinExec(
     override val right: SparkPlan,
     override val isGpuShuffle: Boolean,
     override val gpuBatchSizeBytes: Long,
+    override val partitionNumAmplification: Double,
     override val readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     override val cpuLeftKeys: Seq[Expression],
@@ -1078,6 +1083,7 @@ case class GpuShuffledAsymmetricHashJoinExec(
     override val right: SparkPlan,
     override val isGpuShuffle: Boolean,
     override val gpuBatchSizeBytes: Long,
+    override val partitionNumAmplification: Double,
     override val readOption: CoalesceReadOption,
     override val isSkewJoin: Boolean)(
     override val cpuLeftKeys: Seq[Expression],
@@ -1108,13 +1114,13 @@ sealed trait SpillableHostConcatResult extends AutoCloseable {
   def getNumRows: Long
   def getDataLen: Long
 
-  protected var buffer = {
+  protected var spillableBuffer = {
     SpillableHostBuffer(hmb, hmb.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
   }
 
-  override def close(): Unit = if (buffer != null) {
-    buffer.close()
-    buffer = null
+  override def close(): Unit = if (spillableBuffer != null) {
+    spillableBuffer.close()
+    spillableBuffer = null
   }
 }
 
@@ -1123,7 +1129,7 @@ class CudfSpillableHostConcatResult(
     val hmb: HostMemoryBuffer) extends SpillableHostConcatResult {
 
   override def toBatch: ColumnarBatch = {
-    closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
+    closeOnExcept(spillableBuffer.getHostBuffer()) { hostBuf =>
       SerializedTableColumn.from(header, hostBuf)
     }
   }
@@ -1138,14 +1144,17 @@ class KudoSpillableHostConcatResult(kudoTableHeader: KudoTableHeader,
 ) extends SpillableHostConcatResult  {
   require(kudoTableHeader != null, "KudoTableHeader cannot be null")
   require(hmb != null, "HostMemoryBuffer cannot be null")
+  val bufferLength: Long = hmb.getLength
 
-  override def toBatch: ColumnarBatch = closeOnExcept(buffer.getHostBuffer()) { hostBuf =>
-    KudoSerializedTableColumn.from(new KudoTable(kudoTableHeader, hostBuf))
+  override def toBatch: ColumnarBatch = closeOnExcept(spillableBuffer.getHostBuffer()) { hostBuf =>
+    KudoSerializedTableColumn.from(kudoTableHeader, hostBuf)
   }
 
   override def getNumRows: Long = kudoTableHeader.getNumRows
 
-  override def getDataLen: Long = hmb.getLength
+  // Should not reference hmb after its ownership is transferred to spillableBuffer,
+  // so we just cache the length at the time of construction
+  override def getDataLen: Long = bufferLength
 }
 
 object SpillableHostConcatResult {
@@ -1154,12 +1163,9 @@ object SpillableHostConcatResult {
     batch.column(0) match {
       case col: KudoSerializedTableColumn => {
         // This will be closed
-        val oldKudoTable = col.kudoTable
-        val buffer = col.kudoTable.getBuffer
-        if (buffer != null) {
-          buffer.incRefCount()
-        }
-        new KudoSpillableHostConcatResult(oldKudoTable.getHeader, buffer)
+        val oldKudoTable = col.spillableKudoTable
+        val buffer = col.spillableKudoTable.makeKudoTable.getBuffer
+        new KudoSpillableHostConcatResult(oldKudoTable.header, buffer)
       }
       case col: SerializedTableColumn =>
         val buffer = col.hostBuffer
@@ -1321,10 +1327,13 @@ abstract class JoinPartitioner(
     numPartitions: Int,
     batchTypes: Array[DataType],
     boundJoinKeys: Seq[Expression],
-    metrics: Map[String, GpuMetric]) extends AutoCloseable {
+    metrics: Map[String, GpuMetric]) extends GpuHashPartitioner with AutoCloseable {
   protected val partitions: Array[JoinPartition] =
     (0 until numPartitions).map(_ => new JoinPartition).toArray
   protected val opTime = metrics(OP_TIME)
+
+  override protected val hashFunc: GpuHashExpression =
+    GpuMurmur3Hash(boundJoinKeys, JoinPartitioner.HASH_SEED)
 
   /**
    * Hash partitions a batch in preparation for performing a sub-join. The input batch will
@@ -1334,9 +1343,8 @@ abstract class JoinPartitioner(
     val spillableBatch = SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     withRetryNoSplit(spillableBatch) { _ =>
       opTime.ns {
-        val partsTable = GpuHashPartitioningBase.hashPartitionAndClose(
-          spillableBatch.getColumnarBatch(), boundJoinKeys, numPartitions, "partition for join",
-          JoinPartitioner.HASH_SEED)
+        val partsTable = hashPartitionAndClose(spillableBatch.getColumnarBatch(), numPartitions,
+          "partition for join")
         val contigTables = withResource(partsTable) { _ =>
           partsTable.getTable.contiguousSplit(partsTable.getPartitions.tail: _*)
         }
@@ -1576,16 +1584,19 @@ class StreamSidePartitioner(
  *
  * @param info join information from input probing phase
  * @param gpuBatchSizeBytes target GPU batch size
+ * @param partitionNumAmplification boost number of partitions for build size by this times
  * @param metrics metrics to update
  */
 class BigSizedJoinIterator(
     info: JoinInfo,
     gpuBatchSizeBytes: Long,
+    partitionNumAmplification: Double,
     metrics: Map[String, GpuMetric])
   extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
   private val buildPartitioner = {
-    val numPartitions = (info.buildSize / gpuBatchSizeBytes) + 1
+    val numPartitions =
+      (((info.buildSize / gpuBatchSizeBytes) + 1) * partitionNumAmplification).toLong
     require(numPartitions <= Int.MaxValue, "too many build partitions")
     new BuildSidePartitioner(info.joinType, numPartitions.toInt, info.buildIter,
       info.exprs.buildTypes, info.exprs.boundBuildKeys, gpuBatchSizeBytes, metrics)

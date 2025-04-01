@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuMetric, GpuReadFileFormatWithMetrics, PartitionReaderIterator, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -27,6 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -90,7 +90,7 @@ object GpuReadAvroFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuAvroScan.tagSupport(
-      SparkShimImpl.sessionFromPlan(fsse),
+      SparkSessionUtils.sessionFromPlan(fsse),
       fsse.requiredSchema,
       fsse.relation.options,
       meta
