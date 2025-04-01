@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.filecache.FileCacheLocalityManager
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim, SparkShimImpl, StaticPartitionShims}
 import org.apache.hadoop.fs.Path
@@ -95,7 +96,16 @@ case class GpuFileSourceScanExec(
     case f => throw new IllegalStateException(s"${f.getClass} is not a GPU format with metrics")
   }
 
-  private val isPerFileReadEnabled = gpuFormat.isPerFileReadEnabled(rapidsConf)
+  /**
+   Remove after GpuDeltaParquetFileFormat support other readers besides PERFILE
+   */
+  private lazy val deltaProvider = DeltaProvider()
+
+  private val isPerFileReadEnabled = {
+    val isDatabricks143 = VersionUtils.isDatabricks143
+    val isDeltaFormat = deltaProvider.isSupportedFormat(relation.fileFormat.getClass)
+    (isDatabricks143 && isDeltaFormat) || gpuFormat.isPerFileReadEnabled(rapidsConf)
+  }
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 

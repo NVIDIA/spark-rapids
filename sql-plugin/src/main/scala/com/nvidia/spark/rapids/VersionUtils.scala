@@ -18,6 +18,11 @@ package com.nvidia.spark.rapids
 
 object VersionUtils {
 
+  lazy val isDatabricks143 = ShimLoader.getShimVersion match {
+    case DatabricksShimVersion(3, 5, 0, "14.3") => true
+    case _ => false
+  }
+
   lazy val isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
 
   lazy val isSpark: Boolean = {
