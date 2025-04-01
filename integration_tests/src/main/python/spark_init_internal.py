@@ -261,7 +261,7 @@ def log_test_name(request):
 def set_spark_job_timeout(request):
     # TODO dial down after identifying all long tests
     # and set exceptions there
-    default_timeout_seconds = 60 * 60
+    default_timeout_seconds = 900
     logger.debug("set_spark_job_timeout: BEFORE TEST\n")
     tm = request.node.get_closest_marker("spark_job_timeout")
     if tm:
