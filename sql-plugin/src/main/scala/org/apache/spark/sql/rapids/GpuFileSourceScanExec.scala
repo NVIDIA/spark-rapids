@@ -99,7 +99,7 @@ case class GpuFileSourceScanExec(
   /**
    Remove after GpuDeltaParquetFileFormat support other readers besides PERFILE
    */
-  private lazy val deltaProvider = DeltaProvider()
+  @transient private lazy val deltaProvider = DeltaProvider()
 
   private val isPerFileReadEnabled = {
     val isDatabricks143 = VersionUtils.isDatabricks143
