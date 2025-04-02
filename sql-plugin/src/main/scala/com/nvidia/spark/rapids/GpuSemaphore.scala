@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util
 import java.util.Map
-import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -496,7 +496,7 @@ private final class GpuSemaphore() extends Logging {
   // A map of taskAttemptId => semaphoreTaskInfo.
   // This map keeps track of all tasks that are both active on the GPU and blocked waiting
   // on the GPU.
-  private val tasks = new util.HashMap[Long, SemaphoreTaskInfo]
+  private val tasks = new ConcurrentHashMap[Long, SemaphoreTaskInfo]
   private val stageEstimators = {
     val lru = new util.LinkedHashMap[Int, GpuStageMemoryEstimator]() {
       override def removeEldestEntry(entry: Map.Entry[Int, GpuStageMemoryEstimator]): Boolean = {
