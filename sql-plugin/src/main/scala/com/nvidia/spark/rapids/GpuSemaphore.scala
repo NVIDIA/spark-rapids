@@ -382,7 +382,7 @@ private final class GpuSemaphore() extends Logging {
   }
 
   def releaseIfNecessary(context: TaskContext): Unit = {
-    NvtxId.RELEASE_GPU {
+    NvtxRegistry.RELEASE_GPU {
       val taskAttemptId = context.taskAttemptId()
       GpuTaskMetrics.get.updateRetry(taskAttemptId)
       val taskInfo = tasks.get(taskAttemptId)

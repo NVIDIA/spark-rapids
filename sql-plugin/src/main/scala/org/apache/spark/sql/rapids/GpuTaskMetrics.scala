@@ -20,15 +20,12 @@ import java.{lang => jl}
 import java.io.ObjectInputStream
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-
 import scala.collection.mutable
-
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.NvtxId
+import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
-
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.{AccumulatorV2, LongAccumulator, Utils}
@@ -291,7 +288,7 @@ class GpuTaskMetrics extends Serializable {
   }
 
   private def timeIt[A](timer: NanoSecondAccumulator,
-                        range: NvtxId.IdBase,
+                        range: NvtxId,
                         f: => A): A = {
     val start = System.nanoTime()
     range {
@@ -307,7 +304,7 @@ class GpuTaskMetrics extends Serializable {
 
   def getSemWaitTime(): Long = semWaitTimeNs.value.value
 
-  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, NvtxId.ACQUIRE_GPU, f)
+  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, NvtxRegistry.ACQUIRE_GPU, f)
 
   def spillToHostTime[A](f: => A): A = {
     timeIt(spillToHostTimeNs, "spillToHostTime", NvtxColor.RED, f)

@@ -22,11 +22,20 @@ import scala.collection.mutable
 
 import org.apache.spark.internal.Logging
 
-sealed class NvtxId private(val name: String, val doc: String) {
+sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
   def help(): Unit = println(s"$name|$doc")
+
+  def apply[V](block: => V): V = {
+    try {
+      NvtxRange.push(name, color)
+      block
+    } finally {
+      NvtxRange.pop()
+    }
+  }
 }
 
-object NvtxId extends Logging {
+object NvtxRegistry extends Logging {
   val registeredRanges: mutable.Map[String, NvtxId] = mutable.Map[String, NvtxId]()
 
   private def register(id: NvtxId): Unit = {
@@ -37,38 +46,15 @@ object NvtxId extends Logging {
     }
   }
 
-  trait IdBase {
-    protected def name: String
-    protected def color: NvtxColor
-    protected def doc: String
+  val ACQUIRE_GPU: NvtxId = NvtxId("Acquire GPU", NvtxColor.RED,
+      "Time waiting for GPU semaphore to be acquired")
 
-    def apply[V](block: => V): V = {
-      try {
-        NvtxRange.push(name, color)
-        block
-      } finally {
-        NvtxRange.pop()
-      }
-    }
-
-    def init(): Unit = register(new NvtxId(name, doc))
-  }
-
-  object ACQUIRE_GPU extends IdBase {
-    override protected def name = "Acquire GPU"
-    override protected def color = NvtxColor.RED
-    override protected def doc = "Time waiting for GPU semaphore to be acquired"
-  }
-
-  object RELEASE_GPU extends IdBase {
-    override protected def name = "Release GPU"
-    override protected def color = NvtxColor.RED
-    override protected def doc = "Releasing the GPU semaphore"
-  }
+  val RELEASE_GPU: NvtxId = NvtxId("Release GPU", NvtxColor.RED,
+    "Releasing the GPU semaphore")
 
   def init(): Unit = {
-    ACQUIRE_GPU.init()
-    RELEASE_GPU.init()
+    register(ACQUIRE_GPU)
+    register(RELEASE_GPU)
   }
 }
 
@@ -98,12 +84,12 @@ object NvtxRangeDocs {
   }
 
   def main(args: Array[String]): Unit = {
-    NvtxId.init()
+    NvtxRegistry.init()
     val configs = new FileOutputStream(new File(args(0)))
     Console.withOut(configs) {
       Console.withErr(configs) {
         helpCommon()
-        NvtxId.registeredRanges.values.foreach(_.help())
+        NvtxRegistry.registeredRanges.values.foreach(_.help())
       }
     }
   }
