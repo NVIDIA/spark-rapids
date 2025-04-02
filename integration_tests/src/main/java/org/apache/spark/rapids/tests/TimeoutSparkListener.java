@@ -121,9 +121,9 @@ public class TimeoutSparkListener extends SparkListener {
     }
   }
 
-  public static void setSparkJobTimeout(int ts, boolean dummpThreads) {
+  public static void setSparkJobTimeout(int ts, boolean dumpThreads) {
     timeoutSeconds = ts;
-    shouldDumpThreads = dummpThreads;
+    shouldDumpThreads = dumpThreads;
   }
 
   public void onApplicationEnd(SparkListenerApplicationEnd applicationEnd) {
