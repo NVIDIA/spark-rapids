@@ -547,6 +547,7 @@ unsupported_condition_list = [
 def adaptive_select_datagen(condition, gen_list):
     # parse the condition to get the column names
     get_column_names = re.findall(r'[\w\d_]+', condition)
+    # filter the gen_list to only include the columns that are in the condition
     return [gen for gen in gen_list if gen[0] in get_column_names]
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
@@ -657,7 +658,7 @@ cast_condition_list = [
     "(cast(float1 as short) == 1)",
     "(cast(float1 as int) == 1)",
     "(cast(float1 as long) == 1)",
-    "(cast(float1 as double) == 1.0)",
+    pytest.param("(cast(float1 as double) == 1.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
     "(cast(float1 as string) == '1')",
     "(cast(float1 as decimal) == 1)",
     # Double to:
