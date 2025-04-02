@@ -27,6 +27,10 @@ import org.apache.spark.sql.internal.SQLConf
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   test("Aggregate") {
     doTestReplay("10[*]") { spark =>
+      // Disable ANSI mode as the plan has aggregate operator sum
+      // which is not supported in ANSI mode
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      spark.conf.set("spark.sql.ansi.enabled", "false")
       spark.range(0, 1000, 1, 100)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -36,6 +40,10 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("Broadcast join") {
     doTestReplay("32[*]") { spark =>
+      // Disable ANSI mode as the plan has aggregate operator count
+      // which is not supported in ANSI mode
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      spark.conf.set("spark.sql.ansi.enabled", "false")
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -64,6 +72,10 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("Subquery in projection") {
     doTestReplay("11[*]") { spark =>
+      // Disable ANSI mode as the plan has aggregate operator count
+      // which is not supported in ANSI mode
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      spark.conf.set("spark.sql.ansi.enabled", "false")
       spark.sql(
         """
           |CREATE TEMPORARY VIEW t1
@@ -82,6 +94,10 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("No broadcast join") {
     doTestReplay("30[*]") { spark =>
+      // Disable ANSI mode as the plan has aggregate operator sum
+      // which is not supported in ANSI mode
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      spark.conf.set("spark.sql.ansi.enabled", "false")
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -100,6 +116,10 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("AQE broadcast") {
     doTestReplay("90[*]") { spark =>
+      // Disable ANSI mode as the plan has aggregate operator sum
+      // which is not supported in ANSI mode
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      spark.conf.set("spark.sql.ansi.enabled", "false")
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -118,6 +138,10 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("AQE Exchange") {
     doTestReplay("28[*]") { spark =>
+      // Disable ANSI mode as the plan has aggregate operator sum
+      // which is not supported in ANSI mode
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      spark.conf.set("spark.sql.ansi.enabled", "false")
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       spark.range(0, 1000, 1, 100)

@@ -15,14 +15,19 @@
  */
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 
 class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
+  // Disable ANSI mode as the plans in the tests have aggregate operators
+  // which is not supported in ANSI mode
+  // https://github.com/NVIDIA/spark-rapids/issues/5114
+  val conf = new SparkConf().set("spark.sql.ansi.enabled", "false")
   IGNORE_ORDER_testSparkResultsAreEqual("group with aggregates",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.groupBy($"key")
@@ -36,7 +41,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("cube with count",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").count()
@@ -44,7 +49,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("cube with count distinct",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat2")
@@ -53,7 +58,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("cube with sum",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").sum()
@@ -61,7 +66,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("rollup with count",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat1", $"cat2").count()
@@ -69,7 +74,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("rollup with count distinct",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat2")
@@ -78,7 +83,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("rollup with sum",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       import frame.sparkSession.implicits._
       frame.rollup($"key", $"cat1", $"cat2").sum()
@@ -86,7 +91,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("sql with grouping expressions",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       frame.createOrReplaceTempView("t0")
       val sql =
@@ -99,7 +104,7 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("sql with different shape grouping expressions",
-    createDataFrame, repart = 2) {
+    createDataFrame, repart = 2, conf) {
     frame => {
       frame.createOrReplaceTempView("t0")
       val sql =

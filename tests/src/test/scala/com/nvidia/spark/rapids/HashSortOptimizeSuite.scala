@@ -153,7 +153,10 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
   }
 
   test("should not insert sort because of missing GpuDataWritingCommandExec") {
-    val conf = sparkConf.clone()
+    // Disable ANSI mode as the plan has aggregate operator count
+    // which is not supported in ANSI mode
+    // https://github.com/NVIDIA/spark-rapids/issues/5114
+    val conf = sparkConf.clone().set("spark.sql.ansi.enabled", "false")
     withGpuSparkSession(spark => {
       buildDataFrame1(spark).createOrReplaceTempView("t1")
       val df = spark.sql("select a+1, count(*) from " +

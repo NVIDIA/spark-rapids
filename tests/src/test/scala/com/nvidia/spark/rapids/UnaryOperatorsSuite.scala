@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.{col, lit}
 
 class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
@@ -31,7 +32,8 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("pi()")
   }
 
-  testSparkResultsAreEqual("Test md5", mixedDfWithNulls) {
+  testSparkResultsAreEqual("Test md5", mixedDfWithNulls,
+    conf = new SparkConf().set("spark.sql.ansi.enabled", "false")) {
     frame => frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
       "md5(cast(longs as binary))")
   }
