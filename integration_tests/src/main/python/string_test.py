@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import pytest
+import random
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, \
     assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, \
     assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, get_datagen_seed
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -850,40 +851,6 @@ def test_like_complex_escape():
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 
-@pytest.mark.parametrize('from_base,pattern',
-                         [
-                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
-                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16')
-                         ])
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9784')
-# to_base can be positive and negative
-@pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
-def test_conv_dec_to_from_hex(from_base, to_base, pattern):
-    # before 3.2 leading space are deem the string non-numeric and the result is 0
-    if not is_before_spark_320:
-        pattern = r' ?' + pattern
-    gen = mk_str_gen(pattern)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),
-        conf={'spark.rapids.sql.expression.Conv': True}
-    )
-
-@pytest.mark.parametrize('from_base,to_base,expected_err_msg_prefix',
-                         [
-                             pytest.param(10, 15, '15 is not a supported target radix', id='to_base_unsupported'),
-                             pytest.param(11, 16, '11 is not a supported source radix', id='from_base_unsupported'),
-                             pytest.param(9, 17, 'both 9 and 17 are not a supported radix', id='both_base_unsupported')
-                         ])
-def test_conv_unsupported_base(from_base, to_base, expected_err_msg_prefix):
-    def do_conv(spark):
-        gen = StringGen()
-        df = unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))
-        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
-        unsupported_base_str = f'{expected_err_msg_prefix}, only literal 10 or 16 are supported for source and target radixes'
-        assert unsupported_base_str in explain_str
-
-    with_cpu_session(do_conv)
-
 format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0),
                                       DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5),
                                       DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10),
@@ -939,3 +906,33 @@ def test_format_number_float_value():
         lambda spark: unary_op_df(spark, data_gen).selectExpr('format_number(a, 5)').collect())))
     for cpu, gpu in zip(cpu_results, gpu_results):
         assert math.isclose(cpu, gpu, rel_tol=1e-7) or math.isclose(cpu, gpu, abs_tol=1.1e-5)
+
+# valid base range is [2, 36], to_base can be negative, out of range results nulls
+# TODO: test ansi mode
+@pytest.mark.parametrize('ansi_mode', [False], ids=idfn)
+def test_conv(ansi_mode):
+    gen = [
+        ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),
+        ("from_col", IntegerGen(min_val=0, max_val=38)),
+        ("to_col", IntegerGen(min_val=-38, max_val=38))]
+    data_gen_seed = get_datagen_seed()
+    r = random.Random(data_gen_seed)
+    from_base_scalar = r.randint(0, 38)
+    to_base_scalar = r.randint(0, 38)
+    to_sign = r.randint(0, 1)
+    if to_sign == 0:
+        to_base_scalar = -to_base_scalar
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        f"select " + \
+        f"conv(str_col, from_col, to_col), " + \
+        f"conv(str_col, from_col, {to_base_scalar}), " + \
+        f"conv(str_col, {from_base_scalar}, to_col), " + \
+        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " + \
+        f"conv(' 101010FFCC', from_col, to_col), " + \
+        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " + \
+        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
+        f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
+        conf = {"spark.sql.ansi.enabled": ansi_mode})
+
