@@ -78,7 +78,7 @@ parquet_gens_fallback_lists = [
     # DayTimeIntervalType is NOT supported, and it is not supported before Pyspark 3.3.0
     pytest.param([DayTimeIntervalGen()],
                  marks=pytest.mark.skipif(is_before_spark_330(), 
-                 reason='DayTimeInterval is not supported before Pyspark 3.3.0')),
+                     reason='DayTimeInterval is not supported before Pyspark 3.3.0')),
 ]
 
 
