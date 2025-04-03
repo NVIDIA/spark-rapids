@@ -75,10 +75,6 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
     # empty schema is NOT supported (select count(1))
     [],
-    # DayTimeIntervalType is NOT supported
-    pytest.param([DayTimeIntervalGen()],
-                marks=pytest.mark.skipif(is_before_spark_330(), 
-                reason='DayTimeInterval is not supported before Pyspark 3.3.0')),
 ]
 
 
@@ -165,6 +161,20 @@ def test_hybrid_parquet_read_fallback_to_gpu(spark_tmp_path, parquet_gens):
             'spark.rapids.sql.hybrid.parquet.enabled': 'true',
         })
 
+@pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+def test_hybrid_parquet_read_daytime_interval_fallback_to_gpu(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', DayTimeIntervalGen())]).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.parquet(data_path),
+        exist_classes='GpuFileSourceScanExec',
+        non_exist_classes='HybridFileSourceScanExec',
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enabled': 'true',
+        })
 
 # Test the preloading feature with extreme tiny target batch size (and source batch size), creating
 # scenarios in which multiple target batches will be generated.
