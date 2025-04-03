@@ -19,5 +19,5 @@ See [nvtx_profiling.md](https://nvidia.github.io/spark-rapids/docs/dev/nvtx_prof
 
 Name | Description
 -----|-------------
-Acquire GPU|Time waiting for GPU semaphore to be acquired
 Release GPU|Releasing the GPU semaphore
+Acquire GPU|Time waiting for GPU semaphore to be acquired

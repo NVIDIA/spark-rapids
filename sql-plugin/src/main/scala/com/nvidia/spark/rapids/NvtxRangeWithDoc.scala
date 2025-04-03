@@ -20,8 +20,6 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import java.io.{File, FileOutputStream}
 import scala.collection.mutable
 
-import org.apache.spark.internal.Logging
-
 sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
   def help(): Unit = println(s"$name|$doc")
 
@@ -35,12 +33,12 @@ sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
   }
 }
 
-object NvtxRegistry extends Logging {
+object NvtxRegistry {
   val registeredRanges: mutable.Map[String, NvtxId] = mutable.Map[String, NvtxId]()
 
   private def register(id: NvtxId): Unit = {
     if (registeredRanges.contains(id.name)) {
-      logError(s"Collision detected for key: ${id.name}")
+      Console.err.println(s"Collision detected for key: ${id.name}")
     } else {
       registeredRanges += (id.name -> id)
     }
