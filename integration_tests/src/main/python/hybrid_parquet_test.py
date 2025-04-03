@@ -75,8 +75,10 @@ parquet_gens_fallback_lists = [
     [StructGen([["c0", StructGen([["cc0", simple_string_to_string_map_gen]])]])],
     # empty schema is NOT supported (select count(1))
     [],
-    # DayTimeIntervalType is NOT supported
-    [DayTimeIntervalGen()],
+    # DayTimeIntervalType is NOT supported, and it is not supported before Pyspark 3.3.0
+    pytest.param([DayTimeIntervalGen()],
+                 marks=pytest.mark.skipif(is_before_spark_330(), 
+                 reason='DayTimeInterval is not supported before Pyspark 3.3.0')),
 ]
 
 
@@ -293,32 +295,6 @@ def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
         lambda spark: spark.read.parquet(data_path).filter(f.col("a") > f.lit(datetime(2024, 1, 1, tzinfo=timezone.utc))),
         conf=filter_split_conf)
 
-filter_pushdown_gen_list = [('bool1', BooleanGen()),
-           ('bool2', BooleanGen()),
-           ('double1', DoubleGen()),
-           ('double2', DoubleGen()),
-           ('double3', DoubleGen()),
-           ('int1', IntegerGen()),
-           ('int2', IntegerGen()),
-           ('int3', IntegerGen()),
-           ('int4', IntegerGen()),
-           ('int_not_null', IntegerGen(nullable=False)),
-           ('date1', DateGen()),
-           ('date2', DateGen()),
-           ('timestamp', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
-           ('array_int_1', ArrayGen(IntegerGen())),
-           ('array_int_2', ArrayGen(IntegerGen())),
-           ('array_array_int_1', ArrayGen(ArrayGen(IntegerGen(),max_length=3))),
-           ('array_str_1', ArrayGen(StringGen())),
-           ('str1', StringGen()),
-           ('str2', StringGen()),
-           ('str3', StringGen(pattern='[a-z]{1,3}')),
-           ('digitstr', StringGen(pattern='[0-9]{1,5}')),
-           ('long', LongGen()),
-           ('comma_separated_str', StringGen(pattern='([0-9],){1,5}')),
-           ('json_str', StringGen(pattern=r'\{"a": "[a-z]{1,3}"\}')),
-]
-
 condition_list = [
     # Boolean:
     # Not
@@ -388,34 +364,34 @@ condition_list = [
     "(date_sub(date1, 1) == date2)",
     # Array[Int], lambda:
     # ArrayExists,ArrayForAll
-    "(exists(array_int_1, x -> x == 1))",
-    "(forall(array_int_1, x -> x == 1))",
+    "(exists(array_int1, x -> x == 1))",
+    "(forall(array_int1, x -> x == 1))",
     # Array[Int], Int:
     # ArrayContains,ArrayPosition,ArrayRemove,ElementAt
-    "(array_contains(array_int_1, 1))",
-    "(array_position(array_int_1, 1) == 1)",
-    "(array_remove(array_int_1, 1) == array_int_1)",
-    "(element_at(array_int_1, 1) == 1)",
+    "(array_contains(array_int1, 1))",
+    "(array_position(array_int1, 1) == 1)",
+    "(array_remove(array_int1, 1) == array_int1)",
+    "(element_at(array_int1, 1) == 1)",
     # Array[Int]:
     # ArrayDistinct,ArrayMax,ArrayMin,ArraySort,Shuffle,Size
-    "(array_distinct(array_int_1) == array_int_1)",
-    "(array_max(array_int_1) == 1)",
-    "(array_min(array_int_1) == 1)",
-    "(sort_array(array_int_1) == array_int_1)",
-    pytest.param("(shuffle(array_int_1) == array_int_1)", marks=pytest.mark.xfail(reason='result not correct')),
-    "(size(array_int_1) == 1)",
+    "(array_distinct(array_int1) == array_int1)",
+    "(array_max(array_int1) == 1)",
+    "(array_min(array_int1) == 1)",
+    "(sort_array(array_int1) == array_int1)",
+    pytest.param("(shuffle(array_int1) == array_int1)", marks=pytest.mark.xfail(reason='result not correct')),
+    "(size(array_int1) == 1)",
     # Array[Int], Array[Int]:
     # ArrayExcept,ArrayIntersect,ArraysZip
-    "(array_except(array_int_1, array_int_2) == array_int_1)",
-    "(array_intersect(array_int_1, array_int_2) == array_int_1)",
-    "(arrays_zip(array_int_1, array_int_2) == " + 
-    "array(struct(1 as array_int_1, 1 as array_int_2), struct(2 as array_int_1, 2 as array_int_2), struct(3 as array_int_1, 3 as array_int_2)))",
+    "(array_except(array_int1, array_int2) == array_int1)",
+    "(array_intersect(array_int1, array_int2) == array_int1)",
+    "(arrays_zip(array_int1, array_int2) == " + 
+    "array(struct(1 as array_int1, 1 as array_int2), struct(2 as array_int1, 2 as array_int2), struct(3 as array_int1, 3 as array_int2)))",
     # Array[Array[Int]]:
     # Flatten
-    "(flatten(array_array_int_1) == array_int_1)",
+    "(flatten(array_array_int1) == array_int1)",
     # Array[Int], Array[Int], lambda:
     # ZipWith
-    "(zip_with(array_int_1, array_int_2, (x, y) -> x + y) == array(2,4,6))",
+    "(zip_with(array_int1, array_int2, (x, y) -> x + y) == array(2,4,6))",
     # String:
     # Ascii,BitLength,Hex,Length,Lower,Reverse,Sha1,SoundEx,StringTrim,StringTrimLeft,StringTrimRight,Upper
     "(ascii(str1) == 79)",
@@ -433,7 +409,7 @@ condition_list = [
     # Int, Int:
     # ArrayRepeat,BitwiseAnd,BitwiseOr,BitwiseXor,EqualNullSafe,EqualTo,GreaterThan,GreaterThanOrEqual,
     # Greatest,Least,LessThan,LessThanOrEqual,Remainder,ShiftLeft,ShiftRight
-    "(array_repeat(array_int_1, 2) == array(array_int_1, array_int_1))",
+    "(array_repeat(array_int1, 2) == array(array_int1, array_int1))",
     "(int1 & int2 == 1)",
     "(int1 | int2 == 3)",
     "(int1 ^ int2 == 2)",
@@ -491,7 +467,7 @@ condition_list = [
     # ArrayJoin,FindInSet,GetJsonObject,GetMapValue,If,In,LengthOfJsonArray,Like,
     # MapFromArrays,MapKeys,MapValues,MapZipWith,NextDay,Overlay,StringToMap,
     # SubstringIndex,ToUnixTimestamp,Unhex
-    pytest.param("(array_join(array_str_1, ',') == '1,2,3')", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    pytest.param("(array_join(array_str1, ',') == '1,2,3')", marks=pytest.mark.xfail(reason='not supported by gluten')),
     "(find_in_set('1', comma_separated_str) == 1)",
     "(get_json_object(json_str, '$.a') == 'a')",
     "(map_values(map(int_not_null, str1)) == array('a'))",
@@ -538,29 +514,74 @@ unsupported_condition_list = [
     "(repeat(str1, 2) == 'hellohello')",
     "(crc32(str1) == 1041237462)",
     "(md5(str1) == 'b10a8db164e0754105b7a99be72e3fe5')",
-    "(array_join(array_str_1, ',') == '1,2,3')",
+    "(array_join(array_str1, ',') == '1,2,3')",
     "(1 in(int1, int2, int3))",
     "(json_array_length(json_str) == 1)",
     "(to_unix_timestamp(timestamp) == 1717171717)",
 ]
 
-def adaptive_select_datagen(condition, gen_list):
-    # parse the condition to get the column names
-    get_column_names = re.findall(r'[\w\d_]+', condition)
-    # filter the gen_list to only include the columns that are in the condition
-    return [gen for gen in gen_list if gen[0] in get_column_names]
+filter_pushdown_gen_list = [
+    # for testing casting between each type
+    ('bool1', BooleanGen()),
+    ('byte1', ByteGen()),
+    ('short1', ShortGen()),
+    ('int1', IntegerGen()),
+    ('long1', LongGen()),
+    ('float1', FloatGen()),
+    ('double1', DoubleGen()),
+    ('date1', DateGen()),
+    # Timestamp is not supported in filter pushdown yet
+    ('string1', StringGen()),
+    ('string_digit', StringGen(pattern='[0-9]{1,3}(\.[0-9]{1,3})?')),
+    ('decimal1', DecimalGen()),
+    # Null is not supported in parquet
+    # Binary is not supported in hybrid execution yet
+    # CalendarInterval is not supported in hybrid execution yet
+    ('array_int1', ArrayGen(IntegerGen())),
+    ('map_int_str1', MapGen(IntegerGen(nullable=False), StringGen())),
+    ('struct_int_str1', StructGen([('int1', IntegerGen()), ('str1', StringGen())])),
+    # UDT is not supported in hybrid execution yet
+    # DayTimeIntervalType is not supported in hybrid execution yet
+    # YearMonthIntervalType is not supported in hybrid execution yet
+    ('bool2', BooleanGen()),
+    ('double2', DoubleGen()),
+    ('double3', DoubleGen()),
+    ('int2', IntegerGen()),
+    ('int3', IntegerGen()),
+    ('int4', IntegerGen()),
+    ('int_not_null', IntegerGen(nullable=False)),
+    ('date2', DateGen()),
+    ('timestamp', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
+    ('array_int2', ArrayGen(IntegerGen())),
+    ('array_array_int1', ArrayGen(ArrayGen(IntegerGen(),max_length=3))),
+    ('array_str1', ArrayGen(StringGen())),
+    ('str1', StringGen()),
+    ('str2', StringGen()),
+    ('str3', StringGen(pattern='[a-z]{1,3}')),
+    ('digitstr', StringGen(pattern='[0-9]{1,5}')),
+    ('long', LongGen()),
+    ('comma_separated_str', StringGen(pattern='([0-9],){1,5}')),
+    ('json_str', StringGen(pattern=r'\{"a": "[a-z]{1,3}"\}'))
+]
+
+@pytest.fixture(scope="function")
+def prepared_parquet_data(spark_tmp_path):
+    """Create parquet test data for filter pushdown tests."""
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    
+    gen_list = filter_pushdown_gen_list
+
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+    
+    return data_path
 
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
 @pytest.mark.parametrize('condition', condition_list, ids=idfn)
-def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen_list = adaptive_select_datagen(condition, filter_pushdown_gen_list)
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-
+def test_hybrid_parquet_filter_pushdown_more_exprs(prepared_parquet_data, condition):
     conf = {
         'spark.sql.sources.useV1SourceList': 'parquet',
         'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -570,7 +591,7 @@ def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
     }
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: spark.read.parquet(data_path).filter(condition),
+        lambda spark: spark.read.parquet(prepared_parquet_data).filter(condition),
         exist_classes='HybridFileSourceScanExec',
         non_exist_classes='GpuFileSourceScanExec',
         conf=conf)
@@ -580,13 +601,7 @@ def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
 @pytest.mark.parametrize('condition', unsupported_condition_list, ids=idfn)
-def test_hybrid_parquet_filter_pushdown_more_exprs_unsupported(spark_tmp_path, condition):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen_list = adaptive_select_datagen(condition, filter_pushdown_gen_list)
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-
+def test_hybrid_parquet_filter_pushdown_more_exprs_unsupported(prepared_parquet_data, condition):
     # check if the condition is supported by hybrid execution when cannot push down
     conf = {
         'spark.sql.sources.useV1SourceList': 'parquet',
@@ -596,7 +611,7 @@ def test_hybrid_parquet_filter_pushdown_more_exprs_unsupported(spark_tmp_path, c
     }
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: spark.read.parquet(data_path).filter(condition),
+        lambda spark: spark.read.parquet(prepared_parquet_data).filter(condition),
         exist_classes='HybridFileSourceScanExec',
         non_exist_classes='GpuFileSourceScanExec',
         conf=conf)
@@ -716,41 +731,11 @@ cast_condition_list = [
     pytest.param("(cast(struct_int_str1 as struct<col1 long, col2 string>) == struct(1, 'a'))", marks=pytest.mark.xfail(reason='not supported by gluten')),
 ]
 
-filter_pushdown_cast_gen_list = [
-    ('bool1', BooleanGen()),
-    ('byte1', ByteGen()),
-    ('short1', ShortGen()),
-    ('int1', IntegerGen()),
-    ('long1', LongGen()),
-    ('float1', FloatGen()),
-    ('double1', DoubleGen()),
-    ('date1', DateGen()),
-    # Timestamp is not supported in filter pushdown yet
-    ('string1', StringGen()),
-    ('string_digit', StringGen(pattern='[0-9]{1,3}(\.[0-9]{1,3})?')),
-    ('decimal1', DecimalGen()),
-    # Null is not supported in parquet
-    # Binary is not supported in hybrid execution yet
-    # CalendarInterval is not supported in hybrid execution yet
-    ('array_int1', ArrayGen(IntegerGen())),
-    ('map_int_str1', MapGen(IntegerGen(nullable=False), StringGen())),
-    ('struct_int_str1', StructGen([('int1', IntegerGen()), ('str1', StringGen())])),
-    # UDT is not supported in hybrid execution yet
-    # DayTimeIntervalType is not supported in hybrid execution yet
-    # YearMonthIntervalType is not supported in hybrid execution yet
-]
-
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
 @pytest.mark.parametrize('condition', cast_condition_list, ids=idfn)
-def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen_list = adaptive_select_datagen(condition, filter_pushdown_cast_gen_list)
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
-        conf=rebase_write_corrected_conf)
-
+def test_hybrid_parquet_filter_pushdown_cast(prepared_parquet_data, condition):
     conf = {
         'spark.sql.sources.useV1SourceList': 'parquet',
         'spark.rapids.sql.hybrid.parquet.enabled': 'true',
@@ -760,7 +745,7 @@ def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
     }
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: spark.read.parquet(data_path).filter(condition),
+        lambda spark: spark.read.parquet(prepared_parquet_data).filter(condition),
         exist_classes='HybridFileSourceScanExec',
         non_exist_classes='GpuFileSourceScanExec',
         conf=conf)
