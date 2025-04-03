@@ -27,10 +27,10 @@ sealed case class NvtxId private(name: String, color: NvtxColor, doc: String) {
 
   def apply[V](block: => V): V = {
     try {
-      NvtxRange.push(name, color)
+      NvtxRange.pushRange(name, color)
       block
     } finally {
-      NvtxRange.pop()
+      NvtxRange.popRange()
     }
   }
 }
