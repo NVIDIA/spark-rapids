@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
+import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
 
@@ -2136,72 +2137,65 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   }
 }
 
-class GpuConvMeta(
-  expr: Conv,
-  conf: RapidsConf,
-  parent: Option[RapidsMeta[_,_,_]],
-  rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
-
-  override def tagExprForGpu(): Unit = {
-    val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
-    val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
-    val errorPostfix = "only literal 10 or 16 are supported for source and target radixes"
-    (fromBaseLit, toBaseLit) match {
-      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
-        def isBaseSupported(base: Any): Boolean = base == 10 || base == 16
-        if (!isBaseSupported(fromBaseVal) && !isBaseSupported(toBaseVal)) {
-          willNotWorkOnGpu(because = s"both ${fromBaseVal} and ${toBaseVal} are not " +
-            s"a supported radix, ${errorPostfix}")
-        } else if (!isBaseSupported(fromBaseVal)) {
-          willNotWorkOnGpu(because = s"${fromBaseVal} is not a supported source radix, " +
-            s"${errorPostfix}")
-        } else if (!isBaseSupported(toBaseVal)) {
-          willNotWorkOnGpu(because = s"${toBaseVal} is not a supported target radix, " +
-            s"${errorPostfix}")
-        }
-      case _ =>
-        // This will never happen in production as the function signature enforces
-        // integer types for the bases, but nice to have an edge case handling.
-        willNotWorkOnGpu(because = "either source radix or target radix is not an integer " +
-          "literal, " + errorPostfix)
-    }
-  }
-
-  override def convertToGpu(
-    numStr: Expression,
-    fromBase: Expression,
-    toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase)
-}
-
-
-case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
+case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, ansiEnabled: Boolean)
   extends GpuTernaryExpression {
 
   override def doColumnar(
-    v1: GpuColumnVector,
-    v2: GpuColumnVector,
-    v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+    strCv: GpuColumnVector,
+    fromCv: GpuColumnVector,
+    toCv: GpuColumnVector): ColumnVector = {
+    if (ansiEnabled &&
+      NumberConverter.isConvertOverflowCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)) {
+      throw new RuntimeException("")
+    }
+    NumberConverter.convertCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)
   }
 
-  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strS: GpuScalar, fromCv: GpuColumnVector, toCv: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strS, fromCv.getRowCount.toInt, toCv.dataType)) { strCV =>
+      doColumnar(strCV, fromCv, toCv)
+    }
   }
 
-  override def doColumnar(v1: GpuScalar, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strS: GpuScalar, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strS, toCv.getRowCount.toInt, strS.dataType)) { strCV =>
+      doColumnar(strCV, fromS, fromS)
+    }
   }
 
-  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strS: GpuScalar, fromCv: GpuColumnVector, toS: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(strS, fromCv.getRowCount.toInt, strS.dataType)) { strCV =>
+      doColumnar(strCV, fromCv, toS)
+    }
   }
 
-  override def doColumnar(v1: GpuColumnVector, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strCv: GpuColumnVector, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
+    fromS.getValue match {
+      case fromRadix: Int =>
+        if (ansiEnabled &&
+          NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
+          throw new RuntimeException("")
+        }
+        NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
+      case _ => throw new UnsupportedOperationException()
+    }
   }
 
-  override def doColumnar(v1: GpuColumnVector, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strCv: GpuColumnVector, fromCv: GpuColumnVector, toS: GpuScalar): ColumnVector = {
+    toS.getValue match {
+      case toRadix: Int =>
+        if (ansiEnabled &&
+          NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
+          throw new RuntimeException("")
+        }
+        NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
+      case _ => throw new UnsupportedOperationException()
+    }
   }
 
   override def doColumnar(
@@ -2216,17 +2210,17 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
   }
 
   override def doColumnar(
-    str: GpuColumnVector,
+    strCv: GpuColumnVector,
     fromBase: GpuScalar,
     toBase: GpuScalar
   ): ColumnVector = {
     (fromBase.getValue, toBase.getValue) match {
       case (fromRadix: Int, toRadix: Int) =>
-        withResource(
-          CastStrings.toIntegersWithBase(str.getBase, fromRadix, false, DType.UINT64)
-        ) { intCV =>
-          CastStrings.fromIntegersWithBase(intCV, toRadix)
+        if (ansiEnabled &&
+          NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
+          throw new RuntimeException("")
         }
+        NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
       case _ => throw new UnsupportedOperationException()
     }
   }
