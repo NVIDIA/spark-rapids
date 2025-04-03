@@ -2161,7 +2161,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
   override def doColumnar(
       strS: GpuScalar, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
     withResource(GpuColumnVector.from(strS, toCv.getRowCount.toInt, strS.dataType)) { strCV =>
-      doColumnar(strCV, fromS, fromS)
+      doColumnar(strCV, fromS, toCv)
     }
   }
 
