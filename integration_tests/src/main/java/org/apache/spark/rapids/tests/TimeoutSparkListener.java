@@ -51,6 +51,9 @@ import org.slf4j.LoggerFactory;
  */
 public class TimeoutSparkListener extends SparkListener {
   private static final Logger LOG = LoggerFactory.getLogger(TimeoutSparkListener.class);
+  private static JavaSparkContext sparkContext;
+  private static int timeoutSeconds;
+  private static boolean shouldDumpThreads;
   private static final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1,
     runnable -> {
       final Thread t = new Thread(runnable);
@@ -59,13 +62,8 @@ public class TimeoutSparkListener extends SparkListener {
       return t;
     }
   );
-
   private static final Map<Integer,ScheduledFuture<?>> cancelJobMap = new ConcurrentHashMap<>();
-  private static int timeoutSeconds;
-  private static boolean shouldDumpThreads;
-  private static JavaSparkContext sparkContext;
   private static final TimeoutSparkListener SINGLETON = new TimeoutSparkListener();
-
 
   public TimeoutSparkListener() {
     super();
@@ -118,6 +116,8 @@ public class TimeoutSparkListener extends SparkListener {
     final ScheduledFuture<?> cancelFuture = cancelJobMap.remove(jobId);
     if (cancelFuture != null) {
       cancelFuture.cancel(false);
+    } else {
+      LOG.debug("Timeout task for Job {} not found", jobId);
     }
   }
 

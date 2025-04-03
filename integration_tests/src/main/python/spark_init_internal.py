@@ -17,6 +17,7 @@ import os
 import pytest
 import re
 import stat
+import traceback
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -153,8 +154,10 @@ def pytest_sessionstart(session):
     # and set exceptions there
     global default_timeout_seconds
     global default_dump_threads
+    global set_spark_job_timeout_failure_logged
     default_timeout_seconds = 60 * 60
     default_dump_threads = True
+    set_spark_job_timeout_failure_logged = False
     _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.init(_s._jsc)
     global _spark
     _spark = _s
@@ -275,10 +278,16 @@ def set_spark_job_timeout(request):
         spark_timeout = default_timeout_seconds
         dump_threads = default_dump_threads
     # before the test
-    _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.setSparkJobTimeout(
-        spark_timeout,
-        dump_threads
-    )
+    try:
+        _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.setSparkJobTimeout(
+            spark_timeout,
+            dump_threads
+        )
+    except Exception as e:
+        if not set_spark_job_timeout_failure_logged:
+            set_spark_job_timeout_failure_logged = True
+            logger.warning(f"set_spark_job_timeout: Ignoring pre-test exception : {traceback.format_exc()}")
+        pass
     # yield for test
     yield
     # after the test
