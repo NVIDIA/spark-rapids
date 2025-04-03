@@ -2146,14 +2146,14 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     toCv: GpuColumnVector): ColumnVector = {
     if (ansiEnabled &&
       NumberConverter.isConvertOverflowCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)) {
-      throw new RuntimeException("")
+      throw new RuntimeException("Overflow")
     }
     NumberConverter.convertCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)
   }
 
   override def doColumnar(
       strS: GpuScalar, fromCv: GpuColumnVector, toCv: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(strS, fromCv.getRowCount.toInt, toCv.dataType)) { strCV =>
+    withResource(GpuColumnVector.from(strS, fromCv.getRowCount.toInt, strS.dataType)) { strCV =>
       doColumnar(strCV, fromCv, toCv)
     }
   }
@@ -2178,7 +2178,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
       case fromRadix: Int =>
         if (ansiEnabled &&
           NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
-          throw new RuntimeException("")
+          throw new RuntimeException("Overflow")
         }
         NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
       case _ => throw new UnsupportedOperationException()
@@ -2191,7 +2191,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
       case toRadix: Int =>
         if (ansiEnabled &&
           NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
-          throw new RuntimeException("")
+          throw new RuntimeException("Overflow")
         }
         NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
       case _ => throw new UnsupportedOperationException()
@@ -2218,7 +2218,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
       case (fromRadix: Int, toRadix: Int) =>
         if (ansiEnabled &&
           NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
-          throw new RuntimeException("")
+          throw new RuntimeException("Overflow")
         }
         NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
       case _ => throw new UnsupportedOperationException()
