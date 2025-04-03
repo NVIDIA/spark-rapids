@@ -908,9 +908,7 @@ def test_format_number_float_value():
         assert math.isclose(cpu, gpu, rel_tol=1e-7) or math.isclose(cpu, gpu, abs_tol=1.1e-5)
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
-# TODO: test ansi mode
-@pytest.mark.parametrize('ansi_mode', [False], ids=idfn)
-def test_conv(ansi_mode):
+def test_conv():
     gen = [
         ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),
         ("from_col", IntegerGen(min_val=0, max_val=38)),
@@ -933,6 +931,32 @@ def test_conv(ansi_mode):
         f"conv(' 101010FFCC', from_col, to_col), " + \
         f"conv('10 1010FFCC', from_col, {to_base_scalar}), " + \
         f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
+        f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab")
+
+# valid base range is [2, 36], to_base can be negative, out of range results nulls
+def test_conv_ansi_on():
+    gen = [
+        ("str_col", mk_str_gen(r'[0-9a-zA-Z]{1,8}')), # make sure no overflow
+        ("from_col", IntegerGen(min_val=0, max_val=38)),
+        ("to_col", IntegerGen(min_val=-38, max_val=38))]
+    data_gen_seed = get_datagen_seed()
+    r = random.Random(data_gen_seed)
+    from_base_scalar = r.randint(0, 38)
+    to_base_scalar = r.randint(0, 38)
+    to_sign = r.randint(0, 1)
+    if to_sign == 0:
+        to_base_scalar = -to_base_scalar
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        f"select " + \
+        f"conv(str_col, from_col, to_col), " + \
+        f"conv(str_col, from_col, {to_base_scalar}), " + \
+        f"conv(str_col, {from_base_scalar}, to_col), " + \
+        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " + \
+        f"conv(' 101010FFCC', from_col, to_col), " + \
+        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " + \
+        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
-        conf = {"spark.sql.ansi.enabled": ansi_mode})
+        conf = {"spark.sql.ansi.enabled": True})
 
