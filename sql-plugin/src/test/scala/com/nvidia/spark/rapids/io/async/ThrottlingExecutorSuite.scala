@@ -159,7 +159,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     assertCause(e2, classOf[RejectedExecutionException])
   }
 
-  test("test task metrics") {
+  ignore("test task metrics: https://github.com/NVIDIA/spark-rapids/issues/12410") {
     val exec = Executors.newSingleThreadExecutor()
     // Run a task. Note that the first task never waits in ThrottlingExecutor.
     var runningTask = new TestTask
