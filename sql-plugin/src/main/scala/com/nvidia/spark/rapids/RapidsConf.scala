@@ -1111,11 +1111,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(RapidsReaderType.values.map(_.toString))
-    .createWithDefault(
-      ShimLoader.getShimVersion match {
-        case DatabricksShimVersion(3, 5, 0, "14.3") => RapidsReaderType.PERFILE.toString
-        case _ => RapidsReaderType.AUTO.toString
-      })
+    .createWithDefault(RapidsReaderType.AUTO.toString)
 
   val PARQUET_DECOMPRESS_CPU =
     conf("spark.rapids.sql.format.parquet.decompressCpu")
@@ -2563,7 +2559,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.04.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-25.06.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
