@@ -17,6 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "351odp"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
@@ -65,7 +66,7 @@ object SparkShimImpl extends Spark340PlusNonDBShims {
               GpuToPrettyString(child)
             }
           }
-      }), 
+      }),
       GpuOverrides.expr[PythonUDAF](
         "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated",

@@ -25,6 +25,7 @@
 {"spark": "350"}
 {"spark": "350db143"}
 {"spark": "351"}
+{"spark": "351odp"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
@@ -138,7 +139,7 @@ case class GpuOptimizedCreateHiveTableAsSelectCommand(
     outputColumnNames: Seq[String],
     mode: SaveMode,
     cpuCmd: CreateHiveTableAsSelectCommand) extends GpuCreateHiveTableAsSelectBase {
-  // Copy from `CreateHiveTableAsSelectCommand.getWritingCommand`, 
+  // Copy from `CreateHiveTableAsSelectCommand.getWritingCommand`,
   // because it is private in Spark
   private def cpuGetWritingCommand(
       tableDesc: CatalogTable,

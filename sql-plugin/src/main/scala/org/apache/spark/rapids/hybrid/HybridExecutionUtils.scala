@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object HybridExecutionUtils extends PredicateHelper {
-  
+
   private val HYBRID_JAR_PLUGIN_CLASS_NAME = "com.nvidia.spark.rapids.hybrid.HybridPluginWrapper"
 
   /**
@@ -159,7 +159,7 @@ object HybridExecutionUtils extends PredicateHelper {
    * report error if it is
    */
   private def checkNotRunningCDHorDatabricks(): Unit = {
-    if (VersionUtils.isCloudera || VersionUtils.isDataBricks) {
+    if (VersionUtils.isCloudera || VersionUtils.isDataBricks || VersionUtils.isAcceldata) {
       throw new RuntimeException("Hybrid feature does not support Cloudera/Databricks " +
           "Spark releases, Please disable Hybrid feature by setting " +
           "spark.rapids.sql.parquet.useHybridReader=false")
@@ -381,7 +381,7 @@ object HybridExecutionUtils extends PredicateHelper {
     }
   }
 
-  /** 
+  /**
    * Search the plan for FilterExec whose child is a FileSourceScanExec if Hybrid Scan is enabled
    * and decide whether to push down a filter to the GPU or not according to whether CPU/GPU
    * support it. After that we can remove the condition from one side to avoid duplicate execution

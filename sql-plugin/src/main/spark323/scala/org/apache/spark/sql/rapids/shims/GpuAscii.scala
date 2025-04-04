@@ -33,6 +33,7 @@
 {"spark": "350"}
 {"spark": "350db143"}
 {"spark": "351"}
+{"spark": "351odp"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
@@ -49,7 +50,7 @@ import com.nvidia.spark.rapids.shims.NullIntolerantShim
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 
-case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes 
+case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes
     with NullIntolerantShim {
 
   override def dataType: DataType = IntegerType

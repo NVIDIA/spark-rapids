@@ -39,6 +39,7 @@
 {"spark": "350"}
 {"spark": "350db143"}
 {"spark": "351"}
+{"spark": "351odp"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
@@ -57,7 +58,7 @@ class RapidsCsvScanMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ScanMeta[CSVScan](cScan, conf, parent, rule) {
-  
+
   override def tagSelfForGpu(): Unit = {
     GpuCSVScan.tagSupport(this)
     // we are being overly cautious and that Csv does not support this yet

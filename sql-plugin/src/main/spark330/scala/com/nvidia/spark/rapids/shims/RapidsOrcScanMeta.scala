@@ -33,6 +33,7 @@
 {"spark": "350"}
 {"spark": "350db143"}
 {"spark": "351"}
+{"spark": "351odp"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
@@ -51,7 +52,7 @@ class RapidsOrcScanMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ScanMeta[OrcScan](oScan, conf, parent, rule) {
-  
+
   override def tagSelfForGpu(): Unit = {
     GpuOrcScan.tagSupport(this)
     // we are being overly cautious and that Orc does not support this yet

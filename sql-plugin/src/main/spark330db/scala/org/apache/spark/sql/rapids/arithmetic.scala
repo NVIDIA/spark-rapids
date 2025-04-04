@@ -26,6 +26,7 @@
 {"spark": "350"}
 {"spark": "350db143"}
 {"spark": "351"}
+{"spark": "351odp"}
 {"spark": "352"}
 {"spark": "353"}
 {"spark": "354"}
@@ -238,10 +239,10 @@ object DecimalRemainderChecks {
   def neededScale(lhs: DecimalType, rhs: DecimalType): Int =
     math.max(lhs.scale, rhs.scale)
 
-  // For Remainder, the operands need to have the same precision (for CUDF to the do the 
+  // For Remainder, the operands need to have the same precision (for CUDF to the do the
   // computation) *and* the same scale (to account for the part of the remainder < 1 in the output).
-  // This means that first start with the needed scale (in this case the max of the scales between 
-  // the 2 operands), and then account for enough space (precision) to store the resulting value 
+  // This means that first start with the needed scale (in this case the max of the scales between
+  // the 2 operands), and then account for enough space (precision) to store the resulting value
   // without overflow
   def neededPrecision(lhs: DecimalType, rhs: DecimalType): Int =
     math.max(lhs.precision - lhs.scale, rhs.precision - rhs.scale) + neededScale(lhs, rhs)
@@ -291,7 +292,7 @@ case class GpuDecimalRemainder(
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
 
-  // We should only use the long remainder algorithm when 
+  // We should only use the long remainder algorithm when
   // the intermedite precision required will overflow one of the operands
   private[this] lazy val useLongDivision: Boolean = {
     DecimalRemainderChecks.neededPrecision(lhsType, rhsType) > DType.DECIMAL128_MAX_PRECISION
@@ -356,7 +357,7 @@ case class GpuDecimalRemainder(
         }
         remainder.incRefCount()
       } else {
-        // With remainder, the return type can actually be a lower precision type than 
+        // With remainder, the return type can actually be a lower precision type than
         // DECIMAL128, the output of DecimalUtils.remainder128, so we need to cast it here.
         val castRemainder = remainder.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
         withResource(castRemainder) { castRemainder =>

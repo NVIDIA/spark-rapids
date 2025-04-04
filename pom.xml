@@ -609,6 +609,27 @@
             </modules>
         </profile>
         <profile>
+            <id>release351odp</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>351odp</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>351odp</buildver>
+                <spark.version>${spark351odp.version}</spark.version>
+                <spark.test.version>${spark351odp.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release351</id>
             <activation>
                 <property>
@@ -936,6 +957,7 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350db143.version>3.5.0-databricks-143</spark350db143.version>
+        <spark351odp.version>3.5.1.3.3.6.0-1</spark351odp.version>
         <spark350.version>3.5.0</spark350.version>
         <spark351.version>3.5.1</spark351.version>
         <spark352.version>3.5.2</spark352.version>
@@ -1037,6 +1059,8 @@
             --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
+        <acceldata.repo.url>https://repo1.acceldata.dev/repository/odp-central</acceldata.repo.url>
+        <acceldata.repo.enabled>false</acceldata.repo.enabled>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
         <cloudera.repo.url>https://repository.cloudera.com/artifactory/cloudera-repos</cloudera.repo.url>
         <cloudera.repo.url.fallback>https://repository.cloudera.com/repository/cloudera-repos</cloudera.repo.url.fallback>
@@ -1991,6 +2015,16 @@ This will force full Scala code rebuild in downstream modules.
             </snapshots>
         </repository>
         <repository>
+            <id>acceldata-repo</id>
+            <url>${acceldata.repo.url}</url>
+            <releases>
+                <enabled>${acceldata.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${acceldata.repo.enabled}</enabled>
+            </snapshots>
+        </repository>
+        <repository>
             <id>cloudera-repo</id>
             <url>${cloudera.repo.url}</url>
             <releases>
@@ -2017,6 +2051,13 @@ This will force full Scala code rebuild in downstream modules.
             <url>https://repo1.maven.org/maven2</url>
             <snapshots>
                 <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>acceldata-repo</id>
+            <url>${acceldata.repo.url}</url>
+            <snapshots>
+                <enabled>${acceldata.repo.enabled}</enabled>
             </snapshots>
         </pluginRepository>
         <pluginRepository>
