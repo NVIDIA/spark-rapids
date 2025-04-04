@@ -65,6 +65,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
         case SparkShimVersion(major, minor, _) => major == 3 && minor == 0
         case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor == 0
+        case AcceldataShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case _ => true
       }
       assume(isValidTestForSparkVersion)
@@ -116,13 +117,13 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("String regexp_extract regex 1", extractStrings, conf = conf) {
-    frame => 
+    frame =>
       assume(isUnicodeEnabled())
       frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
   }
 
   testSparkResultsAreEqual("String regexp_extract regex 2", extractStrings, conf = conf) {
-    frame => 
+    frame =>
       assume(isUnicodeEnabled())
       frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
   }
