@@ -46,7 +46,6 @@ _delta_confs = copy_and_update(writer_confs, delta_writes_enabled_conf,
 
 def get_writer_with_deletion_vector_property_set(writer, enable_deletion_vectors):
     if supports_delta_lake_deletion_vectors():
-        print(f"GERA_DEBUG delta.enableDeletionVectors={enable_deletion_vectors}")
         return writer.option("delta.enableDeletionVectors", str(enable_deletion_vectors).lower())
     return writer
 
@@ -101,7 +100,8 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf, enable_dele
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("enable_deletion_vectors", [True], ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
+                            enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12027"), ids=idfn)
 def test_delta_write_round_trip_unmanaged(spark_tmp_path, enable_deletion_vectors):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"

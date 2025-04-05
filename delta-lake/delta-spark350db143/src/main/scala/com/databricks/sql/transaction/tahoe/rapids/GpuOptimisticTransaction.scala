@@ -91,6 +91,8 @@ class GpuOptimisticTransaction(
       Option[GpuDeltaJobStatisticsTracker],
           Option[GpuStatisticsCollection]) = {
     if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
+      val protocol = newProtocol.getOrElse(snapshot.protocol)
+      val metadata = newMetadata.getOrElse(snapshot.metadata)
 
       val (statsDataSchema, statsCollectionSchema) = getStatsSchema(output, partitionSchema)
 
@@ -109,15 +111,13 @@ class GpuOptimisticTransaction(
       }
 
       val _spark = spark
-      val protocol = deltaLog.unsafeVolatileSnapshot.protocol
-
       val statsCollection = new GpuStatisticsCollection {
         override val spark = _spark
         override val deletionVectorsSupported = {
-          val dvFromMeta = DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION.fromMetaData(metadata)
+          val dvFromMeta = DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION
+            .fromMetaData(metadata)
           val dvFromProtocol = protocol.isFeatureSupported(DeletionVectorsTableFeature) 
-          System.err.println(s"GERA_DEBUG: dvFromMeta=${dvFromMeta} dvFromProtocol=${dvFromProtocol}")
-          true
+          dvFromMeta && dvFromProtocol
         }
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
