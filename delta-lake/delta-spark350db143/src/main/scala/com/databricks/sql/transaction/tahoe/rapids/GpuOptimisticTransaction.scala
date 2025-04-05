@@ -114,8 +114,10 @@ class GpuOptimisticTransaction(
       val statsCollection = new GpuStatisticsCollection {
         override val spark = _spark
         override val deletionVectorsSupported = {
-          DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION.fromMetaData(metadata) &&
-           protocol.isFeatureSupported(DeletionVectorsTableFeature) 
+          val dvFromMeta = DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION.fromMetaData(metadata)
+          val dvFromProtocol = protocol.isFeatureSupported(DeletionVectorsTableFeature) 
+          System.err.println(s"GERA_DEBUG: dvFromMeta=${dvFromMeta} dvFromProtocol=${dvFromProtocol}")
+          true
         }
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
