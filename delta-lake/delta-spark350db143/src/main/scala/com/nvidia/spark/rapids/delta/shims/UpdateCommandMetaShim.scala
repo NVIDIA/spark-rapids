@@ -22,8 +22,8 @@ import com.nvidia.spark.rapids.delta.{UpdateCommandEdgeMeta, UpdateCommandMeta}
 
 object UpdateCommandMetaShim {
   def tagForGpu(meta: UpdateCommandMeta): Unit = {
-    val deltaLog = Option(meta.updateCmd.tahoeFileIndex).map(_.deltaLog).orNull
-    val dvFeatureEnabled = deltaLog == null ||
+    val deltaLog = meta.updateCmd.tahoeFileIndex.deltaLog
+    val dvFeatureEnabled =
       DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
 
     if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
@@ -34,8 +34,8 @@ object UpdateCommandMetaShim {
   }
 
   def tagForGpu(meta: UpdateCommandEdgeMeta): Unit = {
-    val deltaLog = Option(meta.updateCmd.tahoeFileIndex).map(_.deltaLog).orNull
-    val dvFeatureEnabled = deltaLog == null ||
+    val deltaLog = meta.updateCmd.tahoeFileIndex.deltaLog
+    val dvFeatureEnabled =
       DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
 
     if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
