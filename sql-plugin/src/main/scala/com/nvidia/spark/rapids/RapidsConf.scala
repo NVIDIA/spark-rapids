@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
+import java.time.{LocalDateTime, ZoneId}
 import java.util
 
 import scala.collection.JavaConverters._
@@ -3332,7 +3333,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
-  lazy val maxTimeZoneYear: Int = get(MAX_TIMEZONE_YEAR)
+  lazy val maxTimestamp: Long = LocalDateTime.of(get(MAX_TIMEZONE_YEAR)+1, 1, 1, 0, 0, 0)
+    .atZone(ZoneId.of("UTC")).toEpochSecond
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 

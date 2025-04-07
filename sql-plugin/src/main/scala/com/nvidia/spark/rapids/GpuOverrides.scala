@@ -1752,7 +1752,8 @@ object GpuOverrides extends Logging {
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
         override def isTimeZoneSupported = true
-        override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr, hour.timeZoneId)
+        override def convertToGpu(expr: Expression): GpuExpression =
+          GpuHour(expr, hour.timeZoneId, conf.maxTimestamp)
       }),
     expr[Minute](
       "Returns the minute component of the string/timestamp",
@@ -1761,7 +1762,7 @@ object GpuOverrides extends Logging {
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(expr: Expression): GpuExpression =
-          GpuMinute(expr, minute.timeZoneId)
+          GpuMinute(expr, minute.timeZoneId, conf.maxTimestamp)
       }),
     expr[Second](
       "Returns the second component of the string/timestamp",
@@ -1770,7 +1771,7 @@ object GpuOverrides extends Logging {
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(expr: Expression): GpuExpression =
-          GpuSecond(expr, second.timeZoneId)
+          GpuSecond(expr, second.timeZoneId, conf.maxTimestamp)
       }),
     expr[WeekDay](
       "Returns the day of the week (0 = Monday...6=Sunday)",
