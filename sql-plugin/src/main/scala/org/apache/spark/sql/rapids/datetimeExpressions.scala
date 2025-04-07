@@ -77,42 +77,6 @@ trait TimestampConversionExpression {
     }
   }
 
-  // /**
-  //  * Get the result of evaluating this expression on the CPU side.
-  //  * This can be called from any point when CPU fallback is needed.
-  //  * @return A ColumnVector containing the CPU-computed results
-  //  */
-  // def getCpuResult(cpuExpr: Expression, lhs: GpuColumnVector, rhs: GpuScalar,
-  //   lhsType: DataType, rhsType: DataType): ColumnVector = {
-  //   // Create CPU expression with bound references
-  //   // val cpuExpr = ToUTCTimestamp(
-  //   //   BoundReference(0, TimestampType, nullable = true),
-  //   //   BoundReference(1, StringType, nullable = true)
-  //   // )
-    
-  //   val numRows = lhs.getRowCount.toInt
-  //   val resultVector = new OnHeapColumnVector(numRows, TimestampType)
-    
-  //   // Process each row manually
-  //   for (i <- 0 until numRows) {
-  //     val timestampValue = lhs.getBase.getLong(i)
-  //     val timezoneValue = rhs.getValue.asInstanceOf[UTF8String]
-      
-  //     // Create a row with these values
-  //     val row = InternalRow.fromSeq(Seq(timestampValue, timezoneValue))
-      
-  //     // Evaluate the expression
-  //     val result = cpuExpr.eval(row)
-      
-  //     if (result == null) {
-  //       resultVector.putNull(i)
-  //     } else {
-  //       resultVector.putLong(i, result.asInstanceOf[Long])
-  //     }
-  //   }
-    
-  //   GpuColumnVector.from(resultVector)
-  // }
   /**
   * Evaluates a CPU expression using GPU column vector data
   *
