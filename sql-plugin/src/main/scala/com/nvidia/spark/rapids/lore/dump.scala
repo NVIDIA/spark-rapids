@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector}
+import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, SerializedTableColumn}
 import com.nvidia.spark.rapids.GpuCoalesceExec.EmptyPartition
 import com.nvidia.spark.rapids.lore.GpuLore.pathOfChild
 import org.apache.hadoop.fs.Path
@@ -62,7 +62,15 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
           loadNextBatch()
           if (!hasNext) {
             // This is the last batch, save the partition meta
-            val partitionMeta = LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
+            val isFromShuffle = ret.numCols() == 1 &&
+              ret.column(0).isInstanceOf[SerializedTableColumn]
+            val partitionMeta = if (isFromShuffle) {
+              // get the array of dataType from the info.attrs
+              val factDataTypes = info.attrs.map(_.dataType)
+              LoreRDDPartitionMeta(batchIdx, factDataTypes, isFromShuffle)
+            } else {
+              LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret), isFromShuffle)
+            }
             GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
               info.hadoopConf.value.value)
           }

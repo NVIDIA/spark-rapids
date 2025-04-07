@@ -113,9 +113,17 @@ object DumpUtils extends Logging {
    */
   def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream): Unit = {
     closeOnExcept(outputStream) { _ =>
-      withResource(GpuColumnVector.from(columnarBatch)) { table =>
-        withResource(new ParquetDumper(outputStream, table)) { dumper =>
-          dumper.writeTable(table)
+      val table = if (columnarBatch.numCols() == 1 &&
+        columnarBatch.column(0).isInstanceOf[SerializedTableColumn]) {
+        val serializedCol = columnarBatch.column(0).asInstanceOf[SerializedTableColumn]
+        deserializeSerializedTableColumn(serializedCol)
+      } else {
+        GpuColumnVector.from(columnarBatch)
+      }
+
+      withResource(table) { t =>
+        withResource(new ParquetDumper(outputStream, t)) { dumper =>
+          dumper.writeTable(t)
         }
       }
     }
@@ -131,7 +139,7 @@ object DumpUtils extends Logging {
    */
   def dumpToParquetFile(table: Table, filePrefix: String): Option[String] = {
     if (table.getNumberOfColumns == 0) {
-      logWarning("dump to parquet failed, has no column, file prefix is " + filePrefix)
+      logWarning(s"dump to parquet failed, has no column, file prefix is $filePrefix")
       None
     } else {
       Some(dumpToParquetFileImp(table, filePrefix))
@@ -154,16 +162,28 @@ object DumpUtils extends Logging {
   }
 
   private def genPath(filePrefix: String): String = {
-    var path = ""
     val random = new Random
-    var succeeded = false
-    while (!succeeded) {
-      path = filePrefix + random.nextInt(Int.MaxValue) + ".parquet"
-      if (!new File(path).exists()) {
-        succeeded = true
+    Stream.continually(filePrefix + random.nextInt(Int.MaxValue) + ".parquet")
+      .find(path => !new File(path).exists())
+      .get
+  }
+
+/**
+ * Deserialize a SerializedTableColumn back to a Table
+ */
+private def deserializeSerializedTableColumn(column: SerializedTableColumn): Table = {
+  import ai.rapids.cudf.JCudfSerialization
+  val header = column.header
+  val buffer = column.hostBuffer
+  if (buffer == null || header == null) {
+    throw new IllegalArgumentException("Cannot deserialize from null header or buffer")
+  }
+
+  withResource(JCudfSerialization.unpackHostColumnVectors(header, buffer)) { hostColumns =>
+    withResource(hostColumns.map(_.copyToDevice())) { deviceColumns =>
+        new Table(deviceColumns: _*)
       }
     }
-    path
   }
 }
 

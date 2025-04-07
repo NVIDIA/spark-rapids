@@ -41,7 +41,7 @@ import org.apache.spark.util.SerializableConfiguration
 
 case class LoreRDDMeta(numPartitions: Int, outputPartitions: Seq[Int], attrs: Seq[Attribute])
 
-case class LoreRDDPartitionMeta(numBatches: Int, dataType: Seq[DataType])
+case class LoreRDDPartitionMeta(numBatches: Int, dataType: Seq[DataType], isFromShuffle: Boolean)
 
 trait GpuLoreRDD {
   def rootPath: Path
@@ -278,7 +278,6 @@ object GpuLore {
 
       sparkPlan
     }
-
     newPlan
   }
 

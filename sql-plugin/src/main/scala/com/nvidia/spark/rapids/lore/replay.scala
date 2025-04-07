@@ -84,7 +84,6 @@ class GpuLoreReplayRDD(sc: SparkContext, rootPathStr: String,
                   GpuColumnVector.from(restoredTable, partitionMeta.dataType.toArray)
                 }
               }
-
             }
             batchIdx += 1
             ret

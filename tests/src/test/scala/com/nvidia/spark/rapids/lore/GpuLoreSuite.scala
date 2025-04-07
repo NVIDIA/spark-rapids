@@ -168,6 +168,22 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
     }
   }
 
+  test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
+    doTestReplay("56[*]") { spark =>
+      // Disable broadcast join, force hash join
+      spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+      spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+
+      // Create larger tables to ensure shuffle
+      val df1 = spark.range(0, 1000, 1, 100)
+      .selectExpr("id % 10 as key", "id as value")
+    val df2 = spark.range(0, 1000, 1, 100)
+      .selectExpr("id % 10 as key", "id as value")
+      // Join with equality condition to trigger hash join
+      df1.join(df2, Seq("key"))
+    }
+  }
+
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {
     val loreId = OutputLoreId.parse(loreDumpIds).head._1
     withGpuSparkSession { spark =>
