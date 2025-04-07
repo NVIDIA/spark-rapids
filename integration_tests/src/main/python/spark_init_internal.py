@@ -156,10 +156,7 @@ def pytest_sessionstart(session):
     global default_dump_threads
     default_timeout_seconds = 60 * 60
     default_dump_threads = True
-    _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.init(
-        _s._jsc,
-        running_with_xdist(session, is_worker = True)
-    )
+    _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.init(_s._jsc)
     global _spark
     _spark = _s
 

@@ -54,7 +54,6 @@ public class TimeoutSparkListener extends SparkListener {
   private static JavaSparkContext sparkContext;
   private static int timeoutSeconds;
   private static boolean shouldDumpThreads;
-  private static boolean onXdistWorker;
   private static final ScheduledExecutorService runner = Executors.newScheduledThreadPool(1,
     runnable -> {
       final Thread t = new Thread(runnable);
@@ -70,10 +69,9 @@ public class TimeoutSparkListener extends SparkListener {
     super();
   }
 
-  public static synchronized void init(JavaSparkContext sc, boolean onXdist) {
+  public static synchronized void init(JavaSparkContext sc) {
     if (sparkContext == null) {
       sparkContext = sc;
-      onXdistWorker = onXdist;
       sparkContext.sc().addSparkListener(SINGLETON);
     }
   }
@@ -89,12 +87,10 @@ public class TimeoutSparkListener extends SparkListener {
     if (sparkContext != null) {
       sparkContext.sc().cancelJob(jobId, message);
     }
-    if (onXdistWorker) {
-      LOG.error(message + ". Shutting down the Driver JVM; xdist worker will stop as well per " +
+    LOG.error(message + ". Shutting down the Driver JVM; xdist worker will stop as well per " +
 "https://github.com/NVIDIA/spark-rapids/pull/12455. Pending tests will be re-executed " +
 "in the replacement worker");
-      System.exit(timeoutSeconds);
-    }
+    System.exit(timeoutSeconds);
   }
 
   public void onJobStart(SparkListenerJobStart jobStart) {
