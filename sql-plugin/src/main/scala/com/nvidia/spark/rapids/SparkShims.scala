@@ -188,7 +188,11 @@ trait SparkShims {
 
   def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan
 
-  def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = plan
+  def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    // This rule is not applied onto Databricks shims, because shim plan rules of Databricks are
+    // overridden and LocalAggregateRule is not included
+    LocalAggregateRule(plan)
+  }
 
   def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = plan
 
