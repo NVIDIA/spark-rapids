@@ -113,6 +113,7 @@ object DumpUtils extends Logging {
    */
   def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream): Unit = {
     closeOnExcept(outputStream) { _ =>
+      // For batches from a shuffle node, convert the SerializedTableColumn to a table first
       val table = if (columnarBatch.numCols() == 1 &&
         columnarBatch.column(0).isInstanceOf[SerializedTableColumn]) {
         val serializedCol = columnarBatch.column(0).asInstanceOf[SerializedTableColumn]
@@ -139,7 +140,7 @@ object DumpUtils extends Logging {
    */
   def dumpToParquetFile(table: Table, filePrefix: String): Option[String] = {
     if (table.getNumberOfColumns == 0) {
-      logWarning(s"dump to parquet failed, has no column, file prefix is $filePrefix")
+      logWarning("dump to parquet failed, has no column, file prefix is " + filePrefix)
       None
     } else {
       Some(dumpToParquetFileImp(table, filePrefix))
@@ -162,10 +163,16 @@ object DumpUtils extends Logging {
   }
 
   private def genPath(filePrefix: String): String = {
+    var path = ""
     val random = new Random
-    Stream.continually(filePrefix + random.nextInt(Int.MaxValue) + ".parquet")
-      .find(path => !new File(path).exists())
-      .get
+    var succeeded = false
+    while (!succeeded) {
+      path = filePrefix + random.nextInt(Int.MaxValue) + ".parquet"
+      if (!new File(path).exists()) {
+        succeeded = true
+      }
+    }
+    path
   }
 
 /**

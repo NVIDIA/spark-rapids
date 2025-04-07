@@ -67,9 +67,9 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
             val partitionMeta = if (isFromShuffle) {
               // get the array of dataType from the info.attrs
               val factDataTypes = info.attrs.map(_.dataType)
-              LoreRDDPartitionMeta(batchIdx, factDataTypes, isFromShuffle)
+              LoreRDDPartitionMeta(batchIdx, factDataTypes)
             } else {
-              LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret), isFromShuffle)
+              LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
             }
             GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
               info.hadoopConf.value.value)
