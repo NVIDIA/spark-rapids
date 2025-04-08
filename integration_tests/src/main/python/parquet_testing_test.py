@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,6 +62,13 @@ _xfail_files = {
     "hadoop_lz4_compressed_larger.parquet": "cudf does not support Hadoop LZ4 format",
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
 }
+
+_skip_hard_crash_files = {
+    "hadoop_lz4_compressed.parquet": "Avoiding SIGSEGV https://github.com/NVIDIA/spark-rapids/issues/12453",
+    "hadoop_lz4_compressed_larger.parquet": "Avoiding SIGSEGV https://github.com/NVIDIA/spark-rapids/issues/12453",
+    "non_hadoop_lz4_compressed.parquet": "Avoiding SIGSEGV https://github.com/NVIDIA/spark-rapids/issues/12453",
+}
+
 if is_before_spark_330():
     _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"
 
@@ -77,7 +84,7 @@ def hdfs_glob(path_str, pattern):
     """
     Finds hdfs files by checking the input path with glob pattern
 
-    :param path_str: hdfs path to check 
+    :param path_str: hdfs path to check
     :type path_str: str
     :return: generator of matched files
     """
@@ -96,7 +103,7 @@ def glob(path_str, pattern):
     Finds files by checking the input path with glob pattern.
     Support local file system and hdfs
 
-    :param path_str: input path to check 
+    :param path_str: input path to check
     :type path_str: str
     :return: generator of matched files
     """
@@ -137,9 +144,14 @@ def locate_parquet_testing_files():
 def gen_testing_params_for_errors():
     result = []
     for f in locate_parquet_testing_files():
-        error_obj = _error_files.get(os.path.basename(f), None)
+        basename = os.path.basename(f)
+        error_obj = _error_files.get(basename, None)
         if error_obj is not None:
-            result.append((f, error_obj))
+            skip_reason = _skip_hard_crash_files.get(basename, None)
+            if skip_reason is None:
+                result.append((f, error_obj))
+            else:
+                result.append(pytest.param(f, error_obj, marks=pytest.mark.skip(reason=skip_reason)))
     return result
 
 def gen_testing_params_for_valid_files():
@@ -148,11 +160,16 @@ def gen_testing_params_for_valid_files():
         basename = os.path.basename(f)
         if basename in _error_files:
             continue
-        xfail_reason = _xfail_files.get(basename, None)
-        if xfail_reason:
-            files.append(pytest.param(f, marks=pytest.mark.xfail(reason=xfail_reason)))
+        skip_reason = _skip_hard_crash_files.get(basename, None)
+        if skip_reason:
+            files.append(pytest.param(f, marks=pytest.mark.skip(reason=skip_reason)))
         else:
-            files.append(f)
+            xfail_reason = _xfail_files.get(basename, None)
+            if xfail_reason:
+                files.append(pytest.param(f, marks=pytest.mark.xfail(reason=xfail_reason)))
+            else:
+                files.append(f)
+
     return files
 
 @pytest.mark.parametrize("path", gen_testing_params_for_valid_files())
