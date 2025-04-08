@@ -918,8 +918,6 @@ def test_format_number_float_value():
 @pytest.mark.parametrize('to_base', [2, 10, 16, -2, -10, -16], ids=idfn)
 def test_conv_with_more_valid_values(from_base, to_base, pattern):
     gen = [("str_col", mk_str_gen(pattern))]
-    data_gen_seed = get_datagen_seed()
-    r = random.Random(data_gen_seed)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
@@ -995,4 +993,15 @@ def test_conv_ansi_on_and_overflow():
         lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)").collect(),
         conf = {"spark.sql.ansi.enabled": True},
         error_message=error)
+
+def test_conv_input_is_integer():
+    gen = [
+        ("input_col", IntegerGen()),
+        ("from_col", IntegerGen(min_val=0, max_val=38)),
+        ("to_col", IntegerGen(min_val=-38, max_val=38))]
+    # here use 38 to test invalid bases: 0, 1, 37 and 38
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        "select conv(input_col, from_col, to_col) from tab")
 
