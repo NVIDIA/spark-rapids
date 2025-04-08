@@ -20,6 +20,7 @@ from datetime import date, datetime, timezone
 from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
+from zoneinfo import ZoneInfo
 import pyspark.sql.functions as f
 
 # Some operations only work in UTC specifically
@@ -30,6 +31,13 @@ non_supported_tz_allow = ['ProjectExec'] if not is_supported_time_zone() else []
 # We only support literal intervals for TimeSub
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
             (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
+
+last_supported_time_tz = datetime(2170, 12, 31, 23, 59, 59, 999999,tzinfo=timezone.utc)
+fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
+variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago", "IST", "Australia/Broken_Hill", "Pacific/Chatham", "Australia/Lord_Howe"]
+fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST"]
+variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
+
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_timesub(data_gen):
@@ -177,10 +185,23 @@ def test_hour():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
 
-@allow_non_gpu(*hms_fallback)
-def test_minute():
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_minute_tz_rules(time_zone):
+    tz_timestamp_gen = TimestampGen(end=last_supported_time_tz, tzinfo=ZoneInfo(time_zone))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
+        lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
+
+@pytest.mark.parametrize('time_zone', variable_offset_timezones_iana, ids=idfn)
+def test_minute_tz_rules_runtime_fallback(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
+
+@pytest.mark.parametrize('time_zone', fixed_offset_timezones_iana, ids=idfn)
+def test_minute_fixed_offset(time_zone):
+    tz_timestamp_gen = TimestampGen(tzinfo=ZoneInfo(time_zone))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, tz_timestamp_gen).selectExpr('minute(a)'))
 
 @allow_non_gpu(*hms_fallback)
 def test_second():
@@ -322,8 +343,7 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
         "to_unix_timestamp(a, b)"),
         "ToUnixTimestamp")
 
-fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
-variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
+all_timezones = fixed_offset_timezones+variable_offset_timezones
 
 @pytest.mark.parametrize('time_zone', fixed_offset_timezones, ids=idfn)
 def test_from_utc_timestamp_fixed_offset(time_zone):
@@ -333,7 +353,12 @@ def test_from_utc_timestamp_fixed_offset(time_zone):
 @pytest.mark.parametrize('time_zone', variable_offset_timezones, ids=idfn)
 def test_from_utc_timestamp_tz_rules(time_zone):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, TimestampGen(end=datetime(2170, 12, 31, 23, 59, 59, 999999,tzinfo=timezone.utc))).select(f.from_utc_timestamp(f.col('a'), time_zone)))
+        lambda spark: unary_op_df(spark, TimestampGen(end=last_supported_time_tz)).select(f.from_utc_timestamp(f.col('a'), time_zone)))
+    
+@pytest.mark.parametrize('time_zone', variable_offset_timezones, ids=idfn)
+def test_from_utc_timestamp_tz_rules_runtime_fallback(time_zone):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
 
 @pytest.mark.parametrize('time_zone', fixed_offset_timezones, ids=idfn)
 def test_to_utc_timestamp_fixed_offset(time_zone):
@@ -363,6 +388,15 @@ def test_from_utc_timestamp_dst_spring_backward(time_zone):
     # Test times around the spring forward time, including things like 1:30 AM
     start_time = datetime(2022, 11, 6, 0, 0, 0, 0, tzinfo=timezone.utc)
     end_time = datetime(2022, 11, 6, 3, 0, 0, 0, tzinfo=timezone.utc)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, TimestampGen(start=start_time,end=end_time))\
+            .select(f.from_utc_timestamp(f.col('a'), time_zone)))
+
+@pytest.mark.parametrize('time_zone', all_timezones, ids=idfn)
+def test_from_utc_timestamp_dst_leap_year(time_zone):
+    # Check that Feb 29th (leap year) is handled correctly
+    start_time = datetime(2024, 2, 28, 0, 0, 0, 0, tzinfo=timezone.utc)
+    end_time = datetime(2024, 3, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, TimestampGen(start=start_time,end=end_time))\
             .select(f.from_utc_timestamp(f.col('a'), time_zone)))
