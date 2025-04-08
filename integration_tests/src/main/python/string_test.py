@@ -908,18 +908,40 @@ def test_format_number_float_value():
         assert math.isclose(cpu, gpu, rel_tol=1e-7) or math.isclose(cpu, gpu, abs_tol=1.1e-5)
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
-def test_conv():
+# When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+@pytest.mark.parametrize('from_base,pattern',
+                         [
+                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
+                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16'),
+                             pytest.param(36, r'-?[0-9a-zA-Z]{1,15}', id='from_36')
+                         ])
+@pytest.mark.parametrize('to_base', [2, 10, 16, -2, -10, -16], ids=idfn)
+def test_conv_with_more_valid_values(from_base, to_base, pattern):
+    gen = [("str_col", mk_str_gen(pattern))]
+    data_gen_seed = get_datagen_seed()
+    r = random.Random(data_gen_seed)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen),
+        "tab",
+        f"select " + \
+        f"conv(str_col, {from_base}, {to_base}), " + \
+        f"conv(null, {from_base}, {to_base}), " + \
+        f"conv(str_col, null,  {to_base}), " + \
+        f"conv(str_col, {from_base}, null), " + \
+        f"conv(' 101010FFCC', {from_base}, {to_base}) from tab")
+
+# valid base range is [2, 36], to_base can be negative, out of range results nulls
+# When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
+def test_conv_with_more_invalid_values():
     gen = [
         ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),
         ("from_col", IntegerGen(min_val=0, max_val=38)),
         ("to_col", IntegerGen(min_val=-38, max_val=38))]
     data_gen_seed = get_datagen_seed()
     r = random.Random(data_gen_seed)
+    # here use 38 to test invalid bases: 0, 1, 37 and 38
     from_base_scalar = r.randint(0, 38)
-    to_base_scalar = r.randint(0, 38)
-    to_sign = r.randint(0, 1)
-    if to_sign == 0:
-        to_base_scalar = -to_base_scalar
+    to_base_scalar = r.randint(-38, 38)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
@@ -937,18 +959,17 @@ def test_conv():
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab")
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
+# When base is 36, the valid alphabets are: [0-9], [a-z] and [A-Z]
 def test_conv_ansi_on():
     gen = [
         ("str_col", mk_str_gen(r'[0-9a-zA-Z]{1,8}')), # make sure no overflow
+        # here use 38 to test invalid bases: 0, 1, 37 and 38
         ("from_col", IntegerGen(min_val=0, max_val=38)),
         ("to_col", IntegerGen(min_val=-38, max_val=38))]
     data_gen_seed = get_datagen_seed()
     r = random.Random(data_gen_seed)
     from_base_scalar = r.randint(0, 38)
-    to_base_scalar = r.randint(0, 38)
-    to_sign = r.randint(0, 1)
-    if to_sign == 0:
-        to_base_scalar = -to_base_scalar
+    to_base_scalar = r.randint(-38, 38)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
