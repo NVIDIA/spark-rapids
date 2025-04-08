@@ -105,10 +105,14 @@ object LocalAggregatePattern extends Logging {
     val aggExpressions = merge.aggregateExpressions
     val childGroupExpressions = partial.groupingExpressions
     val childAggExpressions = partial.aggregateExpressions
+    val requiredDistribution = merge.requiredChildDistribution
 
     if ( // Fast check
       groupExpressions.length != childGroupExpressions.length ||
         aggExpressions.length != childAggExpressions.length) {
+      false
+    } else if ( // Check if partial OutputPartition statisfy distribution of FinalAgg
+      !partial.outputPartitioning.satisfies(requiredDistribution.head)) {
       false
     } else if ( // Check AggregateExpressions
       !aggExpressions.zip(childAggExpressions).forall {
