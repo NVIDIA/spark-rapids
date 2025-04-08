@@ -278,6 +278,7 @@ object GpuLore {
 
       sparkPlan
     }
+
     newPlan
   }
 
