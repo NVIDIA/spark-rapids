@@ -22,9 +22,10 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate._
 
 /**
- * Folds two-stage AggregateExecs with one-shot Complete one if it is a local Aggregate.
+ * Folds two-stage AggregateExecs of Local Aggregate into one-shot CompleteAggregate.
+ *
  * Local Aggregate is a concept of physical plan which means no need to do shuffle exchange to
- * redistribute data before final aggregate. The LocalAggregate may emerge under certain
+ * redistribute data before final aggregate. The Local Aggregate may emerge under certain
  * circumstance, such as the BucketScan Spec fully matches the groupBy keys.
  */
 object FoldLocalAggregate extends Rule[SparkPlan] {
@@ -42,18 +43,21 @@ object FoldLocalAggregate extends Rule[SparkPlan] {
         finalAgg match {
           case hash: HashAggregateExec =>
             hash.copy(
+              // Need to use partial group expressions. Otherwise, groupBy(Literal) will fail.
               groupingExpressions = partAgg.groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
               child = partAgg.child)
           case sort: SortAggregateExec =>
             sort.copy(
+              // Need to use partial group expressions. Otherwise, groupBy(Literal) will fail.
               groupingExpressions = partAgg.groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
               child = partAgg.child)
           case obj: ObjectHashAggregateExec =>
             obj.copy(
+              // Need to use partial group expressions. Otherwise, groupBy(Literal) will fail.
               groupingExpressions = partAgg.groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
@@ -101,31 +105,29 @@ object LocalAggregatePattern extends Logging {
     val aggExpressions = merge.aggregateExpressions
     val childGroupExpressions = partial.groupingExpressions
     val childAggExpressions = partial.aggregateExpressions
-    // Fast path
-    if (groupExpressions.length != childGroupExpressions.length ||
-      aggExpressions.length != childAggExpressions.length) {
-      return false
+
+    if ( // Fast check
+      groupExpressions.length != childGroupExpressions.length ||
+        aggExpressions.length != childAggExpressions.length) {
+      false
+    } else if ( // Check AggregateExpressions
+      !aggExpressions.zip(childAggExpressions).forall {
+        // <Partial -> Final> pair check
+        case (s2, s1) if s2.mode != Final || s1.mode != Partial =>
+          false
+        // TODO: Currently, distinct aggregate is NOT supported
+        case (s2, s1) if s2.isDistinct || s1.isDistinct =>
+          false
+        // AggregateFunctions should be identical
+        case (s2, s1) =>
+          s2.aggregateFunction.equals(s1.aggregateFunction)
+      }) {
+      false
+    } else {
+      // Check GroupExpressions
+      groupExpressions.zip(childGroupExpressions).forall {
+        case (s2, s1) => s2.semanticEquals(s1.toAttribute)
+      }
     }
-    // Check AggregateExpressions
-    if (!aggExpressions.zip(childAggExpressions).forall {
-      // <Partial -> Final> pair check
-      case (s2, s1) if s2.mode != Final || s1.mode != Partial =>
-        false
-      // distinct is NOT supported
-      case (s2, s1) if s2.isDistinct || s1.isDistinct =>
-        false
-      // aggregateFunctions should be identical
-      case (s2, s1) =>
-        s2.aggregateFunction.equals(s1.aggregateFunction)
-    }) {
-      return false
-    }
-    // Check GroupExpressions
-    if (!groupExpressions.zip(childGroupExpressions).forall {
-      case (s2, s1) => s2.semanticEquals(s1.toAttribute)
-    }) {
-      return false
-    }
-    true
   }
 }

@@ -308,7 +308,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
             assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
           case GpuColumnarToRowExec(plan, _) => // Codegen disabled
-            assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
+            assert(plan.isInstanceOf[GpuHashAggregateExec])
+            // if local aggregate being folded, child of (Complete)Aggregate becomes GpuSort
+            if (df.sparkSession.conf.get(RapidsConf.ENABLE_FOLD_LOCAL_AGGREGATE.key) == "true") {
+              assert(plan.children.head.isInstanceOf[GpuSortExec])
+            } else {
+              assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
+            }
             assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
             assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
