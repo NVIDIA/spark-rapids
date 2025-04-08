@@ -35,6 +35,7 @@ import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.errors.ConvUtils
 import org.apache.spark.sql.rapids.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -2146,82 +2147,119 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     toCv: GpuColumnVector): ColumnVector = {
     if (ansiEnabled &&
       NumberConverter.isConvertOverflowCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)) {
-      throw new RuntimeException("Overflow")
+      ConvUtils.overflowInConvError()
     }
     NumberConverter.convertCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)
   }
 
   override def doColumnar(
       strS: GpuScalar, fromCv: GpuColumnVector, toCv: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(strS, fromCv.getRowCount.toInt, strS.dataType)) { strCV =>
-      doColumnar(strCV, fromCv, toCv)
+    if (!strS.isValid) {
+      GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
+    } else {
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowSCvCv(strS.getBase, fromCv.getBase, toCv.getBase)) {
+        ConvUtils.overflowInConvError()
+      }
+      NumberConverter.convertSCvCv(strS.getBase, fromCv.getBase, toCv.getBase)
     }
   }
 
   override def doColumnar(
       strS: GpuScalar, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(strS, toCv.getRowCount.toInt, strS.dataType)) { strCV =>
-      doColumnar(strCV, fromS, toCv)
+
+    if (!strS.isValid || !fromS.isValid) {
+      GpuColumnVector.columnVectorFromNull(toCv.getRowCount.toInt, dataType)
+    } else {
+      fromS.getValue match {
+        case fromRadix: Int =>
+          if (ansiEnabled &&
+          NumberConverter.isConvertOverflowSSCv (strS.getBase, fromRadix, toCv.getBase) ) {
+            ConvUtils.overflowInConvError()
+          }
+          NumberConverter.convertSSCv(strS.getBase, fromRadix, toCv.getBase)
+        case _ => throw new UnsupportedOperationException()
+      }
     }
   }
 
   override def doColumnar(
       strS: GpuScalar, fromCv: GpuColumnVector, toS: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(strS, fromCv.getRowCount.toInt, strS.dataType)) { strCV =>
-      doColumnar(strCV, fromCv, toS)
+    if (!strS.isValid || !toS.isValid) {
+      GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
+    } else {
+      toS.getValue match {
+        case toRadix: Int =>
+          if (ansiEnabled &&
+            NumberConverter.isConvertOverflowSCvS(strS.getBase, fromCv.getBase, toRadix)) {
+            ConvUtils.overflowInConvError()
+          }
+          NumberConverter.convertSCvS(strS.getBase, fromCv.getBase, toRadix)
+        case _ => throw new UnsupportedOperationException()
+      }
     }
   }
 
   override def doColumnar(
       strCv: GpuColumnVector, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
-    fromS.getValue match {
-      case fromRadix: Int =>
-        if (ansiEnabled &&
-          NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
-          throw new RuntimeException("Overflow")
-        }
-        NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
-      case _ => throw new UnsupportedOperationException()
+    if (!fromS.isValid) {
+      GpuColumnVector.columnVectorFromNull(toCv.getRowCount.toInt, dataType)
+    } else {
+      fromS.getValue match {
+        case fromRadix: Int =>
+          if (ansiEnabled &&
+            NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
+            ConvUtils.overflowInConvError()
+          }
+          NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
+        case _ => throw new UnsupportedOperationException()
+      }
     }
   }
 
   override def doColumnar(
       strCv: GpuColumnVector, fromCv: GpuColumnVector, toS: GpuScalar): ColumnVector = {
-    toS.getValue match {
-      case toRadix: Int =>
-        if (ansiEnabled &&
-          NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
-          throw new RuntimeException("Overflow")
-        }
-        NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
-      case _ => throw new UnsupportedOperationException()
+    if (!toS.isValid) {
+      GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
+    } else {
+      toS.getValue match {
+        case toRadix: Int =>
+          if (ansiEnabled &&
+            NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
+            ConvUtils.overflowInConvError()
+          }
+          NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
+        case _ => throw new UnsupportedOperationException()
+      }
     }
   }
 
   override def doColumnar(
     numRows: Int,
-    strScalar: GpuScalar,
-    fromBase: GpuScalar,
-    toBase: GpuScalar
+    strSr: GpuScalar,
+    fromS: GpuScalar,
+    toS: GpuScalar
   ): ColumnVector = {
-    withResource(GpuColumnVector.from(strScalar, numRows, strScalar.dataType)) { strCV =>
-      doColumnar(strCV, fromBase, toBase)
-    }
+    throw new RuntimeException("Logic error: Spark should fold the conv expr into scalar value.")
   }
 
   override def doColumnar(
     strCv: GpuColumnVector,
-    fromBase: GpuScalar,
-    toBase: GpuScalar
+    fromS: GpuScalar,
+    toS: GpuScalar
   ): ColumnVector = {
-    (fromBase.getValue, toBase.getValue) match {
-      case (fromRadix: Int, toRadix: Int) =>
-        if (ansiEnabled &&
-          NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
-          throw new RuntimeException("Overflow")
-        }
-        NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
-      case _ => throw new UnsupportedOperationException()
+    if (!fromS.isValid || !toS.isValid) {
+      GpuColumnVector.columnVectorFromNull(strCv.getRowCount.toInt, dataType)
+    } else {
+      (fromS.getValue, toS.getValue) match {
+        case (fromRadix: Int, toRadix: Int) =>
+          if (ansiEnabled &&
+            NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
+            ConvUtils.overflowInConvError()
+          }
+          NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
+        case _ => throw new UnsupportedOperationException()
+      }
     }
   }
 

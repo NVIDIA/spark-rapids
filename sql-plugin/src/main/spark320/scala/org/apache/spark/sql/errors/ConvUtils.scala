@@ -37,24 +37,10 @@
 {"spark": "343"}
 {"spark": "344"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExpression, RapidsConf, RapidsMeta, TernaryExprMeta}
+package org.apache.spark.sql.errors
 
-import org.apache.spark.sql.catalyst.expressions.{Conv, Expression}
-import org.apache.spark.sql.rapids.GpuConv
-
-class GpuConvMeta(
-    expr: Conv,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_,_,_]],
-    rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
-
-  /**
-   * For Spark version < 350, do not support ansiEnabled.
-   */
-  override def convertToGpu(
-      numStr: Expression,
-      fromBase: Expression,
-      toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase, ansiEnabled = false)
+object ConvUtils {
+  // only Spark versions >= 350 support this function
+  def overflowInConvError(): Unit = throw new UnsupportedOperationException()
 }

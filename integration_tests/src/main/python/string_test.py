@@ -24,7 +24,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later, is_before_spark_350
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -928,6 +928,9 @@ def test_conv():
         f"conv(str_col, from_col, {to_base_scalar}), " + \
         f"conv(str_col, {from_base_scalar}, to_col), " + \
         f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " + \
+        f"conv(null, from_col, to_col), " + \
+        f"conv(str_col, null, to_col), " + \
+        f"conv(str_col, from_col, null), " + \
         f"conv(' 101010FFCC', from_col, to_col), " + \
         f"conv('10 1010FFCC', from_col, {to_base_scalar}), " + \
         f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
@@ -959,4 +962,16 @@ def test_conv_ansi_on():
         f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
         conf = {"spark.sql.ansi.enabled": True})
+
+@pytest.mark.skipif(condition=is_before_spark_350(),
+                    reason="conv supports Ansi mode from Spark 350 version")
+def test_conv_ansi_on_and_overflow():
+    def _gen(spark):
+        return spark.createDataFrame([("184467440737095515991",),], 'a string')
+    error = "Overflow in function conv()"
+    # start can not be zero
+    assert_gpu_and_cpu_error(
+        lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)").collect(),
+        conf = {"spark.sql.ansi.enabled": True},
+        error_message=error)
 
