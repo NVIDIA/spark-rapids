@@ -62,7 +62,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, enable_deletion_vec
     delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql, checker,
                           partition_columns, enable_deletion_vectors)
 
-@allow_non_gpu('ColumnarToRowExec', 'RapidsDeltaWriteExec', delta_write_fallback_allow, *delta_meta_allow)
+@allow_non_gpu('ColumnarToRowExec', 'ExecutedCommandExec', delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -79,7 +79,7 @@ def test_delta_update_fallback_with_deletion_vectors(spark_tmp_path):
         spark.sql(update_sql)
     with_cpu_session(setup_tables)
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
-                              "RapidsDeltaWriteExec", delta_update_enabled_conf)
+                              "ExecutedCommandExec", delta_update_enabled_conf)
 
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
