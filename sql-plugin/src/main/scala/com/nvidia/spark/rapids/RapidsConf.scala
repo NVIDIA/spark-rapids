@@ -900,6 +900,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val ENABLE_FOLD_LOCAL_AGGREGATE = conf("spark.rapids.sql.foldLocalAggregate.enabled")
     .doc("Whether to fold two-stages local aggregate into one-shot Complete aggregate.")
+    .internal()
     .booleanConf
     .createWithDefault(true)
 
