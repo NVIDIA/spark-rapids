@@ -57,14 +57,9 @@ trait TimestampConversionExpression {
     if (zoneId.getRules().isFixedOffset()){
       return true
     }
-    // handle up to microsecond precision
-    val maxTimestampAdjusted = inputVector.getType() match {
-      case DType.TIMESTAMP_SECONDS => maxTimestamp
-      case DType.TIMESTAMP_MILLISECONDS => maxTimestamp*1000
-      case DType.TIMESTAMP_MICROSECONDS => maxTimestamp*1000*1000
-      case _ => maxTimestamp
-    }
-    val targetTimestamp = Scalar.fromLong(maxTimestampAdjusted)
+    // Create the correct type of timestamp scalar based on the input column's type
+    val targetTimestamp = Scalar.timestampFromLong(inputVector.getType(), maxTimestamp)
+
     withResource(targetTimestamp) { _ =>
       val comparisonResults = inputVector.binaryOp(BinaryOp.GREATER, targetTimestamp, DType.BOOL8);
       withResource(comparisonResults) { _ =>
@@ -100,8 +95,9 @@ trait TimestampConversionExpression {
     val resultVector = new OnHeapColumnVector(numRows, cpuExpr.dataType)
     val lhsHost = lhs.copyToHost()
     
-    // Get timezone value (scalar)
+    // Get timezone value (scalar) and unwrap any Option/Some wrappers
     val rhsValue = rhs.map(value => value.getValue)
+    
     val lhsType = lhs.dataType()
     // Process each row individually
     for (i <- 0 until numRows) {
@@ -124,7 +120,7 @@ trait TimestampConversionExpression {
         // Create a row with the extracted values
         val row = rhsValue match {
           case None => InternalRow.fromSeq(Seq(lhsValue))
-          case _ => InternalRow.fromSeq(Seq(lhsValue, rhsValue))
+          case _ => InternalRow.fromSeq(Seq(lhsValue, rhsValue.get))
         }
         
         // Evaluate the CPU expression for this row
@@ -135,16 +131,18 @@ trait TimestampConversionExpression {
           resultVector.putNull(i)
         } else {
           // Put value based on result type
-          cpuExpr.dataType match {
-            case TimestampType => resultVector.putLong(i, result.asInstanceOf[Long])
-            case StringType =>
+          outType.getType match {
+            case DType.TIMESTAMP_SECONDS => resultVector.putLong(i, result.asInstanceOf[Long])
+            case DType.TIMESTAMP_MILLISECONDS => resultVector.putLong(i, result.asInstanceOf[Long])
+            case DType.TIMESTAMP_MICROSECONDS => resultVector.putLong(i, result.asInstanceOf[Long])
+            case DType.STRING =>
               val utf8 = result.asInstanceOf[UTF8String]
               resultVector.putByteArray(i, utf8.getBytes)
-            case IntegerType => resultVector.putInt(i, result.asInstanceOf[Int])
-            case LongType => resultVector.putLong(i, result.asInstanceOf[Long])
-            case DoubleType => resultVector.putDouble(i, result.asInstanceOf[Double])
-            case FloatType => resultVector.putFloat(i, result.asInstanceOf[Float])
-            case BooleanType => resultVector.putBoolean(i, result.asInstanceOf[Boolean])
+            case DType.INT32 => resultVector.putInt(i, result.asInstanceOf[Int])
+            case DType.INT64 => resultVector.putLong(i, result.asInstanceOf[Long])
+            case DType.FLOAT32 => resultVector.putDouble(i, result.asInstanceOf[Double])
+            case DType.FLOAT64 => resultVector.putFloat(i, result.asInstanceOf[Float])
+            case DType.BOOL8 => resultVector.putBoolean(i, result.asInstanceOf[Boolean])
             case _ => throw new UnsupportedOperationException(s"Unsupported type: ${cpuExpr.dataType}")
           }
         }
