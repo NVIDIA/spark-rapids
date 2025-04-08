@@ -439,11 +439,15 @@ def test_map_pandas_udf_with_empty_partitions():
                     reason='mapInPandas with barrier mode is introduced by Pyspark 3.5.0')
 @pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
 def test_map_in_pandas_with_barrier_mode(is_barrier):
+    # The "tc" here can be either a BarrierTaskContext or TaskContext on DB14.3,
+    # not sure any special change made by DB.
+    tc_types = (BarrierTaskContext, TaskContext) if is_databricks143_or_later() else BarrierTaskContext
+
     def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
         if is_barrier:
-            assert isinstance(tc, BarrierTaskContext)
+            assert isinstance(tc, tc_types)
         else:
             assert not isinstance(tc, BarrierTaskContext)
 
@@ -461,6 +465,7 @@ def test_map_in_arrow_with_barrier_mode(is_barrier):
     # The "tc" here can be either a BarrierTaskContext or TaskContext on DB14.3,
     # not sure any special change made by DB.
     tc_types = (BarrierTaskContext, TaskContext) if is_databricks143_or_later() else BarrierTaskContext
+
     def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
