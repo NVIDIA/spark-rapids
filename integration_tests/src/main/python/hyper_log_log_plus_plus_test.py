@@ -40,12 +40,12 @@ def test_hllpp_reduction(data_gen):
 
 # precision = Math.ceil(2.0d * Math.log(1.106d / relativeSD) / Math.log(2.0d)).toInt
 _relativeSD = [
-    0.3,   #  precision 4
+    pytest.param(0.3, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/12452")), #  precision 4
     0.25,  #  precision 5
     0.15,  #  precision 6
     0.1,   #  precision 7
     0.08,  #  precision 8
-    0.05,  #  precision 9
+    0.05,  #  precision 9 # The default precision
     0.04,  #  precision 10
     0.03,  #  precision 11
     0.02,  #  precision 12
