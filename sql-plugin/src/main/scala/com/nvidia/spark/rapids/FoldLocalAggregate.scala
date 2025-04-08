@@ -15,39 +15,49 @@
  */
 package com.nvidia.spark.rapids
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate._
 
 /**
- * Replace two-stage AggregateExecs with one-shot Complete one if it is a local Aggregate.
- * Local Aggregate is the concept of physical plan which means no need to do shuffle exchange to
+ * Folds two-stage AggregateExecs with one-shot Complete one if it is a local Aggregate.
+ * Local Aggregate is a concept of physical plan which means no need to do shuffle exchange to
  * redistribute data before final aggregate. The LocalAggregate may emerge under certain
  * circumstance, such as the BucketScan Spec fully matches the groupBy keys.
  */
-object LocalAggregateRule extends Rule[SparkPlan] {
+object FoldLocalAggregate extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
-    plan.transformUp {
-      case LocalAggregatePattern(finalAgg: BaseAggregateExec, _) =>
-        val aggExpressions = finalAgg.aggregateExpressions.map(_.copy(mode = Complete))
+    plan.transform {
+      case LocalAggregatePattern(finalAgg: BaseAggregateExec, partAgg: BaseAggregateExec) =>
+        // Spark eliminates the filter for the aggExpressions in Final mode. So, we need to copy
+        // the filter from the corresponding partial aggExpressions.
+        val aggExpressions = finalAgg.aggregateExpressions.zip(
+          partAgg.aggregateExpressions).map { case (finalAggExpr, partAggExpr) =>
+            require(finalAggExpr.filter.isEmpty, "FinalAggExpression should have no filter")
+            finalAggExpr.copy(mode = Complete, filter = partAggExpr.filter)
+        }
         val aggAttributes = aggExpressions.map(_.resultAttribute)
         finalAgg match {
           case hash: HashAggregateExec =>
             hash.copy(
+              groupingExpressions = partAgg.groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
-              child = hash.child.children.head)
+              child = partAgg.child)
           case sort: SortAggregateExec =>
             sort.copy(
+              groupingExpressions = partAgg.groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
-              child = sort.child.children.head)
+              child = partAgg.child)
           case obj: ObjectHashAggregateExec =>
             obj.copy(
+              groupingExpressions = partAgg.groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
-              child = obj.child.children.head)
+              child = partAgg.child)
           case _ =>
             throw new IllegalStateException(s"Unexpected AggregateExec: $finalAgg")
         }
@@ -64,7 +74,7 @@ object LocalAggregateRule extends Rule[SparkPlan] {
  * The LocalAggregate can be emerged regardless HashAggregateExec, SortAggregateExec or
  * ObjectHashAggregateExec.
  */
-object LocalAggregatePattern {
+object LocalAggregatePattern extends Logging {
   def unapply(plan: SparkPlan): Option[(BaseAggregateExec, BaseAggregateExec)] = {
     plan match {
       case hashAgg: HashAggregateExec
@@ -98,11 +108,15 @@ object LocalAggregatePattern {
     }
     // Check AggregateExpressions
     if (!aggExpressions.zip(childAggExpressions).forall {
+      // <Partial -> Final> pair check
+      case (s2, s1) if s2.mode != Final || s1.mode != Partial =>
+        false
+      // distinct is NOT supported
+      case (s2, s1) if s2.isDistinct || s1.isDistinct =>
+        false
+      // aggregateFunctions should be identical
       case (s2, s1) =>
-        s2.mode == Final && s1.mode == Partial &&
-          !s2.isDistinct && !s1.isDistinct &&
-          // it is okay to use equals rather than semanticEquals
-          s2.aggregateFunction.equals(s1.aggregateFunction)
+        s2.aggregateFunction.equals(s1.aggregateFunction)
     }) {
       return false
     }

@@ -2454,41 +2454,55 @@ def test_group_by_binary(gen):
         "tab",
         "select c_binary, sum(c_int) from tab group by c_binary")
 
-hash_agg_conf = {"spark.sql.execution.useObjectHashAggregateExec": 'false'}
-sort_agg_conf = {"spark.sql.execution.useObjectHashAggregateExec": 'false',
+def local_aggregate_gen(spark, bucketed_table, group_key):
+    df = spark.table(bucketed_table).filter(f.length('str_val') > 1).groupBy(group_key)
+    return df.agg(
+        f.sum(f.col('int_val') * 2),
+        f.max(f.col('int_val') * f.col('int_val')),
+        f.min(f.col('int_val') + f.col('normal_key')))
+
+def local_aggregate_gen_with_filter(spark, bucketed_table, group_key):
+    return spark.sql(f"""SELECT
+            {group_key},
+            SUM(int_val * 2) FILTER (WHERE int_val > 1) AS sum_filtered,
+            MAX(int_val * int_val) AS max_square,
+            MIN(int_val + normal_key) FILTER (WHERE normal_key > 0) AS min_sum
+        FROM {bucketed_table}
+        WHERE LENGTH(str_val) > 1
+        GROUP BY {group_key}
+        """)
+
+hash_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true'}
+sort_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true',
                  "spark.sql.test.forceApplySortAggregate": 'true'}
-obj_hash_agg_conf = {"spark.sql.execution.useObjectHashAggregateExec": 'true'}
+
 @ignore_order(local=True)
 @pytest.mark.skipif(is_databricks_runtime(), reason="This rule is not applied onto Databricks shims")
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
-@pytest.mark.parametrize("agg_conf", [hash_agg_conf, sort_agg_conf, obj_hash_agg_conf], ids=idfn)
-def test_local_aggregate_rule(spark_tmp_table_factory, aqe_enabled, agg_conf):
+@pytest.mark.parametrize("agg_conf", [hash_agg_conf, sort_agg_conf], ids=idfn)
+@pytest.mark.parametrize("agg_transform_fn", [local_aggregate_gen,
+                                              local_aggregate_gen_with_filter], ids=idfn)
+def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, agg_transform_fn):
     # --- Create bucketed table ---
     bucketed_table = spark_tmp_table_factory.get()
+
     def write_bucket_table(spark):
         df = gen_df(spark, [('bucket_key', LongGen(nullable=False)),
                             ('normal_key', LongGen(nullable=False)),
-                            ('str_val', StringGen(pattern="(.|\n){1,3}")),
-                            ('int_val', int_gen)])
-        return df.write.bucketBy(8, "bucket_key").format('parquet').mode("overwrite")\
+                            ('str_val', StringGen(pattern="(.|\n){1,10}")),
+                            ('int_val', int_gen),
+                            ('long_val', long_gen)])
+        return df.write.bucketBy(8, "bucket_key").format('parquet').mode("overwrite") \
             .saveAsTable(bucketed_table)
 
     with_cpu_session(write_bucket_table)
 
     run_conf = agg_conf.copy()
     run_conf.update({"spark.sql.adaptive.enabled": aqe_enabled})
-    def aggregate_gen(spark, group_key):
-        df = spark.table(bucketed_table).groupBy(group_key)
-        # use `spark.sql.execution.useObjectHashAggregateExec` as a label to select the schema
-        # includes/excludes the ImperativeAggregateFunction
-        if spark.conf.get("spark.sql.execution.useObjectHashAggregateExec") == "true":
-            return df.agg(f.collect_list('str_val').alias('str_list'))\
-                .select(group_key, f.explode('str_list'))
-        return df.agg(f.sum('int_val'), f.max('int_val'), f.min('int_val'))
 
     # case 1: can apply because the group key matches the bucket key
     def verify_local_aggregate(spark):
-        df = aggregate_gen(spark, "bucket_key")
+        df = agg_transform_fn(spark, bucketed_table, "bucket_key")
         # execute the plan so that the final adaptive plan is available when AQE is on
         df.collect()
         return str(df._jdf.queryExecution().executedPlan())
@@ -2496,19 +2510,21 @@ def test_local_aggregate_rule(spark_tmp_table_factory, aqe_enabled, agg_conf):
     # Check if there is only one GpuHashAggregate node in the plan
     plan_str = with_gpu_session(verify_local_aggregate, conf=run_conf)
     aggregate_nodes = plan_str.count("GpuHashAggregate (")
+    # Folds the two-stage aggregate into one.
     assert aggregate_nodes == 1, "Unexpected SparkPlan: " + plan_str
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: aggregate_gen(spark, 'bucket_key'), conf=run_conf)
+        lambda spark: agg_transform_fn(spark, bucketed_table, 'bucket_key'), conf=run_conf)
 
     # case 2: cannot apply because shuffle is being injected
     def verify_two_stages_aggregate(spark):
-        df = aggregate_gen(spark, 'normal_key')
+        df = agg_transform_fn(spark, bucketed_table, 'normal_key')
         # execute the plan so that the final adaptive plan is available when AQE is on
         df.collect()
         return str(df._jdf.queryExecution().executedPlan())
 
     plan_str = with_gpu_session(verify_two_stages_aggregate, conf=run_conf)
     aggregate_nodes = plan_str.count("GpuHashAggregate (")
+    # two-stage aggregate should be 2x the number of logical aggregates
     assert aggregate_nodes == 2, "Unexpected SparkPlan: " + plan_str
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: aggregate_gen(spark, 'normal_key'), conf=run_conf)
+        lambda spark: agg_transform_fn(spark, bucketed_table, 'normal_key'), conf=run_conf)
