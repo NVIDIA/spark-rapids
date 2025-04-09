@@ -62,13 +62,6 @@ _xfail_files = {
     "hadoop_lz4_compressed_larger.parquet": "cudf does not support Hadoop LZ4 format",
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
 }
-
-_skip_hard_crash_files = {
-    "hadoop_lz4_compressed.parquet": "Avoiding SIGSEGV https://github.com/NVIDIA/spark-rapids/issues/12453",
-    "hadoop_lz4_compressed_larger.parquet": "Avoiding SIGSEGV https://github.com/NVIDIA/spark-rapids/issues/12453",
-    "non_hadoop_lz4_compressed.parquet": "Avoiding SIGSEGV https://github.com/NVIDIA/spark-rapids/issues/12453",
-}
-
 if is_before_spark_330():
     _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"
 
@@ -144,14 +137,9 @@ def locate_parquet_testing_files():
 def gen_testing_params_for_errors():
     result = []
     for f in locate_parquet_testing_files():
-        basename = os.path.basename(f)
-        error_obj = _error_files.get(basename, None)
+        error_obj = _error_files.get(os.path.basename(f), None)
         if error_obj is not None:
-            skip_reason = _skip_hard_crash_files.get(basename, None)
-            if skip_reason is None:
-                result.append((f, error_obj))
-            else:
-                result.append(pytest.param(f, error_obj, marks=pytest.mark.skip(reason=skip_reason)))
+            result.append((f, error_obj))
     return result
 
 def gen_testing_params_for_valid_files():
@@ -160,16 +148,11 @@ def gen_testing_params_for_valid_files():
         basename = os.path.basename(f)
         if basename in _error_files:
             continue
-        skip_reason = _skip_hard_crash_files.get(basename, None)
-        if skip_reason:
-            files.append(pytest.param(f, marks=pytest.mark.skip(reason=skip_reason)))
+        xfail_reason = _xfail_files.get(basename, None)
+        if xfail_reason:
+            files.append(pytest.param(f, marks=pytest.mark.xfail(reason=xfail_reason)))
         else:
-            xfail_reason = _xfail_files.get(basename, None)
-            if xfail_reason:
-                files.append(pytest.param(f, marks=pytest.mark.xfail(reason=xfail_reason)))
-            else:
-                files.append(f)
-
+            files.append(f)
     return files
 
 @pytest.mark.parametrize("path", gen_testing_params_for_valid_files())
