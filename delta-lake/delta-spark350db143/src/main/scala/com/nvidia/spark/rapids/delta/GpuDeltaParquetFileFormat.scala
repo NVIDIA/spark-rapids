@@ -21,6 +21,7 @@ import java.net.URI
 import com.databricks.sql.io.RowIndexFilterType
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat._
+import com.databricks.sql.transaction.tahoe.commands.DeletionVectorUtils
 import com.databricks.sql.transaction.tahoe.deletionvectors.{DropMarkedRowsFilter, KeepAllRowsFilter, KeepMarkedRowsFilter}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.util.DeltaFileOperations.absolutePath
@@ -248,13 +249,11 @@ case class GpuDeltaParquetFileFormat(
 object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    val requiredSchema = meta.wrapped.requiredSchema
-    if (requiredSchema.exists(_.name.startsWith("_databricks_internal"))) {
+    val dvEnabled = DeletionVectorUtils.deletionVectorsWritable(format.protocol, format.metadata)
+
+    if (dvEnabled || format.hasDeletionVectorMap) {
       meta.willNotWorkOnGpu(
-        s"reading metadata columns starting with prefix _databricks_internal is not supported")
-    }
-    if (format.hasDeletionVectorMap) {
-      meta.willNotWorkOnGpu("deletion vectors are not supported")
+        s"Reading deletion vectors is not supported on the GPU")
     }
   }
 
