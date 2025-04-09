@@ -943,17 +943,18 @@ def test_conv_with_more_invalid_values():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
-        f"select " + \
-        f"conv(str_col, from_col, to_col), " + \
-        f"conv(str_col, from_col, {to_base_scalar}), " + \
-        f"conv(str_col, {from_base_scalar}, to_col), " + \
-        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " + \
-        f"conv(null, from_col, to_col), " + \
-        f"conv(str_col, null, to_col), " + \
-        f"conv(str_col, from_col, null), " + \
-        f"conv(' 101010FFCC', from_col, to_col), " + \
-        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " + \
-        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
+        f"select " +
+        f"conv('1112222', 2, 10), " + # Spark will fold with constant value
+        f"conv(str_col, from_col, to_col), " +
+        f"conv(str_col, from_col, {to_base_scalar}), " +
+        f"conv(str_col, {from_base_scalar}, to_col), " +
+        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " +
+        f"conv(null, from_col, to_col), " +
+        f"conv(str_col, null, to_col), " +
+        f"conv(str_col, from_col, null), " +
+        f"conv(' 101010FFCC', from_col, to_col), " +
+        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " +
+        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " +
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab")
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
@@ -971,14 +972,14 @@ def test_conv_ansi_on():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
-        f"select " + \
-        f"conv(str_col, from_col, to_col), " + \
-        f"conv(str_col, from_col, {to_base_scalar}), " + \
-        f"conv(str_col, {from_base_scalar}, to_col), " + \
-        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " + \
-        f"conv(' 101010FFCC', from_col, to_col), " + \
-        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " + \
-        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " + \
+        f"select " +
+        f"conv(str_col, from_col, to_col), " +
+        f"conv(str_col, from_col, {to_base_scalar}), " +
+        f"conv(str_col, {from_base_scalar}, to_col), " +
+        f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " +
+        f"conv(' 101010FFCC', from_col, to_col), " +
+        f"conv('10 1010FFCC', from_col, {to_base_scalar}), " +
+        f"conv('1010 10FFCC', {from_base_scalar}, to_col), " +
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
         conf = {"spark.sql.ansi.enabled": True})
 
