@@ -2480,8 +2480,9 @@ sort_agg_conf = {"spark.rapids.sql.foldLocalAggregate.enabled": 'true',
 @pytest.mark.skipif(is_databricks_runtime(), reason="This rule is not applied onto Databricks shims")
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
 @pytest.mark.parametrize("agg_conf", [hash_agg_conf, sort_agg_conf], ids=idfn)
-@pytest.mark.parametrize("agg_transform_fn", [local_aggregate_gen,
-                                              local_aggregate_gen_with_filter], ids=idfn)
+@pytest.mark.parametrize("agg_transform_fn",
+                         [local_aggregate_gen, local_aggregate_gen_with_filter],
+                         ids=['local_aggregate_gen', 'local_aggregate_gen_with_filter'])
 def test_fold_local_aggregate(spark_tmp_table_factory, aqe_enabled, agg_conf, agg_transform_fn):
     # --- Create bucketed table ---
     bucketed_table = spark_tmp_table_factory.get()
