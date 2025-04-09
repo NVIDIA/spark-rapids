@@ -112,7 +112,8 @@ object DumpUtils extends Logging {
    * @param columnarBatch The columnar batch to be dumped, should be GPU columnar batch. It
    *                      should be closed by caller.
    * @param outputStream  Will be closed after writing.
-   * @param kudoSerializer Optional. Only required when the batch contains a KudoSerializedTableColumn.
+   * @param kudoSerializer Optional. Only required when the batch contains a
+   *                       KudoSerializedTableColumn.
    */
   def dumpToParquet(columnarBatch: ColumnarBatch, outputStream: OutputStream,
       kudoSerializer: Option[KudoSerializer] = None)
