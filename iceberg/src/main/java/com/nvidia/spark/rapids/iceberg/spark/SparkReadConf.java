@@ -17,6 +17,8 @@
 package com.nvidia.spark.rapids.iceberg.spark;
 
 
+import com.nvidia.spark.rapids.iceberg.GpuSparkReadOptions$;
+import com.nvidia.spark.rapids.iceberg.GpuSparkSQLProperties$;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.iceberg.PlanningMode;
 import org.apache.iceberg.Table;
@@ -24,6 +26,8 @@ import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.hadoop.Util;
 
+import org.apache.iceberg.spark.SparkReadOptions;
+import org.apache.iceberg.spark.SparkSQLProperties;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.spark.SparkConf;
 import org.apache.spark.sql.SparkSession;
@@ -352,8 +356,8 @@ public class SparkReadConf {
   public boolean reportColumnStats() {
     return confParser
         .booleanConf()
-        .sessionConf(SparkSQLProperties.REPORT_COLUMN_STATS)
-        .defaultValue(SparkSQLProperties.REPORT_COLUMN_STATS_DEFAULT)
+        .sessionConf(GpuSparkSQLProperties$.MODULE$.REPORT_COLUMN_STATS())
+        .defaultValue(GpuSparkSQLProperties$.MODULE$.REPORT_COLUMN_STATS_DEFAULT())
         .parse();
   }
 
@@ -371,9 +375,9 @@ public class SparkReadConf {
    */
   public boolean handleTimestampWithoutZone() {
     return confParser.booleanConf()
-        .option(SparkReadOptions.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
-        .sessionConf(SparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
-        .defaultValue(SparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE_DEFAULT)
+        .option(GpuSparkReadOptions$.MODULE$.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE())
+        .sessionConf(GpuSparkSQLProperties$.MODULE$.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE())
+        .defaultValue(GpuSparkSQLProperties$.MODULE$.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE_DEFAULT())
         .parse();
   }
 

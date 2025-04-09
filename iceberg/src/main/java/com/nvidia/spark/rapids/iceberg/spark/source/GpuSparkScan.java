@@ -24,11 +24,8 @@ import java.util.stream.Collectors;
 
 import com.nvidia.spark.rapids.GpuScanWrapper;
 import com.nvidia.spark.rapids.RapidsConf;
-import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
+import com.nvidia.spark.rapids.iceberg.GpuSparkUtil$;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
-import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
-import com.nvidia.spark.rapids.iceberg.spark.SparkUtil;
-import com.nvidia.spark.rapids.iceberg.spark.source.metrics.*;
 import org.apache.iceberg.*;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.metrics.ScanReport;
@@ -36,6 +33,9 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.base.Strings;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.spark.Spark3Util;
+import org.apache.iceberg.spark.SparkSchemaUtil;
+import org.apache.iceberg.spark.source.metrics.*;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.SnapshotUtil;
@@ -169,8 +169,9 @@ abstract class GpuSparkScan extends GpuScanWrapper
   @Override
   public StructType readSchema() {
     if (readSchema == null) {
-      Preconditions.checkArgument(readTimestampWithoutZone || !SparkUtil.hasTimestampWithoutZone(expectedSchema),
-          SparkUtil.TIMESTAMP_WITHOUT_TIMEZONE_ERROR);
+      Preconditions.checkArgument(readTimestampWithoutZone ||
+              !GpuSparkUtil$.MODULE$.hasTimestampWithoutZone(expectedSchema),
+          GpuSparkUtil$.MODULE$.TIMESTAMP_WITHOUT_TIMEZONE_ERROR());
       this.readSchema = SparkSchemaUtil.convert(expectedSchema);
     }
     return readSchema;

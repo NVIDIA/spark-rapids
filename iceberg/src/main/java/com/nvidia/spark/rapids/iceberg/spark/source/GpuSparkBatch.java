@@ -21,11 +21,12 @@ import java.util.Objects;
 
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
-import com.nvidia.spark.rapids.iceberg.spark.SparkUtil;
 import org.apache.iceberg.ScanTaskGroup;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.spark.SparkUtil;
+import org.apache.iceberg.spark.source.SerializableTableWithSize;
 import org.apache.iceberg.types.Types;
 
 import org.apache.spark.api.java.JavaSparkContext;

@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
 import com.nvidia.spark.rapids.RapidsConf;
-import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionScanTask;
@@ -33,6 +32,7 @@ import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.metrics.ScanReport;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.SnapshotUtil;
 import org.apache.iceberg.util.StructLikeSet;

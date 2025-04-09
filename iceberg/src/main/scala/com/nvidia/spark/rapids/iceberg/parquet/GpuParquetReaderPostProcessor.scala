@@ -23,9 +23,9 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor.{doUpCastIfNeeded, HandlerResult}
-import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil
 import java.util
 import org.apache.iceberg.{MetadataColumns, Schema}
+import org.apache.iceberg.spark.SparkSchemaUtil
 import org.apache.iceberg.types.{Type, Types, TypeUtil}
 import org.apache.iceberg.types.Types.NestedField
 import org.apache.parquet.schema.MessageType
