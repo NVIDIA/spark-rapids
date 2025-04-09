@@ -16,22 +16,35 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{
-  ByteArrayInputStream,
-  ByteArrayOutputStream,
-  DataInputStream,
-  DataOutputStream,
-  File,
-  FileOutputStream
-}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream, File, FileOutputStream}
 import java.nio.file.Files
 
-import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, Rmm, RmmAllocationMode, Table}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.kudo.{KudoSerializer, KudoTableHeader}
+import com.nvidia.spark.rapids.spill.SpillFramework
+import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
-class DumpUtilsSuite extends AnyFunSuite {
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.types.{DataType, LongType, StringType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+
+class DumpUtilsSuite extends AnyFunSuite with BeforeAndAfterAll {
+
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    SpillFramework.initialize(new RapidsConf(new SparkConf))
+  }
+
+  override def afterAll(): Unit = {
+    super.afterAll()
+    SpillFramework.shutdown()
+    Rmm.shutdown()
+  }
 
   test("dumpToParquet handles SerializedTableColumn") {
     // Create a simple table
@@ -71,6 +84,63 @@ class DumpUtilsSuite extends AnyFunSuite {
           // Clean up
           Files.delete(tempFile.toPath)
         }
+      }
+    }
+  }
+
+  test("dumpToParquet handles KudoSerializedTableColumn") {
+    // Create a simple table
+    withResource(
+      new Table.TestBuilder()
+        .column(
+          1L.asInstanceOf[java.lang.Long],
+          2L.asInstanceOf[java.lang.Long],
+          3L.asInstanceOf[java.lang.Long])
+        .column("a", "b", "c")
+        .build()) { table =>
+      // Create a KudoSerializer
+      val dataTypes: Array[DataType] = Array(LongType, StringType)
+      val kudoSerializer = new KudoSerializer(GpuColumnVector.from(dataTypes))
+
+      val byteOut = new ByteArrayOutputStream()
+      val hostColumns = Array.range(0, table.getNumberOfColumns)
+        .map(table.getColumn)
+        .map(_.copyToHost())
+
+      try {
+        kudoSerializer.writeToStreamWithMetrics(hostColumns, byteOut, 0, table.getRowCount.toInt)
+        // Create a KudoTableHeader from the serialized data
+        val bytes = byteOut.toByteArray
+        val in = new ByteArrayInputStream(bytes)
+        val din = new DataInputStream(in)
+        val headerOptional = KudoTableHeader.readFrom(din)
+        if (!headerOptional.isPresent) {
+          throw new NoSuchElementException("KudoTableHeader not found")
+        }
+        val header = headerOptional.get()
+        val buffer = HostMemoryBuffer.allocate(header.getTotalDataLen())
+        buffer.copyFromStream(0, din, header.getTotalDataLen())
+        val spillableKudoTable = SpillableKudoTable(header, buffer)
+        withResource(new KudoSerializedTableColumn(spillableKudoTable)) { column =>
+          val batch = new ColumnarBatch(Array(column.asInstanceOf[GpuColumnVectorBase]),
+            spillableKudoTable.header.getNumRows)
+
+          // Create a temporary output file
+          val tempFile = File.createTempFile("dumpkudotest", ".parquet")
+          tempFile.deleteOnExit()
+          // Test dumping the KudoSerializedTableColumn to parquet
+          withResource(new FileOutputStream(tempFile)) { fileOut =>
+            DumpUtils.dumpToParquet(batch, fileOut, Some(kudoSerializer))
+          }
+          // Verify the file was created and has content
+          assert(tempFile.exists())
+          assert(tempFile.length() > 0)
+          // Clean up
+          Files.delete(tempFile.toPath)
+        }
+      } finally {
+        hostColumns.foreach(_.close())
+        byteOut.close()
       }
     }
   }
