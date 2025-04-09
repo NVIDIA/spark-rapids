@@ -1118,11 +1118,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(RapidsReaderType.values.map(_.toString))
-    .createWithDefault(
-      ShimLoader.getShimVersion match {
-        case DatabricksShimVersion(3, 5, 0, "14.3") => RapidsReaderType.PERFILE.toString
-        case _ => RapidsReaderType.AUTO.toString
-      })
+    .createWithDefault(RapidsReaderType.AUTO.toString)
 
   val PARQUET_DECOMPRESS_CPU =
     conf("spark.rapids.sql.format.parquet.decompressCpu")
