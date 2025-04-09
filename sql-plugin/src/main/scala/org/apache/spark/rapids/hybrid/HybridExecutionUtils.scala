@@ -436,7 +436,7 @@ object HybridExecOverrides extends Logging {
   val HYBRID_SCAN_HINT = "HYBRID_SCAN"
 
   // The tag is used to mark the table to be scanned by HybridScan
-  val HYBRID_SCAN_TAG = "ENABLE_HYBRID_SCAN"
+  val HYBRID_SCAN_TAG = "HYBRID_SCAN_ENABLED"
 
   /**
    * Resolve HybridScanHint by pushing it down to connected LogicalRelations as an extra option of
