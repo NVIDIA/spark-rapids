@@ -14,24 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg.spark.source.metrics;
+package com.nvidia.spark.rapids.iceberg
 
-import org.apache.spark.sql.connector.metric.CustomTaskMetric;
-
-public class TaskNumSplits implements CustomTaskMetric {
-  private final long value;
-
-  public TaskNumSplits(long value) {
-    this.value = value;
-  }
-
-  @Override
-  public String name() {
-    return "numSplits";
-  }
-
-  @Override
-  public long value() {
-    return value;
-  }
+object GpuSparkReadOptions {
+  // Controls whether to allow reading timestamps without zone info
+  val HANDLE_TIMESTAMP_WITHOUT_TIMEZONE = "handle-timestamp-without-timezone"
 }
