@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 import java.time.ZoneId
 import scala.collection.mutable
@@ -1111,26 +1110,19 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = conf.isFoldableNonLitAllowed
 
-  // There are 4 levels of timezone check in GPU plan tag phase:
+  // There are 1 levels of timezone check in GPU plan tag phase:
   //    Level 1: Check whether an expression is related to timezone. This is achieved by
   //        [[needTimeZoneCheck]] below.
   //    Level 2: Check related expression has been implemented with timezone. There is a
   //        toggle flag [[isTimeZoneSupported]] for this. If false, fallback to UTC-only check as
   //        before. If yes, move to next level check. When we add timezone support for a related
   //        function. [[isTimeZoneSupported]] should be override as true.
-  //    Level 3: Check whether the desired timezone is supported by Gpu kernel.
   def checkExprForTimezone(): Unit = {
     // Level 1 check
     if (!needTimeZoneCheck) return
 
     // Level 2 check
     if (!isTimeZoneSupported) return checkUTCTimezone(this, getZoneId())
-
-    // Level 3 check
-    val zoneId = getZoneId()
-    if (!GpuTimeZoneDB.isSupportedTimeZone(zoneId)) {
-      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(zoneId.toString))
-    }
   }
 
   protected def getZoneId(): ZoneId = {

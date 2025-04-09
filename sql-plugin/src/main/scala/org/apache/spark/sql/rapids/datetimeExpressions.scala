@@ -87,7 +87,7 @@ case class GpuDayOfWeek(child: Expression)
   }
 }
 
-case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
+case class GpuMinute(child: Expression, maxTimezoneYear: Int, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
@@ -98,13 +98,14 @@ case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
       input.getBase.minute()
     } else {
       // Non-UTC time zone
-      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId)) {
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId,
+        maxTimezoneYear)) {
         shifted => shifted.minute()
       }
     }
 }
 
-case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
+case class GpuSecond(child: Expression, maxTimezoneYear: Int, timeZoneId: Option[String] = None)
     extends GpuTimeUnaryExpression {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
@@ -115,13 +116,14 @@ case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
       input.getBase.second()
     } else {
       // Non-UTC time zone
-      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId)) {
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId,
+        maxTimezoneYear)) {
         shifted => shifted.second()
       }
     }
 }
 
-case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
+case class GpuHour(child: Expression, maxTimezoneYear: Int, timeZoneId: Option[String] = None)
   extends GpuTimeUnaryExpression {
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
@@ -132,7 +134,8 @@ case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
       input.getBase.hour()
     } else {
       // Non-UTC time zone
-      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId)) {
+      withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.getBase, zoneId,
+        maxTimezoneYear)) {
         shifted => shifted.hour()
       }
     }
@@ -322,6 +325,7 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
 case class GpuDateFormatClass(timestamp: Expression,
     format: Expression,
     strfFormat: String,
+    maxTimezoneYear: Int,
     timeZoneId: Option[String] = None)
   extends GpuBinaryExpressionArgsAnyScalar
       with TimeZoneAwareExpression with ImplicitCastInputTypes {
@@ -349,7 +353,8 @@ case class GpuDateFormatClass(timestamp: Expression,
         tsVector.asStrings(strfFormat)
       } else {
         // Non-UTC TZ
-        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(tsVector, zoneId.normalized())) {
+        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(tsVector, zoneId.normalized(),
+          maxTimezoneYear)) {
           shifted => shifted.asStrings(strfFormat)
         }
       }
@@ -864,6 +869,7 @@ abstract class GpuToTimestamp
 
   def sparkFormat: String
   def strfFormat: String
+  def maxTzYear: Int
 
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(StringType, DateType, TimestampType), StringType)
@@ -900,7 +906,7 @@ abstract class GpuToTimestamp
           res
         } else {
           withResource(res) { _ =>
-            GpuTimeZoneDB.fromTimestampToUtcTimestamp(res, zoneId)
+            GpuTimeZoneDB.fromTimestampToUtcTimestamp(res, zoneId, maxTzYear)
           }
         }
       case _: DateType =>
@@ -909,9 +915,9 @@ abstract class GpuToTimestamp
             if (GpuOverrides.isUTCTimezone(zoneId)) {
               lhs.getBase.asTimestampMicroseconds()
             } else {
-              assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
+              // assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
               withResource(lhs.getBase.asTimestampMicroseconds) { tsInMs =>
-                GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId)
+                GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId, maxTzYear)
               }
             }
           case None => lhs.getBase.asTimestampMicroseconds()
@@ -947,8 +953,11 @@ case class GpuUnixTimestamp(strTs: Expression,
     format: Expression,
     sparkFormat: String,
     strf: String,
+    maxTimezoneYear: Int,
     timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
+  override def maxTzYear = maxTimezoneYear
+
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
@@ -962,8 +971,11 @@ case class GpuToUnixTimestamp(strTs: Expression,
     format: Expression,
     sparkFormat: String,
     strf: String,
+    maxTimezoneYear: Int,
     timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
+  override def maxTzYear = maxTimezoneYear
+
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
   }
@@ -978,11 +990,13 @@ case class GpuGetTimestamp(
     format: Expression,
     sparkFormat: String,
     strf: String,
+    maxTimezoneYear: Int,
     timeZoneId: Option[String] = None) extends GpuToTimestamp {
 
   override def strfFormat = strf
   override val downScaleFactor = 1
   override def dataType: DataType = TimestampType
+  override def maxTzYear = maxTimezoneYear
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
@@ -1041,7 +1055,7 @@ class FromUnixTimeMeta(a: FromUnixTime,
   override def isTimeZoneSupported = true
   override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
     // passing the already converted strf string for a little optimization
-    GpuFromUnixTime(lhs, rhs, strfFormat, colConverter, a.timeZoneId)
+    GpuFromUnixTime(lhs, rhs, strfFormat, conf.maxTimezoneYear, colConverter, a.timeZoneId)
   }
 }
 
@@ -1049,6 +1063,7 @@ case class GpuFromUnixTime(
     sec: Expression,
     format: Expression,
     strfFormat: String,
+    maxTimezoneYear: Int,
     colConverter: Option[ColumnView => ColumnVector],
     timeZoneId: Option[String])
   extends GpuBinaryExpressionArgsAnyScalar
@@ -1073,7 +1088,7 @@ case class GpuFromUnixTime(
         secondCV.asStrings(strfFormat)
       } else {
         // Non-UTC TZ
-        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(secondCV, zoneId.normalized())) {
+        withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(secondCV, zoneId.normalized(), maxTimezoneYear)) {
           shifted => shifted.asStrings(strfFormat)
         }
       }
@@ -1119,10 +1134,8 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
         willNotWorkOnGpu("timezone input must be a literal string")
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
-          timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
-          if (!GpuTimeZoneDB.isSupportedTimeZone(timezoneId)) {
-            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-          }
+          // check that this timezoneID is valid
+          GpuTimeZoneDB.getZoneId(timezoneShortID)
         }
     }
   }
@@ -1136,11 +1149,11 @@ class FromUTCTimestampExprMeta(
   extends ConvertUTCTimestampExprMetaBase[FromUTCTimestamp](expr, conf, parent, rule) {
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone, timezoneId)
+    GpuFromUTCTimestamp(timestamp, timezone, timezoneId, conf.maxTimezoneYear)
 }
 
 case class GpuFromUTCTimestamp(
-    timestamp: Expression, timezone: Expression, zoneId: ZoneId)
+    timestamp: Expression, timezone: Expression, zoneId: ZoneId, maxTimezoneYear: Int)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
       with NullIntolerantShim {
@@ -1156,7 +1169,7 @@ case class GpuFromUTCTimestamp(
         // For UTC timezone, just a no-op bypassing GPU computation.
         lhs.getBase.incRefCount()
       } else {
-        GpuTimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
+        GpuTimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId, maxTimezoneYear)
       }
     } else {
       // All-null output column.
@@ -1179,11 +1192,11 @@ class ToUTCTimestampExprMeta(
   extends ConvertUTCTimestampExprMetaBase[ToUTCTimestamp](expr, conf, parent, rule) {
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuToUTCTimestamp(timestamp, timezone, timezoneId)
+    GpuToUTCTimestamp(timestamp, timezone, timezoneId, conf.maxTimezoneYear)
 }
 
 case class GpuToUTCTimestamp(
-    timestamp: Expression, timezone: Expression, zoneId: ZoneId)
+    timestamp: Expression, timezone: Expression, zoneId: ZoneId, maxTimezoneYear: Int)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
       with NullIntolerantShim {
@@ -1199,7 +1212,7 @@ case class GpuToUTCTimestamp(
         // For UTC timezone, just a no-op bypassing GPU computation.
         lhs.getBase.incRefCount()
       } else {
-        GpuTimeZoneDB.fromTimestampToUtcTimestamp(lhs.getBase, zoneId)
+        GpuTimeZoneDB.fromTimestampToUtcTimestamp(lhs.getBase, zoneId, maxTimezoneYear)
       }
     } else {
       // All-null output column.
@@ -1226,30 +1239,12 @@ class MonthsBetweenExprMeta(expr: MonthsBetween,
   override def convertToGpu(): GpuExpression = {
     val gpuChildren = childExprs.map(_.convertToGpu())
     assert(gpuChildren.length == 3)
-    GpuMonthsBetween(gpuChildren(0), gpuChildren(1), gpuChildren(2), expr.timeZoneId)
+    GpuMonthsBetween(gpuChildren(0), gpuChildren(1), gpuChildren(2), conf.maxTimezoneYear, expr.timeZoneId)
   }
 }
 
 object GpuMonthsBetween {
   val UTC = GpuOverrides.UTC_TIMEZONE_ID
-
-  /**
-   * Convert the given timestamp in UTC to a specific time zone and close the original input.
-   * @param micros the timestamp in micros to convert
-   * @param normalizedZoneId the time zone to convert it to. Note that this should have
-   *                         already been normalized.
-   * @return the converted timestamp.
-   */
-  private def convertToZoneAndClose(micros: GpuColumnVector,
-                                    normalizedZoneId: ZoneId): ColumnVector = {
-    withResource(micros) { _ =>
-      if (normalizedZoneId.equals(UTC)) {
-        micros.getBase.incRefCount()
-      } else {
-        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, normalizedZoneId)
-      }
-    }
-  }
 
   private def calcMonths(converted: ColumnVector): ColumnVector = {
     val yearInMonths = withResource(converted.year()) { year =>
@@ -1386,10 +1381,30 @@ object GpuMonthsBetween {
 case class GpuMonthsBetween(ts1: Expression,
                             ts2: Expression,
                             roundOff: Expression,
+                            maxTimezoneYear: Int,
                             timeZoneId: Option[String] = None) extends GpuExpression
   with ShimExpression with TimeZoneAwareExpression with ImplicitCastInputTypes
   with NullIntolerantShim {
   import GpuMonthsBetween._
+
+  /**
+   * Convert the given timestamp in UTC to a specific time zone and close the original input.
+   * @param micros the timestamp in micros to convert
+   * @param normalizedZoneId the time zone to convert it to. Note that this should have
+   *                         already been normalized.
+   * @return the converted timestamp.
+   */
+  private def convertToZoneAndClose(micros: GpuColumnVector,
+                                    normalizedZoneId: ZoneId): ColumnVector = {
+    withResource(micros) { _ =>
+      if (normalizedZoneId.equals(UTC)) {
+        micros.getBase.incRefCount()
+      } else {
+        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, normalizedZoneId,
+          maxTimezoneYear)
+      }
+    }
+  }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val needsRoundOff = withResourceIfAllowed(roundOff.columnarEvalAny(batch)) {

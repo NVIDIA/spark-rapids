@@ -620,6 +620,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
+  val MAX_TIMEZONE_YEAR = conf("spark.rapids.sql.maxTimezoneYear")
+    .doc("Set the max year for timestamp processing. Adding more years will use " +
+      "more memory, every 100 years is roughly 1MB.")
+    .commonlyUsed()
+    .integerConf
+    .createWithDefault(2200)
+
   // Internal Features
 
   val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
@@ -3338,6 +3345,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
+
+  lazy val maxTimezoneYear: Int = get(MAX_TIMEZONE_YEAR)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 
