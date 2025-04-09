@@ -23,10 +23,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.iceberg.Schema;
-import org.apache.iceberg.parquet.ParquetBloomRowGroupFilter;
-import org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
-import org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
-import org.apache.iceberg.parquet.ParquetSchemaUtil;
+import com.nvidia.shaded.spark.org.apache.iceberg.parquet.ParquetBloomRowGroupFilter;
+import com.nvidia.shaded.spark.org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
+import com.nvidia.shaded.spark.org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
+import com.nvidia.shaded.spark.org.apache.iceberg.parquet.ParquetSchemaUtil;
 import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
