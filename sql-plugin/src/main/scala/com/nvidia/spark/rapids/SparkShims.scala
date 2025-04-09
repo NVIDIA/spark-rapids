@@ -188,15 +188,7 @@ trait SparkShims {
 
   def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan
 
-  def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    // We don't apply FoldLocalAggregate under Databricks runtime. This rule is only applied to
-    // shim layers other than Databricks shims.
-    if (conf.enableFoldLocalAggregate) {
-      FoldLocalAggregate(plan)
-    } else {
-      plan
-    }
-  }
+  def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = plan
 
   def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = plan
 
