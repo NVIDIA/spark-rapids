@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
 import org.apache.spark.util.{ShutdownHookManager, ThreadUtils, Utils}
@@ -101,7 +102,7 @@ object TrampolineUtil {
   }
 
   /** Shuts down and cleans up any existing Spark session */
-  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+  def cleanupAnyExistingSession(): Unit = TrampolineConnectShims.cleanupAnyExistingSession()
 
   def asNullable(dt: DataType): DataType = dt.asNullable
 

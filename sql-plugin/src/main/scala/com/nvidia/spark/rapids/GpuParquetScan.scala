@@ -37,8 +37,9 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter}
+import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -1904,10 +1905,13 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
   protected def readPartFile(
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
-      filePath: Path): (HostMemoryBuffer, Seq[BlockMetaData]) = {
+      filePath: Path): (SpillableHostBuffer, Seq[BlockMetaData]) = {
     withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
       val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema, false)
-      closeOnExcept(HostMemoryBuffer.allocate(estTotalSize)) { hmb =>
+      val outHostBuf = withRetryNoSplit[HostMemoryBuffer] {
+        HostMemoryBuffer.allocate(estTotalSize)
+      }
+      closeOnExcept(outHostBuf) { hmb =>
         val out = new HostMemoryOutputStream(hmb)
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
         val outputBlocks = if (compressCfg.decompressAnyCpu) {
@@ -1924,10 +1928,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
               s"small, actual written: ${out.getPos}")
         }
-        val outputBuffer = withResource(hmb) { _ =>
-          hmb.slice(0, out.getPos)
-        }
-        (outputBuffer, outputBlocks)
+        (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+          outputBlocks)
       }
     }
   }
@@ -2407,7 +2409,8 @@ class MultiFileCloudParquetPartitionReader(
             }
             val sliceOffset = if (buffers.isEmpty) 0 else PARQUET_MAGIC.size
             require(hmbInfo.hmbs.length == 1)
-            buffers += hmbInfo.hmbs.head.slice(sliceOffset, bytesToSlice)
+            buffers += SpillableHostBuffer.sliceWithRetry(hmbInfo.hmbs.head, sliceOffset,
+              bytesToSlice)
           }
           val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset)
           allOutputBlocks ++= outputBlocks
@@ -2432,7 +2435,9 @@ class MultiFileCloudParquetPartitionReader(
         footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
         offset += footerOut.getPos
       }
-      val newHmbBufferInfo = SingleHMBAndMeta(buffers.toArray, offset,
+      val spHostBufs = buffers.map(b =>
+        SpillableHostBuffer(b, b.getLength, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+      val newHmbBufferInfo = SingleHMBAndMeta(spHostBufs.toArray, offset,
         combinedMeta.allPartValues.map(_._1).sum, Seq.empty)
       val newHmbMeta = HostMemoryBuffersWithMetaData(
         metaToUse.partitionedFile,
@@ -2596,6 +2601,7 @@ class MultiFileCloudParquetPartitionReader(
      */
     override def call(): HostMemoryBuffersWithMetaDataBase = {
       TrampolineUtil.setTaskContext(taskContext)
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         doRead()
       } catch {
@@ -2613,6 +2619,7 @@ class MultiFileCloudParquetPartitionReader(
             DateTimeRebaseLegacy, DateTimeRebaseLegacy,
             hasInt96Timestamps = false, null, null, 0)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }
@@ -2657,7 +2664,7 @@ class MultiFileCloudParquetPartitionReader(
                 val (dataBuffer, blockMeta) =
                   readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
                 val numRows = blocksToRead.map(_.getRowCount).sum.toInt
-                hostBuffers += SingleHMBAndMeta(Array(dataBuffer), dataBuffer.getLength,
+                hostBuffers += SingleHMBAndMeta(Array(dataBuffer), dataBuffer.length,
                   numRows, blockMeta)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
@@ -2769,7 +2776,7 @@ class MultiFileCloudParquetPartitionReader(
       clippedSchema: MessageType,
       readDataSchema: StructType,
       partedFile: PartitionedFile,
-      hostBuffers: Array[HostMemoryBuffer],
+      hostBuffers: Array[SpillableHostBuffer],
       allPartValues: Option[Array[(Long, InternalRow)]]): Iterator[ColumnarBatch] = {
 
     val parseOpts = closeOnExcept(hostBuffers) { _ =>
@@ -2777,19 +2784,18 @@ class MultiFileCloudParquetPartitionReader(
     }
     val colTypes = readDataSchema.fields.map(f => f.dataType)
 
-    // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
     withResource(hostBuffers) { _ =>
       RmmRapidsRetryIterator.withRetryNoSplit {
-        // The MakeParquetTableProducer will close the input buffers, and that would be bad
-        // because we don't want to close them until we know that we are done with them.
-        hostBuffers.foreach(_.incRefCount())
+        // The MakeParquetTableProducer will close the input buffers
+        val hostBufs = hostBuffers.safeMap(_.getDataHostBuffer())
+        // Duplicate request is ok, and start to use the GPU just after the host
+        // buffer is ready to not block CPU things.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val tableReader = MakeParquetTableProducer(useChunkedReader,
           maxChunkedReaderMemoryUsageSizeBytes,
           conf, targetBatchSizeBytes,
           parseOpts,
-          hostBuffers, metrics,
+          hostBufs, metrics,
           dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
           isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, files,
           debugDumpPrefix, debugDumpAlways)
@@ -3039,21 +3045,20 @@ class ParquetPartitionReader(
           val (dataBuffer, _) = metrics(BUFFER_TIME).ns {
             readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
           }
-          if (dataBuffer.getLength == 0) {
+          if (dataBuffer.length == 0) {
             dataBuffer.close()
             CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
-            // about to start using the GPU
-            GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
-              // Inc the ref count because MakeParquetTableProducer will try to close the dataBuffer
-              // which we don't want until we know that the retry is done with it.
-              dataBuffer.incRefCount()
+              // MakeParquetTableProducer will try to close the hostBuf
+              val hostBuf = dataBuffer.getDataHostBuffer()
+              // Duplicate request is ok, and start to use the GPU just after the host
+              // buffer is ready to not block CPU things.
+              GpuSemaphore.acquireIfNecessary(TaskContext.get())
               val producer = MakeParquetTableProducer(useChunkedReader,
                 maxChunkedReaderMemoryUsageSizeBytes, conf,
                 targetBatchSizeBytes, parseOpts,
-                Array(dataBuffer), metrics,
+                Array(hostBuf), metrics,
                 dateRebaseMode, timestampRebaseMode,
                 hasInt96Timestamps, isSchemaCaseSensitive,
                 useFieldId, readDataSchema,

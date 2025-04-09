@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids.python
 
-import com.nvidia.spark.rapids.RapidsConf.{POOLED_MEM, UVM_ENABLED}
-import com.nvidia.spark.rapids.RapidsConf.conf
+import com.nvidia.spark.rapids.RapidsConf.{conf, RMM_POOL, UVM_ENABLED}
 
 object PythonConfEntries {
 
@@ -60,7 +59,9 @@ object PythonConfEntries {
   val PYTHON_POOLED_MEM = conf("spark.rapids.python.memory.gpu.pooling.enabled")
     .doc("Should RMM in Python workers act as a pooling allocator for GPU memory, or" +
       " should it just pass through to CUDA memory allocation directly. When not specified," +
-      s" It will honor the value of config '${POOLED_MEM.key}'")
+      s" It will honor the value of config '${RMM_POOL.key}', but now only 'DEFAULT' and" +
+      " 'NONE' are supported. If 'ASYNC' or 'ARENA' is specified, it will fall back to" +
+      " 'DEFAULT'.")
     .booleanConf
     .createOptional
 

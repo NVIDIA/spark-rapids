@@ -1231,6 +1231,24 @@ trait SpillableStore[T <: SpillableHandle]
       }
     }
   }
+
+  def spillableSummary(): String = {
+    var spillableHandleCount = 0L
+    var spillableHandleBytes = 0L
+    var totalHandleBytes = 0L
+    handles.forEach((handle, _) => {
+      totalHandleBytes += handle.approxSizeInBytes
+      if (handle.spillable) {
+        spillableHandleCount += 1
+        spillableHandleBytes += handle.approxSizeInBytes
+      }
+    })
+    s"SpillableStore: ${this.getClass.getSimpleName}, " +
+      s"Total Handles: $numHandles, " +
+      s"Spillable Handles: $spillableHandleCount, " +
+      s"Total Handle Bytes: $totalHandleBytes, " +
+      s"Spillable Handle Bytes: $spillableHandleBytes"
+  }
 }
 
 class SpillableHostStore(val maxSize: Option[Long] = None)
@@ -1720,6 +1738,24 @@ object SpillFramework extends Logging {
     }
     val hostSpillStorageSizeStr = hostSpillStorageSize.map(sz => s"$sz B").getOrElse("unlimited")
     logInfo(s"Initialized SpillFramework. Host spill store max size is: $hostSpillStorageSizeStr.")
+  }
+
+  def getHostStoreSpillableSummary: String = {
+    try {
+      stores.hostStore.spillableSummary()
+    } catch {
+      case _: IllegalStateException =>
+        "Could not log spill summary, spill framework not initialized"
+    }
+  }
+
+  def getDeviceStoreSpillableSummary: String = {
+    try {
+      stores.deviceStore.spillableSummary()
+    } catch {
+      case _: IllegalStateException =>
+        "Could not log spill summary, spill framework not initialized"
+    }
   }
 
   def shutdown(): Unit = {

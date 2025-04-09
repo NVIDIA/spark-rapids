@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
 import com.nvidia.spark.rapids.spill.{SpillableColumnarBatchFromBufferHandle, SpillableColumnarBatchHandle, SpillableCompressedColumnarBatchHandle, SpillableDeviceBufferHandle, SpillableHostBufferHandle, SpillableHostColumnarBatchHandle}
 
 import org.apache.spark.TaskContext
@@ -27,7 +28,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * Holds a ColumnarBatch that the backing buffers on it can be spilled.
  */
-trait SpillableColumnarBatch extends AutoCloseable {
+trait SpillableColumnarBatch extends AutoCloseable with SizeProvider {
   /**
    * The number of rows stored in this batch.
    */
@@ -420,7 +421,7 @@ object SpillableHostColumnarBatch {
  * Just like a SpillableColumnarBatch but for buffers.
  */
 class SpillableBuffer(
-    handle: SpillableDeviceBufferHandle) extends AutoCloseable {
+    handle: SpillableDeviceBufferHandle) extends AutoCloseable with SizeProvider {
 
   /**
    * Set a new spill priority.
@@ -447,6 +448,8 @@ class SpillableBuffer(
     val size = handle.sizeInBytes
     s"SpillableBuffer size:$size, handle:$handle"
   }
+
+  override def sizeInBytes: Long = handle.sizeInBytes
 }
 
 /**
@@ -459,7 +462,7 @@ class SpillableBuffer(
  */
 class SpillableHostBuffer(handle: SpillableHostBufferHandle,
                           val length: Long)
-    extends AutoCloseable {
+    extends AutoCloseable with SizeProvider {
   /**
    * Set a new spill priority.
    */
@@ -478,8 +481,23 @@ class SpillableHostBuffer(handle: SpillableHostBufferHandle,
     handle.materialize()
   }
 
+  /**
+   * Get the host buffer for data part only, which is sliced to the range of [0, length).
+   * Since a spillable buffer may have larger space than the actual data size.
+   */
+  def getDataHostBuffer(): HostMemoryBuffer = {
+    val buf = getHostBuffer()
+    if (length < buf.getLength) {
+      withResource(buf)(_.slice(0, length))
+    } else { // length == buf.getLength
+      buf
+    }
+  }
+
   override def toString: String =
     s"SpillableHostBuffer length:$length, handle:$handle"
+
+  override def sizeInBytes: Long = length
 }
 
 object SpillableBuffer {
@@ -519,5 +537,11 @@ object SpillableHostBuffer {
           s"greater than the backing host buffer length ${buffer.getLength} B")
     }
     new SpillableHostBuffer(SpillableHostBufferHandle(buffer), length)
+  }
+
+  def sliceWithRetry(shb: SpillableHostBuffer, start: Long, len: Long): HostMemoryBuffer = {
+    withRetryNoSplit[HostMemoryBuffer] {
+      withResource(shb.getHostBuffer())(_.slice(start, len))
+    }
   }
 }

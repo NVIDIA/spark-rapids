@@ -1177,12 +1177,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def tagPlanForGpu(): Unit = {
     // We don't support Maps as GroupBy keys yet, even if they are nested in Structs. So,
     // we need to run recursive type check on the structs.
-    val mapOrBinaryGroupings = agg.groupingExpressions.exists(e =>
-      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[MapType] || dt.isInstanceOf[BinaryType]))
-    if (mapOrBinaryGroupings) {
-      willNotWorkOnGpu("MapType, or BinaryType " +
-        "in grouping expressions are not supported")
+    val mapGroupings = agg.groupingExpressions.exists(e =>
+      TrampolineUtil.dataTypeExistsRecursively(e.dataType, dt => dt.isInstanceOf[MapType]))
+    if (mapGroupings) {
+      willNotWorkOnGpu("MapType in grouping expressions are not supported")
     }
 
     // We support Arrays as grouping expression but not if the child is a struct. So we need to
@@ -1380,8 +1378,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       val estimatedInputSize = gpuChild.output.map { attr =>
         GpuBatchUtils.estimateGpuMemory(attr.dataType, attr.nullable, numRowsForEstimate)
       }.sum
-      val estimatedOutputSize = preProcessAggHelper.preStepBound.outputTypes.map { dt =>
-        GpuBatchUtils.estimateGpuMemory(dt, true, numRowsForEstimate)
+      val estimatedOutputSize = preProcessAggHelper.preStepBound.outputExprs.map { e =>
+        GpuBatchUtils.estimateGpuMemory(e.dataType, true, numRowsForEstimate)
       }.sum
       if (estimatedInputSize == 0 && estimatedOutputSize == 0) {
         1.0
@@ -2079,7 +2077,7 @@ class DynamicGpuPartialAggregateIterator(
     skipAggPassReductionRatio: Double
 ) extends Iterator[ColumnarBatch] {
   private var aggIter: Option[Iterator[ColumnarBatch]] = None
-  private[this] val isReductionOnly = boundGroupExprs.outputTypes.isEmpty
+  private[this] val isReductionOnly = boundGroupExprs.outputExprs.isEmpty
 
   // When doing a reduction we don't have the aggIter setup for the very first time
   // so we have to match what happens for the normal reduction operations.
@@ -2099,18 +2097,22 @@ class DynamicGpuPartialAggregateIterator(
       helper: AggHelper): (Iterator[ColumnarBatch], Boolean) = {
     // we need to decide if we are going to sort the data or not, so the very
     // first thing we need to do is get a batch and make a choice.
-    val cb = cbIter.next()
     withResource(new NvtxWithMetrics("dynamic sort heuristic", NvtxColor.BLUE,
       metrics.opTime, metrics.heuristicTime)) { _ =>
-      lazy val estimatedGrowthAfterAgg: Double = closeOnExcept(cb) { cb =>
-        val numRows = cb.numRows()
-        val cardinality = estimateCardinality(cb)
-        val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
-          helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-        (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
-      }
-      val wrappedIter = Seq(cb).toIterator ++ cbIter
-      (wrappedIter, estimatedGrowthAfterAgg > 1.0)
+
+        withRetryNoSplit(SpillableColumnarBatch(cbIter.next(),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            val numRows = cb.numRows()
+            val cardinality = estimateCardinality(cb)
+            val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
+              helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+            val estimatedGrowthAfterAgg =
+              (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
+            val wrappedIter = Seq(GpuColumnVector.incRefCounts(cb)).toIterator ++ cbIter
+            (wrappedIter, estimatedGrowthAfterAgg > 1.0)
+          }
+        }
     }
   }
 
@@ -2134,8 +2136,7 @@ class DynamicGpuPartialAggregateIterator(
     // After sorting we want to split the input for the project so that
     // we don't get ourselves in trouble.
     val sortedSplitIter = new PreProjectSplitIterator(sortedIter,
-      inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
-      metrics.opTime, metrics.numPreSplits)
+      preProcessAggHelper.preStepBound, metrics.opTime, metrics.numPreSplits)
 
     val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper,
       metrics)
@@ -2153,8 +2154,7 @@ class DynamicGpuPartialAggregateIterator(
     // We still want to split the input, because the heuristic may not be perfect and
     //  this is relatively light weight
     val splitInputIter = new PreProjectSplitIterator(inputIter,
-      inputAttrs.map(_.dataType).toArray, preProcessAggHelper.preStepBound,
-      metrics.opTime, metrics.numPreSplits)
+      preProcessAggHelper.preStepBound, metrics.opTime, metrics.numPreSplits)
 
     val localInputRowsMetrics = new LocalGpuMetric
 

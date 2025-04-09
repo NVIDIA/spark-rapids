@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.io.FileCommitProtocol
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -28,6 +27,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.FileFormatWriter
 import org.apache.spark.sql.hive.execution.SaveAsHiveFile
 import org.apache.spark.sql.rapids.GpuFileFormatWriter
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
 // Base trait from which all hive insert statement physical execution extends.
 private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {

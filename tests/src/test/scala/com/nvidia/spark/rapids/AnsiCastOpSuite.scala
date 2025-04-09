@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,11 @@ import scala.util.Random
 import com.nvidia.spark.rapids.shims.{CastingConfigShim, SparkShimImpl}
 
 import org.apache.spark.{SparkConf, SparkException}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
 
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
@@ -51,7 +52,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       upperValue: Long,
       outOfRangeValue: Long)(
       session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     // while creating timestamps we multiply the value by 1000 because spark divides it by 1000
     // before casting it to integral types
     generateValidValuesTimestampsDF(lowerValue, upperValue)(session)
@@ -106,7 +107,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   def generateValidValuesTimestampsDF(lowerValid: Long,
       upperValid: Long)(
       session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     //static seed
     val r = new Random(4135277987418063300L)
 

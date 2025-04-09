@@ -102,7 +102,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
       wrapped.relation.partitionSchema,
       wrapped.relation.dataSchema,
       wrapped.relation.bucketSpec,
-      GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+      GpuFileSourceScanExec.convertFileFormat(wrapped.relation),
       options)(sparkSession)
 
     GpuFileSourceScanExec(

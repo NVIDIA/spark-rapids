@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -142,7 +142,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     val input = if (isPreNeeded) {
-      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())
+      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded(), false)
     } else {
       childPlans.head.convertIfNeeded()
     }
@@ -165,9 +165,9 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     if (isPostNeeded) {
-      GpuProjectExec(post.toList, windowExpr)
+      GpuProjectExec(post.toList, windowExpr, false)
     } else if (windowExpr.output != windowExec.output) {
-      GpuProjectExec(windowExec.output.toList, windowExpr)
+      GpuProjectExec(windowExec.output.toList, windowExpr, false)
     } else {
       windowExpr
     }
