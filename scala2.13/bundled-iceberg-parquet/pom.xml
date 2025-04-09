@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2025 NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.nvidia</groupId>
+        <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
+        <version>25.04.0-SNAPSHOT</version>
+        <relativePath>../jdk-profiles/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>rapids-4-spark-bundled-iceberg-parquet_2.13</artifactId>
+    <name>Bundled iceberg parquet for RAPIDS Accelerator</name>
+    <description>Bundled iceberg parquet for RAPIDS Accelerator</description>
+    <version>25.04.0-SNAPSHOT</version>
+
+    <properties>
+        <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.compressed.artifact>false</rapids.compressed.artifact>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-parquet</artifactId>
+            <version>${iceberg.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <configuration>
+                    <shadedArtifactAttached>true</shadedArtifactAttached>
+                    <artifactSet>
+                        <excludes>
+                            <exclude>org.slf4j:*</exclude>
+                        </excludes>
+                    </artifactSet>
+                    <transformers>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <manifestEntries>
+                                <Multi-Release>true</Multi-Release>
+                            </manifestEntries>
+                        </transformer>
+                        <transformer
+                                implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                    </transformers>
+                    <relocations>
+                        <!--
+                        This package is introduced by iceberg-parquet. We need to shade it
+                        because it conflicts with iceberg-spark-runtime. When running
+                        spark-rapids with iceberg support, we require user to provide
+                        iceberg-spark-runtime jar, which also contains the iceberg-parquet
+                        package, but relocated parquet classes, see https://github
+                        .com/apache/iceberg/blob/10fc04b639136af7e5bf6720e89b00637109374c/spark/v3.5/build.gradle#L255.
+                        If we don't do this shading, at runtime for classes in iceberg-parquet,
+                        there will be two versions in the classpath, one from
+                        iceberg-spark-runtime, another from iceberg-parquet, but they have
+                        different class definitions, which will cause runtime linkage errors.
+                         -->
+                        <relocation>
+                            <pattern>org.apache.iceberg.parquet</pattern>
+                            <shadedPattern>${rapids.shade.package}.org.apache.iceberg.parquet</shadedPattern>
+                        </relocation>
+                    </relocations>
+                    <minimizeJar>true</minimizeJar>
+                    <createDependencyReducedPom>true</createDependencyReducedPom>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>main-${spark.version.classifier}</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

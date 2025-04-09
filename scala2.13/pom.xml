@@ -580,6 +580,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>bundled-iceberg-parquet</module>
             </modules>
         </profile>
         <profile>
@@ -625,6 +626,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>bundled-iceberg-parquet</module>
             </modules>
         </profile>
         <profile>
@@ -647,6 +649,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>bundled-iceberg-parquet</module>
             </modules>
         </profile>
         <profile>
@@ -669,6 +672,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>bundled-iceberg-parquet</module>
             </modules>
         </profile>
         <profile>
@@ -691,6 +695,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>bundled-iceberg-parquet</module>
             </modules>
         </profile>
         <profile>
@@ -713,6 +718,7 @@
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg</module>
+                <module>bundled-iceberg-parquet</module>
             </modules>
         </profile>
         <!-- #if scala-2.13 -->
