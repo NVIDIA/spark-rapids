@@ -1135,6 +1135,7 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
           // check that this timezoneID is valid
+          timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
           GpuTimeZoneDB.getZoneId(timezoneShortID)
         }
     }

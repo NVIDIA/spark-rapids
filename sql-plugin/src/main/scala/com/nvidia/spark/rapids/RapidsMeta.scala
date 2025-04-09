@@ -1110,7 +1110,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = conf.isFoldableNonLitAllowed
 
-  // There are 1 levels of timezone check in GPU plan tag phase:
+  // There are 2 levels of timezone check in GPU plan tag phase:
   //    Level 1: Check whether an expression is related to timezone. This is achieved by
   //        [[needTimeZoneCheck]] below.
   //    Level 2: Check related expression has been implemented with timezone. There is a
