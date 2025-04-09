@@ -168,7 +168,8 @@ def test_delta_update_rows(spark_tmp_path, use_cdf, partition_columns, enable_de
 @ignore_order
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
-@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_350DB143_xfail_reasons(
+                            enabled_xfail_reason='https://github.com/NVIDIA/spark-rapids/issues/12042'), ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors are new in Spark 3.4.0 / DBR 12.2")
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/10025')
 def test_delta_update_rows_with_dv(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
