@@ -44,6 +44,12 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
   require(originPlan.relation.fileFormat.getClass == classOf[ParquetFileFormat],
     "HybridScan only supports ParquetFormat")
 
+  logInfo(s"using HybridScan over HadoopFsRelation: $originPlan")
+
+  override val nodeName: String = {
+    s"HybridScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
+  }
+
   override def relation: BaseRelation = originPlan.relation
 
   override def tableIdentifier: Option[TableIdentifier] = originPlan.tableIdentifier

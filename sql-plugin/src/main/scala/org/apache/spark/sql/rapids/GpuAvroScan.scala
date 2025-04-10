@@ -31,6 +31,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
@@ -722,6 +723,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
     override def call(): HostMemoryBuffersWithMetaDataBase = {
       TrampolineUtil.setTaskContext(taskContext)
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         doRead()
       } catch {
@@ -735,6 +737,7 @@ class GpuMultiFileCloudAvroPartitionReader(
             s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
           AvroHostBuffersWithMeta(partFile, Array(SingleHMBAndMeta.empty()), 0)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }

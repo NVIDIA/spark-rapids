@@ -97,6 +97,7 @@ class GpuSortMergeJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          conf.sizedJoinPartitionAmplification,
           readOpt,
           join.isSkewJoin)(
           join.leftKeys,
@@ -112,6 +113,7 @@ class GpuSortMergeJoinMeta(
           right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
+          conf.sizedJoinPartitionAmplification,
           readOpt,
           join.isSkewJoin)(
           join.leftKeys,
@@ -125,6 +127,7 @@ class GpuSortMergeJoinMeta(
           joinCondition,
           left,
           right,
+          readOpt,
           join.isSkewJoin)(
           join.leftKeys,
           join.rightKeys)

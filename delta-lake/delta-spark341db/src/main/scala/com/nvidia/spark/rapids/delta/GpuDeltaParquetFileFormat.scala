@@ -29,7 +29,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -116,7 +116,8 @@ object GpuDeltaParquetFileFormat {
     }
   }
 
-  def convertToGpu(fmt: DeltaParquetFileFormat): GpuDeltaParquetFileFormat = {
+  def convertToGpu(relation: HadoopFsRelation): GpuDeltaParquetFileFormat = {
+    val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     GpuDeltaParquetFileFormat(fmt.columnMappingMode, fmt.referenceSchema, fmt.isSplittable,
       fmt.disablePushDowns, fmt.broadcastDvMap)
   }

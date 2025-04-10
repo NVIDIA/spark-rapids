@@ -27,6 +27,7 @@ import scala.collection.mutable.ListBuffer
 
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.{AddFile, FileAction}
+import com.databricks.sql.transaction.tahoe.commands.DeletionVectorUtils
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, Constraints}
 import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -109,12 +110,10 @@ class GpuOptimisticTransaction(
       }
 
       val _spark = spark
-      val protocol = deltaLog.unsafeVolatileSnapshot.protocol
-
       val statsCollection = new GpuStatisticsCollection {
         override val spark = _spark
-        override val deletionVectorsSupported =
-          protocol.isFeatureSupported(DeletionVectorsTableFeature)
+        override val deletionVectorsSupported: Boolean =
+          DeletionVectorUtils.deletionVectorsWritable(snapshot, newProtocol, newMetadata)
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
         override val numIndexedCols = indexedCols

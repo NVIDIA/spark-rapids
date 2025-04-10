@@ -58,6 +58,7 @@ ArrayIntersect,4
 ArrayJoin,4
 ArrayMax,4
 ArrayMin,4
+ArrayPosition,4
 ArrayRemove,4
 ArrayRepeat,4
 ArrayTransform,4
@@ -140,6 +141,7 @@ HiveGenericUDF,4
 HiveHash,4
 HiveSimpleUDF,4
 Hour,4
+HyperLogLogPlusPlus,4
 Hypot,4
 If,4
 In,4

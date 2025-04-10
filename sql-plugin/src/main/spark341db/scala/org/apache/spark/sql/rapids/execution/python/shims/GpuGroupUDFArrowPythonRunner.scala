@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -55,6 +55,7 @@ class GpuGroupUDFArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Long,
     override val pythonOutSchema: StructType,
+    argNames: Option[Array[Array[Option[String]]]] = None,
     jobArtifactUUID: Option[String] = None)
   extends GpuBasePythonRunner[ColumnarBatch](funcs.map(_._1), evalType, argOffsets,
     jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
@@ -69,7 +70,7 @@ class GpuGroupUDFArrowPythonRunner(
 
       val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, batchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {
-          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets)
+          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets, argNames)
         }
       }
 

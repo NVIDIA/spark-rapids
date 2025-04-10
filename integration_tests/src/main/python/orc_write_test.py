@@ -19,7 +19,7 @@ import pyarrow.orc as orc
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from spark_session import is_before_spark_320, is_databricks_version_or_later, is_spark_321cdh, is_spark_400_or_later, is_spark_cdh, with_cpu_session, with_gpu_session
-from conftest import is_not_utc
+from conftest import is_apache_runtime, is_databricks_runtime, is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -101,8 +101,10 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
+# Only runs on Apache and Databricks, as PyArrow requires files to be stored on the local filesystem.
 @pytest.mark.parametrize('orc_gen', [int_gen], ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@pytest.mark.skipif(not is_apache_runtime() and not is_databricks_runtime(), reason="Only runs on Apache and Databricks")
 def test_write_with_stripe_size_rows(spark_tmp_path, orc_gen, orc_impl):
     gen_list = [('_c0', orc_gen)]
     data_path = spark_tmp_path + '/ORC_DATA'

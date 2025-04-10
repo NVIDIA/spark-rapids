@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RmmSpark, RmmSparkThreadState}
 import com.nvidia.spark.rapids.spill._
 import org.mockito.Mockito.when
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Ignore}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 import org.scalatest.concurrent.{Signaler, TimeLimits}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.time._
@@ -34,8 +34,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-// Waiting for the fix of https://github.com/NVIDIA/spark-rapids/issues/12194
-@Ignore
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
   private val sqlConf = new SQLConf()
@@ -267,7 +265,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       waitForFree()
     }
 
-    private def doAlloc(): Void = {
+    def doAlloc(): Void = {
       RmmRapidsRetryIterator.withRetryNoSplit {
         val tmp = HostAlloc.alloc(size, preferPinned)
         synchronized {
@@ -351,8 +349,9 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       // put RMM back for other tests to use
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-    // 1 GiB
-    PinnedMemoryPool.initialize(1 * 1024 * 1024 * 1024)
+    // less than 1 GiB, see more background at:
+    // https://github.com/NVIDIA/spark-rapids/issues/12194#issuecomment-2703186601
+    PinnedMemoryPool.initialize(500 * 1024 * 1024)
     HostAlloc.initialize(-1)
   }
 
@@ -670,6 +669,75 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
         thread1.done.get(1, TimeUnit.SECONDS)
         thread2.done.get(1, TimeUnit.SECONDS)
         thread3.done.get(1, TimeUnit.SECONDS)
+      }
+    }
+  }
+
+  test("split should not happen immediately after fallback on memory contention") {
+
+    // It allocates a small piece of memory (1024) as a warmup, sleep 1s,
+    // then allocates a large piece of memory
+    class AllocOnAnotherThreadWithWarmup(override val thread: TaskThread,
+        override val size: Long) extends AllocOnAnotherThread(thread, size) {
+
+      override def doAlloc(): Void = {
+        RmmRapidsRetryIterator.withRetryNoSplit {
+
+          // read shuffle data from remote and put it into Spillalble Framework
+          val w = SpillableHostBuffer.apply(HostAlloc.alloc(1024, preferPinned),
+            1024, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+
+          Thread.sleep(1000)
+
+          // let's say we will do sth with the shuffle data read, e.g. concat them
+          // for simplicity, we just have one SpillableHostBuffer as input, in real case there
+          // should be multiple SpillableHostBuffer as input
+          withResource(w.getHostBuffer()) { _ =>
+            // create another buffer as destination for concat
+            val tmp = HostAlloc.alloc(size, preferPinned)
+            synchronized {
+              closeOnExcept(tmp) { _ =>
+                assert(b.isEmpty)
+                b = Option(tmp)
+              }
+            }
+          }
+
+          // at some point close w
+          w.close()
+        }
+        null
+      }
+    }
+
+    PinnedMemoryPool.initialize(0)
+    HostAlloc.initialize(10 * 1024) // memory only big enough for the one concurrent thread to pass
+
+    failAfter(Span(10, Seconds)) {
+      val thread1 = new TaskThread("thread1", 1)
+      thread1.initialize()
+      val thread2 = new TaskThread("thread2", 2)
+      thread2.initialize()
+
+      try {
+        // Actually it will require 10 * 1024 memory
+        withResource(new AllocOnAnotherThreadWithWarmup(thread2, 9 * 1024)) { a =>
+
+          // Actually it will require 10 * 1024 memory
+          withResource(new AllocOnAnotherThreadWithWarmup(thread1, 9 * 1024)) { b =>
+
+            // At this point, both threads are blocked because of memory contention,
+            // we expect both thread1 and thread2 to fall back to BUFN state, and then thread1
+            // should attempt another try before doing splitting
+
+            b.waitForAlloc()
+            b.assertAllocSize(9 * 1024)
+            b.freeAndWait()
+          }
+        }
+      } finally {
+        thread1.done.get(1, TimeUnit.SECONDS)
+        thread2.done.get(1, TimeUnit.SECONDS)
       }
     }
   }

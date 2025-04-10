@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -58,10 +58,6 @@ _enable_json_to_structs_conf = {
     'spark.rapids.sql.json.read.double.enabled': 'true',
     'spark.rapids.sql.json.read.decimal.enabled': 'true',
     'spark.rapids.sql.json.read.decimal.enabled': 'true'
-}
-
-_enable_json_tuple_conf = {
-    'spark.rapids.sql.expression.JsonTuple': 'true'
 }
 
 WITH_COMMENTS_FILE = "withComments.json"
@@ -131,8 +127,7 @@ def test_get_json_object_allow_comments_off(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_comments_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_COMMENTS_FILE, "json").selectExpr('''json_tuple(json, "str")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_COMMENTS_FILE, "json").selectExpr('''json_tuple(json, "str")'''))
 
 WITH_SQ_FILE = "withSingleQuotes.json"
 WITH_SQ_SCHEMA = StructType([StructField("str", StringType())])
@@ -198,8 +193,7 @@ def test_get_json_object_allow_single_quotes_on(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_single_quotes_on(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_SQ_FILE, "json").selectExpr('''json_tuple(json, "str")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_SQ_FILE, "json").selectExpr('''json_tuple(json, "str")'''))
 
 WITH_UNQUOTE_FIELD_NAMES_FILE = "withUnquotedFieldNames.json"
 WITH_UNQUOTE_FIELD_NAMES_SCHEMA = StructType([StructField("str", StringType())])
@@ -268,8 +262,7 @@ def test_get_json_object_allow_unquoted_field_names_off(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_unquoted_field_names_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTE_FIELD_NAMES_FILE, "json").selectExpr('''json_tuple(json, "str")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTE_FIELD_NAMES_FILE, "json").selectExpr('''json_tuple(json, "str")'''))
 
 WITH_NUMERIC_LEAD_ZEROS_FILE = "withNumericLeadingZeros.json"
 WITH_NUMERIC_LEAD_ZEROS_SCHEMA = StructType([StructField("byte", ByteType()),
@@ -343,8 +336,7 @@ def test_get_json_object_allow_numeric_leading_zeros_off(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_numeric_leading_zeros_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NUMERIC_LEAD_ZEROS_FILE, "json").selectExpr('''json_tuple(json, "byte", "int", "float", "decimal")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NUMERIC_LEAD_ZEROS_FILE, "json").selectExpr('''json_tuple(json, "byte", "int", "float", "decimal")'''))
 
 WITH_NONNUMERIC_NUMBERS_FILE = "withNonnumericNumbers.json"
 WITH_NONNUMERIC_NUMBERS_SCHEMA = StructType([
@@ -421,8 +413,7 @@ def test_get_json_object_allow_nonnumeric_numbers_off(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_nonnumeric_numbers_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NONNUMERIC_NUMBERS_FILE, "json").selectExpr('''json_tuple(json, "float", "double")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_NONNUMERIC_NUMBERS_FILE, "json").selectExpr('''json_tuple(json, "float", "double")'''))
 
 WITH_BS_ESC_FILE = "withBackslashEscapingAnyCharacter.json"
 WITH_BS_ESC_SCHEMA = StructType([
@@ -492,8 +483,7 @@ def test_get_json_object_allow_backslash_escape_any_off(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_backslash_escape_any_off(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_BS_ESC_FILE, "json").selectExpr('''json_tuple(json, "str")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_BS_ESC_FILE, "json").selectExpr('''json_tuple(json, "str")'''))
 
 WITH_UNQUOTED_CONTROL_FILE = "withUnquotedControlChars.json"
 WITH_UNQUOTED_CONTROL_SCHEMA = StructType([
@@ -559,8 +549,7 @@ def test_get_json_object_allow_unquoted_control_chars_on(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_allow_unquoted_control_chars_on(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTED_CONTROL_FILE, "json").selectExpr('''json_tuple(json, "str")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_UNQUOTED_CONTROL_FILE, "json").selectExpr('''json_tuple(json, "str")'''))
 
 
 WITH_DEC_LOCALE_FILE = "decimal_locale_formatted_strings.json"
@@ -635,8 +624,7 @@ def test_get_json_object_dec_locale(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_dec_locale(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_FILE, "json").selectExpr('''json_tuple(json, "data")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_FILE, "json").selectExpr('''json_tuple(json, "data")'''))
 
 
 ####################################################################
@@ -712,8 +700,7 @@ def test_get_json_object_dec_locale_non_aribic(std_input_path):
 @allow_non_gpu(TEXT_INPUT_EXEC)
 def test_json_tuple_dec_locale_non_aribic(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_NON_ARIBIC_FILE, "json").selectExpr('''json_tuple(json, "data")'''),
-        conf =_enable_json_tuple_conf)
+        lambda spark : read_json_as_text(spark, std_input_path + '/' + WITH_DEC_LOCALE_NON_ARIBIC_FILE, "json").selectExpr('''json_tuple(json, "data")'''))
 
 # These are common files used by most of the tests. A few files are for specific types, but these are very targeted tests
 COMMON_TEST_FILES=[
@@ -1059,8 +1046,7 @@ def test_json_tuple_formats(std_input_path, input_file):
             '''json_tuple(json, "data")''').selectExpr("*",
                 # json_tuple is not the same as get_json_object
             '''json_tuple(json, 'id', 'name', 'details.address.city') AS (id, name, city)''').selectExpr("*",
-            '''json_tuple(json, 'user.profile.username', 'user.skills[0]', 'user.projects[1].name') AS (username, first_skill, second_project_name)'''),
-        conf =_enable_json_tuple_conf)
+            '''json_tuple(json, 'user.profile.username', 'user.skills[0]', 'user.projects[1].name') AS (username, first_skill, second_project_name)'''))
 
 @pytest.mark.parametrize('input_file', COMMON_SCAN_TEST_FILES)
 @pytest.mark.parametrize('read_func', [read_json_df])
@@ -1471,6 +1457,7 @@ def test_from_json_string_arrays(std_input_path, input_file):
     "timestamp_tz_formatted_strings.json",
     "scan_emtpy_lines.json"])
 @pytest.mark.parametrize('read_func', [read_json_df]) # we have done so many tests already that we don't need both read func. They are the same
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11711')
 def test_scan_json_long_structs(std_input_path, read_func, spark_tmp_table_factory, input_file):
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + input_file,
@@ -1503,6 +1490,7 @@ def test_scan_json_long_structs(std_input_path, read_func, spark_tmp_table_facto
     "timestamp_formatted_strings.json",
     "timestamp_tz_formatted_strings.json"])
 @allow_non_gpu(TEXT_INPUT_EXEC, *non_utc_allow) # https://github.com/NVIDIA/spark-rapids/issues/10453
+@pytest.mark.xfail(condition=is_databricks143_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/11711')
 def test_from_json_long_structs(std_input_path, input_file):
     schema = StructType([StructField("data", StructType([StructField("A", LongType()),StructField("B", LongType())]))])
     assert_gpu_and_cpu_are_equal_collect(

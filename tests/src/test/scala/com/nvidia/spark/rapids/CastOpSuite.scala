@@ -26,10 +26,11 @@ import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
 
 class CastOpSuite extends GpuExpressionTestSuite {
@@ -832,19 +833,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Detect overflow from numeric types to decimal") {
     def intGenerator(column: Seq[Int])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def longGenerator(column: Seq[Long])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def floatGenerator(column: Seq[Float])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def doubleGenerator(column: Seq[Double])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def decimalGenerator(column: Seq[Decimal], decType: DecimalType
@@ -968,7 +969,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("cast string to decimal (truncated cases)") {
     def specialGenerator(column: Seq[String])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
 
@@ -1061,7 +1062,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     rndGenerator: scala.util.Random,
     rowCount: Int)(ss: SparkSession): DataFrame = {
 
-    import ss.sqlContext.implicits._
+    import ss.implicits._
     val enhancedRnd = new EnhancedRandom(rndGenerator, FuzzerOptions()) {
       override def nextLong(): Long = r.nextInt(11) match {
         case 0 => -999999999999999999L
@@ -1126,77 +1127,77 @@ object CastOpSuite {
   }
 
   def bytesAsShorts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toShort).toDF("c0")
   }
 
   def bytesAsInts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toInt).toDF("c0")
   }
 
   def bytesAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toLong).toDF("c0")
   }
 
   def bytesAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toFloat).toDF("c0")
   }
 
   def bytesAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toDouble).toDF("c0")
   }
 
   def bytesAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def bytesAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def shortsAsInts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toInt).toDF("c0")
   }
 
   def shortsAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toLong).toDF("c0")
   }
 
   def shortsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toFloat).toDF("c0")
   }
 
   def shortsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toDouble).toDF("c0")
   }
 
   def shortsAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def shortsAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def intsAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(_.toLong).toDF("c0")
   }
 
   def intsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     // Spark 3.1.0 changed the range of floats that can be cast to integral types and this
     // required the intsAsFloats to be updated to avoid using Int.MaxValue. The supported
     // range is now `Math.floor(x) <= Int.MaxValue && Math.ceil(x) >= Int.MinValue`
@@ -1204,52 +1205,52 @@ object CastOpSuite {
   }
 
   def intsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(_.toDouble).toDF("c0")
   }
 
   def intsAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def intsAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def longsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(_.toFloat).toDF("c0")
   }
 
   def longsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(_.toDouble).toDF("c0")
   }
 
   def longsAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def longsAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def longsAsDecimalStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(value => String.valueOf(value) + ".1").toDF("c0")
   }
 
   def timestampsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampValues.map(_.toFloat).toDF("c0")
   }
 
   def timestampsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampValues.map(_.toDouble).toDF("c0")
   }
 
@@ -1407,7 +1408,7 @@ object CastOpSuite {
   }
 
   def longsDivideByMicrosPerSecond(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(_ / 10000000L).toDF("c0")
   }
 
@@ -1415,12 +1416,12 @@ object CastOpSuite {
       session: SparkSession,
       castStringToTimestamp: Boolean,
       validOnly: Boolean): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampsAsStringsSeq(castStringToTimestamp, validOnly).toDF("c0")
   }
 
   def validTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     val timestampStrings = Seq(
       "8669-07-22T04:45:57.73",
       "6233-08-04T19:30:55.701",
