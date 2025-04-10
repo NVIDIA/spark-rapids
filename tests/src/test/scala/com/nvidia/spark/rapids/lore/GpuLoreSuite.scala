@@ -99,7 +99,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("AQE broadcast") {
-    doTestReplay("90[*]") { spark =>
+    doTestReplay("93[*]") { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       val df1 = spark.range(0, 1000, 1, 10)
