@@ -159,7 +159,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
     assertCause(e2, classOf[RejectedExecutionException])
   }
 
-  ignore("test task metrics: https://github.com/NVIDIA/spark-rapids/issues/12410") {
+  test("task metrics") {
     val exec = Executors.newSingleThreadExecutor()
     // Run a task. Note that the first task never waits in ThrottlingExecutor.
     var runningTask = new TestTask
@@ -167,6 +167,7 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
       override def run(): Unit = executor.submit(runningTask, 100)
     })
     var taskCount = 1
+    var actualMaxThrottleTimeNs = 0L
 
     for (i <- 0 to 9) {
       val sleepTimeMs = (i + 1) * 10L
@@ -195,11 +196,20 @@ class ThrottlingExecutorSuite extends AnyFunSuite with BeforeAndAfterEach {
       runningTask.latch.countDown()
       // Wait until the waitingTask is submitted.
       waitingTaskSubmitted.await(longTimeoutSec, TimeUnit.SECONDS)
+      actualMaxThrottleTimeNs = math.max(actualMaxThrottleTimeNs, actualWaitTimeNs.get())
       executor.updateMetrics()
 
       // Skip the check on the min throttle time as the first task never waits.
 
-      assert(actualWaitTimeNs.get() >=
+      // This test incrementally increases the task wait time in a loop, which will update
+      // the max throttle time metric in the ThrottlingExecutor. However, it seems possible
+      // that the wait time in a previous iteration can be larger than the wait time in the
+      // current iteration in some cases, especially when the task has to wait for longer
+      // than the given wait time because of some other factors such as limited resources.
+      // As such, we compute the actual max wait time (actualMaxThrottleTimeNs) and compare
+      // it with the max throttle time metric instead of the current wait time
+      // (actualWaitTimeNs.get()).
+      assert(actualMaxThrottleTimeNs >=
         taskMetrics(GpuWriteJobStatsTracker.ASYNC_WRITE_MAX_THROTTLE_TIME_KEY).value
       )
 
