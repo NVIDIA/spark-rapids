@@ -557,8 +557,6 @@ def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
         'spark.sql.ansi.enabled': 'false'
     }
 
-    check_filtered_length(data_path, condition, conf, 1, 2047)
-
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).filter(condition),
         exist_classes='HybridFileSourceScanExec',
@@ -748,8 +746,6 @@ def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
         'spark.rapids.sql.exec.FilterExec': False,
         'spark.sql.ansi.enabled': 'false',
     }
-
-    check_filtered_length(data_path, condition, conf, 1, 2047)
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).filter(condition),

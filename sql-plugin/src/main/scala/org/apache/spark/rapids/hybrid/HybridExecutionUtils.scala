@@ -194,7 +194,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArrayMin],
     classOf[ArrayPosition],
     classOf[ArrayRemove],
-    classOf[ArrayRepeat],
     classOf[ArraySort],
     classOf[ArraysZip],
     classOf[Ascii],
