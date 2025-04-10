@@ -95,13 +95,6 @@ query ($baseRefName: String!, $after: String) {
             name
           }
         }
-        projectCards(first: 10) {
-          nodes {
-            project {
-              name
-            }
-          }
-        }
         projectItems(first: 10) {
           nodes {
               roadmap: fieldValueByName(name: "Roadmap") {
@@ -134,13 +127,6 @@ query ($after: String, $since: DateTime) {
         labels(first: 10) {
           nodes {
             name
-          }
-        }
-        projectCards(first: 10) {
-          nodes {
-            project {
-              name
-            }
           }
         }
         projectItems(first: 10) {
