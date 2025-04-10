@@ -54,7 +54,8 @@ case class GpuGroupedPythonRunnerFactory(
     argOffsets: Array[Array[Int]],
     dedupAttrs: StructType,
     pythonOutputSchema: StructType,
-    evalType: Int) {
+    evalType: Int,
+    argNames: Option[Array[Array[Option[String]]]] = None) {
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
@@ -68,6 +69,7 @@ case class GpuGroupedPythonRunnerFactory(
       pythonRunnerConf,
       // The whole group data should be written in a single call, so here is unlimited
       Int.MaxValue,
-      pythonOutputSchema)
+      pythonOutputSchema,
+      argNames)
   }
 }

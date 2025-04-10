@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ _atomic_gens = [
 
 _struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_atomic_gens)])
 
-# will be used by HyperLogLogPlusPLus(approx_count_distinct)
+# This is also used by HyperLogLogPlusPLus(approx_count_distinct)
 xxhash_gens = (_atomic_gens + [_struct_of_xxhash_gens] + single_level_array_gens
                + nested_array_gens_sample + [
                    all_basic_struct_gen,

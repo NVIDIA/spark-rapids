@@ -4033,6 +4033,47 @@ object GpuOverrides extends Logging {
           GpuDynamicPruningExpression(child)
         }
       }),
+    expr[HyperLogLogPlusPlus](
+      "Aggregation approximate count distinct",
+      ExprChecks.reductionAndGroupByAgg(TypeSig.LONG, TypeSig.LONG,
+        // HyperLogLogPlusPlus depends on Xxhash64
+        // HyperLogLogPlusPlus supports all the types that Xxhash 64 supports
+        Seq(ParamCheck("input",XxHash64Shims.supportedTypes, TypeSig.all))),
+      (a, conf, p, r) => new UnaryExprMeta[HyperLogLogPlusPlus](a, conf, p, r) {
+
+        // It's the same as Xxhash64
+        override def tagExprForGpu(): Unit = {
+          val maxDepth = a.children.map(
+            c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
+          if (maxDepth > Hash.MAX_STACK_DEPTH) {
+            willNotWorkOnGpu(s"The data type requires a stack depth of $maxDepth, " +
+                s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}. " +
+                "The algorithm to calculate stack depth: " +
+                "1: Primitive type counts 1 depth; " +
+                "2: Array of Structure counts:  1  + depthOf(Structure); " +
+                "3: Array of Other counts: depthOf(Other); " +
+                "4: Structure counts: 1 + max of depthOf(child); " +
+                "5: Map counts: 2 + max(depthOf(key), depthOf(value)); "
+            )
+          }
+          val precision = GpuHyperLogLogPlusPlus.computePrecision(a.relativeSD)
+          // Spark supports precision range: [4, Infinity)
+          // Spark-Rapids only supports precision range: [5, 14]
+          if (precision <= 4 || precision > 14) {
+            //
+            // Info: cuCollection supports precision range [4, 18]
+            // Due to https://github.com/NVIDIA/spark-rapids/issues/12347, the Spark-Rapids supports
+            // fewer precisions than cuCollection: range: [5, 14]
+            willNotWorkOnGpu(s"The precision $precision from relativeSD ${a.relativeSD} is bigger" +
+              s" than 14, GPU only supports precision range [5, 14].")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression = {
+          GpuHyperLogLogPlusPlus(child, a.relativeSD)
+        }
+      }
+    ),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 

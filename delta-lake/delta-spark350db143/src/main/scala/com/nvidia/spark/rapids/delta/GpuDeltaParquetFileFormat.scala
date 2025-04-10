@@ -247,8 +247,14 @@ case class GpuDeltaParquetFileFormat(
 
 object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (!meta.conf.isParquetPerFileReadEnabled) {
-      meta.willNotWorkOnGpu("Deletion vectors only supported for PERFILE reader")
+    val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+    val requiredSchema = meta.wrapped.requiredSchema
+    if (requiredSchema.exists(_.name.startsWith("_databricks_internal"))) {
+      meta.willNotWorkOnGpu(
+        s"reading metadata columns starting with prefix _databricks_internal is not supported")
+    }
+    if (format.hasDeletionVectorMap) {
+      meta.willNotWorkOnGpu("deletion vectors are not supported")
     }
   }
 
