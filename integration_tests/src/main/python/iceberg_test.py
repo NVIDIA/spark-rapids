@@ -158,7 +158,7 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
     ("uncompressed", None),
     ("snappy", None),
     ("gzip", None),
-    pytest.param(("lz4", "Unsupported compression type"),
+    pytest.param(("lz4", "Unsupported Parquet compression type"),
                  marks=pytest.mark.skipif(is_before_spark_320(),
                                           reason="Hadoop with Spark 3.1.x does not support lz4 by default")),
     ("zstd", None)], ids=idfn)
