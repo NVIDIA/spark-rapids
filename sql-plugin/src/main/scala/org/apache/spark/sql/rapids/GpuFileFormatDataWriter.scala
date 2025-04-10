@@ -341,7 +341,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * Avoid JVM GC issue when many short-living `WriterIndex` objects are created
    * if switching between concurrent writers frequently.
    */
-  protected val currentWriterId: WriterIndex = new WriterIndex(None, None)
+  private val currentWriterId: WriterIndex = new WriterIndex(None, None)
 
   /** Flag saying whether or not the data to be written out is partitioned. */
   protected val isPartitioned: Boolean = description.partitionColumns.nonEmpty
@@ -864,6 +864,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
         val getBucketId = genGetBucketIdFunc(keyHostCb)
         val getNextPartValues = genGetPartValuesFunc(keyHostCb)
         var idx = 0
+        var tempParVals: Option[InternalRow] = None
         while (idx < groups.length && concurrentWriters.size < spec.maxWriters) {
           val writerId = new WriterIndex(getNextPartValues(idx), getBucketId(idx))
           val writerStatus =
@@ -872,11 +873,10 @@ class GpuDynamicPartitionDataConcurrentWriter(
             // a new partition or bucket, so create a writer
             renewOutWriter(writerId, writerStatus, closeOldWriter = false)
             // if due to different part, update the tracker
-            if (currentWriterId.partitionValues != writerId.partitionValues) {
-              currentWriterId.partitionValues = writerId.partitionValues
-              statsTrackers.foreach(_.newPartition(writerId.partitionValues.get))
+            if (tempParVals != writerId.partitionValues) {
+              tempParVals = writerId.partitionValues
+              statsTrackers.foreach(_.newPartition(tempParVals.get))
             }
-            currentWriterId.bucketId = writerId.bucketId
           }
           withResource(groups(idx)) { gp =>
             groups(idx) = null
