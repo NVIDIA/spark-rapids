@@ -959,7 +959,6 @@
         <iceberg.artifact.suffix>3.5</iceberg.artifact.suffix>
         <iceberg.version>1.6.1</iceberg.version>
         <avro.version>1.11.2</avro.version>
-        <jackson.version>2.15.2</jackson.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
@@ -1149,12 +1148,6 @@
                 <groupId>org.apache.avro</groupId>
                 <artifactId>avro</artifactId>
                 <version>${avro.version}</version>
-                <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>${jackson.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
