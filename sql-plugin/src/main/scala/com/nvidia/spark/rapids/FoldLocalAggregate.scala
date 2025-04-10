@@ -40,25 +40,30 @@ object FoldLocalAggregate extends Rule[SparkPlan] {
             finalAggExpr.copy(mode = Complete, filter = partAggExpr.filter)
         }
         val aggAttributes = aggExpressions.map(_.resultAttribute)
+        // Need to use partial group expressions. Otherwise, `groupBy(Literal)` cases will fail.
+        // Because GpuHashAggregateExec derive input attributes from the child’s output. For a
+        // “group by 1”, the literal 1 is used only in the partial aggregate (as an alias for
+        // Literal(1)), and the final aggregate uses attributes bound from the partial output
+        // rather than the literal itself.
+        val groupingExpressions = partAgg.groupingExpressions
         finalAgg match {
           case hash: HashAggregateExec =>
             hash.copy(
-              // Need to use partial group expressions. Otherwise, groupBy(Literal) will fail.
-              groupingExpressions = partAgg.groupingExpressions,
+              groupingExpressions = groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
               child = partAgg.child)
           case sort: SortAggregateExec =>
             sort.copy(
               // Need to use partial group expressions. Otherwise, groupBy(Literal) will fail.
-              groupingExpressions = partAgg.groupingExpressions,
+              groupingExpressions = groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
               child = partAgg.child)
           case obj: ObjectHashAggregateExec =>
             obj.copy(
               // Need to use partial group expressions. Otherwise, groupBy(Literal) will fail.
-              groupingExpressions = partAgg.groupingExpressions,
+              groupingExpressions = groupingExpressions,
               aggregateExpressions = aggExpressions,
               aggregateAttributes = aggAttributes,
               child = partAgg.child)
