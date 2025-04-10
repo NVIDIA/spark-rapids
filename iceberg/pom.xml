@@ -48,7 +48,12 @@
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-bundled-iceberg-parquet_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
-            <classifier>shaded</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.iceberg</groupId>
+                    <artifactId>iceberg-parquet</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
