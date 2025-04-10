@@ -307,28 +307,28 @@ def test_hybrid_parquet_filter_pushdown_timestamp(spark_tmp_path):
 
 filter_pushdown_gen_list = [('bool1', BooleanGen()),
            ('bool2', BooleanGen()),
-           ('double1', DoubleGen()),
+           ('double1', DoubleGen(min_exp=-5, max_exp=5)),
            ('double2', DoubleGen()),
            ('double3', DoubleGen()),
-           ('int1', IntegerGen()),
-           ('int2', IntegerGen()),
+           ('int1', IntegerGen(min_val=-16, max_val=16)),
+           ('int2', IntegerGen(min_val=-16, max_val=16)),
            ('int3', IntegerGen()),
            ('int4', IntegerGen()),
-           ('int_not_null', IntegerGen(nullable=False)),
-           ('date1', DateGen()),
-           ('date2', DateGen()),
+           ('int_not_null1', IntegerGen(nullable=False, min_val=-16, max_val=16)),
+           ('int_not_null2', IntegerGen(nullable=False, min_val=-16, max_val=16)),
+           ('date1', DateGen(start=date(2009, 12, 25), end=date(2010, 1, 5))),
+           ('date2', DateGen(start=date(2009, 12, 25), end=date(2010, 1, 5))),
+           ('date3', DateGen(start=date(2010, 1, 25), end=date(2010, 2, 5))), 
            ('timestamp', TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
-           ('array_int_1', ArrayGen(IntegerGen())),
-           ('array_int_2', ArrayGen(IntegerGen())),
-           ('array_array_int_1', ArrayGen(ArrayGen(IntegerGen(),max_length=3))),
-           ('array_str_1', ArrayGen(StringGen())),
-           ('str1', StringGen()),
-           ('str2', StringGen()),
-           ('str3', StringGen(pattern='[a-z]{1,3}')),
-           ('digitstr', StringGen(pattern='[0-9]{1,5}')),
+           ('array_int_1', ArrayGen(IntegerGen(min_val=1, max_val=2), min_length=1, max_length=2)),
+           ('array_int_2', ArrayGen(IntegerGen(min_val=1, max_val=2), min_length=1, max_length=2)),
+           ('array_array_int_1', ArrayGen(ArrayGen(IntegerGen(min_val=1, max_val=2),max_length=2))),
+           ('array_str_1', ArrayGen(StringGen(pattern='[a-z]{1,3}'))),
+           ('str1', StringGen(pattern='[a-dA-D ]{1,3}')),
+           ('str2', StringGen(pattern='[a-dA-D ]{1,3}')),
            ('long', LongGen()),
            ('comma_separated_str', StringGen(pattern='([0-9],){1,5}')),
-           ('json_str', StringGen(pattern=r'\{"a": "[a-z]{1,3}"\}')),
+           ('json_str', StringGen(pattern=r'\{"a": "[a-c]{1,2}"\}')),
 ]
 
 condition_list = [
@@ -340,11 +340,9 @@ condition_list = [
     "(bool1 and bool2)",
     "(bool1 or bool2)",
     # Double:
-    # Acos, Acosh, Asin, Asinh, Atan, Atan2, Atanh, Ceil, Cos, Cosh, IsNaN, Log, Log10, Log2, Rint, Sin, Sqrt, Tan, Tanh,Cbrt,Exp,Expm1,Floor,ToDegrees,ToRadians
+    # Acos, Asin, Atan, Atan2, Atanh, Ceil, Cos, Cosh, IsNaN, Log, Log10, Log2, Rint, Exp, Expm1, Floor
     "(acos(double1) > 0.5)", 
-    pytest.param("(acosh(double1) < 1.5)", marks=pytest.mark.xfail(reason='result not correct')),
     "(asin(double1) > 0.2)", 
-    pytest.param("(asinh(double1) < 0.8)", marks=pytest.mark.xfail(reason='result not correct')), 
     "(atan(double1) > 0.3)", 
     "(atan2(double1, double2) > 0.4)", 
     "(atanh(double1) < 0.6)",
@@ -356,30 +354,19 @@ condition_list = [
     "(log10(double1) < 1.2)", 
     "(log2(double1) > 1.4)", 
     "(rint(double1) == 2)",
-    pytest.param("(sin(double1) > 0.1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    pytest.param("(sqrt(double1) < 1.6)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    pytest.param("(tan(double1) > 0.8)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    pytest.param("(tanh(double1) < 0.4)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    pytest.param("(cbrt(double1) == 3.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(exp(double1) == 1.0)",
-    "(expm1(double1) == 1.0)",
+    "(exp(double1) < 1.0)",
+    "(expm1(double1) < 1.0)",
     "(floor(double1) == 1)",
-    pytest.param("(degrees(double1) == 0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    pytest.param("(radians(double1) == 0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
     # Double, Int:
     # Round,ArrayRepeat
     "(round(double1) == 3)",
     # Double, Double:
     # NaNvl,Pow
     "(nanvl(double1, 1) == 1)",
-    "(pow(double1, double2) == 2)",
+    "(pow(double1, double2) < 1.0)",
     # Double, Long:
     # Round
     "(round(double1, 1) == 3.1)",
-    # Timestamp:
-    # Hour, Minute
-    pytest.param("(hour(timestamp) == 1)", marks=pytest.mark.xfail(reason='timestamp filter not supported by gluten')),
-    pytest.param("(minute(timestamp) == 1)", marks=pytest.mark.xfail(reason='timestamp filter not supported by gluten')),
     # Date:
     # LastDay, WeekOfYear,DayOfMonth, DayOfWeek, DayOfYear, Month, Quarter, Second, UnixMicros, UnixMillis, UnixSeconds, WeekDay, Year
     "(last_day(date1) == date1)",
@@ -390,7 +377,7 @@ condition_list = [
     "(month(date1) == 1)",
     # Date, Int
     # AddMonths
-    "(add_months(date1, 1) == date1)",
+    "(add_months(date1, 1) == date3)",
     # Date, Date:
     # DateDiff
     "(date_diff(date1, date2) == 1)",
@@ -409,118 +396,101 @@ condition_list = [
     "(array_remove(array_int_1, 1) == array_int_1)",
     "(element_at(array_int_1, 1) == 1)",
     # Array[Int]:
-    # ArrayDistinct,ArrayMax,ArrayMin,ArraySort,Shuffle,Size
+    # ArrayDistinct,ArrayMax,ArrayMin,ArraySort,Size
     "(array_distinct(array_int_1) == array_int_1)",
     "(array_max(array_int_1) == 1)",
     "(array_min(array_int_1) == 1)",
     "(sort_array(array_int_1) == array_int_1)",
-    pytest.param("(shuffle(array_int_1) == array_int_1)", marks=pytest.mark.xfail(reason='result not correct')),
     "(size(array_int_1) == 1)",
     # Array[Int], Array[Int]:
     # ArrayExcept,ArrayIntersect,ArraysZip
     "(array_except(array_int_1, array_int_2) == array_int_1)",
     "(array_intersect(array_int_1, array_int_2) == array_int_1)",
     "(arrays_zip(array_int_1, array_int_2) == " + 
-    "array(struct(1 as array_int_1, 1 as array_int_2), struct(2 as array_int_1, 2 as array_int_2), struct(3 as array_int_1, 3 as array_int_2)))",
+    "array(struct(1 as array_int_1, 1 as array_int_2), struct(2 as array_int_1, 2 as array_int_2)))",
     # Array[Array[Int]]:
     # Flatten
-    "(flatten(array_array_int_1) == array_int_1)",
+    "(flatten(array_array_int_1) == array(1,2,1,2))",
     # Array[Int], Array[Int], lambda:
     # ZipWith
-    "(zip_with(array_int_1, array_int_2, (x, y) -> x + y) == array(2,4,6))",
+    "(zip_with(array_int_1, array_int_2, (x, y) -> x + y) == array(2,4))",
     # String:
-    # Ascii,BitLength,Hex,Length,Lower,Reverse,Sha1,SoundEx,StringTrim,StringTrimLeft,StringTrimRight,Upper
-    "(ascii(str1) == 79)",
-    "(bit_length(str1) == 10)",
-    "(hex(str1) == '4f')",
-    "(length(str1) == 5)",
-    "(lower(str1) == 'hello')",
-    "(reverse(str1) == 'olleh')",
-    pytest.param("(sha1(str1) == 'b10a8db164e0754105b7a99be72e3fe5')", marks=pytest.mark.xfail(reason='binary type not supported yet')),
-    "(soundex(str1) == 'h400')",
-    "(trim(str1) == 'hello')",
-    "(ltrim(str1) == 'hello')",
-    "(rtrim(str1) == 'hello')",
-    "(upper(str1) == 'HELLO')",
+    # Ascii,BitLength,Hex,Length,Lower,Reverse,SoundEx,StringTrim,StringTrimLeft,StringTrimRight,Upper
+    "(ascii(str1) == 97)",
+    "(bit_length(str1) == 16)",
+    "(hex(str1) == '616263')", # abc -> 616263
+    "(length(str1) == 2)",
+    "(lower(str1) == 'abc')",
+    "(reverse(str1) == 'cba')",
+    "(soundex(str1) == 'A120')", # abc -> A120
+    "(trim(str1) == 'abc')",
+    "(ltrim(str1) == 'abc')",
+    "(rtrim(str1) == 'abc')",
+    "(upper(str1) == 'ABC')",
     # Int, Int:
     # ArrayRepeat,BitwiseAnd,BitwiseOr,BitwiseXor,EqualNullSafe,EqualTo,GreaterThan,GreaterThanOrEqual,
     # Greatest,Least,LessThan,LessThanOrEqual,Remainder,ShiftLeft,ShiftRight
-    "(array_repeat(array_int_1, 2) == array(array_int_1, array_int_1))",
-    "(int1 & int2 == 1)",
-    "(int1 | int2 == 3)",
-    "(int1 ^ int2 == 2)",
+    pytest.param("(array_repeat(1, 2) == array_int_1)", marks=pytest.mark.xfail(reason='VeloxRuntimeError')),
+    "(int1 & int2 == 0)",
+    "(int1 | int2 == 16)",
+    "(int1 ^ int2 == 16)",
     "(int1 <=> int2)",
     "(int1 == int2)",
     "(int1 > int2)",
     "(int1 >= int2)",
-    "(greatest(int1, int2) == 2)",
-    "(least(int1, int2) == 1)",
+    "(greatest(int1, int2) > 15)",
+    "(least(int1, int2) < -10)",
     "(int1 < int2)",
     "(int1 <= int2)",
     "(int1 % int2 == 1)",
-    "(shiftleft(int1, int2) == 4)",
-    "(shiftright(int1, int2) == 0)",
-    # Double, Double, Double, Long:
-    # WidthBucket
-    pytest.param("(width_bucket(double1, double2, double3, long) == 1)", marks=pytest.mark.xfail(reason='result not correct')),
+    "(shiftleft(int1, 1) >= 8)",
+    "(shiftright(int1, 1) < 8)",
     # Int:
     # DateFromUnixDate,IsNotNull,IsNull,UnaryPositive
-    "(date_from_unix_date(int1) == date1)",
+    "(date_from_unix_date(int1) == '1970-01-02')",
     "(isnotnull(int1))",
     "(isnull(int1))",
     "(positive(int1) == 1)",
     # String, String:
     # Concat,Levenshtein,StringInstr
-    "(concat(str1, str2) == 'hellohello')",
+    "(concat(str1, str1) == 'aaaa')",
     pytest.param("(levenshtein(str1, str2) == 4)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(instr(str1, 'e') == 1)",
+    "(instr(str1, 'b') == 1)",
     # String, String, String:
     # StringReplace
-    "(replace(str1, 'e', 'a') == 'hallo')",
+    "(replace(str1, 'c', 'a') == 'aba')",
     # String, Int:
-    # Left,Sha2,StringLPad,StringRPad,StringRepeat,Substring
-    "(left(str1, 2) == 'he')",
-    pytest.param("(sha2(str1, 256) == 'b10a8db164e0754105b7a99be72e3fe5')", marks=pytest.mark.xfail(reason='binary type not supported yet')),
-    "(lpad(str1, 10, 'x') == 'xxxxxxhello')",
-    "(rpad(str1, 10, 'x') == 'helloxxxxxx')",
-    pytest.param("(repeat(str1, 2) == 'hellohello')", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(substring(str1, 1, 2) == 'he')",
-    # Binary:
-    # Crc32,Md5
-    pytest.param("(crc32(str1) == 1041237462)", marks=pytest.mark.xfail(reason='binary type not supported yet')),
-    pytest.param("(md5(str1) == 'b10a8db164e0754105b7a99be72e3fe5')", marks=pytest.mark.xfail(reason='binary type not supported yet')),
+    # Left,StringLPad,StringRPad,Substring
+    "(left(str1, 2) == 'ab')",
+    "(lpad(str1, 3, 'a') == 'aab')",
+    "(rpad(str1, 3, 'a') == 'aba')",
+    "(substring(str1, 1, 2) == 'ab')",
     # Long:
     # Chr
-    "(chr(int1) == 'd')",
+    "(chr(int1 + 95) == 'd')",
     # No args:
-    # MonotonicallyIncreasingID,Pi,Rand,SparkPartitionID,Uuid
-    "(monotonically_increasing_id() == int1)",
-    "(pi() == double1)",
-    "(rand() == double1)",
-    "(spark_partition_id() == int1)",
-    "(uuid() == str1)",
+    # MonotonicallyIncreasingID,Pi,SparkPartitionID
+    "(monotonically_increasing_id() > int1)",
+    "(pi() == 3.141592653589793 + double1)",
+    "(spark_partition_id() > int1)",
     # Special:
-    # ArrayJoin,FindInSet,GetJsonObject,GetMapValue,If,In,LengthOfJsonArray,Like,
+    # FindInSet,GetJsonObject,GetMapValue,If,Like,
     # MapFromArrays,MapKeys,MapValues,MapZipWith,NextDay,Overlay,StringToMap,
-    # SubstringIndex,ToUnixTimestamp,Unhex
-    pytest.param("(array_join(array_str_1, ',') == '1,2,3')", marks=pytest.mark.xfail(reason='not supported by gluten')),
+    # SubstringIndex,Unhex
     "(find_in_set('1', comma_separated_str) == 1)",
-    "(get_json_object(json_str, '$.a') == 'a')",
-    "(map_values(map(int_not_null, str1)) == array('a'))",
+    "(get_json_object(json_str, '$.a') == 'ab')",
+    "(map_values(map(int_not_null1, str1)) == array('ab'))",
     "(if(bool1, 1, 2) == 1)",
-    pytest.param("(1 in(int1, int2, int3))", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    pytest.param("(json_array_length(json_str) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(like(str1, '_e_'))",
-    "(isnotnull(map_from_arrays(array(int1, int2), array(str1, str2))))",
-    "(map_keys(map(int_not_null, str1)) == array(1))",
-    "(map_values(map(int_not_null, str1)) == array('b'))",
-    "(isnotnull(map_zip_with(map(int1, str1, int2, str2), map(int3, str3), (k, v1, v2) -> if(k == int3, v2, v1))))",
-    "(next_day(date1, 'monday') == date1)",
-    "(overlay(str1, 'a', 1) == 'hallo')",
-    "(isnotnull(str_to_map(str3)))",
-    "(substring_index(str1, 'e', 2) == 'he')",
-    pytest.param("(to_unix_timestamp(timestamp) == 1717171717)", marks=pytest.mark.xfail(reason='timestamp filter not supported by gluten')),
-    "(unhex('68656c6c6f') == str1)",
+    "(like(str1, '_a_'))",
+    "(map_keys(map_from_arrays(array(int_not_null1), array(str1))) == array(1))",
+    "(map_keys(map(int_not_null1, str1)) == array(1))",
+    "(map_values(map(int_not_null1, str1)) == array('ab'))",
+    "(map_keys(map_zip_with(map(int_not_null1, str1), map(int_not_null2, str2), (k, v1, v2) -> if(k == int_not_null2, v2, v1))) == array(1))",
+    "(next_day(date1, 'monday') == date2)",
+    "(overlay(str1, 'a', 1) == 'aab')",
+    "(map_keys(str_to_map(str1)) == array('ab'))",
+    "(substring_index(str1, 'b', 2) == 'ab')",
+    "(unhex('616263') == str1)",
     # Ansi false only:
     # Multiply, Add, Subtract, Divide, Abs, Pmod
     "(int1 * int2 == 24)",
@@ -562,6 +532,12 @@ def adaptive_select_datagen(condition, gen_list):
     # filter the gen_list to only include the columns that are in the condition
     return [gen for gen in gen_list if gen[0] in get_column_names]
 
+def check_filtered_length(data_path, condition, conf, lower_bound, upper_bound):
+    cpu_df_count = with_cpu_session(lambda spark: spark.read.parquet(data_path).filter(condition).count(), conf=conf)
+    
+    assert cpu_df_count <= upper_bound
+    assert cpu_df_count >= lower_bound
+
 @pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
 @pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
 @hybrid_test
@@ -580,6 +556,8 @@ def test_hybrid_parquet_filter_pushdown_more_exprs(spark_tmp_path, condition):
         'spark.rapids.sql.exec.FilterExec': False,
         'spark.sql.ansi.enabled': 'false'
     }
+
+    check_filtered_length(data_path, condition, conf, 1, 2047)
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).filter(condition),
@@ -671,7 +649,7 @@ cast_condition_list = [
     "(cast(float1 as int) == 1)",
     "(cast(float1 as long) == 1)",
     pytest.param("(cast(float1 as double) == 1.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(cast(float1 as string) == '1')",
+    "(cast(float1 as string) == '0.0')",
     "(cast(float1 as decimal) == 1)",
     # Double to:
     # Boolean, Byte, Short, Int, Long, Float, String, Decimal
@@ -680,8 +658,8 @@ cast_condition_list = [
     "(cast(double1 as short) == 1)",
     "(cast(double1 as int) == 1)",
     "(cast(double1 as long) == 1)",
-    "(cast(double1 as float) == 1.0)",
-    "(cast(double1 as string) == '1')",
+    "(cast(double1 as float) == 0)",
+    "(cast(double1 as string) == '0.0')",
     "(cast(double1 as decimal) == 1)",
     # Date to:
     # Boolean, Byte, Short, Int, Long, Float, Double, String, Decimal
@@ -692,7 +670,7 @@ cast_condition_list = [
     pytest.param("(cast(date1 as long) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
     pytest.param("(cast(date1 as float) == 1.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
     pytest.param("(cast(date1 as double) == 1.0)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(cast(date1 as string) == '1')",
+    "(substring(cast(date1 as string), 1, 3) == '200')",
     pytest.param("(cast(date1 as decimal) == 1)", marks=pytest.mark.xfail(reason='not supported by gluten')),
     # String to:
     # Boolean, Byte, Short, Int, Long, Float, Double, Decimal
@@ -701,19 +679,19 @@ cast_condition_list = [
     "(cast(string_digit as short) == 1)",
     "(cast(string_digit as int) == 1)",
     "(cast(string_digit as long) == 1)",
-    "(cast(string_digit as float) == 1.0)",
-    "(cast(string_digit as double) == 1.0)",
+    "(cast(string_digit as float) == 0.0)",
+    "(cast(string_digit as double) == 0.0)",
     "(cast(string_digit as decimal) == 1)",
     # Decimal to:
     # Boolean, Byte, Short, Int, Long, Float, Double, String
     pytest.param("(cast(decimal1 as boolean) == true)", marks=pytest.mark.xfail(reason='not supported by gluten')),
-    "(cast(decimal1 as byte) == 1)",
-    "(cast(decimal1 as short) == 1)",
-    "(cast(decimal1 as int) == 1)",
-    "(cast(decimal1 as long) == 1)",
-    "(cast(decimal1 as float) == 1.0)",
-    "(cast(decimal1 as double) == 1.0)",
-    "(cast(decimal1 as string) == '1')",
+    "(cast(decimal1 as byte) == 0)",
+    "(cast(decimal1 as short) == 0)",
+    "(cast(decimal1 as int) == 0)",
+    "(cast(decimal1 as long) == 0)",
+    "(cast(decimal1 as float) == 0.0)",
+    "(cast(decimal1 as double) == 0.0)",
+    "(cast(decimal1 as string) == '0')",
     # Array to:
     # String, Array
     pytest.param("(cast(array_int1 as string) == '[1, 2, 3]')", marks=pytest.mark.xfail(reason='not supported by gluten')),
@@ -739,7 +717,7 @@ filter_pushdown_cast_gen_list = [
     ('date1', DateGen()),
     # Timestamp is not supported in filter pushdown yet
     ('string1', StringGen()),
-    ('string_digit', StringGen(pattern='[0-9]{1,3}(\.[0-9]{1,3})?')),
+    ('string_digit', StringGen(pattern=r'[0-9]{1,2}(\.[0-9]{1,2})?')),
     ('decimal1', DecimalGen()),
     # Null is not supported in parquet
     # Binary is not supported in hybrid execution yet
@@ -770,6 +748,8 @@ def test_hybrid_parquet_filter_pushdown_cast(spark_tmp_path, condition):
         'spark.rapids.sql.exec.FilterExec': False,
         'spark.sql.ansi.enabled': 'false',
     }
+
+    check_filtered_length(data_path, condition, conf, 1, 2047)
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).filter(condition),
