@@ -57,7 +57,9 @@ class GpuProjectExecMeta(
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
-      if (childExprs.forall(_.canThisBeAst)) {
+      if (childExprs.forall(_.canThisBeAst)
+        // cuDF requires return column is fix width
+        && gpuExprs.forall(expr => GpuBatchUtils.isFixedWidth(expr.dataType))) {
         return GpuProjectAstExec(gpuExprs, gpuChild)
       }
       // explain AST because this is optional and it is sometimes hard to debug
@@ -67,6 +69,12 @@ class GpuProjectExecMeta(
         if (explain.nonEmpty) {
           logWarning(s"AST PROJECT\n$explain")
         }
+      }
+
+      if (!gpuExprs.forall(expr => GpuBatchUtils.isFixedWidth(expr.dataType))) {
+        val returnTypes = gpuExprs.map(_.dataType)
+        logWarning(s"AST PROJECT\nCan not use AST project due to some of result column is " +
+          s"non fix width type: $returnTypes")
       }
     }
     GpuProjectExec(gpuExprs, gpuChild)

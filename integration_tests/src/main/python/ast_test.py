@@ -14,11 +14,13 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
+from pyspark.sql.types import *
+from pyspark.sql.window import Window
 
 # Each descriptor contains a list of data generators and a corresponding boolean
 # indicating whether that data type is supported by the AST
@@ -406,3 +408,30 @@ def test_multi_tier_ast():
         # repartition is here to avoid Spark simplifying the expression
         func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
             .selectExpr("x", "(id < x) == (id < (id + x))"))
+
+
+# Return column for AST MUST be fix width, e.g. byte, short, int, date, ...
+# Use GpuProjectExec instead of GpuProjectAstExec when meet an expr which return type is non fix width(e.g. string)
+# or cudf::compute_column will throw error: Invalid, non-fixed-width type
+def test_not_use_ast_when_column_reference_to_string():
+    def _gen_df(spark):
+        data = [(1, "a"), (-1, "b"), (None, None)]
+        schema = StructType([
+            StructField('col_int', IntegerType(), True),
+            StructField('col_string', StringType(), True)])
+        df = spark.createDataFrame(data, schema).repartition(1)
+        cols = df.columns
+        df = df.withColumn("cidx", f.monotonically_increasing_id())
+        window_spec = Window.orderBy("cidx")
+        df = df.withColumn("rid", f.row_number().over(window_spec)).drop("cidx")
+        return df.alias("t1").join(df.alias("t2"),
+                                   [(f.col("t1.col_int") > f.col("t2.col_int")), ~(f.col("t1.col_int").isNull())],
+                                   how="leftsemi").selectExpr(*[f"isnotnull({c})" for c in cols], "rid")
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: _gen_df(spark),
+        {
+            'spark.sql.adaptive.enabled': 'false',
+            'spark.rapids.sql.projectAstEnabled': 'true'
+        })
+
