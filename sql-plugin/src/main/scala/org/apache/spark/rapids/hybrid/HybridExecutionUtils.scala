@@ -194,6 +194,7 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[ArrayMin],
     classOf[ArrayPosition],
     classOf[ArrayRemove],
+    classOf[ArrayRepeat],
     classOf[ArraySort],
     classOf[ArraysZip],
     classOf[Ascii],
@@ -230,7 +231,6 @@ object HybridExecutionUtils extends PredicateHelper {
     classOf[Flatten],
     classOf[Floor],
     classOf[GetJsonObject],
-    classOf[GetMapValue],
     classOf[GreaterThan],
     classOf[GreaterThanOrEqual],
     classOf[Greatest],
@@ -343,7 +343,7 @@ object HybridExecutionUtils extends PredicateHelper {
     (childDataType, dataType) match {
       case (_, BooleanType) => false
       case (DateType, StringType) => true
-      case (DateType, _) => true
+      case (DateType, _) => false
       case (ArrayType(_, _), _) => false
       case (MapType(_, _, _), _) => false
       case (StructType(_), _) => false

@@ -312,7 +312,7 @@ filter_pushdown_gen_list = [('bool1', BooleanGen()),
            ('double3', DoubleGen()),
            ('int1', IntegerGen(min_val=-16, max_val=16)),
            ('int2', IntegerGen(min_val=-16, max_val=16)),
-           ('int3', IntegerGen()),
+           ('int3', IntegerGen(min_val=1, max_val=2)),
            ('int4', IntegerGen()),
            ('int_not_null1', IntegerGen(nullable=False, min_val=-16, max_val=16)),
            ('int_not_null2', IntegerGen(nullable=False, min_val=-16, max_val=16)),
@@ -430,7 +430,7 @@ condition_list = [
     # Int, Int:
     # ArrayRepeat,BitwiseAnd,BitwiseOr,BitwiseXor,EqualNullSafe,EqualTo,GreaterThan,GreaterThanOrEqual,
     # Greatest,Least,LessThan,LessThanOrEqual,Remainder,ShiftLeft,ShiftRight
-    pytest.param("(array_repeat(1, 2) == array_int_1)", marks=pytest.mark.xfail(reason='VeloxRuntimeError')),
+    "(array_repeat(int3, 2) == array_int_1)",
     "(int1 & int2 == 0)",
     "(int1 | int2 == 16)",
     "(int1 ^ int2 == 16)",
@@ -474,12 +474,11 @@ condition_list = [
     "(pi() == 3.141592653589793 + double1)",
     "(spark_partition_id() > int1)",
     # Special:
-    # FindInSet,GetJsonObject,GetMapValue,If,Like,
+    # FindInSet,GetJsonObject,If,Like,
     # MapFromArrays,MapKeys,MapValues,MapZipWith,NextDay,Overlay,StringToMap,
     # SubstringIndex,Unhex
     "(find_in_set('1', comma_separated_str) == 1)",
     "(get_json_object(json_str, '$.a') == 'ab')",
-    "(map_values(map(int_not_null1, str1)) == array('ab'))",
     "(if(bool1, 1, 2) == 1)",
     "(like(str1, '_a_'))",
     "(map_keys(map_from_arrays(array(int_not_null1), array(str1))) == array(1))",
