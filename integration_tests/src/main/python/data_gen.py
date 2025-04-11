@@ -609,11 +609,13 @@ class TimestampGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         if start is None:
-            start = datetime(1, 1, 1, tzinfo=tzinfo)
+            # not set to (1, 1, 1) because we can leave the timestamp bounds with timezones
+            start = datetime(1, 2, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
-        max_end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
+        # not set to (9999, 12, 31) because we can leave the timestamp bounds with timezones
+        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
             end = max_end
         elif isinstance(end, timedelta):
