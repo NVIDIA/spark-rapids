@@ -962,14 +962,6 @@ object GpuOverrides extends Logging {
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
-
-        override def tagSelfForAst(): Unit = {
-          if (!GpuBatchUtils.isFixedWidth(att.dataType)) {
-            willNotWorkInAst(s"AST Reference MUST refer to a fixed width column, " +
-              s"found column with type: ${att.dataType}")
-          }
-        }
-
         // There are so many of these that we don't need to print them out, unless it
         // will not work on the GPU
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
