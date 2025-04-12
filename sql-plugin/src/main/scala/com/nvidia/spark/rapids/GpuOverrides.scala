@@ -964,9 +964,9 @@ object GpuOverrides extends Logging {
         override def convertToGpu(): Expression = att
 
         override def tagSelfForAst(): Unit = {
-          if (GpuBatchUtils.isFixedWidth(att.dataType)) {
-            willNotWorkInAst(s"AST BoundReference MUST refer to a fixed width column, " +
-              s"found column with type: $att.dataType")
+          if (!GpuBatchUtils.isFixedWidth(att.dataType)) {
+            willNotWorkInAst(s"AST Reference MUST refer to a fixed width column, " +
+              s"found column with type: ${att.dataType}")
           }
         }
 
