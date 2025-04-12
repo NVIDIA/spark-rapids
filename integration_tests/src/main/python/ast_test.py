@@ -413,13 +413,11 @@ def test_multi_tier_ast():
 # Return column for AST MUST be fix width, e.g. byte, short, int, date, ...
 # Use GpuProjectExec instead of GpuProjectAstExec when meet an expr which return type is non fix width(e.g. string)
 # or cudf::compute_column will throw error: Invalid, non-fixed-width type
+@ignore_order(local=True)
 def test_not_use_ast_when_column_reference_to_string():
     def _gen_df(spark):
-        data = [(1, "a"), (-1, "b"), (None, None)]
-        schema = StructType([
-            StructField('col_int', IntegerType(), True),
-            StructField('col_string', StringType(), True)])
-        df = spark.createDataFrame(data, schema).repartition(1)
+        gens = [('col_int', int_gen), ('col_string', string_gen)]
+        df = gen_df(spark, gens)
         cols = df.columns
         df = df.withColumn("cidx", f.monotonically_increasing_id())
         window_spec = Window.orderBy("cidx")
