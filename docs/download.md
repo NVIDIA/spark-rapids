@@ -21,9 +21,9 @@ guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/ov
 ## Release v25.04.0
 ### Hardware Requirements:
 
-The plugin is tested on the following architectures:
+The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
 
-	GPU Models: NVIDIA V100, T4, A10/A100, L4, H100 and B100 GPUs
+	GPU Models: NVIDIA V100, T4, A10, A100, L4, H100 and B100 GPUs
 
 ### Software Requirements:
 
@@ -54,9 +54,10 @@ The plugin is tested on the following architectures:
 	Supported Dataproc versions (Debian/Ubuntu/Rocky):
 		GCP Dataproc 2.1
 		GCP Dataproc 2.2
-	
+
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
+		Spark runtime 1.2
 		Spark runtime 2.0
 		Spark runtime 2.1
 		Spark runtime 2.2
