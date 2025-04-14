@@ -1,5 +1,5 @@
 # Change log
-Generated on 2025-04-11
+Generated on 2025-04-14
 
 ## Release 25.04
 
@@ -82,6 +82,8 @@ Generated on 2025-04-11
 ### PRs
 |||
 |:---|:---|
+|[#12497](https://github.com/NVIDIA/spark-rapids/pull/12497)|[DOC] update the download page for 2504 release [skip ci]|
+|[#12473](https://github.com/NVIDIA/spark-rapids/pull/12473)|Update dependency version JNI, private, hybrid to 25.04.0|
 |[#12485](https://github.com/NVIDIA/spark-rapids/pull/12485)|Enable the  14.3 Shim|
 |[#12490](https://github.com/NVIDIA/spark-rapids/pull/12490)|Fix bug where rows dropped if partitioned column size is too large|
 |[#12481](https://github.com/NVIDIA/spark-rapids/pull/12481)|Fix incorrect supported DataSources in generated tools generated files|
