@@ -115,7 +115,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("AQE broadcast") {
-    doTestReplay("90[*]") { spark =>
+    doTestReplay("93[*]") { spark =>
       // Disable ANSI mode as the plan has aggregate operator sum
       // which is not supported in ANSI mode
       // https://github.com/NVIDIA/spark-rapids/issues/5114
@@ -189,6 +189,40 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       assertThrows[IllegalArgumentException] {
         df.collect()
       }
+    }
+  }
+
+  test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
+    doTestReplay("56[*]") { spark =>
+      // Disable broadcast join, force hash join
+      spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+      spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+
+      // Create larger tables to ensure shuffle
+      val df1 = spark.range(0, 1000, 1, 100)
+      .selectExpr("id % 10 as key", "id as value")
+    val df2 = spark.range(0, 1000, 1, 100)
+      .selectExpr("id % 10 as key", "id as value")
+      // Join with equality condition to trigger hash join
+      df1.join(df2, Seq("key"))
+    }
+  }
+
+  test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
+    doTestReplay("56[*]") { spark =>
+      // Disable broadcast join, force hash join
+      spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+      spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      // in Kudo mode
+      spark.conf.set(RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.key, "true")
+
+      // Create larger tables to ensure shuffle
+      val df1 = spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id as value")
+      val df2 = spark.range(0, 1000, 1, 100)
+        .selectExpr("id % 10 as key", "id as value")
+      // Join with equality condition to trigger hash join
+      df1.join(df2, Seq("key"))
     }
   }
 

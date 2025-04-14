@@ -2749,6 +2749,14 @@ object GpuOverrides extends Logging {
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
+    expr[ArrayDistinct](
+      "Removes duplicate values from the array",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
+      GpuArrayDistinctMeta),
     expr[Flatten](
       "Creates a single array from an array of arrays",
       ExprChecks.unaryProject(
@@ -4056,17 +4064,16 @@ object GpuOverrides extends Logging {
                 "5: Map counts: 2 + max(depthOf(key), depthOf(value)); "
             )
           }
-          // Spark already checked: precision >= 4, no need to check again.
           val precision = GpuHyperLogLogPlusPlus.computePrecision(a.relativeSD)
           // Spark supports precision range: [4, Infinity)
-          // Spark-Rapids only supports precision range: [4, 14]
-          if (precision > 14) {
+          // Spark-Rapids only supports precision range: [5, 14]
+          if (precision <= 4 || precision > 14) {
             //
             // Info: cuCollection supports precision range [4, 18]
             // Due to https://github.com/NVIDIA/spark-rapids/issues/12347, the Spark-Rapids supports
-            // fewer precisions than cuCollection: range: [4, 14]
+            // fewer precisions than cuCollection: range: [5, 14]
             willNotWorkOnGpu(s"The precision $precision from relativeSD ${a.relativeSD} is bigger" +
-              s" than 14, GPU only supports precision is less or equal to 14.")
+              s" than 14, GPU only supports precision range [5, 14].")
           }
         }
 

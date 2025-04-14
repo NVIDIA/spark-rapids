@@ -31,6 +31,8 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
+case class HostAllocResult(buffer: HostMemoryBuffer, isPinned: Boolean)
+
 private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
   private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes
@@ -82,7 +84,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       currentPinnedAllocated -= amount
     }
     val metrics = GpuTaskMetrics.get
-    metrics.decHostBytesAllocated(amount)
+    metrics.decHostBytesAllocated(amount, isPinned = true)
     logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
@@ -92,7 +94,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       currentNonPinnedAllocated -= amount
     }
     val metrics = GpuTaskMetrics.get
-    metrics.decHostBytesAllocated(amount)
+    metrics.decHostBytesAllocated(amount, isPinned = false)
     logTrace(getHostAllocMetricsLogStr(metrics))
     RmmSpark.cpuDeallocate(ptr, amount)
   }
@@ -184,23 +186,23 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       preferPinned: Boolean,
       blocking: Boolean): (Option[HostMemoryBuffer], Boolean) = {
     var retryCount = 0L
-    var ret = Option.empty[HostMemoryBuffer]
+    var ret = Option.empty[HostAllocResult]
     var shouldRetry = false
     var shouldRetryInternal = true
     val isRecursive = RmmSpark.preCpuAlloc(amount, blocking)
     var allocAttemptFinishedWithoutException = false
     try {
       do {
-        val firstPass = if (preferPinned) {
-          tryAllocPinned(amount)
-        } else {
-          tryAllocNonPinned(amount)
-        }
-        ret = firstPass.orElse {
+        ret = (
           if (preferPinned) {
-            tryAllocNonPinned(amount)
+            tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
           } else {
-            tryAllocPinned(amount)
+            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+          }).orElse {
+          if (preferPinned) {
+            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+          } else {
+            tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
           }
         }
         if (ret.isEmpty) {
@@ -213,21 +215,22 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       } while(ret.isEmpty && shouldRetryInternal && retryCount < 10)
       allocAttemptFinishedWithoutException = true
     } finally {
-      if (ret.isDefined) {
-        val metrics = GpuTaskMetrics.get
-        metrics.incHostBytesAllocated(amount)
-        if (BOOKKEEP_MEMORY) {
-          HostAlloc.bookkeepHostMemoryAlloc(ret.get.getAddress, amount)
-        }
-        logTrace(getHostAllocMetricsLogStr(metrics))
-        RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
-      } else {
-        // shouldRetry should indicate if spill did anything for us and we should try again.
-        shouldRetry = RmmSpark.postCpuAllocFailed(allocAttemptFinishedWithoutException,
-          blocking, isRecursive)
+      ret match {
+        case Some(HostAllocResult(buffer: HostMemoryBuffer, isPinned: Boolean)) =>
+          val metrics = GpuTaskMetrics.get
+          metrics.incHostBytesAllocated(amount, isPinned)
+          if (BOOKKEEP_MEMORY) {
+            HostAlloc.bookkeepHostMemoryAlloc(buffer.getAddress, amount)
+          }
+          logTrace(getHostAllocMetricsLogStr(metrics))
+          RmmSpark.postCpuAllocSuccess(buffer.getAddress, amount, blocking, isRecursive)
+        case None =>
+          // shouldRetry should indicate if spill did anything for us and we should try again.
+          shouldRetry = RmmSpark.postCpuAllocFailed(allocAttemptFinishedWithoutException,
+            blocking, isRecursive)
       }
     }
-    (ret, shouldRetry)
+    (ret.map(_.buffer), shouldRetry)
   }
 
   def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {

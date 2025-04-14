@@ -19,11 +19,12 @@ package org.apache.spark.sql.rapids
 import java.util.Optional
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, ReductionAggregation, Scalar, SegmentedReductionAggregation, Table}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, DuplicateKeepOption, ReductionAggregation, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
+import com.nvidia.spark.rapids.GpuListUtils
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.GpuListSliceUtils
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
@@ -1702,6 +1703,14 @@ case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with Nu
   override def dataType: DataType = childDataType.elementType
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     input.getBase.flattenLists
+  }
+}
+
+case class GpuArrayDistinct(child: Expression) extends GpuUnaryExpression with NullIntolerantShim {
+  override def dataType: DataType = child.dataType
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    input.getBase.dropListDuplicates(DuplicateKeepOption.KEEP_FIRST)
   }
 }
 
