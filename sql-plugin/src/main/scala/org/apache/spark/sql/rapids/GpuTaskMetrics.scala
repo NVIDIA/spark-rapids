@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,30 @@ case class NanoTime(value: java.lang.Long) {
   }
 }
 
+// Format example:
+//  10.74GB (11534336000 bytes)
+//  1.23MB (1289750 bytes)
+//  1020.10KB (1044585 bytes)
+case class SizeInBytes(value: jl.Long) {
+  override def toString: String = {
+    var unitVal = value
+    var remainVal = 0L
+    var unitIndex = 0
+    while (unitIndex < SizeInBytes.SizeUnitNames.length && unitVal >= 1024) {
+      val nextUnitVal = unitVal >> 10
+      remainVal = unitVal - (nextUnitVal << 10)
+      unitVal = nextUnitVal
+      unitIndex += 1
+    }
+    val finalVal = (unitVal + (remainVal.toDouble / 1024)).formatted("%.2f")
+    s"$finalVal${SizeInBytes.SizeUnitNames(unitIndex)} ($value bytes)"
+  }
+}
+
+private object SizeInBytes {
+  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB")
+}
+
 class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   private var _sum = 0L
   override def isZero: Boolean = _sum == 0
@@ -78,7 +102,7 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   override def value: NanoTime = NanoTime(_sum)
 }
 
-class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
+class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
   private var _value = 0L
   override def isZero: Boolean = _value == 0
 
@@ -96,7 +120,7 @@ class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
     _value += v
   }
 
-  override def merge(other: AccumulatorV2[jl.Long, Long]): Unit = other match {
+  override def merge(other: AccumulatorV2[jl.Long, SizeInBytes]): Unit = other match {
     case wa: HighWatermarkAccumulator =>
       _value = _value.max(wa._value)
     case _ =>
@@ -104,7 +128,7 @@ class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, Long] {
         s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
   }
 
-  override def value: Long = _value
+  override def value: SizeInBytes = SizeInBytes(_value)
 }
 
 class MaxLongAccumulator extends AccumulatorV2[jl.Long, jl.Long] {
@@ -205,11 +229,15 @@ class GpuTaskMetrics extends Serializable {
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
   private val maxHostMemoryBytes = new HighWatermarkAccumulator
+  private val maxPageableMemoryBytes = new HighWatermarkAccumulator
+  private val maxPinnedMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
 
   private val maxGpuFootprint = new LongAccumulator
 
   private var maxHostBytesAllocated: Long = 0
+  private var maxPageableBytesAllocated: Long = 0
+  private var maxPinnedBytesAllocated: Long = 0
 
   private var maxDiskBytesAllocated: Long = 0
 
@@ -221,13 +249,19 @@ class GpuTaskMetrics extends Serializable {
 
   def getMaxHostBytesAllocated: Long = maxHostBytesAllocated
 
-  def incHostBytesAllocated(bytes: Long): Unit = {
-    GpuTaskMetrics.incHostBytesAllocated(bytes)
+  def incHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = {
+    GpuTaskMetrics.incHostBytesAllocated(bytes, isPinned)
     maxHostBytesAllocated = maxHostBytesAllocated.max(GpuTaskMetrics.hostBytesAllocated)
+    if (isPinned) {
+      maxPinnedBytesAllocated = maxPinnedBytesAllocated.max(GpuTaskMetrics.pinnedBytesAllocated)
+    } else {
+      maxPageableBytesAllocated = maxPageableBytesAllocated.max(
+        GpuTaskMetrics.pageableBytesAllocated)
+    }
   }
 
-  def decHostBytesAllocated(bytes: Long): Unit = {
-    GpuTaskMetrics.decHostBytesAllocated(bytes)
+  def decHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = {
+    GpuTaskMetrics.decHostBytesAllocated(bytes, isPinned)
   }
 
   def incDiskBytesAllocated(bytes: Long): Unit = {
@@ -236,7 +270,7 @@ class GpuTaskMetrics extends Serializable {
   }
 
   def decDiskBytesAllocated(bytes: Long): Unit = {
-    GpuTaskMetrics.decHostBytesAllocated(bytes)
+    GpuTaskMetrics.decDiskBytesAllocated(bytes)
   }
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
@@ -253,6 +287,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
     "gpuMaxHostMemoryBytes" -> maxHostMemoryBytes,
     "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes,
+    "gpuMaxPageableMemoryBytes" -> maxPageableMemoryBytes,
+    "gpuMaxPinnedMemoryBytes" -> maxPinnedMemoryBytes,
     "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
     "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
     "gpuMaxTaskFootprint" -> maxGpuFootprint
@@ -349,6 +385,12 @@ class GpuTaskMetrics extends Serializable {
     if (maxHostBytesAllocated > 0) {
       maxHostMemoryBytes.add(maxHostBytesAllocated)
     }
+    if (maxPageableBytesAllocated > 0) {
+      maxPageableMemoryBytes.add(maxPageableBytesAllocated)
+    }
+    if (maxPinnedBytesAllocated > 0) {
+      maxPinnedMemoryBytes.add(maxPinnedBytesAllocated)
+    }
     if (maxDiskBytesAllocated > 0) {
       maxDiskMemoryBytes.add(maxDiskBytesAllocated)
     }
@@ -374,14 +416,26 @@ object GpuTaskMetrics extends Logging {
   private val taskLevelMetrics = mutable.Map[Long, GpuTaskMetrics]()
 
   private var hostBytesAllocated: Long = 0
+  private var pageableBytesAllocated: Long = 0
+  private var pinnedBytesAllocated: Long = 0
   private var diskBytesAllocated: Long = 0
 
-  private def incHostBytesAllocated(bytes: Long): Unit = synchronized {
+  private def incHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = synchronized {
     hostBytesAllocated += bytes
+    if (isPinned) {
+      pinnedBytesAllocated += bytes
+    } else {
+      pageableBytesAllocated += bytes
+    }
   }
 
-  private def decHostBytesAllocated(bytes: Long): Unit = synchronized {
+  private def decHostBytesAllocated(bytes: Long, isPinned: Boolean): Unit = synchronized {
     hostBytesAllocated -= bytes
+    if (isPinned) {
+      pinnedBytesAllocated -= bytes
+    } else {
+      pageableBytesAllocated -= bytes
+    }
   }
 
   def incDiskBytesAllocated(bytes: Long): Unit = synchronized {
