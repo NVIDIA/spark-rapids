@@ -609,12 +609,14 @@ class TimestampGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
         super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         if start is None:
-            # not set to (1, 1, 1) because we can leave the timestamp bounds with timezones
+            # If set to (1,1,1), a timezone with a negative offset would cause an out of bound error with Spark
+            # The ISO SQL:2016 standard declares the valid range for timestamps is from 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999
             start = datetime(1, 2, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
-        # not set to (9999, 12, 31) because we can leave the timestamp bounds with timezones
+        # If set to (9999,12,31), a timezone with a postiive would cause an out of bound error with Spark
+        # The ISO SQL:2016 standard declares the valid range for timestamps is from 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999
         max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
             end = max_end

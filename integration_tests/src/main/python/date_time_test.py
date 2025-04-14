@@ -27,11 +27,14 @@ import pytz
 # Some operations only work in UTC specifically
 non_utc_tz_allow = ['ProjectExec'] if not is_utc() else []
 # Others work in all supported time zones
+
+# the last time that is configured to be supported by the GPU transition rules
 last_supported_tz_time = datetime(2200, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
 fixed_offset_timezones = ["Asia/Shanghai", "UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0", "EST", "MST", "VST"]
 variable_offset_timezones = ["PST", "NST", "AST", "America/Los_Angeles", "America/New_York", "America/Chicago"]
 fixed_offset_timezones_iana = ["Pacific/Pitcairn", "Etc/GMT-0", "Etc/GMT+0", "Asia/Bangkok", "GMT", "MST"]
-variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata",] # "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
+variable_offset_timezones_iana = ["America/Los_Angeles", "America/St_Johns", "America/Halifax", "America/Los_Angeles", "America/New_York", "America/Chicago", "Asia/Kolkata", "Australia/Adelaide", "Pacific/Chatham", "Australia/Lord_Howe"]
 all_tzs = pytz.all_timezones
 all_tzs.remove('ROC')
 tz_rules_date_gen = DateGen(end=date(2170,12,31))
@@ -151,7 +154,7 @@ def test_datediff(data_gen):
 def test_months_between_runtime_fallback():
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
+    time_zone_gen = TimestampGen(tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, false)'))
 
@@ -173,7 +176,7 @@ def test_months_between_last_day():
 def test_months_between_round_runtime_fallback():
     # We will do a CPU fallback during runtime for timezones with transitions during 
     # years > 2200 as described in https://github.com/NVIDIA/spark-rapids/issues/6840
-    time_zone_gen = TimestampGen(end=last_supported_tz_time, tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
+    time_zone_gen = TimestampGen(tzinfo=ZoneInfo(os.environ.get('TZ', 'UTC')))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, time_zone_gen).selectExpr('months_between(a, b, true)'))
 
