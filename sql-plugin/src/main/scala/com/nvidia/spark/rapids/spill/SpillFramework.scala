@@ -371,7 +371,7 @@ class SpillableHostBufferHandle private (
       // of garbage collection that needs to happen. We could use a lot of
       // syntactic sugar to make the code look cleaner, but I don't want to
       // add more overhead for only a handful of places in the code.
-      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
       try {
         materialized = closeOnExcept(HostMemoryBuffer.allocate(sizeInBytes)) { hmb =>
           diskHandle.materializeToHostMemoryBuffer(hmb)
@@ -537,7 +537,7 @@ class SpillableDeviceBufferHandle private (
       // of garbage collection that needs to happen. We could use a lot of
       // syntactic sugar to make the code look cleaner, but I don't want to
       // add more overhead for only a handful of places in the code.
-      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
       try {
         materialized = closeOnExcept(DeviceMemoryBuffer.allocate(sizeInBytes)) { dmb =>
           hostHandle.materializeToDeviceMemoryBuffer(dmb)
@@ -640,7 +640,7 @@ class SpillableColumnarBatchHandle private (
       // of garbage collection that needs to happen. We could use a lot of
       // syntactic sugar to make the code look cleaner, but I don't want to
       // add more overhead for only a handful of places in the code.
-      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
       try {
         val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
           hostHandle.materializeToDeviceMemoryBuffer(dmb)
@@ -788,7 +788,7 @@ class SpillableColumnarBatchFromBufferHandle private (
       // of garbage collection that needs to happen. We could use a lot of
       // syntactic sugar to make the code look cleaner, but I don't want to
       // add more overhead for only a handful of places in the code.
-      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
       try {
         val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
           hostHandle.materializeToDeviceMemoryBuffer(dmb)
@@ -905,7 +905,7 @@ class SpillableCompressedColumnarBatchHandle private (
       // of garbage collection that needs to happen. We could use a lot of
       // syntactic sugar to make the code look cleaner, but I don't want to
       // add more overhead for only a handful of places in the code.
-      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
       try {
         val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) { dmb =>
           hostHandle.materializeToDeviceMemoryBuffer(dmb)
@@ -1020,7 +1020,7 @@ class SpillableHostColumnarBatchHandle private (
       // of garbage collection that needs to happen. We could use a lot of
       // syntactic sugar to make the code look cleaner, but I don't want to
       // add more overhead for only a handful of places in the code.
-      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
       try {
         materialized = diskHandle.withInputWrappedStream { inputStream =>
           val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(inputStream)
@@ -1282,7 +1282,7 @@ trait SpillableStore[T <: SpillableHandle]
         // of garbage collection that needs to happen. We could use a lot of
         // syntactic sugar to make the code look cleaner, but I don't want to
         // add more overhead for only a handful of places in the code.
-        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStarting()
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
         try {
           val plan = makeSpillPlan(spillNeeded)
           val amountSpilled = plan.trySpill()
