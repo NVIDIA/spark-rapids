@@ -80,8 +80,8 @@ The RAPIDS Accelerator maintains support for Apache Spark versions available for
 | arm64     | Scala 2.12    | [RAPIDS Accelerator v25.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.04.0/rapids-4-spark_2.12-25.04.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.04.0/rapids-4-spark_2.12-25.04.0-cuda11-arm64.jar.asc) |
 | arm64     | Scala 2.13    | [RAPIDS Accelerator v25.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.04.0/rapids-4-spark_2.13-25.04.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.04.0/rapids-4-spark_2.13-25.04.0-cuda11-arm64.jar.asc) |
 
-This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
-CUDA 11.8 through CUDA 12.0.
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs with 
+CUDA 11.8 and CUDA 12.8.  
 
 ### Verify signature
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
@@ -96,13 +96,14 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* Support group by on binary type for databricks
-* Support ArrayPosition function for databricks
-* Support Databricks 14.3 ML LTS
+* Support approx_count_distinct
+* Support group by on binary type 
+* Support ArrayPosition function 
+* Support Databricks 14.3 ML LTS (without support for Deletion Vector reads in Delta Lake)
+* Support Slice
+* Enable Hive text writer
 * Refine split-retry logs when out of memory happens to expose the real reason
 * Allow BigSizedJoinIterator#buildPartitioner to produce more sub-partitions to avoid CudfColumnSizeOverflowException
-* Fix a hanging issue for Python UDF in spark 4.0.0
-* Fix a device memory leak when re-partitioning in GpuSubPartitionHashJoin
 
 Note: There is a known issue in the 25.04.0 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
