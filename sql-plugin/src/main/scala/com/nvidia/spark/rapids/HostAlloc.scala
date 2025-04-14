@@ -193,11 +193,12 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     var allocAttemptFinishedWithoutException = false
     try {
       do {
-        ret = if (preferPinned) {
-          tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
-        } else {
-          tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
-        }.orElse {
+        ret = (
+          if (preferPinned) {
+            tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
+          } else {
+            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+          }).orElse {
           if (preferPinned) {
             tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
           } else {
