@@ -95,13 +95,14 @@ The output of signature verify:
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
-* Support group by on binary type for databricks
-* Support ArrayPosition function for databricks
-* Support Databricks 14.3 ML LTS
+* Support approx_count_distinct
+* Support group by on binary type 
+* Support ArrayPosition function 
+* Support Databricks 14.3 ML LTS (without support for Deletion Vector reads in Delta Lake)
+* Support Slice
+* Enable Hive text writer
 * Refine split-retry logs when out of memory happens to expose the real reason
 * Allow BigSizedJoinIterator#buildPartitioner to produce more sub-partitions to avoid CudfColumnSizeOverflowException
-* Fix a hanging issue for Python UDF in spark 4.0.0
-* Fix a device memory leak when re-partitioning in GpuSubPartitionHashJoin
 
 Note: There is a known issue in the 25.04.0 release when decompressing gzip files on H100 GPUs.
 Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
