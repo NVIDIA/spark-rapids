@@ -611,7 +611,7 @@ class TimestampGen(DataGen):
         if start is None:
             # If set to (1,1,1), a timezone with a negative offset would cause an out of bound error with Python
             # Valid range of time: date.min = datetime.date(1, 1, 1)
-            start = datetime(1, 1, 1, tzinfo=tzinfo)
+            start = datetime(1, 2, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
