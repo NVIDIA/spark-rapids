@@ -31,12 +31,11 @@ import org.apache.spark.sql.execution.aggregate._
 object FoldLocalAggregate extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
     plan.transform {
-      case LocalAggregatePattern(finalAgg: BaseAggregateExec, partAgg: BaseAggregateExec) =>
+      case p@LocalAggregatePattern(finalAgg: BaseAggregateExec, partAgg: BaseAggregateExec) =>
         // Spark eliminates the filter for the aggExpressions in Final mode. So, we need to copy
         // the filter from the corresponding partial aggExpressions.
         val aggExpressions = finalAgg.aggregateExpressions.zip(
           partAgg.aggregateExpressions).map { case (finalAggExpr, partAggExpr) =>
-            require(finalAggExpr.filter.isEmpty, "FinalAggExpression should have no filter")
             finalAggExpr.copy(mode = Complete, filter = partAggExpr.filter)
         }
         val aggAttributes = aggExpressions.map(_.resultAttribute)
@@ -68,7 +67,9 @@ object FoldLocalAggregate extends Rule[SparkPlan] {
               aggregateAttributes = aggAttributes,
               child = partAgg.child)
           case _ =>
-            throw new IllegalStateException(s"Unexpected AggregateExec: $finalAgg")
+            logError(
+              s"Failed to fold LocalAggregate because of unexpected AggregateExec: $finalAgg")
+            p
         }
     }
   }
@@ -130,6 +131,10 @@ object LocalAggregatePattern extends Logging {
         // AggregateFunctions should be identical
         case (s2, s1) =>
           s2.aggregateFunction.equals(s1.aggregateFunction)
+        // Check if the filter of FinalAgg is empty
+        case (s2, _) if s2.filter.isDefined =>
+          logError(s"AggregateExpression($s2) of FinalAggregate($merge) should not carry filter")
+          false
       }) {
       false
     } else {
