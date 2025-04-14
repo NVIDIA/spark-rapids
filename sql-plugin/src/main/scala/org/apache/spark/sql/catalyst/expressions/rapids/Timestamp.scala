@@ -45,4 +45,3 @@ object TimeStamp {
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 }
-
