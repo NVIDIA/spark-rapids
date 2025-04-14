@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,5 +21,5 @@ package com.nvidia.spark.rapids.delta
  */
 class DeltaProbeImpl extends DeltaProbe {
   // Delta Lake is built-in for Databricks instances, so no probing is necessary.
-  override def getDeltaProvider: DeltaProvider = DeltaSpark341DBProvider
+  override def getDeltaProvider: DeltaProvider = DeltaSpark350DB143Provider
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,12 +29,13 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {
@@ -78,7 +79,7 @@ object SparkSessionHolder extends Logging {
     // Add Locale setting
     Locale.setDefault(Locale.US)
 
-    val builder = SparkSession.builder()
+    val builder = getBuilder()
         .master("local[1]")
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
@@ -108,14 +109,14 @@ object SparkSessionHolder extends Logging {
   }
 
   def sparkSession: SparkSession = {
-    if (SparkSession.getActiveSession.isEmpty) {
+    if (!hasActiveSession) {
       reinitSession()
     }
     spark
   }
 
   def resetSparkSessionConf(): Unit = {
-    if (SparkSession.getActiveSession.isEmpty) {
+    if (!hasActiveSession) {
       reinitSession()
     } else {
       setAllConfs(origConf.toArray)
@@ -1266,7 +1267,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def mixedDfWithBuckets(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Integer, java.lang.Long, java.lang.Double, String, java.lang.Integer, String)](
       (99, 100L, 1.0, "A", 1, "A"),
       (98, 200L, 2.0, "B", 2, "B"),
@@ -1307,7 +1308,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def likeDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       (150, "abc"), (140, "a*c"), (130, "ab"), (120, "ac"), (110, "a|bc"), (100, "a.b"), (90, "b$"),
       (80, "b$c"), (70, "\r"), (60, "a\rb"), (50, "\roo"), (40, "\n"), (30, "a\nb"), (20, "\noo"),
@@ -1320,7 +1321,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def mixedDfWithNulls(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Long, java.lang.Double, java.lang.Integer, String)](
       (100L, 1.0, 99, "A"),
       (200L, 2.0, 98, "A"),
@@ -1337,7 +1338,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def booleanDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Boolean, java.lang.Boolean)](
       (true, true),
       (false, true),
@@ -1348,7 +1349,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def datesDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       (Date.valueOf("0100-1-1"), Date.valueOf("2100-1-1")),
       (Date.valueOf("0211-1-1"), Date.valueOf("1492-4-7")),
@@ -1361,7 +1362,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def timestampsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
 
     Seq(
       (Timestamp.valueOf("0100-1-1 23:00:01"), Timestamp.valueOf("2100-1-1 23:12:01")),
@@ -1377,7 +1378,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def epochDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       -1586549475L, //1919-09-23 3:48:45 AM
       1435708800L, //2015-07-01 12:00:00 (the day after leap second was added)
@@ -1400,7 +1401,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def doubleTimestampSecondsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     // some cases out of the range (-62135510400, 253402214400), which are not covered by IT
     Seq[Double](
       253402214400.000001d,
@@ -1411,7 +1412,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def decimalTimestampSecondsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[BigDecimal](
       BigDecimal("253402214400.000001"),
       BigDecimal("269999999999.999999"),
@@ -1421,7 +1422,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def longTimestampSecondsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[java.lang.Long](
       253402214401L,
       269999999999L,
@@ -1431,7 +1432,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def longTimestampMillisDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[java.lang.Long](
       253402214401000L,
       269999999999999L,
@@ -1441,7 +1442,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def longTimestampMicrosDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[java.lang.Long](
       253402214401000000L,
       269999999999999999L,
@@ -1452,7 +1453,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
    def longTimestampMicrosLongOverflowDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[java.lang.Long](
       Long.MinValue,
       -9223183700000000000L
@@ -1460,7 +1461,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def datesPostEpochDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       1435708800L, //2015-07-01 12:00:00 (the day after leap second was added)
       118800L, //1970-01-02 09:00:00
@@ -1481,7 +1482,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def exponentsAsStringsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq("1.38E-2",
       "1.2e-2",
       "3.544E+2",
@@ -1491,19 +1492,19 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def invalidFloatStringsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(("A", "null"), ("1.3", "43.54")).toDF("c0", "c1")
   }
 
   def badDoubleStringsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq("1.7976931348623159E308", "-1.7976931348623159E308",
       "1.79769313486231581E308", "-1.79769313486231581E308",
       "17.9769313486231582E307", "-17.9769313486231582E307").toDF("c0")
   }
 
   def stringsAndLongsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       ("A", 1L),
       ("B", 2L),
@@ -1517,7 +1518,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def longsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       (100L, 1L),
       (200L, 2L),
@@ -1533,7 +1534,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def intsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       (100, 1),
       (200, 2),
@@ -1547,7 +1548,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def biggerLongsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       (100L, 1L),
       (200L, 2L),
@@ -1588,7 +1589,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def nonZeroLongsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       (100L, 1L),
       (200L, 2L),
@@ -1602,7 +1603,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def nanDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[java.lang.Double](
       DOUBLE_NEGATIVE_NAN_LOWER_RANGE,
       Double.NaN,
@@ -1612,7 +1613,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def nullDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Long, java.lang.Long)](
       (100L, 15L),
       (100L, null)
@@ -1620,7 +1621,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def mixedDoubleDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Double, java.lang.Double)](
       (Double.PositiveInfinity, Double.PositiveInfinity),
       (Double.PositiveInfinity, Double.NegativeInfinity),
@@ -1709,7 +1710,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def mixedFloatDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Float, java.lang.Float)](
       (Float.PositiveInfinity, Float.PositiveInfinity),
       (Float.PositiveInfinity, Float.NegativeInfinity),
@@ -1798,7 +1799,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def intnullableFloatWithNullAndNanDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Integer, java.lang.Float)](
       (100, 1.0f),
       (200, 2.04f),
@@ -1815,7 +1816,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def doubleWithNansDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(java.lang.Double, java.lang.Double)](
       (100.50d, 1.0d),
       (200.80d, Double.NaN),
@@ -1832,7 +1833,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def decimals(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(String, BigDecimal)](
       ("a", BigDecimal("12.0")),
       ("a", BigDecimal("12.0")),
@@ -1845,7 +1846,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def doubleWithDifferentKindsOfNansAndZeros(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(Double, Int)](
       // Regular numbers
       (1, 10),
@@ -1869,7 +1870,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def floatWithDifferentKindsOfNansAndZeros(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(Float, Int)](
       // Regular numbers
       (1, 10),
@@ -1889,7 +1890,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def nullableStringsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(String, String)](
       ("100.0", "1.0"),
       (null, "2.0"),
@@ -1902,7 +1903,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def nullableStringsIntsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(String, Integer)](
       ("100.0", 1),
       (null, 2),
@@ -1918,7 +1919,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def oldDatesDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       new Date(-141427L * 24 * 60 * 60 * 1000),
       new Date(-150000L * 24 * 60 * 60 * 1000),
@@ -1928,7 +1929,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def oldTsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       new Timestamp(-141427L * 24 * 60 * 60 * 1000),
       new Timestamp(-150000L * 24 * 60 * 60 * 1000),
@@ -1938,14 +1939,14 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def utf8RepeatedDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     var utf8Chars = (0 until 256 /*65536*/).map(i => (i.toChar.toString, i))
     utf8Chars = utf8Chars ++ utf8Chars
     utf8Chars.toDF("strings", "ints")
   }
 
   def utf8StringsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq[(String)](
       ("Foo"),
       ("Bar"),
@@ -1956,12 +1957,12 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def ArrayKeyMapDF(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq((Map(List(1, 2) -> 2), (Map(List(2, 3) -> 3)))).toDF("col1", "col2")
   }
 
   def StructKeyMapDF(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq((Map((1, 2) -> 2), (Map((2, 3) -> 3)))).toDF("col1", "col2")
   }
 
@@ -1973,7 +1974,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   def singularDoubleDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(1.1).toDF("double")
   }
 
@@ -2139,7 +2140,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       case StructField(c, t, _, m) ⇒ StructField(c, t, nullable = nullable, m)
     })
     // apply new schema
-    df.sqlContext.createDataFrame(df.rdd, newSchema)
+    df.sparkSession.createDataFrame(df.rdd, newSchema)
   }
 
   def windowTestDfOrcNonNullable: SparkSession => DataFrame = {

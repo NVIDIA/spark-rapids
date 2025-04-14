@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ import os
 import pytest
 import re
 import stat
+import traceback
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -114,6 +115,7 @@ def pytest_sessionstart(session):
         findspark_init()
 
     import pyspark
+    from py4j.java_gateway import java_import
 
     # Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
@@ -147,6 +149,16 @@ def pytest_sessionstart(session):
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
+    java_import(_s._jvm, 'org.apache.spark.rapids.tests.TimeoutSparkListener')
+    # TODO dial down after identifying all long tests
+    # and set exceptions there
+    global default_timeout_seconds
+    global default_dump_threads
+    global set_spark_job_timeout_failure_logged
+    default_timeout_seconds = 60 * 60
+    default_dump_threads = True
+    set_spark_job_timeout_failure_logged = False
+    _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.init(_s._jsc)
     global _spark
     _spark = _s
 
@@ -178,12 +190,12 @@ def _get_driver_opts_for_worker_logs(_sb, wid):
         ' -Dlogfile={}'.format(log_file)
 
     # Set up Logging to the WORKERID_worker_logs
-    # Note: This logger is only used for logging the test name in method `log_test_name`. 
+    # Note: This logger is only used for logging the test name in method `log_test_name`.
     global logger
     logger.setLevel(logging.INFO)
     # Create file handler to output logs into corresponding worker log file
-    # This file_handler is modifying the worker_log file that the plugin will also write to 
-    # The reason for doing this is to get all test logs in one place from where we can do other analysis 
+    # This file_handler is modifying the worker_log file that the plugin will also write to
+    # The reason for doing this is to get all test logs in one place from where we can do other analysis
     # that might be needed in future to look at the execs that were used in our integration tests
     file_handler = logging.FileHandler(log_file)
     # Set the formatter for the file handler, we match the formatter from the basicConfig for consistency in logs
@@ -254,3 +266,30 @@ def spark_version():
 @pytest.fixture(scope='function', autouse=_use_worker_logs())
 def log_test_name(request):
     logger.info("Running test '{}'".format(request.node.nodeid))
+
+@pytest.fixture(scope="function", autouse=True)
+def set_spark_job_timeout(request):
+    logger.debug("set_spark_job_timeout: BEFORE TEST\n")
+    tm = request.node.get_closest_marker("spark_job_timeout")
+    if tm:
+        spark_timeout = tm.kwargs.get('seconds', default_timeout_seconds)
+        dump_threads = tm.kwargs.get('dump_threads', default_dump_threads)
+    else:
+        spark_timeout = default_timeout_seconds
+        dump_threads = default_dump_threads
+    # before the test
+    try:
+        _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.setSparkJobTimeout(
+            spark_timeout,
+            dump_threads
+        )
+    except Exception as e:
+        if not set_spark_job_timeout_failure_logged:
+            set_spark_job_timeout_failure_logged = True
+            logger.warning(f"set_spark_job_timeout: Ignoring pre-test exception : {traceback.format_exc()}")
+        pass
+    # yield for test
+    yield
+    # after the test
+
+

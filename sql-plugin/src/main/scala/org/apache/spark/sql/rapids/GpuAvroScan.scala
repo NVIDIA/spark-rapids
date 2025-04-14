@@ -30,6 +30,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
@@ -366,22 +368,23 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
    * 'splits' is used only for debugging.
    */
   protected final def sendToGpu(
-      hostBuf: HostMemoryBuffer,
+      hostBuf: SpillableHostBuffer,
       bufSize: Long,
       splits: Array[PartitionedFile]): Option[ColumnarBatch] = {
-    withResource(hostBuf) { _ =>
-      if (bufSize == 0) {
-        None
-      } else {
-        withResource(sendToGpuUnchecked(hostBuf, bufSize, splits)) { t =>
-          val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
-          logDebug(s"GPU batch size: $batchSizeBytes bytes")
-          metrics(NUM_OUTPUT_BATCHES) += 1
-          // convert to batch
-          Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
-        }
-      } // end of else
-    }
+    if (bufSize == 0) {
+      hostBuf.close()
+      None
+    } else {
+      val dataBuf = withRetryNoSplit(hostBuf)(_.getDataHostBuffer())
+      val t = withResource(dataBuf)(sendToGpuUnchecked(_, bufSize, splits))
+      withResource(t) { _ =>
+        val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
+        logDebug(s"GPU batch size: $batchSizeBytes bytes")
+        metrics(NUM_OUTPUT_BATCHES) += 1
+        // convert to batch
+        Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
+      }
+    } // end of else
   }
 
   /**
@@ -433,7 +436,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       partFilePath: Path,
       blocks: Seq[BlockInfo],
       headerSize: Long,
-      conf: Configuration): (HostMemoryBuffer, Long) = {
+      conf: Configuration): (SpillableHostBuffer, Long) = {
     withResource(new NvtxRange("Avro buffer file split", NvtxColor.YELLOW)) { _ =>
       if (blocks.isEmpty) {
         // No need to check the header here since it can not be null when blocks is not empty.
@@ -450,7 +453,8 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
               throw new QueryExecutionException(s"Calculated buffer size $estOutSize is" +
                 s" too small, actual written: ${out.getPos}")
             }
-            (hmb, out.getPos)
+            (SpillableHostBuffer(hmb, out.getPos, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+              out.getPos)
           }
         }
       }
@@ -719,6 +723,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
     override def call(): HostMemoryBuffersWithMetaDataBase = {
       TrampolineUtil.setTaskContext(taskContext)
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         doRead()
       } catch {
@@ -732,6 +737,7 @@ class GpuMultiFileCloudAvroPartitionReader(
             s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
           AvroHostBuffersWithMeta(partFile, Array(SingleHMBAndMeta.empty()), 0)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }
@@ -844,8 +850,12 @@ class GpuMultiFileCloudAvroPartitionReader(
                       batchRowsNum <= maxReadBatchSizeRows)
 
                   // One batch is done
-                  optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(Array(optHmb.get), out.getPos, batchRowsNum, Seq.empty)))
+                  optOut.foreach { out =>
+                    val shb = SpillableHostBuffer(optHmb.get, optHmb.get.getLength,
+                      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                    hostBuffers +=
+                      (SingleHMBAndMeta(Array(shb), out.getPos, batchRowsNum, Seq.empty))
+                  }
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }

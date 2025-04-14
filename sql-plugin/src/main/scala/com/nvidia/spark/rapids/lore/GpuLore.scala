@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import scala.reflect.ClassTag
 
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuExec, RapidsConf}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -36,6 +35,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec}
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.util.SerializableConfiguration
 
@@ -85,7 +85,7 @@ object GpuLore {
 
   def dumpPlan[T <: SparkPlan : ClassTag](plan: T, rootPath: Path): Unit = {
     dumpObject(plan, pathOfRootPlanMeta(rootPath),
-      SparkShimImpl.sessionFromPlan(plan).sparkContext.hadoopConfiguration)
+      SparkSessionUtils.sessionFromPlan(plan).sparkContext.hadoopConfiguration)
   }
 
   def dumpObject[T: ClassTag](obj: T, path: Path, hadoopConf: Configuration): Unit = {
@@ -177,7 +177,7 @@ object GpuLore {
   private def nextLoreIdOf(plan: SparkPlan): Option[Int] = {
     // When the execution id is not set, it means there is no actual execution happening, in this
     // case we don't need to generate lore id.
-    Option(SparkShimImpl.sessionFromPlan(plan)
+    Option(SparkSessionUtils.sessionFromPlan(plan)
       .sparkContext
       .getLocalProperty(SQLExecution.EXECUTION_ID_KEY))
       .map { executionId =>
@@ -200,7 +200,7 @@ object GpuLore {
         new IllegalArgumentException(s"${RapidsConf.LORE_DUMP_PATH.key} must be set " +
           s"when ${RapidsConf.LORE_DUMP_IDS.key} is set."))
 
-      val spark = SparkShimImpl.sessionFromPlan(sparkPlan)
+      val spark = SparkSessionUtils.sessionFromPlan(sparkPlan)
 
       Option(spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)).foreach {
         executionId =>

@@ -44,6 +44,12 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
   require(originPlan.relation.fileFormat.getClass == classOf[ParquetFileFormat],
     "HybridScan only supports ParquetFormat")
 
+  logInfo(s"using HybridScan over HadoopFsRelation: $originPlan")
+
+  override val nodeName: String = {
+    s"HybridScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
+  }
+
   override def relation: BaseRelation = originPlan.relation
 
   override def tableIdentifier: Option[TableIdentifier] = originPlan.tableIdentifier
@@ -87,6 +93,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
       val mapBuilder = mutable.Map.empty[String, GpuMetric]
       hybridCommonMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
       nativeMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
+      preloadMetrics.keys.foreach(key => mapBuilder += key -> allMetrics(key))
       mapBuilder.toMap
     }
 
@@ -94,6 +101,7 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
       output,
       originPlan.requiredSchema,
       TargetSize(coalesceSizeGoal),
+      rapidsConf.hybridParquetPreloadBatches,
       embeddedMetrics
     )
   }
@@ -119,6 +127,13 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     "PageableH2DSize" -> (() => createSizeMetric(MODERATE_LEVEL, "PageableH2DSize")),
     "PinnedH2DSize" -> (() => createSizeMetric(MODERATE_LEVEL, "PinnedH2DSize")),
   )
+  private val preloadMetrics: Map[String, () => GpuMetric] = {
+    if (rapidsConf.hybridParquetPreloadBatches > 0) {
+      Map("preloadWaitTime" -> (() => createNanoTimingMetric(MODERATE_LEVEL, "preloadWaitTime")))
+    } else {
+      Map.empty
+    }
+  }
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     val mapBuilder = Map.newBuilder[String, GpuMetric]
@@ -127,8 +142,12 @@ case class HybridFileSourceScanExec(originPlan: FileSourceScanExec
     hybridCommonMetrics.foreach { case (key, generator) =>
       mapBuilder += key -> generator()
     }
-    // NativeConverter and RoundTripConverter uses different metrics
+    // NativeConverter metrics
     nativeMetrics.foreach { case (key, generator) =>
+      mapBuilder += key -> generator()
+    }
+    // Preloading related metrics
+    preloadMetrics.foreach { case (key, generator) =>
       mapBuilder += key -> generator()
     }
     // Expose all metrics of the underlying CpuNativeScanExec

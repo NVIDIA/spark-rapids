@@ -30,6 +30,7 @@ import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableArray, AutoCloseableProducingSeq}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -53,7 +54,7 @@ import org.apache.spark.util.SerializableConfiguration
  * This contains a single HostMemoryBuffer along with other metadata needed
  * for combining the buffers before sending to GPU.
  */
-case class SingleHMBAndMeta(hmbs: Array[HostMemoryBuffer], bytes: Long, numRows: Long,
+case class SingleHMBAndMeta(hmbs: Array[SpillableHostBuffer], bytes: Long, numRows: Long,
     blockMeta: Seq[DataBlockBase])
 
 object SingleHMBAndMeta {
@@ -1007,16 +1008,14 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         } else {
           val dataBuffer = readPartFiles(currentChunkMeta.currentChunk,
             currentChunkMeta.clippedSchema)
-          if (dataBuffer.getLength == 0) {
+          if (dataBuffer.length == 0) {
             dataBuffer.close()
             CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
             startNewBufferRetry
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
-              // We don't want to actually close the host buffer until we know that we don't
-              // want to retry more, so offset the close for now.
-              dataBuffer.incRefCount()
-              val tableReader = readBufferToTablesAndClose(dataBuffer, dataBuffer.getLength,
+              val dataBuf = dataBuffer.getDataHostBuffer()
+              val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
                 currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
                 currentChunkMeta.extraInfo)
               CachedGpuBatchIterator(tableReader, colTypes)
@@ -1042,7 +1041,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    */
   private def readPartFiles(
       blocks: Seq[(Path, DataBlockBase)],
-      clippedSchema: SchemaBase): HostMemoryBuffer = {
+      clippedSchema: SchemaBase): SpillableHostBuffer = {
 
     withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))) { _ =>
@@ -1057,8 +1056,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       // First, estimate the output file size for the initial allocating.
       //   the estimated size should be >= size of HEAD + Blocks + FOOTER
       val initTotalSize = calculateEstimatedBlocksOutputSize(batchContext)
+      val initBuf = withRetryNoSplit[HostMemoryBuffer] {
+        HostMemoryBuffer.allocate(initTotalSize)
+      }
       val (buffer, bufferSize, footerOffset, outBlocks) =
-        closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { hmb =>
+        closeOnExcept(initBuf) { hmb =>
           // Second, write header
           var offset = writeFileHeader(hmb, batchContext)
 
@@ -1103,7 +1105,10 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         buf = withResource(buffer) { _ =>
           withResource(new HostMemoryInputStream(buffer, footerOffset)) { in =>
             // realloc memory and copy
-            closeOnExcept(HostMemoryBuffer.allocate(bufferSize)) { newhmb =>
+            val newBuf = withRetryNoSplit[HostMemoryBuffer] {
+              HostMemoryBuffer.allocate(bufferSize)
+            }
+            closeOnExcept(newBuf) { newhmb =>
               withResource(new HostMemoryOutputStream(newhmb)) { out =>
                 IOUtils.copy(in, out)
               }
@@ -1133,9 +1138,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       }
       logDebug(s"$getFileFormatShortName Coalescing reading estimates the initTotalSize:" +
         s" $initTotalSize, and the true size: $finalBufferSize")
-      withResource(finalBuffer) { _ =>
-        finalBuffer.slice(0, finalBufferSize)
-      }
+      SpillableHostBuffer(finalBuffer,
+        finalBufferSize,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
   }
 

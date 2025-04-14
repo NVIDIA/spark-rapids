@@ -253,14 +253,20 @@ def is_spark_332cdh():
 def is_spark_cdh():
     return is_spark_321cdh() or is_spark_330cdh() or is_spark_332cdh()
 
-def is_databricks_version_or_later(major, minor):
+def __databricks_version(major, minor):
     spark = get_spark_i_know_what_i_am_doing()
     version = spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "0.0")
     parts = version.split(".")
     if (len(parts) < 2):
         raise RuntimeError("Unable to determine Databricks version from version string: " + version)
-    db_major = int(parts[0])
-    db_minor = int(parts[1])
+    return int(parts[0]), int(parts[1])
+
+def is_databricks_version(major, minor):
+    db_major, db_minor = __databricks_version(major, minor)
+    return db_minor == minor and db_major == major
+
+def is_databricks_version_or_later(major, minor):
+    db_major, db_minor = __databricks_version(major, minor)
     return db_minor >= minor if (db_major == major) else db_major >= major
 
 def is_databricks104_or_later():
@@ -274,6 +280,12 @@ def is_databricks122_or_later():
 
 def is_databricks133_or_later():
     return is_databricks_version_or_later(13, 3)
+
+def is_databricks133():
+    return is_databricks_version(13, 3)
+
+def is_databricks143_or_later():
+    return is_databricks_version_or_later(14, 3)
 
 def supports_delta_lake_deletion_vectors():
     if is_databricks_runtime():

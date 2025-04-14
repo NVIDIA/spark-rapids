@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.LongAdder
+
+import scala.collection.mutable
+
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import com.nvidia.spark.rapids.HostAlloc.bookkeepHostMemoryFree
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{BOOKKEEP_MEMORY, BOOKKEEP_MEMORY_CALLSTACK}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 import com.nvidia.spark.rapids.spill.SpillFramework
 
@@ -40,6 +47,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
         releaseNonPinned(ptr, amount)
+        if (BOOKKEEP_MEMORY) {
+          bookkeepHostMemoryFree(ptr, amount)
+        }
       }
     }
   }
@@ -51,6 +61,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
         releasePinned(ptr, amount)
+        if (BOOKKEEP_MEMORY) {
+          bookkeepHostMemoryFree(ptr, amount)
+        }
       }
     }
   }
@@ -203,6 +216,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       if (ret.isDefined) {
         val metrics = GpuTaskMetrics.get
         metrics.incHostBytesAllocated(amount)
+        if (BOOKKEEP_MEMORY) {
+          HostAlloc.bookkeepHostMemoryAlloc(ret.get.getAddress, amount)
+        }
         logTrace(getHostAllocMetricsLogStr(metrics))
         RmmSpark.postCpuAllocSuccess(ret.get.getAddress, amount, blocking, isRecursive)
       } else {
@@ -256,7 +272,7 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
 /**
  * A new API for host memory allocation. This can be used to limit the amount of host memory.
  */
-object HostAlloc {
+object HostAlloc extends Logging {
   private var singleton: HostAlloc = new HostAlloc(-1)
 
   private def getSingleton: HostAlloc = synchronized {
@@ -363,5 +379,78 @@ object HostAlloc {
         throw error
       }
     }
+  }
+
+
+  /**
+   * For bookkeeping host memory usage per thread
+   */
+  private trait PerThreadMemoryUsage {
+    def add(addr: Long, amount: Long, callstack: String): Unit
+    def remove(addr: Long, amount: Long): Unit
+  }
+  private class SimplePerThreadMemoryUsage extends PerThreadMemoryUsage {
+    private val totalMem: LongAdder = new LongAdder()
+    override def toString: String = s"${totalMem.sum()} bytes in total"
+    override def add(addr: Long, amount: Long, callstack: String): Unit = {
+      totalMem.add(amount)
+    }
+    override def remove(addr: Long, amount: Long): Unit = totalMem.add(-amount)
+  }
+  private case class MemoryUsageDetail(addr: Long, amount: Long, callStack: String) {
+    override def toString: String = s"$amount bytes behind address $addr at $callStack"
+  }
+
+  private class PerThreadMemoryUsageInDetails extends PerThreadMemoryUsage {
+    private val details: mutable.Map[Long, MemoryUsageDetail] = mutable.Map()
+    override def toString: String =
+      s"Total ${details.values.map(_.amount).sum} bytes from below callstacks:\n" +
+        s"${details.values.mkString("\n")}"
+
+    override def add(addr: Long, amount: Long, callstack: String): Unit =
+      details.put(addr, MemoryUsageDetail(addr, amount, callstack))
+
+    override def remove(addr: Long, amount: Long): Unit =
+      details.remove(addr)
+  }
+  private val muPerThreads = new ConcurrentHashMap[Long, PerThreadMemoryUsage]()
+  private val addr2threadId = new ConcurrentHashMap[Long, java.lang.Long]()
+
+  private def bookkeepHostMemoryAlloc(addr: Long, amount: Long): Unit = {
+    val threadId = Thread.currentThread().getId
+    HostAlloc.addr2threadId.put(addr, threadId)
+    if (BOOKKEEP_MEMORY_CALLSTACK) {
+      val mu = muPerThreads.computeIfAbsent(threadId, _ => new PerThreadMemoryUsageInDetails)
+      val callstack = Thread.currentThread().getStackTrace.mkString(" at ")
+      mu.add(addr, amount, callstack)
+    } else {
+      val mu = muPerThreads.computeIfAbsent(threadId, _ => new SimplePerThreadMemoryUsage)
+      mu.add(addr, amount, null)
+    }
+  }
+
+  private def bookkeepHostMemoryFree(ptr: Long, amount: Long) = {
+    val threadId = HostAlloc.addr2threadId.get(ptr)
+    if (threadId != null) {
+      val mu = HostAlloc.muPerThreads.get(threadId)
+      if (mu != null) {
+        mu.remove(ptr, amount)
+      } else {
+        logWarning(s"Could not find MemoryUsage for thread $threadId from address $ptr, " +
+          s"bytes: $amount")
+      }
+      HostAlloc.addr2threadId.remove(ptr)
+    } else {
+      logWarning(s"Could not find thread id for address $ptr, bytes: $amount")
+    }
+  }
+
+  def getHostAllocBookkeepSummary(): String = {
+    val sb = new StringBuilder
+    sb.append("<<Host Memory Bookkeeping>>\n")
+    muPerThreads.forEach((threadId, mu) => {
+      sb.append(s"Thread with ID $threadId memory usage: ${mu.toString}\n\n")
+    })
+    sb.toString()
   }
 }

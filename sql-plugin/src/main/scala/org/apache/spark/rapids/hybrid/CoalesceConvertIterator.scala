@@ -20,8 +20,7 @@ import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, GpuSemaphore, NvtxWithMetrics}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter}
-import com.nvidia.spark.rapids.hybrid.RapidsHostColumn
+import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter, HybridHostRetryAllocator, RapidsHostColumn}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -47,6 +46,20 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
   private val converterMetrics = Map(
     "C2COutputSize" -> GpuMetric.unwrap(metrics("C2COutputSize")))
 
+  private def upstreamHasNext(): Boolean = {
+    val startTime = System.nanoTime()
+    val hasNext = cpuScanIter.hasNext
+    metrics("HybridScanTime") += System.nanoTime() - startTime
+    hasNext
+  }
+
+  private def upstreamNext(): ColumnarBatch = {
+    val startTime = System.nanoTime()
+    val batch = cpuScanIter.next()
+    metrics("HybridScanTime") += System.nanoTime() - startTime
+    batch
+  }
+
   override def hasNext(): Boolean = {
     // isDeckFilled means if there is unconverted source data remained on the deck.
     // hasProceedingBuilders means if there exists working target vectors not being flushed yet.
@@ -55,7 +68,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     }
     // Check the srcExhausted at first, so as to minimize the potential cost of unnecessary call of
     // prev.hasNext
-    lazy val upstreamHoldData = !srcExhausted && cpuScanIter.hasNext
+    lazy val upstreamHoldData = !srcExhausted && upstreamHasNext()
     // Either converter holds data or upstreaming iterator holds data.
     if (selfHoldData || upstreamHoldData) {
       return true
@@ -84,17 +97,18 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
     // Initialize the nativeConverter with the first input batch
     if (converterImpl == null) {
       converterImpl = NativeConverter(
-        cpuScanIter.next(),
+        upstreamNext(),
         targetBatchSizeInBytes,
         schema,
-        converterMetrics
+        converterMetrics,
+        new HybridHostRetryAllocator()
       )
     }
 
     // Keeps consuming input batches of cpuScanIter until targetVectors reaches `targetBatchSize`
     // or cpuScanIter being exhausted.
     while (true) {
-      val needFlush = if (cpuScanIter.hasNext) {
+      val needFlush = if (upstreamHasNext()) {
         metrics("CpuReaderBatches") += 1
         // The only condition leading to a nonEmpty deck is targetVectors are unset after
         // the previous flushing
@@ -104,7 +118,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
         // tryAppendBatch, if failed which indicates the remaining space of targetVectors is NOT
         // enough the current input batch, then the batch will be placed on the deck and trigger
         // the flush of working targetVectors
-        !converterImpl.tryAppendBatch(cpuScanIter.next())
+        !converterImpl.tryAppendBatch(upstreamNext())
       } else {
         // If cpuScanIter is exhausted, then flushes targetVectors as the last output item.
         srcExhausted = true
@@ -128,38 +142,68 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
 }
 
 object CoalesceConvertIterator extends Logging {
-
-  def hostToDevice(hostIter: Iterator[Array[RapidsHostColumn]],
+  /**
+   * Consumes the RapidsHostBatchProducer and converts the HostColumnVectors to Device ones.
+   */
+  def hostToDevice(hostProducer: RapidsHostBatchProducer,
                    outputAttr: Seq[Attribute],
                    metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
-    val dataTypes = outputAttr.map(_.dataType).toArray
+    new Iterator[ColumnarBatch] {
 
-    hostIter.map { hostVectors =>
-      Option(TaskContext.get()).foreach { ctx =>
-        withResource(new NvtxWithMetrics("gpuAcquireC2C", NvtxColor.GREEN,
-          metrics("GpuAcquireTime"))) { _ =>
-          GpuSemaphore.acquireIfNecessary(ctx)
+      private val dataTypes = outputAttr.map(_.dataType).toArray
+
+      override def hasNext: Boolean = hostProducer.hasNext
+
+      /**
+       * At here, for consuming AsyncProducer effectively, we would like to achieve two things:
+       * 1. Does NOT acquire GpuSemaphore until AsyncProducer is ready. It excludes the scenario
+       * that the task thread which holds GpuSemaphore doing nothing but waiting.
+       *
+       * 2. Does NOT commit the consumption of next element until getting GpuSemaphore. It means
+       * that the AsyncProducerThread will not be awakened until the previous element starts to
+       * be transferred to device.
+       */
+      override def next(): ColumnarBatch = {
+        // 1. Preparing Stage
+        // Before waiting for asynchronous cpu task, releases the potential GpuSemaphore being
+        // held by this thread. It may happen if there exists downstreaming nodes which coalesces
+        // multiple input batches (such as Aggregate).
+        Option(TaskContext.get()).foreach { ctx =>
+          GpuSemaphore.releaseIfNecessary(ctx)
         }
-      }
-
-      val deviceVectors: Array[ColumnVector] = hostVectors.zip(dataTypes).safeMap {
-        case (RapidsHostColumn(hcv, isPinned, totalBytes), dt) =>
-          val nvtxMetric = if (isPinned) {
-            metrics("PinnedH2DSize") += totalBytes
-            new NvtxWithMetrics("pinnedH2D", NvtxColor.DARK_GREEN, metrics("PinnedH2DTime"))
-          } else {
-            metrics("PageableH2DSize") += totalBytes
-            new NvtxWithMetrics("PageableH2D", NvtxColor.GREEN, metrics("PageableH2DTime"))
+        // Firstly, waits for the next host batch being ready
+        hostProducer.waitForNext()
+        // Then, acquires GpuSemaphore
+        Option(TaskContext.get()).foreach { ctx =>
+          withResource(new NvtxWithMetrics("gpuAcquireC2C", NvtxColor.GREEN,
+            metrics("GpuAcquireTime"))) { _ =>
+            GpuSemaphore.acquireIfNecessary(ctx)
           }
-          withResource(hcv) { _ =>
-            withResource(nvtxMetric) { _ =>
-              GpuColumnVector.from(hcv.copyToDevice(), dt)
+        }
+        // Finally, take the ownership of the next host batch, which might awake the asynchronous
+        // producer if the producer thread was stuck by the full lock.
+        val hostColumns = hostProducer.takeNext
+        val rowCount = hostColumns.head.vector.getRowCount.toInt
+
+        // 2. Transferring Stage
+        val deviceVectors: Array[ColumnVector] = hostColumns.zip(dataTypes).safeMap {
+          case (RapidsHostColumn(hcv, isPinned, totalBytes), dt) =>
+            val nvtxMetric = if (isPinned) {
+              metrics("PinnedH2DSize") += totalBytes
+              new NvtxWithMetrics("pinnedH2D", NvtxColor.DARK_GREEN, metrics("PinnedH2DTime"))
+            } else {
+              metrics("PageableH2DSize") += totalBytes
+              new NvtxWithMetrics("PageableH2D", NvtxColor.GREEN, metrics("PageableH2DTime"))
             }
-          }
-      }
+            withResource(hcv) { _ =>
+              withResource(nvtxMetric) { _ =>
+                GpuColumnVector.from(hcv.copyToDevice(), dt)
+              }
+            }
+        }
 
-      new ColumnarBatch(deviceVectors, hostVectors.head.vector.getRowCount.toInt)
+        new ColumnarBatch(deviceVectors, rowCount)
+      }
     }
   }
-
 }

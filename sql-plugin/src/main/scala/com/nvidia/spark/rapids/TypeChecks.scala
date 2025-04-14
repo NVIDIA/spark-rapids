@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2188,42 +2188,68 @@ object SupportedOpsForTools {
     val conf = new RapidsConf(Map.empty[String, String])
     val types = allSupportedTypes.toSeq
     val header = Seq("Format", "Direction") ++ types
-    val writeOps: Array[String] = Array.fill(types.size)("NA")
     println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
         val formatLowerCase = format.toString.toLowerCase
-        val formatEnabled = formatLowerCase match {
-          case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+        // Get a tuple of (formatEnabled, readEnabled, Optional(writeEnabled)).
+        // The writeEnabled configuration is optional because it is not always defined.
+        val (formatEnabled, readEnabled, writeEnabled) = formatLowerCase match {
+          case "csv" =>
+            (conf.isCsvEnabled, conf.isCsvReadEnabled, None)
           case "delta" =>
             // Delta Lake reads of data files appear as a normal Parquet read
-            conf.isParquetEnabled && conf.isParquetReadEnabled
-          case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
-          case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
-          case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
-          case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
-          case "iceberg" => conf.isIcebergEnabled && conf.isIcebergReadEnabled
-          case "hivetext" => conf.isHiveDelimitedTextEnabled && conf.isHiveDelimitedTextReadEnabled
+            (conf.isParquetEnabled, conf.isParquetReadEnabled, Some(conf.isParquetWriteEnabled))
+          case "parquet" =>
+            (conf.isParquetEnabled, conf.isParquetReadEnabled, Some(conf.isParquetWriteEnabled))
+          case "orc" =>
+            (conf.isOrcEnabled, conf.isOrcReadEnabled, Some(conf.isOrcWriteEnabled))
+          case "json" =>
+            (conf.isJsonEnabled, conf.isJsonReadEnabled, None)
+          case "avro" =>
+            (conf.isAvroEnabled, conf.isAvroReadEnabled, None)
+          case "iceberg" =>
+            (conf.isIcebergEnabled, conf.isIcebergReadEnabled, None)
+          case "hivetext" =>
+            (conf.isHiveDelimitedTextEnabled,
+              conf.isHiveDelimitedTextReadEnabled,
+              Some(conf.isHiveDelimitedTextWriteEnabled))
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
-        val read = ioMap(ReadFileOp)
-        // we have lots of configs for various operations, just try to get the main ones
-        val readOps = types.map { t =>
-          if (!formatEnabled) {
-            // indicate configured off by default
-            "CO"
-          } else {
-            read.support(t).text
+        if (!formatEnabled) {
+          // Configured off by default.
+          // Write CO for all types in the read section.
+          println(s"$format,read,${types.map(_ => "CO").mkString(",")}")
+        } else {
+          // Step-1: fill in the read values.
+          val readObj = ioMap(ReadFileOp)
+          // we have lots of configs for various operations, just try to get the main ones
+          val finalReadOps = types.map { t =>
+            if (!readEnabled) {
+              // indicate configured off by default
+              "CO"
+            } else {
+              readObj.support(t).text
+            }
           }
-        }
-        // print read formats and types
-        println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
+          // print read formats and types
+          println(s"${(Seq(format, "read") ++ finalReadOps).mkString(",")}")
 
-        val writeFileFormat = ioMap(WriteFileOp).getFileFormat
-        // print supported write formats and NA for types. Cannot determine types from event logs.
-        if (writeFileFormat != TypeSig.none) {
-          println(s"${(Seq(format, "write") ++ writeOps).mkString(",")}")
+          // Step-2: fill in the write values if any.
+          val writeOpObj = ioMap(WriteFileOp)
+          val writeFileFormat = writeOpObj.getFileFormat
+          if (writeFileFormat != TypeSig.none) { // types are defined
+            val finalWriteOps = types.map { t =>
+              if (writeEnabled.getOrElse(false)) {
+                // indicate configured off by default
+                writeOpObj.support(t).text
+              } else {
+                "CO"
+              }
+            }
+            println(s"${(Seq(format, "write") ++ finalWriteOps).mkString(",")}")
+          }
         }
     }
   }

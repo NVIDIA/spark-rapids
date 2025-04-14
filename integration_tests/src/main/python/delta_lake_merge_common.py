@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,14 +30,14 @@ def make_df(spark, gen, num_slices):
                         SetValuesGen(StringType(), string.ascii_uppercase), num_slices=num_slices)
 
 
-def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                          src_table_func, dest_table_func, merge_sql, check_func,
                          partition_columns=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
 
     def setup_tables(spark):
-        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
+        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_deletion_vectors, partition_columns)
         src_table_func(spark).createOrReplaceTempView(src_table)
 
     def do_merge(spark, path):
@@ -48,7 +48,7 @@ def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
     check_func(data_path, do_merge)
 
 
-def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                    src_table_func, dest_table_func, merge_sql,
                                    compare_logs, partition_columns=None, conf=None):
     assert conf is not None, "conf must be set"
@@ -73,72 +73,72 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
         # partitioning due to random sampling.
         if compare_logs and not partition_columns:
             with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
-    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                          src_table_func, dest_table_func, merge_sql, checker, partition_columns)
 
 
 def do_test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
-                                              use_cdf, partition_columns, num_slices, compare_logs,
+                                              use_cdf, enable_deletion_vectors, partition_columns, num_slices, compare_logs,
                                               conf):
     src_range, dest_range = table_ranges
     src_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), src_range), num_slices)
     dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN NOT MATCHED THEN INSERT *"
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                    src_table_func, dest_table_func, merge_sql, compare_logs,
                                    partition_columns, conf=conf)
 
 
 def do_test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
-                                          use_cdf, partition_columns, num_slices, compare_logs,
+                                          use_cdf, enable_deletion_vectors, partition_columns, num_slices, compare_logs,
                                           conf):
     src_range, dest_range = table_ranges
     src_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), src_range), num_slices)
     dest_table_func = lambda spark: make_df(spark, SetValuesGen(IntegerType(), dest_range), num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED THEN DELETE"
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                    src_table_func, dest_table_func, merge_sql, compare_logs,
                                    partition_columns, conf=conf)
 
 
-def do_test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+def do_test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                         num_slices, compare_logs, conf):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                    src_table_func, dest_table_func, merge_sql, compare_logs,
                                    conf=conf)
 
 
-def do_test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+def do_test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                               merge_sql, num_slices, compare_logs, conf):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
-                                   src_table_func, dest_table_func, merge_sql, compare_logs,
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
+                                   src_table_func, dest_table_func, merge_sql, compare_logs, 
                                    conf=conf)
 
 
 def do_test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path,
-                                                                spark_tmp_table_factory, use_cdf,
+                                                                spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                                                 num_slices, compare_logs, conf):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
     dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), range(100)), string_gen, seed=1, num_slices=num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED AND {dest_table}.a > 100 THEN UPDATE SET *"
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                    src_table_func, dest_table_func, merge_sql, compare_logs,
                                    conf=conf)
 
 
-def do_test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+def do_test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                                 conf):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: spark.range(10).withColumn("x", f.col("id") + 1) \
@@ -150,6 +150,6 @@ def do_test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_
                 " WHEN MATCHED THEN UPDATE SET {dest_table}.x = {src_table}.x + 2" \
                 " WHEN NOT MATCHED AND {src_table}.x < 7 THEN INSERT *"
 
-    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vectors,
                                    src_table_func, dest_table_func, merge_sql,
                                    compare_logs=False, conf=conf)

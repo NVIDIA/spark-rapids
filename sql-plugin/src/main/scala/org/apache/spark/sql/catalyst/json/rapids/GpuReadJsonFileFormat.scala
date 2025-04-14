@@ -17,7 +17,6 @@
 package org.apache.spark.sql.catalyst.json.rapids
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -30,6 +29,7 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -85,7 +85,7 @@ object GpuReadJsonFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuJsonScan.tagSupport(
-      SparkShimImpl.sessionFromPlan(fsse).sessionState.conf,
+      SparkSessionUtils.sessionFromPlan(fsse).sessionState.conf,
       JsonFileFormatReaderType,
       fsse.relation.dataSchema,
       fsse.output.toStructType,

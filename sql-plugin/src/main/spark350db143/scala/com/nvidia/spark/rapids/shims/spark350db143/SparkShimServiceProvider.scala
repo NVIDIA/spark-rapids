@@ -36,15 +36,13 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
     // disabled by default
     val shimEnabled = Option(SparkEnv.get)
       .flatMap(_.conf.getOption(shimEnabledProp).map(_.toBoolean))
-      .getOrElse(false)
+      .getOrElse(true)
 
     DatabricksShimServiceProvider.matchesVersion(
       dbrVersion = "14.3.x",
       shimMatchEnabled = shimEnabled,
-      // scalastyle:off line.size.limit
-      disclaimer = s"""|!!!! Databricks 14.3.x support is incomplete: https://github.com/NVIDIA/spark-rapids/issues/10661
-                       |!!!! It can be experimentally enabled by configuring ${shimEnabledProp}=true.""".stripMargin
-      // scalastyle:on line.size.limit
+      disclaimer = "Development of support for Databricks 14.3.x is still in progress: " +
+        "https://github.com/NVIDIA/spark-rapids/issues/10661"
     )
   }
 }
