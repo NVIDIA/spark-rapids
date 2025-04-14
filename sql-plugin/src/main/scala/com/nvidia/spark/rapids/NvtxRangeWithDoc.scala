@@ -38,7 +38,7 @@ object NvtxRegistry {
 
   private def register(id: NvtxId): Unit = {
     if (registeredRanges.contains(id.name)) {
-      Console.err.println(s"Collision detected for key: ${id.name}")
+      throw new IllegalArgumentException(s"Collision detected for key: ${id.name}")
     } else {
       registeredRanges += (id.name -> id)
     }
