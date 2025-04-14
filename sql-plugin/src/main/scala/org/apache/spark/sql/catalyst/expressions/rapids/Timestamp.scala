@@ -40,7 +40,7 @@ object TimeStamp {
       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat, conf.maxTimezoneYear, a.timeZoneId)
+          GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap

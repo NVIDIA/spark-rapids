@@ -1712,7 +1712,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnixTimeExprMeta[DateFormatClass](a, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuDateFormatClass(lhs, rhs, strfFormat, conf.maxTimezoneYear, a.timeZoneId)
+          GpuDateFormatClass(lhs, rhs, strfFormat, a.timeZoneId)
       }
     ),
     expr[ToUnixTimestamp](
@@ -1728,7 +1728,7 @@ object GpuOverrides extends Logging {
         // String type is not supported yet for non-UTC timezone.
         override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, conf.maxTimezoneYear, a.timeZoneId)
+          GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
       }),
     expr[UnixTimestamp](
@@ -1743,7 +1743,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, conf.maxTimezoneYear, a.timeZoneId)
+          GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat, a.timeZoneId)
         }
       }),
     expr[Hour](
@@ -1752,7 +1752,7 @@ object GpuOverrides extends Logging {
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
         override def isTimeZoneSupported = true
-        override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr, conf.maxTimezoneYear, hour.timeZoneId)
+        override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr, hour.timeZoneId)
       }),
     expr[Minute](
       "Returns the minute component of the string/timestamp",
@@ -1761,7 +1761,7 @@ object GpuOverrides extends Logging {
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(expr: Expression): GpuExpression =
-          GpuMinute(expr, conf.maxTimezoneYear, minute.timeZoneId)
+          GpuMinute(expr, minute.timeZoneId)
       }),
     expr[Second](
       "Returns the second component of the string/timestamp",
@@ -1770,7 +1770,7 @@ object GpuOverrides extends Logging {
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
         override def isTimeZoneSupported = true
         override def convertToGpu(expr: Expression): GpuExpression =
-          GpuSecond(expr, conf.maxTimezoneYear, second.timeZoneId)
+          GpuSecond(expr, second.timeZoneId)
       }),
     expr[WeekDay](
       "Returns the day of the week (0 = Monday...6=Sunday)",

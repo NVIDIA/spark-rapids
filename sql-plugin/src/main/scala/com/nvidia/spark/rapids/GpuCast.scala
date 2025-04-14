@@ -39,7 +39,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
-import org.apache.spark.SparkEnv
 
 /** Meta-data for cast and ansi_cast. */
 final class CastExprMeta[INPUT <: UnaryLike[Expression] with TimeZoneAwareExpression](
@@ -309,15 +308,6 @@ object GpuCast {
   val OVERFLOW_MESSAGE: String = "overflow occurred"
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
-  
-  /**
-   * Get the maximum year for timezone calculations from RapidsConf
-   */
-  def getMaxTimezoneYear(): Int = {
-    val sparkConf = SparkEnv.get.conf
-    val rapidsConf = new RapidsConf(sparkConf)
-    rapidsConf.maxTimezoneYear
-  }
 
   def doCast(
       input: ColumnView,
@@ -644,14 +634,13 @@ object GpuCast {
       case (TimestampType, DateType) if options.timeZoneId.isDefined =>
         val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
         withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(input.asInstanceOf[ColumnVector],
-            zoneId.normalized(), getMaxTimezoneYear())) {
+            zoneId.normalized())) {
           shifted => shifted.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (DateType, TimestampType) if options.timeZoneId.isDefined =>
         val zoneId = DateTimeUtils.getZoneId(options.timeZoneId.get)
         withResource(input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))) { cv =>
-          GpuTimeZoneDB.fromTimestampToUtcTimestamp(cv, zoneId.normalized(),
-          getMaxTimezoneYear())
+          GpuTimeZoneDB.fromTimestampToUtcTimestamp(cv, zoneId.normalized())
         }
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))

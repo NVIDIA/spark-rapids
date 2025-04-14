@@ -561,6 +561,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           s"$executorTimezone. Set executor timezone to $driverTimezone.")
       }
 
+      // Initialize timezone database cache asynchronously on executor startup
+      GpuTimeZoneDB.cacheDatabaseAsync(conf.maxTimezoneYear)
+
       GpuCoreDumpHandler.executorInit(conf, pluginContext)
 
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize

@@ -38,7 +38,6 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   private val useGPU = true
   private val testAllTimezones = false
   private val testAllYears = false
-  private val maxTimezoneYear = 2200
 
   private var zones = Seq.empty[String]
 
@@ -186,8 +185,7 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
       val actualRet = if (useGPU) {
         GpuTimeZoneDB.fromUtcTimestampToTimestamp(
           inputCv,
-          ZoneId.of(zoneStr),
-          maxTimezoneYear)
+          ZoneId.of(zoneStr))
       } else {
         TimeZoneDB.fromUtcTimestampToTimestamp(
           inputCv,
@@ -222,8 +220,7 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
       val actualRet = if (useGPU) {
         GpuTimeZoneDB.fromTimestampToUtcTimestamp(
           inputCv,
-          ZoneId.of(zoneStr),
-          maxTimezoneYear)
+          ZoneId.of(zoneStr))
       } else {
         TimeZoneDB.fromTimestampToUtcTimestamp(
           inputCv,
