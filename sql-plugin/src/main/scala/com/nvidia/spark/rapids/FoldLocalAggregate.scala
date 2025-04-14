@@ -129,12 +129,14 @@ object LocalAggregatePattern extends Logging {
         case (s2, s1) if s2.isDistinct || s1.isDistinct =>
           false
         // AggregateFunctions should be identical
-        case (s2, s1) =>
-          s2.aggregateFunction.equals(s1.aggregateFunction)
+        case (s2, s1) if !s2.aggregateFunction.equals(s1.aggregateFunction) =>
+          false
         // Check if the filter of FinalAgg is empty
         case (s2, _) if s2.filter.isDefined =>
           logError(s"AggregateExpression($s2) of FinalAggregate($merge) should not carry filter")
           false
+        case _ =>
+          true
       }) {
       false
     } else {
