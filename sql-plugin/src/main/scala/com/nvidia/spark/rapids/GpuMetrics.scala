@@ -248,7 +248,7 @@ final case class WrappedGpuMetric(sqlMetric: SQLMetric, withMetricsExclSemWait: 
   if (withMetricsExclSemWait) {
     //  SQLMetrics.NS_TIMING_METRIC and SQLMetrics.TIMING_METRIC is private,
     //  so we have to use the string directly
-    if (sqlMetric.metricType == "nsTiming") {
+    if (sqlMetric.metricType.toLowerCase.contains("timing")) {
       companionGpuMetric = Some(WrappedGpuMetric.apply(SQLMetrics.createNanoTimingMetric(
         SparkSession.getActiveSession.get.sparkContext, sqlMetric.name.get + " (excl. SemWait)")))
     }
