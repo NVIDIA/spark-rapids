@@ -17,7 +17,7 @@
 # Sample Dockerfile to install UCX in a Unbuntu 22.04 image with RDMA support.
 #
 # The parameters are: 
-#   - RDMA_CORE_VERSION: Set to 32.1 to match the rdma-core line in the latest 
+#   - RDMA_CORE_VERSION: Set to 36.14 to match the rdma-core line in the latest
 #                        released MLNX_OFED 5.x driver
 #   - CUDA_VER: 11.8.0 by default
 #   - UCX_VER, UCX_CUDA_VER, and UCX_ARCH: 
@@ -33,7 +33,7 @@
 #
 
 
-ARG RDMA_CORE_VERSION=32.1
+ARG RDMA_CORE_VERSION=36.14
 ARG CUDA_VER=11.8.0
 ARG UCX_VER=1.18.0
 ARG UCX_CUDA_VER=11
@@ -55,7 +55,8 @@ RUN CUDA_UBUNTU_VER=`echo "$UBUNTU_VER"| sed -s 's/\.//'` && \
 # hack to get tzdata to install
 RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
 
-RUN apt update && apt install -y dh-make wget build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc dh-python
+RUN apt update && apt install -y dh-make wget build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev \
+    ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc dh-python
 
 RUN wget https://github.com/linux-rdma/rdma-core/releases/download/v${RDMA_CORE_VERSION}/rdma-core-${RDMA_CORE_VERSION}.tar.gz
 RUN tar -xvf *.tar.gz && cd rdma-core*/ && dpkg-buildpackage -b -d
@@ -72,7 +73,7 @@ RUN mkdir /tmp/ucx_install
 COPY --from=rdma_core /*.deb /tmp/ucx_install/
 
 RUN apt update
-RUN apt-get install -y wget
+RUN apt-get install -y wget bzip2
 RUN cd /tmp/ucx_install && \
   wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
   tar -xvf ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
