@@ -1234,6 +1234,24 @@ class MonthsBetweenExprMeta(expr: MonthsBetween,
 object GpuMonthsBetween {
   val UTC = GpuOverrides.UTC_TIMEZONE_ID
 
+  /**
+   * Convert the given timestamp in UTC to a specific time zone and close the original input.
+   * @param micros the timestamp in micros to convert
+   * @param normalizedZoneId the time zone to convert it to. Note that this should have
+   *                         already been normalized.
+   * @return the converted timestamp.
+   */
+  private def convertToZoneAndClose(micros: GpuColumnVector,
+                                    normalizedZoneId: ZoneId): ColumnVector = {
+    withResource(micros) { _ =>
+      if (normalizedZoneId.equals(UTC)) {
+        micros.getBase.incRefCount()
+      } else {
+        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, normalizedZoneId)
+      }
+    }
+  }
+
   private def calcMonths(converted: ColumnVector): ColumnVector = {
     val yearInMonths = withResource(converted.year()) { year =>
       withResource(Scalar.fromInt(12)) { monthsPerYear =>
@@ -1373,24 +1391,6 @@ case class GpuMonthsBetween(ts1: Expression,
   with ShimExpression with TimeZoneAwareExpression with ImplicitCastInputTypes
   with NullIntolerantShim {
   import GpuMonthsBetween._
-
-  /**
-   * Convert the given timestamp in UTC to a specific time zone and close the original input.
-   * @param micros the timestamp in micros to convert
-   * @param normalizedZoneId the time zone to convert it to. Note that this should have
-   *                         already been normalized.
-   * @return the converted timestamp.
-   */
-  private def convertToZoneAndClose(micros: GpuColumnVector,
-                                    normalizedZoneId: ZoneId): ColumnVector = {
-    withResource(micros) { _ =>
-      if (normalizedZoneId.equals(UTC)) {
-        micros.getBase.incRefCount()
-      } else {
-        GpuTimeZoneDB.fromUtcTimestampToTimestamp(micros.getBase, normalizedZoneId)
-      }
-    }
-  }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val needsRoundOff = withResourceIfAllowed(roundOff.columnarEvalAny(batch)) {
