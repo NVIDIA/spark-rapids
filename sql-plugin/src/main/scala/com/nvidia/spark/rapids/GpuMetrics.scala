@@ -70,6 +70,7 @@ class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
 object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
+  val SCAN_TIME = "scanTime"
   val COPY_BUFFER_TIME = "copyBufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
   val NUM_INPUT_ROWS = "numInputRows"
@@ -126,6 +127,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_AGG_TIME = "aggregation time"
   val DESCRIPTION_JOIN_TIME = "join time"
   val DESCRIPTION_FILTER_TIME = "filter time"
+  val DESCRIPTION_SCAN_TIME = "scan time"
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
