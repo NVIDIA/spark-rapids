@@ -16,11 +16,17 @@
 
 package org.apache.spark.rapids.hybrid
 
+import java.util.Locale
+
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.{RapidsConf, VersionUtils}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnresolvedHint}
+import org.apache.spark.sql.catalyst.trees.TreePattern
 import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, SparkPlan}
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -49,17 +55,26 @@ object HybridExecutionUtils extends PredicateHelper {
    * Determine if the given FileSourceScanExec is supported by HybridScan.
    */
   def useHybridScan(conf: RapidsConf, fsse: FileSourceScanExec): Boolean = {
+    // Hybrid scan can be enabled either by setting the global SQL config(HYBRID_PARQUET_READER)
+    // or by adding the specific SQL hint(HYBRID_SCAN_HINT) upon desired tables.
     if (!conf.useHybridParquetReader) {
-      return false
+      if (fsse.relation.options.contains(HybridExecOverrides.HYBRID_SCAN_TAG)) {
+        logInfo(fsse.nodeName + " carries SQL HINT(" + HybridExecOverrides.HYBRID_SCAN_HINT +
+          "), will use HybridScan on this plan if it can be handled by HybridScan")
+      } else {
+        return false
+      }
+    } else {
+      logInfo(s"HybridScan is enabled by ${RapidsConf.HYBRID_PARQUET_READER.key}, " +
+        s"then check if ${fsse.nodeName} can be handled by HybridScan")
     }
+
     require(conf.loadHybridBackend,
       "Hybrid backend was NOT loaded during the launch of spark-rapids plugin")
-    logDebug(s"HybridScan is enabled, checking if ${fsse.nodeName} can be handled by HybridScan")
 
     // Currently, only support reading Parquet
     if (fsse.relation.fileFormat.getClass != classOf[ParquetFileFormat]) {
-      logWarning(s"Fallback to GpuScan because the file format is not Parquet: " +
-        s"${fsse.relation.fileFormat.getClass}")
+      logWarning(s"Fallback to GpuScan because the file format is not Parquet: ${fsse.nodeName}")
       return false
     }
 
@@ -408,9 +423,37 @@ object HybridExecutionUtils extends PredicateHelper {
   }
 
   def tryToApplyHybridScanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    if (!conf.useHybridParquetReader) {
+    if (!conf.loadHybridBackend ||
+      conf.pushDownFiltersToHybrid == RapidsConf.HybridFilterPushdownType.OFF.toString) {
       return plan
     }
     hybridScanFilterSplit(plan, conf)
+  }
+}
+
+object HybridExecOverrides extends Logging {
+  // The SQL hint enables HybridScan for specific tables even if HYBRID_PARQUET_READER is disabled
+  val HYBRID_SCAN_HINT = "HYBRID_SCAN"
+
+  // The tag is used to mark the table to be scanned by HybridScan
+  val HYBRID_SCAN_TAG = "HYBRID_SCAN_ENABLED"
+
+  /**
+   * Resolve HybridScanHint by pushing it down to connected LogicalRelations as an extra option of
+   * HadoopFsRelation, so that the information can be transferred to the corresponding SparkPlan
+   * along with the HadoopFsRelation and be read by GpuOverrides.
+   *
+   * NOTE: Invalid hints will be removed by the following rule: `ResolveHints.RemoveAllHints`
+   */
+  def resolveHybridScanHint(plan: LogicalPlan): LogicalPlan = {
+    plan.resolveOperatorsWithPruning(_.containsPattern(TreePattern.UNRESOLVED_HINT)) {
+      case UnresolvedHint(n, Nil, child) if n.toUpperCase(Locale.ROOT).equals(HYBRID_SCAN_HINT) =>
+        child.transformUp {
+          case op@LogicalRelation(rel: HadoopFsRelation, _, _, _) =>
+            val newOptions = rel.options.updated(HYBRID_SCAN_TAG, "")
+            val newRelation = rel.copy(options = newOptions)(rel.sparkSession)
+            op.copy(relation = newRelation)
+        }
+    }
   }
 }
