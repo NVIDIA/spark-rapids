@@ -1168,8 +1168,7 @@ object SpillableHostConcatResult {
         new KudoSpillableHostConcatResult(oldKudoTable.header, buffer)
       }
       case col: SerializedTableColumn =>
-        val buffer = col.hostBuffer
-        buffer.incRefCount()
+        val buffer = col.getHostBuffer
         new CudfSpillableHostConcatResult(col.header, buffer)
       case c =>
         throw new IllegalStateException(s"Expected SerializedTableColumn, got ${c.getClass}")
