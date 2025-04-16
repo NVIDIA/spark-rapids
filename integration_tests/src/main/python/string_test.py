@@ -989,7 +989,6 @@ def test_conv_ansi_on_and_overflow():
     def _gen(spark):
         return spark.createDataFrame([("184467440737095515991",),], 'a string')
     error = "Overflow in function conv()"
-    # start can not be zero
     assert_gpu_and_cpu_error(
         lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)").collect(),
         conf = {"spark.sql.ansi.enabled": True},
