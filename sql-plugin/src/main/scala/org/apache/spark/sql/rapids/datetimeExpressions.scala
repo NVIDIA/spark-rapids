@@ -909,7 +909,6 @@ abstract class GpuToTimestamp
             if (GpuOverrides.isUTCTimezone(zoneId)) {
               lhs.getBase.asTimestampMicroseconds()
             } else {
-              // assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
               withResource(lhs.getBase.asTimestampMicroseconds) { tsInMs =>
                 GpuTimeZoneDB.fromTimestampToUtcTimestamp(tsInMs, zoneId)
               }
@@ -1123,7 +1122,6 @@ abstract class ConvertUTCTimestampExprMetaBase[INPUT <: BinaryExpression](
         if (timezoneShortID != null) {
           // check that this timezoneID is valid
           timezoneId = GpuTimeZoneDB.getZoneId(timezoneShortID)
-          GpuTimeZoneDB.getZoneId(timezoneShortID)
         }
     }
   }

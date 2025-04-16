@@ -621,8 +621,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .createOptional
 
   val MAX_TIMEZONE_YEAR = conf("spark.rapids.sql.maxTimezoneYear")
-    .doc("Set the max year for timestamp processing. Adding more years will use " +
-      "more memory, every 100 years is roughly 1MB.")
+    .doc("Set the max year for timestamp processing. For efficiency reasons, timestamp" +
+      " transitions are stored on the GPU. We store transitions up to soem set year." +
+      " Adding more years will use more memory, every 100 years is roughly 1MB.")
     .commonlyUsed()
     .integerConf
     .createWithDefault(2200)
