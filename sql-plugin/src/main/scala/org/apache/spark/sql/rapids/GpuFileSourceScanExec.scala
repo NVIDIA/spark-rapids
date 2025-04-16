@@ -407,7 +407,7 @@ case class GpuFileSourceScanExec(
     // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
     // it for each batch.
     if (supportsColumnar) {
-      Some("scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time"))
+      Some(SCAN_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_SCAN_TIME))
     } else {
       None
     }
@@ -434,16 +434,16 @@ case class GpuFileSourceScanExec(
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val scanTime = gpuLongMetric("scanTime")
+    val scanTime = gpuLongMetric(SCAN_TIME)
     inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {
           // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
-          val startNs = System.nanoTime()
-          val res = batches.hasNext
-          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
-          res
+          scanTime.ns {
+            val res = batches.hasNext
+            res
+          }
         }
 
         override def next(): ColumnarBatch = {

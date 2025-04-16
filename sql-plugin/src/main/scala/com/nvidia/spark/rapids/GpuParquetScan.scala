@@ -1198,47 +1198,46 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
-    val startTime = System.nanoTime()
-    val metaAndFilesArr = if (numFilesFilterParallel > 0) {
-      val tc = TaskContext.get()
-      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-      files.grouped(numFilesFilterParallel).map { fileGroup =>
-        // we need to copy the Hadoop Configuration because filter push down can mutate it,
-        // which can affect other threads.
-        threadPool.submit(
-          new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
-            filters, readDataSchema))
-      }.toArray.flatMap(_.get())
-    } else {
-      // We need to copy the Hadoop Configuration because filter push down can mutate it. In
-      // this case we are serially iterating through the files so each one mutating it serially
-      // doesn't affect the filter of the other files. We just need to make sure it's copied
-      // once so other tasks don't modify the same conf.
-      val hadoopConf = new Configuration(conf)
-      files.map { file =>
-        filterBlocksForCoalescingReader(footerReadType, file, hadoopConf, filters, readDataSchema)
+
+    metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
+      metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
+        val metaAndFilesArr = if (numFilesFilterParallel > 0) {
+          val tc = TaskContext.get()
+          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+          files.grouped(numFilesFilterParallel).map { fileGroup =>
+            // we need to copy the Hadoop Configuration because filter push down can mutate it,
+            // which can affect other threads.
+            threadPool.submit(
+              new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
+                filters, readDataSchema))
+          }.toArray.flatMap(_.get())
+        } else {
+          // We need to copy the Hadoop Configuration because filter push down can mutate it. In
+          // this case we are serially iterating through the files so each one mutating it serially
+          // doesn't affect the filter of the other files. We just need to make sure it's copied
+          // once so other tasks don't modify the same conf.
+          val hadoopConf = new Configuration(conf)
+          files.map { file =>
+            filterBlocksForCoalescingReader(footerReadType, file,
+              hadoopConf, filters, readDataSchema)
+          }
+        }
+        metaAndFilesArr.foreach { metaAndFile =>
+          val singleFileInfo = metaAndFile.meta
+          clippedBlocks ++= singleFileInfo.blocks.map(block =>
+            ParquetSingleDataBlockMeta(
+              singleFileInfo.filePath,
+              ParquetDataBlock(block, compressCfg),
+              metaAndFile.file.partitionValues,
+              ParquetSchemaWrapper(singleFileInfo.schema),
+              singleFileInfo.readSchema,
+              new ParquetExtraInfo(singleFileInfo.dateRebaseMode,
+                singleFileInfo.timestampRebaseMode,
+                singleFileInfo.hasInt96Timestamps)))
+        }
       }
     }
-    metaAndFilesArr.foreach { metaAndFile =>
-      val singleFileInfo = metaAndFile.meta
-      clippedBlocks ++= singleFileInfo.blocks.map(block =>
-        ParquetSingleDataBlockMeta(
-          singleFileInfo.filePath,
-          ParquetDataBlock(block, compressCfg),
-          metaAndFile.file.partitionValues,
-          ParquetSchemaWrapper(singleFileInfo.schema),
-          singleFileInfo.readSchema,
-          new ParquetExtraInfo(singleFileInfo.dateRebaseMode,
-            singleFileInfo.timestampRebaseMode,
-            singleFileInfo.hasInt96Timestamps)))
-    }
-    val filterTime = System.nanoTime() - startTime
-    metrics.get(FILTER_TIME).foreach {
-      _ += filterTime
-    }
-    metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
-    }
+
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       targetBatchSizeBytes, maxGpuColumnSizeBytes,
