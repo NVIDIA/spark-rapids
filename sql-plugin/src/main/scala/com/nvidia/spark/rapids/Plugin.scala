@@ -562,7 +562,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       }
 
       // Initialize timezone database cache asynchronously on executor startup
-      GpuTimeZoneDB.cacheDatabaseAsync(conf.maxTimezoneYear)
+      GpuTimeZoneDB.cacheDatabaseAsync(conf.timestampRulesEndYear)
 
       GpuCoreDumpHandler.executorInit(conf, pluginContext)
 
