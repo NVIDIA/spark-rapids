@@ -383,7 +383,7 @@ condition_list = [
     "(add_months(date1, 1) == date3)",
     # Date, Date:
     # DateDiff
-    "(date_diff(date1, date2) == 1)",
+    pytest.param("(date_diff(date1, date2) == 1)", marks=pytest.mark.skipif(is_before_spark_340(), reason='date_diff is not supported before Pyspark 3.4.0')),
     # unit, Int, Date:
     # DateAdd,DateSub
     "(date_add(date1, 1) == date2)",
@@ -516,7 +516,6 @@ unsupported_condition_list = [
     "(hour(timestamp) == 1)",
     "(minute(timestamp) == 1)",
     "(sha1(str1) == 'b10a8db164e0754105b7a99be72e3fe5')",
-    "(width_bucket(double1, double2, double3, long) == 1)",
     "(levenshtein(str1, str2) == 4)",
     "(sha2(str1, 256) == 'b10a8db164e0754105b7a99be72e3fe5')",
     "(repeat(str1, 2) == 'hellohello')",
