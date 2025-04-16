@@ -15,6 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
@@ -30,19 +38,22 @@
 {"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
-import org.apache.parquet.schema.LogicalTypeAnnotation._
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types._
 
-object ParquetTimestampAnnotationShims {
-  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
-    if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetInferTimestampNTZEnabled) {
-      TimestampType
-    } else {
-      TimestampNTZType
-    }
+object ParquetFieldIdShims {
+  /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
+  def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    conf.set(
+      SQLConf.PARQUET_FIELD_ID_WRITE_ENABLED.key,
+      sqlConf.parquetFieldIdWriteEnabled.toString)
+  }
+
+  /** Get Parquet field ID write enabled configuration value */
+  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = {
+    sqlConf.parquetFieldIdWriteEnabled
   }
 }

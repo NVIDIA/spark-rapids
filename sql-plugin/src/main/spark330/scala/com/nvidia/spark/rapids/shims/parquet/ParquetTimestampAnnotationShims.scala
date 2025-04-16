@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,32 +15,25 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "330"}
+{"spark": "330cdh"}
 {"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "400"}
+{"spark": "333"}
+{"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.internal.SQLConf
+package com.nvidia.spark.rapids.shims.parquet
 
-object ParquetStringPredShims {
+import org.apache.parquet.schema.LogicalTypeAnnotation._
 
-  /**
-   * Parquet supports more operations as string push-down filters from Spark 3.4.0.
-   * So a new config is introduced.
-   */
-  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringPredicate
+import org.apache.spark.sql.types._
+
+object ParquetTimestampAnnotationShims {
+  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
+      TimestampType
+  }
 }

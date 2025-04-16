@@ -23,6 +23,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Rmm, Table, TableWriter}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableFromBatchColumns
+import com.nvidia.spark.rapids.parquet.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers.{any, isA}
 import org.mockito.Mockito.{doAnswer, mock, mockStatic, spy, times, verify, when}

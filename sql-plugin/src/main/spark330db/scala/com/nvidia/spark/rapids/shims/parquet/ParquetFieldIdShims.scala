@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
 import org.apache.hadoop.conf.Configuration
 

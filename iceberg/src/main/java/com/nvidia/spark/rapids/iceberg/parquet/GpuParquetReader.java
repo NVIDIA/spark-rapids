@@ -22,26 +22,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.ParquetPartitionReader;
 import org.apache.iceberg.Schema;
-import com.nvidia.shaded.iceberg.org.apache.iceberg.parquet.ParquetBloomRowGroupFilter;
-import com.nvidia.shaded.iceberg.org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
-import com.nvidia.shaded.iceberg.org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
-import com.nvidia.shaded.iceberg.org.apache.iceberg.parquet.ParquetSchemaUtil;
-import org.apache.iceberg.spark.SparkSchemaUtil;
-import org.apache.parquet.ParquetReadOptions;
-import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.metadata.BlockMetaData;
-import org.apache.parquet.schema.GroupType;
-import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.PrimitiveType;
-import org.apache.parquet.schema.Type;
+import org.apache.iceberg.parquet.ParquetBloomRowGroupFilter;
+import org.apache.iceberg.parquet.ParquetDictionaryRowGroupFilter;
+import org.apache.iceberg.parquet.ParquetMetricsRowGroupFilter;
+import org.apache.iceberg.parquet.ParquetSchemaUtil;
+import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import scala.collection.Seq;
 
-import com.nvidia.spark.rapids.CpuCompressionConfig$;
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.CpuCompressionConfig$;
 import com.nvidia.spark.rapids.DateTimeRebaseCorrected$;
 import com.nvidia.spark.rapids.GpuMetric;
-import com.nvidia.spark.rapids.GpuParquetUtils;
-import com.nvidia.spark.rapids.ParquetPartitionReader;
+import com.nvidia.spark.rapids.parquet.iceberg.shaded.GpuParquetUtils;
 import com.nvidia.spark.rapids.PartitionReaderWithBytesRead;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuIcebergReader;
@@ -52,21 +49,8 @@ import org.apache.iceberg.io.CloseableGroup;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.InputFile;
 import org.apache.iceberg.mapping.NameMapping;
-import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.relocated.com.google.common.collect.Lists;
-import org.apache.iceberg.types.Types;
 
 import org.apache.spark.sql.execution.datasources.PartitionedFile;
-import org.apache.spark.sql.types.ArrayType;
-import org.apache.spark.sql.types.DataType;
-import org.apache.spark.sql.types.DecimalType$;
-import org.apache.spark.sql.types.DoubleType$;
-import org.apache.spark.sql.types.FloatType$;
-import org.apache.spark.sql.types.IntegerType$;
-import org.apache.spark.sql.types.LongType$;
-import org.apache.spark.sql.types.MapType;
-import org.apache.spark.sql.types.Metadata;
-import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -203,84 +187,6 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       return ParquetFileReader.open(ParquetIO.file(file), options);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to open Parquet file: " + file.location(), e);
-    }
-  }
-
-  /** Generate the Spark schema corresponding to a Parquet schema and expected Iceberg schema */
-  public static class SparkSchemaConverter extends TypeWithSchemaVisitor<DataType> {
-    @Override
-    public DataType message(Types.StructType iStruct, MessageType message, List<DataType> fields) {
-      return struct(iStruct, message, fields);
-    }
-
-    @Override
-    public DataType struct(Types.StructType iStruct, GroupType struct, List<DataType> fieldTypes) {
-      List<Type> parquetFields = struct.getFields();
-      List<StructField> fields = Lists.newArrayListWithExpectedSize(fieldTypes.size());
-
-      for (int i = 0; i < parquetFields.size(); i++) {
-        Type parquetField = parquetFields.get(i);
-
-        Preconditions.checkArgument(
-            !parquetField.isRepetition(Type.Repetition.REPEATED),
-            "Fields cannot have repetition REPEATED: %s", parquetField);
-
-        boolean isNullable = parquetField.isRepetition(Type.Repetition.OPTIONAL);
-        StructField field = new StructField(parquetField.getName(), fieldTypes.get(i),
-            isNullable, Metadata.empty());
-        fields.add(field);
-      }
-
-      return new StructType(fields.toArray(new StructField[0]));
-    }
-
-    @Override
-    public DataType list(Types.ListType iList, GroupType array, DataType elementType) {
-      GroupType repeated = array.getType(0).asGroupType();
-      Type element = repeated.getType(0);
-
-      Preconditions.checkArgument(
-          !element.isRepetition(Type.Repetition.REPEATED),
-          "Elements cannot have repetition REPEATED: %s", element);
-
-      boolean isNullable = element.isRepetition(Type.Repetition.OPTIONAL);
-      return new ArrayType(elementType, isNullable);
-    }
-
-    @Override
-    public DataType map(Types.MapType iMap, GroupType map, DataType keyType, DataType valueType) {
-      GroupType keyValue = map.getType(0).asGroupType();
-      Type value = keyValue.getType(1);
-
-      Preconditions.checkArgument(
-          !value.isRepetition(Type.Repetition.REPEATED),
-          "Values cannot have repetition REPEATED: %s", value);
-
-      boolean isValueNullable = value.isRepetition(Type.Repetition.OPTIONAL);
-      return new MapType(keyType, valueType, isValueNullable);
-    }
-
-    @Override
-    public DataType primitive(org.apache.iceberg.types.Type.PrimitiveType iPrimitive, PrimitiveType primitiveType) {
-      // If up-casts are needed, load as the pre-cast Spark type, and this will be up-cast in GpuIcebergReader.
-      switch (iPrimitive.typeId()) {
-        case LONG:
-          if (primitiveType.getPrimitiveTypeName().equals(PrimitiveType.PrimitiveTypeName.INT32)) {
-            return IntegerType$.MODULE$;
-          }
-          return LongType$.MODULE$;
-        case DOUBLE:
-          if (primitiveType.getPrimitiveTypeName().equals(PrimitiveType.PrimitiveTypeName.FLOAT)) {
-            return FloatType$.MODULE$;
-          }
-          return DoubleType$.MODULE$;
-        case DECIMAL:
-          @SuppressWarnings("deprecation")
-          org.apache.parquet.schema.DecimalMetadata metadata = primitiveType.getDecimalMetadata();
-          return DecimalType$.MODULE$.apply(metadata.getPrecision(), metadata.getScale());
-        default:
-          return SparkSchemaUtil.convert(iPrimitive);
-      }
     }
   }
 }
