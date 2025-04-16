@@ -5423,10 +5423,10 @@ are limited.
 <tr>
 <td>from_base</td>
 <td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -5446,10 +5446,10 @@ are limited.
 <tr>
 <td>to_base</td>
 <td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
