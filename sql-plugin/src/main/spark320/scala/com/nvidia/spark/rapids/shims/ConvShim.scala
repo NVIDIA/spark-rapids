@@ -30,12 +30,6 @@
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -51,7 +45,7 @@ class GpuConvMeta(
     rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
 
   /**
-   * For Spark version < 350, do not support ansiEnabled.
+   * For Spark version < 340, do not support ansiEnabled.
    */
   override def convertToGpu(
       numStr: Expression,

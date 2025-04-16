@@ -15,6 +15,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
 {"spark": "350db143"}
 {"spark": "351"}
@@ -24,8 +30,21 @@
 {"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.errors
+package com.nvidia.spark.rapids.shims
 
-object ConvUtils {
-  def overflowInConvError(): Unit = throw QueryExecutionErrors.overflowInConvError(null)
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExpression, RapidsConf, RapidsMeta, TernaryExprMeta}
+
+import org.apache.spark.sql.catalyst.expressions.{Conv, Expression}
+import org.apache.spark.sql.rapids.GpuConv
+
+class GpuConvMeta(
+    expr: Conv,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_,_,_]],
+    rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
+
+  override def convertToGpu(
+      numStr: Expression,
+      fromBase: Expression,
+      toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase, expr.ansiEnabled)
 }

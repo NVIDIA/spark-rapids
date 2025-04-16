@@ -2171,15 +2171,12 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     if (!strS.isValid || !fromS.isValid) {
       GpuColumnVector.columnVectorFromNull(toCv.getRowCount.toInt, dataType)
     } else {
-      fromS.getValue match {
-        case fromRadix: Int =>
-          if (ansiEnabled &&
-          NumberConverter.isConvertOverflowSSCv (strS.getBase, fromRadix, toCv.getBase) ) {
-            ConvUtils.overflowInConvError()
-          }
-          NumberConverter.convertSSCv(strS.getBase, fromRadix, toCv.getBase)
-        case _ => throw new UnsupportedOperationException()
+      val fromRadix = fromS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+      NumberConverter.isConvertOverflowSSCv (strS.getBase, fromRadix, toCv.getBase) ) {
+        ConvUtils.overflowInConvError()
       }
+      NumberConverter.convertSSCv(strS.getBase, fromRadix, toCv.getBase)
     }
   }
 
@@ -2188,15 +2185,12 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     if (!strS.isValid || !toS.isValid) {
       GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
     } else {
-      toS.getValue match {
-        case toRadix: Int =>
-          if (ansiEnabled &&
-            NumberConverter.isConvertOverflowSCvS(strS.getBase, fromCv.getBase, toRadix)) {
-            ConvUtils.overflowInConvError()
-          }
-          NumberConverter.convertSCvS(strS.getBase, fromCv.getBase, toRadix)
-        case _ => throw new UnsupportedOperationException()
-      }
+        val toRadix = toS.getValue.asInstanceOf[Int]
+        if (ansiEnabled &&
+          NumberConverter.isConvertOverflowSCvS(strS.getBase, fromCv.getBase, toRadix)) {
+          ConvUtils.overflowInConvError()
+        }
+        NumberConverter.convertSCvS(strS.getBase, fromCv.getBase, toRadix)
     }
   }
 
@@ -2205,15 +2199,12 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     if (!fromS.isValid) {
       GpuColumnVector.columnVectorFromNull(toCv.getRowCount.toInt, dataType)
     } else {
-      fromS.getValue match {
-        case fromRadix: Int =>
-          if (ansiEnabled &&
-            NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
-            ConvUtils.overflowInConvError()
-          }
-          NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
-        case _ => throw new UnsupportedOperationException()
+      val fromRadix = fromS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
+        ConvUtils.overflowInConvError()
       }
+      NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
     }
   }
 
@@ -2222,15 +2213,12 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     if (!toS.isValid) {
       GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
     } else {
-      toS.getValue match {
-        case toRadix: Int =>
-          if (ansiEnabled &&
-            NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
-            ConvUtils.overflowInConvError()
-          }
-          NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
-        case _ => throw new UnsupportedOperationException()
+      val toRadix = toS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
+        ConvUtils.overflowInConvError()
       }
+      NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
     }
   }
 
@@ -2251,15 +2239,13 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     if (!fromS.isValid || !toS.isValid) {
       GpuColumnVector.columnVectorFromNull(strCv.getRowCount.toInt, dataType)
     } else {
-      (fromS.getValue, toS.getValue) match {
-        case (fromRadix: Int, toRadix: Int) =>
-          if (ansiEnabled &&
-            NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
-            ConvUtils.overflowInConvError()
-          }
-          NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
-        case _ => throw new UnsupportedOperationException()
+      val fromRadix = fromS.getValue.asInstanceOf[Int]
+      val toRadix = toS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
+        ConvUtils.overflowInConvError()
       }
+      NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
     }
   }
 

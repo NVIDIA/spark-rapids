@@ -3217,12 +3217,12 @@ object GpuOverrides extends Logging {
             spark = TypeSig.STRING),
           ParamCheck(
             name = "from_base",
-            cudf = TypeSig.integral,
-            spark = TypeSig.integral),
+            cudf = TypeSig.INT,
+            spark = TypeSig.INT),
           ParamCheck(
             name = "to_base",
-            cudf = TypeSig.integral,
-            spark = TypeSig.integral)),
+            cudf = TypeSig.INT,
+            spark = TypeSig.INT)),
         sparkOutputSig = TypeSig.STRING),
       (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
         new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)

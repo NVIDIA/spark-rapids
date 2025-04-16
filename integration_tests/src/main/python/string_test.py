@@ -24,7 +24,7 @@ from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later, is_before_spark_350
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_spark_400_or_later, is_before_spark_340
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -915,17 +915,18 @@ def test_format_number_float_value():
                              pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16'),
                              pytest.param(36, r'-?[0-9a-zA-Z]{1,15}', id='from_36')
                          ])
-@pytest.mark.parametrize('to_base', [2, 10, 16, -2, -10, -16], ids=idfn)
+@pytest.mark.parametrize('to_base', [2, 10, 16, 21, 36, -2, -10, -16, -29, -33], ids=idfn)
 def test_conv_with_more_valid_values(from_base, to_base, pattern):
     gen = [("str_col", mk_str_gen(pattern))]
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
-        f"select " + \
-        f"conv(str_col, {from_base}, {to_base}), " + \
-        f"conv(null, {from_base}, {to_base}), " + \
-        f"conv(str_col, null,  {to_base}), " + \
-        f"conv(str_col, {from_base}, null), " + \
+        f"select " +
+        f"conv('', 3, 35), " + # corner case: empty string
+        f"conv(str_col, {from_base}, {to_base}), " +
+        f"conv(null, {from_base}, {to_base}), " +
+        f"conv(str_col, null,  {to_base}), " +
+        f"conv(str_col, {from_base}, null), " +
         f"conv(' 101010FFCC', {from_base}, {to_base}) from tab")
 
 # valid base range is [2, 36], to_base can be negative, out of range results nulls
@@ -933,12 +934,13 @@ def test_conv_with_more_valid_values(from_base, to_base, pattern):
 def test_conv_with_more_invalid_values():
     gen = [
         ("str_col", mk_str_gen(r'-?[0-9a-zA-Z]{1,15}')),
-        ("from_col", IntegerGen(min_val=0, max_val=38)),
-        ("to_col", IntegerGen(min_val=-38, max_val=38))]
+        ("from_col", IntegerGen(min_val=0, max_val=38)), # will generate invalid base: 0, 1, 37, 38
+        ("to_col", IntegerGen(min_val=-38, max_val=38))] # will generate invalid base: 37, -37 ...
     data_gen_seed = get_datagen_seed()
     r = random.Random(data_gen_seed)
-    # here use 38 to test invalid bases: 0, 1, 37 and 38
+    # here use [0, 38] to test invalid from bases: 0, 1, 37 and 38
     from_base_scalar = r.randint(0, 38)
+    # here use [-38, 38] to test invalid to bases: 0, 1, 37, 38, -1, -37, -38
     to_base_scalar = r.randint(-38, 38)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
@@ -946,6 +948,10 @@ def test_conv_with_more_invalid_values():
         f"select " +
         f"conv('1112222', 2, 10), " + # Spark will fold with constant value
         f"conv(str_col, from_col, to_col), " +
+        f"conv(str_col, 0, 36), " + # fixed invalid from base: 0
+        f"conv(str_col, 1, 36), " + # fixed invalid from base: 1
+        f"conv(str_col, 2, -37), " + # fixed invalid to base: -37
+        f"conv(str_col, 5, 38), " + # fixed invalid to base: 38
         f"conv(str_col, from_col, {to_base_scalar}), " +
         f"conv(str_col, {from_base_scalar}, to_col), " +
         f"conv(str_col, {from_base_scalar}, {to_base_scalar}), " +
@@ -983,25 +989,44 @@ def test_conv_ansi_on():
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
         conf = {"spark.sql.ansi.enabled": True})
 
-@pytest.mark.skipif(condition=is_before_spark_350(),
-                    reason="conv supports Ansi mode from Spark 350 version")
 def test_conv_ansi_on_and_overflow():
     def _gen(spark):
         return spark.createDataFrame([("184467440737095515991",),], 'a string')
-    error = "Overflow in function conv()"
-    assert_gpu_and_cpu_error(
-        lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)").collect(),
-        conf = {"spark.sql.ansi.enabled": True},
-        error_message=error)
+    if (is_before_spark_340()):
+        # For Sparks < 340, the overflow will result in NULL
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)"))
+    else:
+        # For Sparks >= 340, throw exception
+        error = "Overflow in function conv()"
+        assert_gpu_and_cpu_error(
+            lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)").collect(),
+            conf = {"spark.sql.ansi.enabled": True},
+            error_message=error)
 
-def test_conv_input_is_integer():
+def test_conv_other_types():
     gen = [
-        ("input_col", IntegerGen()),
+        ("input_int_col", IntegerGen()),
         ("from_col", IntegerGen(min_val=0, max_val=38)),
-        ("to_col", IntegerGen(min_val=-38, max_val=38))]
-    # here use 38 to test invalid bases: 0, 1, 37 and 38
+        ("to_col", IntegerGen(min_val=-38, max_val=38)),
+        ("from_col_byte", ByteGen(min_val=0, max_val=38)),
+        ("to_col_long", LongGen(min_val=-38, max_val=38)),
+    ]
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, gen),
         "tab",
-        "select conv(input_col, from_col, to_col) from tab")
+        "select " +
+        "conv(input_int_col, from_col, to_col), " +
+        "conv(input_int_col, from_col_byte, to_col), " +
+        "conv(input_int_col, from_col, to_col_long)" +
+        "from tab")
 
+def test_conv_with_str_cv_all_nulls():
+    def _gen_all_null_string(spark):
+        data = [(None,), (None,), (None,), (None,)] # all null values
+        schema = schema = StructType([StructField("str_cv", StringType())])
+        return spark.createDataFrame(data, schema)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: _gen_all_null_string(spark),
+        "tab",
+        f"select conv(str_cv, 3, 5) from tab")
