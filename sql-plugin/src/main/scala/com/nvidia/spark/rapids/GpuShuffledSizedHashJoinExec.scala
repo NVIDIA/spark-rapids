@@ -86,20 +86,11 @@ object GpuShuffledSizedHashJoinExec {
       val flippedCondition = condition.map { c =>
         GpuBindReferences.bindGpuReference(c, conditionLeftAttrs ++ conditionRightAttrs)
       }
-      // For join types other than FullOuter and outer joins where the build side matches the
-      // outer side, we simply set compareNullsEqual as true to adapt struct keys with nullable
-      // children. Non-nested keys can also be correctly processed with compareNullsEqual = true,
-      // because we filter all null records from build table before join.
-      // For full outer and outer joins with build side matching outer side, we need to keep the
-      // nulls in the build table and thus cannot compare nulls as equal.
-      // For details, see https://github.com/NVIDIA/spark-rapids/issues/2126.
-      val treatNullsEqual = joinType match {
-        case FullOuter => false
-        case LeftOuter if buildSide == GpuBuildLeft => false
-        case RightOuter if buildSide == GpuBuildRight => false
-        case _ => GpuHashJoin.anyNullableStructChild(boundStreamKeys)
-      }
-      val needNullFilter = treatNullsEqual && boundStreamKeys.exists(_.nullable)
+
+      val treatNullsEqual = GpuHashJoin.compareNullsEqual(joinType, boundStreamKeys)
+      val needNullFilter = GpuHashJoin.buildSideNeedsNullFilter(
+        joinType, treatNullsEqual, buildSide, boundBuildKeys)
+
       BoundJoinExprs(boundStreamKeys, streamTypes, streamOutput,
         boundBuildKeys, buildTypes, buildOutput,
         flippedCondition, conditionLeftAttrs.size, treatNullsEqual, needNullFilter)
@@ -134,13 +125,13 @@ object GpuShuffledSizedHashJoinExec {
         GpuBindReferences.bindGpuReference(c, streamOutput ++ buildOutput)
       }
 
-      val compareNullsEqual = GpuHashJoin.compareNullsEqual(joinType, boundBuildKeys)
+      val treatNullsEqual = GpuHashJoin.compareNullsEqual(joinType, boundBuildKeys)
       val needNullFilter = GpuHashJoin.buildSideNeedsNullFilter(
-        joinType, compareNullsEqual, buildSide, boundBuildKeys)
+        joinType, treatNullsEqual, buildSide, boundBuildKeys)
 
       BoundJoinExprs(boundBuildKeys, buildTypes, buildOutput,
         boundStreamKeys, streamTypes, streamOutput,
-        boundCondition, streamOutput.size, compareNullsEqual, needNullFilter)
+        boundCondition, streamOutput.size, treatNullsEqual, needNullFilter)
     }
   }
 
