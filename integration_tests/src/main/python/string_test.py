@@ -1024,7 +1024,7 @@ def test_conv_other_types():
 def test_conv_with_str_cv_all_nulls():
     def _gen_all_null_string(spark):
         data = [(None,), (None,), (None,), (None,)] # all null values
-        schema = schema = StructType([StructField("str_cv", StringType())])
+        schema = StructType([StructField("str_cv", StringType())])
         return spark.createDataFrame(data, schema)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: _gen_all_null_string(spark),
