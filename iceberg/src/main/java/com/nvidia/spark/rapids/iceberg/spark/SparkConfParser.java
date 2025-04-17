@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,49 @@
 
 package com.nvidia.spark.rapids.iceberg.spark;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 
+import org.apache.spark.network.util.JavaUtils;
 import org.apache.spark.sql.RuntimeConfig;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.internal.SQLConf;
+import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 /** Derived from Apache Iceberg's SparkConfParser class. */
 public class SparkConfParser {
 
   private final Map<String, String> properties;
   private final RuntimeConfig sessionConf;
-  private final Map<String, String> options;
+  private final CaseInsensitiveStringMap options;
 
-  SparkConfParser(SparkSession spark, Table table, Map<String, String> options) {
-    this.properties = table.properties();
-    this.sessionConf = spark.conf();
+  @SuppressWarnings("unchecked")
+  public static SparkConfParser fromReflect(Object obj) throws IllegalAccessException {
+    Map<String, String> properties = (Map<String, String>) FieldUtils.readField(obj, "properties", true);
+    RuntimeConfig sessionConf = (RuntimeConfig) FieldUtils.readField(obj, "sessionConf", true);
+    CaseInsensitiveStringMap options = (CaseInsensitiveStringMap) FieldUtils.readField(obj, "options", true);
+    return new SparkConfParser(properties, sessionConf, options);
+  }
+
+  SparkConfParser() {
+    this.properties = ImmutableMap.of();
+    this.sessionConf = new RuntimeConfig(SQLConf.get());
+    this.options = CaseInsensitiveStringMap.empty();
+  }
+
+
+  SparkConfParser(Map<String, String> properties, RuntimeConfig sessionConf, CaseInsensitiveStringMap options) {
+    this.properties = properties;
+    this.sessionConf = sessionConf;
     this.options = options;
   }
 
@@ -57,6 +78,13 @@ public class SparkConfParser {
     return new StringConfParser();
   }
 
+  public DurationConfParser durationConf() {
+    return new DurationConfParser();
+  }
+
+  public <T extends Enum<T>> EnumConfParser<T> enumConf(Function<String, T> toEnum) {
+    return new EnumConfParser<>(toEnum);
+  }
   class BooleanConfParser extends ConfParser<BooleanConfParser, Boolean> {
     private Boolean defaultValue;
 
@@ -147,6 +175,66 @@ public class SparkConfParser {
 
     public String parseOptional() {
       return parse(Function.identity(), null);
+    }
+  }
+
+  class DurationConfParser extends ConfParser<DurationConfParser, Duration> {
+    private Duration defaultValue;
+
+    @Override
+    protected DurationConfParser self() {
+      return this;
+    }
+
+    public DurationConfParser defaultValue(Duration value) {
+      this.defaultValue = value;
+      return self();
+    }
+
+    public Duration parse() {
+      Preconditions.checkArgument(defaultValue != null, "Default value cannot be null");
+      return parse(this::toDuration, defaultValue);
+    }
+
+    public Duration parseOptional() {
+      return parse(this::toDuration, defaultValue);
+    }
+
+    private Duration toDuration(String time) {
+      return Duration.ofSeconds(JavaUtils.timeStringAsSec(time));
+    }
+  }
+
+  class EnumConfParser<T extends Enum<T>> extends ConfParser<EnumConfParser<T>, T> {
+    private final Function<String, T> toEnum;
+    private T defaultValue;
+
+    EnumConfParser(Function<String, T> toEnum) {
+      this.toEnum = toEnum;
+    }
+
+    @Override
+    protected EnumConfParser<T> self() {
+      return this;
+    }
+
+    public EnumConfParser<T> defaultValue(T value) {
+      this.defaultValue = value;
+      return self();
+    }
+
+    public EnumConfParser<T> defaultValue(String value) {
+      this.defaultValue = toEnum.apply(value);
+      return self();
+    }
+
+    public T parse() {
+      Preconditions.checkArgument(defaultValue != null, "Default value cannot be null");
+      return parse(toEnum, defaultValue);
+    }
+
+    public T parseOptional() {
+      return parse(toEnum, defaultValue);
     }
   }
 

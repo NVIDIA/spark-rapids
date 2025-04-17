@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuParquetScan, GpuScan, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuScan, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
 
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 
