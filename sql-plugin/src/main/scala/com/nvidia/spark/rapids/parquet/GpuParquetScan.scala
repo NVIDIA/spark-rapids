@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.parquet
 
 import java.io.{Closeable, EOFException, FileNotFoundException, InputStream, IOException, OutputStream}
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
-import java.util
 import java.util.{Collections, Locale}
 import java.util.concurrent._
 
@@ -32,15 +31,18 @@ import scala.language.implicitConversions
 
 import ai.rapids.cudf._
 import com.github.luben.zstd.ZstdDecompressCtx
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
+import java.util
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -3077,15 +3079,15 @@ class ParquetPartitionReader(
 }
 
 object ParquetPartitionReader {
-  private[rapids] val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
-  private[rapids] val PARQUET_CREATOR = "RAPIDS Spark Plugin"
-  private[rapids] val PARQUET_VERSION = 1
+  private[parquet] val PARQUET_MAGIC = "PAR1".getBytes(StandardCharsets.US_ASCII)
+  private[parquet] val PARQUET_CREATOR = "RAPIDS Spark Plugin"
+  private[parquet] val PARQUET_VERSION = 1
 
-  private[rapids] trait CopyItem {
+  private[parquet] trait CopyItem {
     val length: Long
   }
 
-  private[rapids] case class LocalCopy(
+  private[parquet] case class LocalCopy(
       channel: SeekableByteChannel,
       length: Long,
       outputOffset: Long) extends CopyItem with Closeable {
@@ -3094,12 +3096,12 @@ object ParquetPartitionReader {
     }
   }
 
-  private[rapids] case class CopyRange(
+  private[parquet] case class CopyRange(
       offset: Long,
       length: Long,
       outputOffset: Long) extends CopyItem
 
-  private[rapids] def computeOutputSize(
+  private[parquet] def computeOutputSize(
       blocks: Seq[BlockMetaData],
       compressCfg: CpuCompressionConfig): Long = {
     blocks.map { block =>
@@ -3107,7 +3109,7 @@ object ParquetPartitionReader {
     }.sum
   }
 
-  private[rapids] def computeOutputSize(
+  private[parquet] def computeOutputSize(
       block: BlockMetaData,
       compressCfg: CpuCompressionConfig): Long = {
     if (compressCfg.decompressAnyCpu) {

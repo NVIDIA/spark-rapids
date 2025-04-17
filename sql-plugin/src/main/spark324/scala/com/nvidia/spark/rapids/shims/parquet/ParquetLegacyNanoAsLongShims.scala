@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,31 +15,32 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "322"}
-{"spark": "323"}
 {"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
 {"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
 
-object ParquetTimestampNTZShims {
-  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0.
-    // do nothing
+object ParquetLegacyNanoAsLongShims {
+  def legacyParquetNanosAsLong(): Boolean = {
+    SQLConf.get.legacyParquetNanosAsLong
+  }
+
+  /**
+   * This method should strictly be used by ParquetCachedBatchSerializer(PCBS) as it is hard coding
+   * the value of LEGACY_PARQUET_NANOS_AS_LONG.
+   *
+   * As far as PCBS is concerned it really doesn't matter what we set it to as long as
+   * ParquetSchemaConverter doesn't see a "null" value.
+   *
+   * @param conf Hadoop conf
+   */
+  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
+    conf.setBoolean(SQLConf.LEGACY_PARQUET_NANOS_AS_LONG.key, true)
   }
 }
