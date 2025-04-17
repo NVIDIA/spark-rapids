@@ -703,22 +703,22 @@ object GpuShuffledSymmetricHashJoinExec {
             condition, buildSide)
           val (buildQueue, buildSize, streamQueue, rawStreamIter) = buildSide match {
             case GpuBuildRight =>
-              buildTime += rightTime.value
               streamTime += leftTime.value
               (rightQueue, rightSize, leftQueue, rawLeftIter)
             case GpuBuildLeft =>
-              buildTime += leftTime.value
               streamTime += rightTime.value
               (leftQueue, leftSize, rightQueue, rawRightIter)
           }
           metrics(BUILD_DATA_SIZE).set(buildSize)
           val baseBuildIter = setupForJoin(buildQueue, Iterator.empty, exprs.buildTypes,
             gpuBatchSizeBytes, metrics)
-          val buildIter = if (exprs.buildSideNeedsNullFilter) {
-            new NullFilteredBatchIterator(baseBuildIter, exprs.boundBuildKeys, metrics(OP_TIME))
-          } else {
-            baseBuildIter
-          }
+          val buildIter = new CollectTimeIterator("build time",
+            if (exprs.buildSideNeedsNullFilter) {
+              new NullFilteredBatchIterator(baseBuildIter, exprs.boundBuildKeys, metrics(OP_TIME))
+            } else {
+              baseBuildIter
+            }, buildTime)
+
           val streamIter = new CollectTimeIterator("fetch join stream",
             setupForJoin(streamQueue, rawStreamIter, exprs.streamTypes, gpuBatchSizeBytes, metrics),
             streamTime)
