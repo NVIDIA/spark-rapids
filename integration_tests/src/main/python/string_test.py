@@ -989,20 +989,43 @@ def test_conv_ansi_on():
         f"conv('101010FF CC', {from_base_scalar}, {to_base_scalar}) from tab",
         conf = {"spark.sql.ansi.enabled": True})
 
-def test_conv_ansi_on_and_overflow():
+@pytest.mark.parametrize('ansi_enabled', [True, False], ids=idfn)
+@pytest.mark.parametrize('overflow_value, from_base, to_base', [
+    ('184467440737095515991', 10, 15),
+    ('184467440737095515991', 10, -15),
+    ('9223372036854775807', 36, -2),
+    ('9223372036854775807', 36, -2)], ids=idfn)
+def test_conv_overflow(ansi_enabled, overflow_value, from_base, to_base):
+    ansi_conf = {"spark.sql.ansi.enabled": ansi_enabled}
     def _gen(spark):
-        return spark.createDataFrame([("184467440737095515991",),], 'a string')
-    if (is_before_spark_340()):
-        # For Sparks < 340, the overflow will result in NULL
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)"))
-    else:
-        # For Sparks >= 340, throw exception
+        return spark.createDataFrame([(overflow_value,), ], 'str_col string')
+    if (not is_before_spark_340()) and ansi_enabled:
+        # For Sparks >= 340 and ansi mode is on, throw exception
         error = "Overflow in function conv()"
         assert_gpu_and_cpu_error(
-            lambda spark: _gen(spark).selectExpr("conv(a, 10, 10)").collect(),
-            conf = {"spark.sql.ansi.enabled": True},
+            lambda spark: _gen(spark).selectExpr(
+                f"conv(str_col, {from_base}, {to_base})").collect(),
+            conf=ansi_conf,
             error_message=error)
+    else:
+        # Result in NULL
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: _gen(spark).selectExpr(f"conv(str_col, {from_base}, {to_base})"),
+            conf=ansi_conf)
+
+# This is to test negative to_base or input is negative long
+def test_conv_negative_to_base_negative_value():
+    def _query_conv(spark):
+        data = [
+            ('-18446744073709551599', 10, 16),
+            ('-15', 10, 16),
+            ('18446744073709551599', 10, -16)]
+        schema = StructType([
+            StructField("str_col", StringType()),
+            StructField("from_base", IntegerType()),
+            StructField("to_base", IntegerType())])
+        return spark.createDataFrame(data, schema).selectExpr("conv(str_col, from_base, to_base)")
+    assert_gpu_and_cpu_are_equal_collect(_query_conv)
 
 def test_conv_other_types():
     gen = [
