@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,26 +20,25 @@
 {"spark": "321cdh"}
 {"spark": "322"}
 {"spark": "323"}
-{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
-{"spark": "332"}
 {"spark": "332cdh"}
 {"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
 import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.sql.internal.SQLConf
+object ParquetLegacyNanoAsLongShims {
+  def legacyParquetNanosAsLong(): Boolean = {
+    // this should be true for 3.2.4+, 3.3.2+, 3.4.0+ if
+    //   spark.sql.legacy.parquet.nanosAsLong = true
+    false
+  }
 
-object ParquetTimestampNTZShims {
-  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0.
-    // do nothing
+  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
+    // LEGACY_PARQUET_NANOS_AS_LONG is only considered in Spark 3.3.2 and later
   }
 }

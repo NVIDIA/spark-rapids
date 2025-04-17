@@ -19,6 +19,7 @@ package com.nvidia.spark
 import java.io.IOException
 
 import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.parquet.{ByteArrayInputFile, ParquetCachedBatch}
 import org.apache.hadoop.conf.Configuration

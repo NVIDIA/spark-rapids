@@ -23,18 +23,23 @@
 {"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
+{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332cdh"}
+{"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
+
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
 
-object ParquetStringPredShims {
-
-  /** Parquet supports only 'startWith' as a string push-down filter before Spark 3.4.0 */
-  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringStartWith
+object ParquetTimestampNTZShims {
+  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    // This timestamp_NTZ flag is introduced in Spark 3.4.0.
+    // do nothing
+  }
 }
