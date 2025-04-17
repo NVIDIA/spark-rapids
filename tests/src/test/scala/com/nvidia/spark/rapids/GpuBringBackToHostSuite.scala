@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.LongType
@@ -41,7 +42,11 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
   }
 
   test("doExecuteColumnar returns a columnar batch with a valid numRows") {
-    withGpuSparkSession { spark =>
+    // Disable ANSI mode as the plan has aggregate operator count
+    // which is not supported in ANSI mode
+    // https://github.com/NVIDIA/spark-rapids/issues/5114
+    val conf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+    withGpuSparkSession(spark => {
       val data = mixedDf(spark, numSlices = 1)
       val plan = GpuBringBackToHost(
         GpuRowToColumnarExec(data.queryExecution.sparkPlan, RequireSingleBatch))
@@ -56,6 +61,6 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
       assert(batch.numCols() == data.columns.length)
       assert(batch.numRows() == data.count())
       assert(!batches.hasNext)
-    }
+    }, conf)
   }
 }
