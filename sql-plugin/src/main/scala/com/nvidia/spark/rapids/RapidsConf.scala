@@ -620,7 +620,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .stringConf
     .createOptional
 
-  val TIMESTAMP_RULES_END_YEAR = conf("spark.rapids.sql.timestampRulesEndYear")
+  val TIMESTAMP_RULES_END_YEAR = conf("spark.rapids.timezone.transitionCache.maxYear")
     .doc("Set the max year for timestamp processing for timezones with transitions " +
       "such as Daylight Savings. For efficiency reasons, timestamp" +
       " transitions are stored on the GPU. We store transitions up to some set year." +
