@@ -30,18 +30,19 @@
 {"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
-import org.apache.hadoop.conf.Configuration
+import org.apache.parquet.schema.LogicalTypeAnnotation._
 
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types._
 
-object ParquetTimestampNTZShims {
-
-  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0
-    conf.setBoolean(
-      SQLConf.PARQUET_INFER_TIMESTAMP_NTZ_ENABLED.key,
-      sqlConf.parquetInferTimestampNTZEnabled)
+object ParquetTimestampAnnotationShims {
+  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
+    if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetInferTimestampNTZEnabled) {
+      TimestampType
+    } else {
+      TimestampNTZType
+    }
   }
 }

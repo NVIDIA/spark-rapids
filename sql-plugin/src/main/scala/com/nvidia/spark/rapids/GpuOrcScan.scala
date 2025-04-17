@@ -23,7 +23,7 @@ import java.nio.channels.Channels
 import java.nio.charset.StandardCharsets
 import java.time.ZoneId
 import java.util
-import java.util.concurrent.{Callable, TimeUnit}
+import java.util.concurrent.Callable
 import java.util.regex.Pattern
 
 import scala.annotation.tailrec
@@ -632,28 +632,26 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // we must split the different compress files into different ColumnarBatch.
     // So here try the best to group the same compression files together before hand.
     val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
-    val startTime = System.nanoTime()
-    files.map { file =>
-      val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
-        readDataSchema, partitionSchema)
-      compressionAndStripes.getOrElseUpdate(orcPartitionReaderContext.compressionKind,
-        new ArrayBuffer[OrcSingleStripeMeta]) ++=
-        orcPartitionReaderContext.blockIterator.map(block =>
-          OrcSingleStripeMeta(
-            orcPartitionReaderContext.filePath,
-            OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
-            file.partitionValues,
-            OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
-            readDataSchema,
-            OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
+
+    metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
+      metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
+        files.map { file =>
+          val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
+            readDataSchema, partitionSchema)
+          compressionAndStripes.getOrElseUpdate(orcPartitionReaderContext.compressionKind,
+            new ArrayBuffer[OrcSingleStripeMeta]) ++=
+            orcPartitionReaderContext.blockIterator.map(block =>
+              OrcSingleStripeMeta(
+                orcPartitionReaderContext.filePath,
+                OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
+                file.partitionValues,
+                OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
+                readDataSchema,
+                OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
+        }
+      }
     }
-    val filterTime = System.nanoTime() - startTime
-    metrics.get(FILTER_TIME).foreach {
-      _ += filterTime
-    }
-    metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
-    }
+
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,

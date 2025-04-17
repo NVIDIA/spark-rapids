@@ -539,7 +539,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       RapidsPluginUtils.detectMultipleJars(conf)
 
       // Check Hybrid jar if needed.
-      if (conf.useHybridParquetReader) {
+      if (conf.loadHybridBackend) {
         HybridExecutionUtils.checkHybridJarInClassPath()
       }
 

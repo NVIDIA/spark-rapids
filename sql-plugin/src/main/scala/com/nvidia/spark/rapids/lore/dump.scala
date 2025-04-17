@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector}
+import com.nvidia.spark.rapids.{DumpUtils, GpuColumnVector, KudoSerializedTableColumn, SerializedTableColumn}
 import com.nvidia.spark.rapids.GpuCoalesceExec.EmptyPartition
+import com.nvidia.spark.rapids.jni.kudo.KudoSerializer
 import com.nvidia.spark.rapids.lore.GpuLore.pathOfChild
 import org.apache.hadoop.fs.Path
 
@@ -37,6 +38,9 @@ case class LoreDumpRDDInfo(idxInParent: Int, loreOutputInfo: LoreOutputInfo, att
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
   extends RDD[ColumnarBatch](input) with GpuLoreRDD {
   override def rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
+  private val factDataTypes = info.attrs.map(_.dataType)
+  lazy val kudoSerializer: KudoSerializer = new KudoSerializer(
+    GpuColumnVector.from(factDataTypes.toArray))
 
   def saveMeta(): Unit = {
     val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index), info.attrs)
@@ -62,7 +66,15 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
           loadNextBatch()
           if (!hasNext) {
             // This is the last batch, save the partition meta
-            val partitionMeta = LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
+            val isFromShuffle = ret.numCols() == 1 &&
+              (ret.column(0).isInstanceOf[SerializedTableColumn] || ret.column(0)
+                .isInstanceOf[KudoSerializedTableColumn])
+            val partitionMeta = if (isFromShuffle) {
+              // get the array of dataType from the info.attrs
+              LoreRDDPartitionMeta(batchIdx, factDataTypes)
+            } else {
+              LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
+            }
             GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
               info.hadoopConf.value.value)
           }
@@ -73,7 +85,7 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
           val outputPath = pathOfBatch(split.index, batchIdx)
           val outputStream = outputPath.getFileSystem(info.hadoopConf.value.value)
             .create(outputPath, true)
-          DumpUtils.dumpToParquet(nextBatch.get, outputStream)
+          DumpUtils.dumpToParquet(nextBatch.get, outputStream, Some(kudoSerializer))
           nextBatch.get
         }
 

@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -184,16 +184,13 @@ void databricksBuild() {
             }
         }
 
-        // TODO: Temporarily skip tests on Databricks 14.3 until the test failures are fixed
-        if (env.DB_RUNTIME != '14.3') {
-            stage("Test agaist $SPARK_MAJOR DB") {
-                dbStep = 'TEST'
-                withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                    def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
-                    // Get built tar from the path "$testArgs" on Databricks cluster
-                    // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-db28879431d57d0e454a2c7ee89fdda9abdec463c61771333d6a6565bf96c062R52-R55
-                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS $testArgs"
-                }
+        stage("Test agaist $SPARK_MAJOR DB") {
+            dbStep = 'TEST'
+            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
+                // Get built tar from the path "$testArgs" on Databricks cluster
+                // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-db28879431d57d0e454a2c7ee89fdda9abdec463c61771333d6a6565bf96c062R52-R55
+                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS $testArgs"
             }
         }
     } finally {

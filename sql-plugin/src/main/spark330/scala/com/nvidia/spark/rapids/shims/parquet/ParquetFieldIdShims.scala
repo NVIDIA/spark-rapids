@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,36 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
+{"spark": "350"}
+{"spark": "350db143"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
 
 object ParquetFieldIdShims {
-  private val fieldIdOverrideKey: String = "spark.rapids.sql.parquet.writeFieldIds"
-
   /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
   def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
     conf.set(
@@ -35,11 +54,6 @@ object ParquetFieldIdShims {
 
   /** Get Parquet field ID write enabled configuration value */
   def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = {
-    conf.get(fieldIdOverrideKey, "false").toBoolean || sqlConf.parquetFieldIdWriteEnabled
-  }
-
-  /** Set the Parquet field ID write enable override */
-  def setWriteIdOverride(conf: Configuration, enabled: Boolean): Unit = {
-    conf.set(fieldIdOverrideKey, enabled.toString)
+    sqlConf.parquetFieldIdWriteEnabled
   }
 }

@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
+
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.metric.SQLMetrics
 

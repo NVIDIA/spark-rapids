@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReaderPostProcessor;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.CloseableIterator;
 
-import org.apache.parquet.schema.MessageType;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.connector.read.PartitionReader;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 

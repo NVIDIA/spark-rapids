@@ -154,10 +154,8 @@ def pytest_sessionstart(session):
     # and set exceptions there
     global default_timeout_seconds
     global default_dump_threads
-    global set_spark_job_timeout_failure_logged
     default_timeout_seconds = 60 * 60
     default_dump_threads = True
-    set_spark_job_timeout_failure_logged = False
     _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.init(_s._jsc)
     global _spark
     _spark = _s
@@ -267,6 +265,19 @@ def spark_version():
 def log_test_name(request):
     logger.info("Running test '{}'".format(request.node.nodeid))
 
+
+def _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads):
+    try:
+        _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.setSparkJobTimeout(
+            spark_timeout,
+            dump_threads
+        )
+    except Exception as e:
+        logger.error(f"""set_spark_job_timeout: Unusable Spark Driver JVM detected!
+                     Crashing pytest worker to mitigate: {traceback.format_exc()}""")
+        os._exit(os.EX_UNAVAILABLE)
+
+
 @pytest.fixture(scope="function", autouse=True)
 def set_spark_job_timeout(request):
     logger.debug("set_spark_job_timeout: BEFORE TEST\n")
@@ -278,18 +289,9 @@ def set_spark_job_timeout(request):
         spark_timeout = default_timeout_seconds
         dump_threads = default_dump_threads
     # before the test
-    try:
-        _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.setSparkJobTimeout(
-            spark_timeout,
-            dump_threads
-        )
-    except Exception as e:
-        if not set_spark_job_timeout_failure_logged:
-            set_spark_job_timeout_failure_logged = True
-            logger.warning(f"set_spark_job_timeout: Ignoring pre-test exception : {traceback.format_exc()}")
-        pass
+    _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads)
     # yield for test
     yield
     # after the test
-
+    _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads)
 
