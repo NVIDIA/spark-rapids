@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -87,10 +88,11 @@ case class GpuSortExec(
     gpuSortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
-    sortType: SortExecType)(cpuSortOrder: Seq[SortOrder])
+    sortType: SortExecType)(
+    cpuSortOrder: Seq[SortOrder], writeTrackers: Option[Seq[GpuWriteJobStatsTracker]] = None)
   extends ShimUnaryExecNode with GpuExec {
 
-  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: writeTrackers :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
     case FullSortSingleBatch => Seq(RequireSingleBatch)
@@ -135,7 +137,10 @@ case class GpuSortExec(
     val outOfCore = sortType == OutOfCoreSort
     val singleBatch = sortType == FullSortSingleBatch
     child.executeColumnar().mapPartitions { cbIter =>
-      if (outOfCore) {
+      val taskTrackers = writeTrackers.map { tcs =>
+        tcs.map(_.newTaskInstance().asInstanceOf[GpuWriteTaskStatsTracker])
+      }
+      val finalIter = if (outOfCore) {
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
           targetSize, opTime, sortTime, outputBatch, outputRows)
         onTaskCompletion(iter.close())
@@ -144,6 +149,18 @@ case class GpuSortExec(
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
           opTime, sortTime, outputBatch, outputRows)
       }
+      if (taskTrackers.exists(_.nonEmpty)) {
+        finalIter.map { cb =>
+          taskTrackers.get.foreach { tc =>
+            tc.setSortTime(sortTime.value)
+            tc.setSortOpTime(opTime.value)
+          }
+          cb
+        }
+      } else {
+        finalIter
+      }
+
     }
   }
 }
