@@ -330,8 +330,9 @@ under YARN and even though it is off by default you probably want to be sure it 
 
 In case your test jars and resources are downloaded to the `local-path` from dependency Repo, and you want to run tests with them
 using the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh), then the `LOCAL_JAR_PATH=local-path` must be set to point
-to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.By setting `LOCAL_JAR_PATH=local-path`
-the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path.
+to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`. By setting `LOCAL_JAR_PATH=local-path`
+the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path. If you only want to override the 
+plugin jar then you can just set `PLUGIN_JAR=<path to the jar>`.
 
 When running the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) under YARN or Kubernetes, the `$SCRIPTPATH` in the python options
 `--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the cloud paths.
