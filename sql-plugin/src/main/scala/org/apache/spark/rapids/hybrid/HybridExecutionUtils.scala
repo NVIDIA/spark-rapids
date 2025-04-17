@@ -449,10 +449,11 @@ object HybridExecOverrides extends Logging {
     plan.resolveOperatorsWithPruning(_.containsPattern(TreePattern.UNRESOLVED_HINT)) {
       case UnresolvedHint(n, Nil, child) if n.toUpperCase(Locale.ROOT).equals(HYBRID_SCAN_HINT) =>
         child.transformUp {
-          case op@LogicalRelation(rel: HadoopFsRelation, _, _, _) =>
-            val newOptions = rel.options.updated(HYBRID_SCAN_TAG, "")
-            val newRelation = rel.copy(options = newOptions)(rel.sparkSession)
-            op.copy(relation = newRelation)
+          case rel: LogicalRelation if rel.relation.isInstanceOf[HadoopFsRelation] =>
+            val hdfsRel = rel.relation.asInstanceOf[HadoopFsRelation]
+            val newOptions = hdfsRel.options.updated(HYBRID_SCAN_TAG, "")
+            val newRelation = hdfsRel.copy(options = newOptions)(hdfsRel.sparkSession)
+            rel.copy(relation = newRelation)
         }
     }
   }
