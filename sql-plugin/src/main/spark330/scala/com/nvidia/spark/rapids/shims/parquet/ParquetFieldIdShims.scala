@@ -15,6 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
@@ -30,18 +38,22 @@
 {"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
 
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.internal.SQLConf
 
-object ParquetTimestampNTZShims {
+object ParquetFieldIdShims {
+  /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
+  def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    conf.set(
+      SQLConf.PARQUET_FIELD_ID_WRITE_ENABLED.key,
+      sqlConf.parquetFieldIdWriteEnabled.toString)
+  }
 
-  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0
-    conf.setBoolean(
-      SQLConf.PARQUET_INFER_TIMESTAMP_NTZ_ENABLED.key,
-      sqlConf.parquetInferTimestampNTZEnabled)
+  /** Get Parquet field ID write enabled configuration value */
+  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = {
+    sqlConf.parquetFieldIdWriteEnabled
   }
 }

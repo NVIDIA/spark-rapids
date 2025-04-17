@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.parquet
 
 import java.util.{Locale, Optional}
 
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ColumnView, DType, Table}
+import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, SchemaUtils}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
+import com.nvidia.spark.rapids.shims.parquet.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
 
