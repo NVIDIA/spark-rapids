@@ -17,7 +17,8 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
-from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, \
+    with_gpu_session, is_spark_35x
 
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
@@ -37,7 +38,8 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
-pytestmark = pytest.mark.skip(reason="Skipping all iceberg tests as it's under refactoring: https://github.com/NVIDIA/spark-rapids/issues/12176")
+pytestmark = pytest.mark.skipif(not is_spark_35x(),
+                                reason="Current spark-rapids only support spark 3.5.x")
 
 @allow_non_gpu("BatchScanExec")
 @iceberg
@@ -95,6 +97,8 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.xfail(reason="Nested data is not supported in Iceberg yet: "
+                          "https://github.com/NVIDIA/spark-rapids/issues/12298")
 def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     table = spark_tmp_table_factory.get()
@@ -537,25 +541,25 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
         lambda spark : spark.sql("SELECT * FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
-@iceberg
-@pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
-@pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
-    table = spark_tmp_table_factory.get()
-    tmpview = spark_tmp_table_factory.get()
-    def setup_iceberg_table(spark):
-        df = binary_op_df(spark, long_gen)
-        df.createOrReplaceTempView(tmpview)
-        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "TBLPROPERTIES('format-version' = 2, 'write.delete.mode' = 'merge-on-read') " + \
-                  "AS SELECT * FROM {}".format(tmpview))
-        spark.sql("DELETE FROM {} WHERE a < 0".format(table))
-    with_cpu_session(setup_iceberg_table)
-    assert_spark_exception(
-        lambda : with_gpu_session(
-            lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
-            conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
-        "UnsupportedOperationException: Delete filter is not supported")
+# @iceberg
+# @pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
+# @pytest.mark.parametrize('reader_type', rapids_reader_types)
+# def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
+#     table = spark_tmp_table_factory.get()
+#     tmpview = spark_tmp_table_factory.get()
+#     def setup_iceberg_table(spark):
+#         df = binary_op_df(spark, long_gen)
+#         df.createOrReplaceTempView(tmpview)
+#         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+#                   "TBLPROPERTIES('format-version' = 2, 'write.delete.mode' = 'merge-on-read') " + \
+#                   "AS SELECT * FROM {}".format(tmpview))
+#         spark.sql("DELETE FROM {} WHERE a < 0".format(table))
+#     with_cpu_session(setup_iceberg_table)
+#     assert_spark_exception(
+#         lambda : with_gpu_session(
+#             lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
+#             conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
+#         "UnsupportedOperationException: Delete filter is not supported")
 
 
 @iceberg
