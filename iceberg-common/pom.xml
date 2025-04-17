@@ -60,12 +60,12 @@
                         <configuration>
                             <artifactSet>
                                 <includes>
-                                    <include>com.nvidia:rapids-4-spark-sql_2.12:*</include>
+                                    <include>com.nvidia:rapids-4-spark-sql_${scala.binary.version}:*</include>
                                 </includes>
                             </artifactSet>
                             <filters>
                                 <filter>
-                                    <artifact>com.nvidia:rapids-4-spark-sql_2.12</artifact>
+                                    <artifact>com.nvidia:rapids-4-spark-sql_${scala.binary.version}</artifact>
                                     <includes>
                                         <include>com/nvidia/spark/rapids/parquet/**</include>
                                         <include>com/nvidia/spark/rapids/shims/parquet/**</include>
@@ -91,14 +91,6 @@
                         </configuration>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>net.alchim31.maven</groupId>
-                <artifactId>scala-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.rat</groupId>
-                <artifactId>apache-rat-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
