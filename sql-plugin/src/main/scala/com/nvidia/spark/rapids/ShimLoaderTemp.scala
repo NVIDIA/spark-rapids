@@ -33,7 +33,8 @@ object ShimLoaderTemp {
   }
 
   def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
-    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.ParquetCachedBatchSerializer")
+    ShimReflectionUtils.newInstanceOf(
+      "com.nvidia.spark.rapids.parquet.ParquetCachedBatchSerializer")
   }
 
   def newExplainPlan(): ExplainPlanBase = {
