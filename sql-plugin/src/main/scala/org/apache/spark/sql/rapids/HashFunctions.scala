@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.{GpuCast, CastOptions}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.shims.{HashUtils, NullIntolerantShim, ShimExpression}
@@ -39,6 +40,26 @@ case class GpuMd5(child: Expression)
     withResource(HashUtils.normalizeInput(input.getBase)) { normalized =>
       withResource(ColumnVector.md5Hash(normalized)) { fullResult =>
         fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalized)
+      }
+    }
+  }
+}
+
+case class GpuSha1(child: Expression)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+  override def toString: String = s"sha1($child)"
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+  override def dataType: DataType = StringType
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    withResource(HashUtils.normalizeInput(input.getBase)) { normalized =>
+      // at the moment sha1 on CuDF doesn't support lists, so have to translate
+      // BinaryType into StringType first before we operate on it
+      withResource(GpuCast.castToString(normalized, BinaryType, CastOptions.DEFAULT_CAST_OPTIONS))
+      { stringCV => 
+        withResource(ColumnVector.sha1Hash(stringCV)) { fullResult =>
+          fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, stringCV)
+        }
       }
     }
   }
