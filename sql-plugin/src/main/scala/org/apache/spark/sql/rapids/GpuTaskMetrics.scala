@@ -234,6 +234,8 @@ class GpuTaskMetrics extends Serializable {
   private val maxPinnedMemoryBytes = new HighWatermarkAccumulator
   private val maxDiskMemoryBytes = new HighWatermarkAccumulator
 
+  private val maxGpuFootprint = new LongAccumulator
+
   private var maxHostBytesAllocated: Long = 0
   private var maxPageableBytesAllocated: Long = 0
   private var maxPinnedBytesAllocated: Long = 0
@@ -289,7 +291,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuMaxPageableMemoryBytes" -> maxPageableMemoryBytes,
     "gpuMaxPinnedMemoryBytes" -> maxPinnedMemoryBytes,
     "gpuOnGpuTasksWaitingGPUAvgCount" -> onGpuTasksInWaitingQueueAvgCount,
-    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount
+    "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
+    "gpuMaxTaskFootprint" -> maxGpuFootprint
   )
 
   def register(sc: SparkContext): Unit = {
@@ -404,6 +407,13 @@ class GpuTaskMetrics extends Serializable {
     }
     if (maxDiskBytesAllocated > 0) {
       maxDiskMemoryBytes.add(maxDiskBytesAllocated)
+    }
+  }
+
+  def updateFootprint(taskAttemptId: Long): Unit = {
+    val maxFootprint = RmmSpark.getMaxGpuTaskMemory(taskAttemptId)
+    if (maxFootprint > 0) {
+      maxGpuFootprint.setValue(maxFootprint)
     }
   }
 
