@@ -31,6 +31,7 @@ import com.databricks.sql.transaction.tahoe.constraints.{Constraint, Constraints
 import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.parquet._
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.shims.ParquetFieldIdShims
 import org.apache.commons.lang3.exception.ExceptionUtils
