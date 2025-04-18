@@ -33,7 +33,7 @@ import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.parquet._
 import com.nvidia.spark.rapids.delta._
-import com.nvidia.spark.rapids.shims.ParquetFieldIdShims
+import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
