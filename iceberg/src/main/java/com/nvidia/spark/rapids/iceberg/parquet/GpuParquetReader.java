@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,12 @@ import java.util.Set;
 
 import scala.collection.Seq;
 
-import com.nvidia.spark.rapids.CpuCompressionConfig$;
 import com.nvidia.spark.rapids.DateTimeRebaseCorrected$;
 import com.nvidia.spark.rapids.GpuMetric;
-import com.nvidia.spark.rapids.GpuParquetUtils;
-import com.nvidia.spark.rapids.ParquetPartitionReader;
 import com.nvidia.spark.rapids.PartitionReaderWithBytesRead;
+import com.nvidia.spark.rapids.parquet.CpuCompressionConfig$;
+import com.nvidia.spark.rapids.parquet.GpuParquetUtils;
+import com.nvidia.spark.rapids.parquet.ParquetPartitionReader;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuIcebergReader;

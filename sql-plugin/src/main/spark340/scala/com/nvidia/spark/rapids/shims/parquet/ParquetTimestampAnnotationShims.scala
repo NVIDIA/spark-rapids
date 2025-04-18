@@ -15,8 +15,6 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
@@ -32,15 +30,19 @@
 {"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.parquet
+
+import org.apache.parquet.schema.LogicalTypeAnnotation._
 
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types._
 
-object ParquetStringPredShims {
-
-  /**
-   * Parquet supports more operations as string push-down filters from Spark 3.4.0.
-   * So a new config is introduced.
-   */
-  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringPredicate
+object ParquetTimestampAnnotationShims {
+  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
+    if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetInferTimestampNTZEnabled) {
+      TimestampType
+    } else {
+      TimestampNTZType
+    }
+  }
 }

@@ -41,7 +41,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuParquetScan, GpuScan, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuScan, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
 
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 
