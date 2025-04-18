@@ -23,7 +23,7 @@ import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange, NvtxUniqueRange}
+import ai.rapids.cudf.{NvtxColor, NvtxUniqueRange}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 
@@ -562,8 +562,7 @@ private final class GpuSemaphore() extends Logging {
   }
 
   def releaseIfNecessary(context: TaskContext): Unit = {
-    val nvtxRange = new NvtxRange("Release GPU", NvtxColor.RED)
-    try {
+    NvtxRegistry.RELEASE_GPU {
       val taskAttemptId = context.taskAttemptId()
       GpuTaskMetrics.get.updateRetry(taskAttemptId)
       GpuTaskMetrics.get.updateFootprint(taskAttemptId)
@@ -571,8 +570,6 @@ private final class GpuSemaphore() extends Logging {
       if (taskInfo != null) {
         taskInfo.releaseSemaphore(semaphore)
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 

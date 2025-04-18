@@ -42,7 +42,7 @@ RUN CUDA_UBUNTU_VER=`echo "$UBUNTU_VER"| sed -s 's/\.//'` && \
   apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$CUDA_UBUNTU_VER/x86_64/3bf863cc.pub
 
 RUN apt update
-RUN apt-get install -y wget
+RUN apt-get install -y wget bzip2
 RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
   wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
   tar -xvf ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \

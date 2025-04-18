@@ -26,6 +26,7 @@ import org.apache.commons.lang3.reflect.MethodUtils
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan, SparkStrategy}
@@ -343,6 +344,13 @@ object ShimLoader {
 
   def newGpuQueryStagePrepOverrides(): Rule[SparkPlan] = {
     ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
+  }
+
+  def newGpuPostHocResolutionOverrides(ss: SparkSession): Rule[LogicalPlan] = {
+    val clz = ShimReflectionUtils.loadClass(
+      "com.nvidia.spark.rapids.GpuPostHocResolutionOverrides")
+    val constructor = clz.getConstructor(classOf[SparkSession])
+    constructor.newInstance(ss).asInstanceOf[Rule[LogicalPlan]]
   }
 
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {

@@ -219,7 +219,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|`concat`|List/String concatenate|true|None|
 <a name="sql.expression.ConcatWs"></a>spark.rapids.sql.expression.ConcatWs|`concat_ws`|Concatenates multiple input strings or array of strings into a single string using a given separator|true|None|
 <a name="sql.expression.Contains"></a>spark.rapids.sql.expression.Contains| |Contains|true|None|
-<a name="sql.expression.Conv"></a>spark.rapids.sql.expression.Conv|`conv`|Convert string representing a number from one base to another|false|This is disabled by default because GPU implementation is incomplete. We currently only support from/to_base values of 10 and 16. We fall back on CPU if the signed conversion is signalled via a negative to_base. GPU implementation does not check for an 64-bit signed/unsigned int overflow when performing the conversion to return `FFFFFFFFFFFFFFFF` or `18446744073709551615` or to throw an error in the ANSI mode. It is safe to enable if the overflow is not possible or detected externally. For instance decimal strings not longer than 18 characters / hexadecimal strings not longer than 15 characters disregarding the sign cannot cause an overflow.          |
+<a name="sql.expression.Conv"></a>spark.rapids.sql.expression.Conv|`conv`|Convert string representing a number from one base to another|true|None|
 <a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|`cos`|Cosine|true|None|
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|
 <a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|`cot`|Cotangent|true|None|
