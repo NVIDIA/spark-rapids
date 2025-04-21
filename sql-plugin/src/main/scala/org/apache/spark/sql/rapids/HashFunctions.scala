@@ -17,9 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.{GpuCast, CastOptions}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.shims.{HashUtils, NullIntolerantShim, ShimExpression}
