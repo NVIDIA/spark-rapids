@@ -33,7 +33,7 @@ def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda12.0.1' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
-def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
