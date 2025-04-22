@@ -84,6 +84,7 @@ object SparkSessionHolder extends Logging {
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
         .config("spark.rapids.sql.test.enabled", "false")
+        .config("spark.sql.ansi.enabled", "false")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
         .config("spark.sql.queryExecutionListeners",
           "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
@@ -2225,6 +2226,11 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
 
   def assumeSpark340orLater: Assertion =
     assume(isSpark340OrLater, "Spark version not 3.4.0+")
+
+  lazy val isSpark400OrLater: Boolean = cmpSparkVersion(4, 0, 0) >= 0
+
+  def assumePriorToSpark400: Assertion =
+    assume(!isSpark400OrLater, "Spark version not before 4.0.0")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getShimVersion

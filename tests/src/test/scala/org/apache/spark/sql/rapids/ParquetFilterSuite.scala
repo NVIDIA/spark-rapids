@@ -20,7 +20,6 @@ import java.sql.{Date, Timestamp}
 
 import com.nvidia.spark.rapids.{GpuFilterExec, SparkQueryCompareTestSuite}
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Column, DataFrame}
 import org.apache.spark.sql.execution.FilterExec
 import org.apache.spark.sql.functions.col
@@ -264,10 +263,9 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("SPARK-31026: Parquet predicate pushdown for fields having dots in the names") {
-    // Disable ANSI mode as the plan has aggregate operator count
-    // which is not supported in ANSI mode
+    // Aggregate operator not supported in ANSI mode.
     // https://github.com/NVIDIA/spark-rapids/issues/5114
-    val conf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+    assumePriorToSpark400
     withCpuSparkSession(spark => {
       import spark.implicits._
       val df1 = Seq(Some(1), None).toDF("col.dots")
@@ -276,6 +274,6 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       withAllDevicePair(testRangePartitioningPpd(spark, df2, "`col.dots`", 
           {col("`col.dots`") === 500}, 1024))
       withAllDevicePair(testOutOfRangePpd(spark, df2, {col("`col.dots`") === 0}))
-    }, conf)
+    })
   }
 }

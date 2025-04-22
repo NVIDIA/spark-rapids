@@ -30,19 +30,25 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("loan_id"), col("orig_interest_rate"), col("zip"))
   }
 
-  // Disable ANSI mode as the plan has aggregate operator count
-  // which is not supported in ANSI mode
-  // https://github.com/NVIDIA/spark-rapids/issues/5114
   testSparkResultsAreEqual("Test ORC count chunked by rows", fileSplitsOrc,
-    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048").set(
-      "spark.sql.ansi.enabled", "false"))(frameCount)
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "2048")) {
+    frameCount => {
+      // HashAggregate operator not supported in ANSI mode.
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      assumePriorToSpark400
+      frameCount
+    }
+  }
 
-  // Disable ANSI mode as the plan has aggregate operator count
-  // which is not supported in ANSI mode
-  // https://github.com/NVIDIA/spark-rapids/issues/5114
   testSparkResultsAreEqual("Test ORC count chunked by bytes", fileSplitsOrc,
-    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "100").set(
-      "spark.sql.ansi.enabled", "false"))(frameCount)
+    new SparkConf().set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "100")) {
+    frameCount => {
+      // HashAggregate operator not supported in ANSI mode.
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      assumePriorToSpark400
+      frameCount
+    }
+  }
 
   testSparkResultsAreEqual("schema-can-prune dis-order read schema",
     frameFromOrcWithSchema("schema-can-prune.orc", StructType(Seq(

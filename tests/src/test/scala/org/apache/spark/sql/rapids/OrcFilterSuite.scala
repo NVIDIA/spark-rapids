@@ -41,11 +41,11 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
   test("Support for pushing down filters for boolean types gpu write gpu read") {
     withTempPath { file =>
       var gpuPlans: Array[SparkPlan] = Array.empty
-      // Disable ANSI mode as the plan has aggregate operator count
-      // which is not supported in ANSI mode
+      // Aggregate operator not supported in ANSI mode.
       // https://github.com/NVIDIA/spark-rapids/issues/5114
-      val testConf = new SparkConf().set("spark.sql.ansi.enabled", "false")
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+      assumePriorToSpark400
+      val testConf = new SparkConf().set(
+        RapidsConf.TEST_ALLOWED_NONGPU.key,
         "DataWritingCommandExec,ShuffleExchangeExec, WriteFilesExec")
       ExecutionPlanCaptureCallback.startCapture()
       try {
@@ -92,28 +92,26 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
       })
-      // Disable ANSI mode as the plan has aggregate operator count
-      // which is not supported in ANSI mode
+      // Aggregate operator not supported in ANSI mode.
       // https://github.com/NVIDIA/spark-rapids/issues/5114
-      val testConf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+      assumePriorToSpark400
       withGpuSparkSession(spark => {
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == true")
-      }, testConf)
+      })
     }
   }
 
   test("Support for pushing down filters for decimal types gpu write gpu read") {
     withTempPath { file =>
-      // Disable ANSI mode as the plan has aggregate operator count
-      // which is not supported in ANSI mode
+      // Aggregate operator not supported in ANSI mode.
       // https://github.com/NVIDIA/spark-rapids/issues/5114
-      val testConf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+      assumePriorToSpark400
       withGpuSparkSession(spark => {
         val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
-      }, testConf)
+      })
     }
   }
 
@@ -137,13 +135,12 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
       })
-      // Disable ANSI mode as the plan has aggregate operator count
-      // which is not supported in ANSI mode
+      // Aggregate operator not supported in ANSI mode.
       // https://github.com/NVIDIA/spark-rapids/issues/5114
-      val testConf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+      assumePriorToSpark400
       withGpuSparkSession(spark => {
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
-      }, testConf)
+      })
     }
   }
 
@@ -158,14 +155,13 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
       })
-      // Disable ANSI mode as the plan has aggregate operator count
-      // which is not supported in ANSI mode
+      // Aggregate operator not supported in ANSI mode.
       // https://github.com/NVIDIA/spark-rapids/issues/5114
-      val testConf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+      assumePriorToSpark400
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
-      }, testConf)
+      })
     }
   }
 
@@ -189,10 +185,9 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
 
   test("Support for pushing down filters for timestamp types gpu write gpu read") {
     withTempPath { file =>
-      // Disable ANSI mode as the plan has aggregate operator count
-      // which is not supported in ANSI mode
+      // Aggregate operator not supported in ANSI mode.
       // https://github.com/NVIDIA/spark-rapids/issues/5114
-      val testConf = new SparkConf().set("spark.sql.ansi.enabled", "false")
+      assumePriorToSpark400
       withGpuSparkSession(spark => {
         val timeString = "2015-08-20 14:57:00"
         val data = (0 until 10).map { i =>
@@ -202,7 +197,7 @@ class OrcFilterSuite extends SparkQueryCompareTestSuite {
         val df = spark.createDataFrame(data).toDF("a")
         df.repartition(10).write.orc(file.getCanonicalPath)
         checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
-      }, testConf)
+      })
     }
   }
 }

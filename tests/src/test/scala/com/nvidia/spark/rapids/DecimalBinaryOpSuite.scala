@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.functions.{avg, sum}
 import org.apache.spark.sql.rapids.{GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuLessThan, GpuLessThanOrEqual}
@@ -122,14 +121,14 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
       schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
   }
 
-  // https://github.com/NVIDIA/spark-rapids/issues/6076
-  // Disable ANSI mode as the plan has aggregate operators
-  // which is not supported in ANSI mode
-  // https://github.com/NVIDIA/spark-rapids/issues/5114
   testSparkResultsAreEqual("SPARK-24957: average with decimal followed by " +
-      "aggregation returning wrong result", decimals,
-      conf = new SparkConf().set("spark.sql.ansi.enabled", "false")) {
-    df => df.groupBy("text").agg(avg("number").as("avg_res"))
+      "aggregation returning wrong result", decimals) {
+    df => {
+      // HashAggregate operator not supported in ANSI mode.
+      // https://github.com/NVIDIA/spark-rapids/issues/5114
+      assumePriorToSpark400
+      df.groupBy("text").agg(avg("number").as("avg_res"))
         .groupBy("text").agg(sum("avg_res"))
+    }
   }
 }
