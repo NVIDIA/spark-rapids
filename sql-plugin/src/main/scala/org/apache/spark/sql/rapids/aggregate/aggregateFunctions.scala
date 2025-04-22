@@ -256,12 +256,12 @@ class CudfMergeM2 extends CudfAggregate {
           withResource(hcv.getChildColumnView(0)) { partialN =>
             withResource(hcv.getChildColumnView(1)) { partialMean =>
               withResource(hcv.getChildColumnView(2)) { partialM2 =>
-                var mergeN: Long = 0
+                var mergeN: Integer = 0
                 var mergeMean: Double = 0.0
                 var mergeM2: Double = 0.0
 
                 for (i <- 0 until partialN.getRowCount.toInt) {
-                  val n = partialN.getLong(i)
+                  val n = partialN.getInt(i)
                   if (n > 0) {
                     val mean = partialMean.getDouble(i)
                     val m2 = partialM2.getDouble(i)
@@ -273,7 +273,7 @@ class CudfMergeM2 extends CudfAggregate {
                   }
                 }
 
-                withResource(ColumnVector.fromLongs(mergeN)) { cvMergeN =>
+                withResource(ColumnVector.fromInts(mergeN)) { cvMergeN =>
                   withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
                     withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
                       Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
@@ -292,7 +292,7 @@ class CudfMergeM2 extends CudfAggregate {
   override val name: String = "CudfMergeM2"
   override val dataType: DataType =
     StructType(
-      StructField("n", LongType, nullable = false) ::
+      StructField("n", IntegerType, nullable = false) ::
         StructField("avg", DoubleType, nullable = true) ::
         StructField("m2", DoubleType, nullable = true) :: Nil)
 }
@@ -1901,13 +1901,13 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   // This is because we are going to do the merging using libcudf's native MERGE_M2 aggregate,
   // which only accepts one column in the input.
   //
-  // We cast `n` to be LongType, as that's what MERGE_M2 expects. Note that Spark keeps
+  // We cast `n` to be an Integer, as that's what MERGE_M2 expects. Note that Spark keeps
   // `n` as Double thus we also need to cast `n` back to Double after merging.
   // In the future, we need to rewrite CudfMergeM2 such that it accepts `n` in Double type and
   // also output `n` in Double type.
   override lazy val preMerge: Seq[Expression] = {
     val childrenWithNames =
-      GpuLiteral("n", StringType) :: GpuCast(bufferN, LongType) ::
+      GpuLiteral("n", StringType) :: GpuCast(bufferN, IntegerType) ::
         GpuLiteral("avg", StringType) :: bufferAvg ::
         GpuLiteral("m2", StringType) :: bufferM2 :: Nil
     GpuCreateNamedStruct(childrenWithNames) :: Nil
@@ -2025,7 +2025,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
 }
 
 case class GpuReplaceNullmask(
-    input: Expression,
+    input: Expression, 
     mask: Expression) extends GpuExpression with ShimExpression {
 
   override def dataType: DataType = input.dataType
@@ -2092,7 +2092,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   protected val cudfMaxMinByAggregate: CudfAggregate
 
-  private lazy val bufferOrdering: AttributeReference =
+  private lazy val bufferOrdering: AttributeReference = 
     AttributeReference("ordering", orderingExpr.dataType)()
 
   private lazy val bufferValue: AttributeReference =
@@ -2100,7 +2100,7 @@ abstract class GpuMaxMinByBase(valueExpr: Expression, orderingExpr: Expression)
 
   // Cudf allows only one column as input, so wrap value and ordering columns by
   // a struct before just going into cuDF.
-  private def createStructExpression(order: Expression, value: Expression): Expression =
+  private def createStructExpression(order: Expression, value: Expression): Expression = 
     GpuReplaceNullmask(
       GpuCreateNamedStruct(Seq(
         GpuLiteral(CudfMaxMinBy.KEY_ORDERING, StringType), order,
