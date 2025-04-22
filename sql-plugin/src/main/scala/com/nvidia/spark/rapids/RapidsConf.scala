@@ -898,6 +898,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_FOLD_LOCAL_AGGREGATE = conf("spark.rapids.sql.foldLocalAggregate.enabled")
+    .doc("Whether to fold two-stages local aggregate into one-shot Complete aggregate.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_CAST_FLOAT_TO_DECIMAL = conf("spark.rapids.sql.castFloatToDecimal.enabled")
     .doc("Casting from floating point types to decimal on the GPU returns results that have " +
       "tiny difference compared to results returned from CPU.")
@@ -2971,6 +2977,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
+
+  lazy val enableFoldLocalAggregate: Boolean = get(ENABLE_FOLD_LOCAL_AGGREGATE)
 
   lazy val areInnerJoinsEnabled: Boolean = get(ENABLE_INNER_JOIN)
 

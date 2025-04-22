@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,19 +30,8 @@
 {"spark": "355"}
 {"spark": "400"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.errors
 
-import org.apache.parquet.schema.LogicalTypeAnnotation._
-
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types._
-
-object ParquetTimestampAnnotationShims {
-  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
-    if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetInferTimestampNTZEnabled) {
-      TimestampType
-    } else {
-      TimestampNTZType
-    }
-  }
+object ConvUtils {
+  def overflowInConvError(): Unit = throw QueryExecutionErrors.overflowInConvError(null)
 }

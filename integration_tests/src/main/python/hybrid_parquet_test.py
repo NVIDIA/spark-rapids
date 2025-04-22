@@ -357,3 +357,81 @@ def test_hybrid_parquet_bucket_read(parquet_gens, spark_tmp_path, spark_tmp_tabl
             'spark.sql.sources.bucketing.enabled': 'true',
             'spark.sql.sources.bucketing.autoBucketedScan.enabled': 'false'
         })
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@pytest.mark.parametrize('parquet_enabled', [False, True], ids=idfn)
+@hybrid_test
+def test_hybrid_parquet_sql_hint_single_table(spark_tmp_path, parquet_enabled):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('key_col', string_gen), ('int_col', int_gen), ('long_col', long_gen)]
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list, length=2048).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.parquet(data_path).hint("HYBRID_SCAN").filter("int_col > -1"),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enabled': parquet_enabled,
+        })
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.parquet(data_path).filter("long_col < 0").select('key_col').hint("hybrid_SCAN"),
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
+        conf={
+            'spark.sql.sources.useV1SourceList': 'parquet',
+            'spark.rapids.sql.hybrid.parquet.enabled': parquet_enabled,
+        })
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Hybrid feature does not support Databricks currently")
+@pytest.mark.skipif(not is_hybrid_backend_loaded(), reason="HybridScan specialized tests")
+@ignore_order(local=True)
+@hybrid_test
+def test_hybrid_parquet_sql_hint_multiple_tables(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [('key_col', StringGen(pattern='key_[0-9][0-9]', nullable=False)),
+                ('int_col', int_gen),
+                ('long_col', long_gen),
+                ('float_col', float_gen),
+                ('double_col', double_gen)]
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list, length=2048).write.parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    conf = {
+        'spark.sql.sources.useV1SourceList': 'parquet',
+        'spark.rapids.sql.hybrid.parquet.enabled': False,
+    }
+    # case 1: one hybrid scan table and one GPU scan table
+    def fn1(spark):
+        spark.read.parquet(data_path).createOrReplaceTempView("table_parquet")
+        return spark.sql("""
+            select t1.key_col, t1.int_col, t1.long_col, t1.float_col, t1.double_col
+            from (select /*+hybrid_scan*/ * from table_parquet where int_col > -1) t1
+            JOIN (select * from table_parquet where long_col > -1) t2
+            ON t1.key_col = t2.key_col
+            """)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        fn1,
+        exist_classes='HybridFileSourceScanExec,GpuFileSourceScanExec',
+        conf=conf)
+
+    # case 2: two hybrid scan tables
+    def fn2(spark):
+        spark.read.parquet(data_path).createOrReplaceTempView("table_parquet")
+        return spark.sql("""
+            select /*+HYBRID_SCAN*/
+            t1.key_col, t1.int_col, t1.long_col, t1.float_col, t1.double_col
+            from (select * from table_parquet where int_col > -1) t1
+            JOIN (select * from table_parquet where long_col > -1) t2
+            ON t1.key_col = t2.key_col
+            """)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        fn2,
+        exist_classes='HybridFileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec',
+        conf=conf)

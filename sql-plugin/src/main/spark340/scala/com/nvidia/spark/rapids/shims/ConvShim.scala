@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,6 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332cdh"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "341db"}
@@ -40,20 +32,19 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.hadoop.conf.Configuration
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExpression, RapidsConf, RapidsMeta, TernaryExprMeta}
 
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.catalyst.expressions.{Conv, Expression}
+import org.apache.spark.sql.rapids.GpuConv
 
-object ParquetFieldIdShims {
-  /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
-  def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    conf.set(
-      SQLConf.PARQUET_FIELD_ID_WRITE_ENABLED.key,
-      sqlConf.parquetFieldIdWriteEnabled.toString)
-  }
+class GpuConvMeta(
+    expr: Conv,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_,_,_]],
+    rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
 
-  /** Get Parquet field ID write enabled configuration value */
-  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = {
-    sqlConf.parquetFieldIdWriteEnabled
-  }
+  override def convertToGpu(
+      numStr: Expression,
+      fromBase: Expression,
+      toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase, expr.ansiEnabled)
 }

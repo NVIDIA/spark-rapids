@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.parquet
 
 import java.io.{InputStream, IOException}
 import java.nio.ByteBuffer
@@ -26,11 +26,13 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
+import com.nvidia.spark.rapids.{ColumnCastUtil, DecimalUtil, GpuColumnVector, GpuRowToColumnConverter, GpuSemaphore, RapidsConf, RequireSingleBatch, RowToColumnarIterator, SchemaUtils}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.parquet.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
@@ -261,7 +263,7 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
  * Note, this class should not be referenced directly in source code.
  * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
  */
-protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
+class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
