@@ -27,7 +27,7 @@
 import ipp.blossom.*
 
 def githubHelper // blossom github helper
-def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
 
 pipeline {
     agent {

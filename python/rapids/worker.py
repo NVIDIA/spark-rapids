@@ -1,5 +1,5 @@
 ##
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ def initialize_gpu_mem():
     pool_enabled = os.environ.get('RAPIDS_POOLED_MEM_ENABLED', 'false').lower() == 'true'
     uvm_enabled = os.environ.get('RAPIDS_UVM_ENABLED', 'false').lower() == 'true'
     if pool_enabled:
-        from cudf import rmm
+        import rmm
         '''
         RMM will be initialized with default configures (pool disabled) when importing cudf
         as above. So overwrite the initialization when asking for pooled memory,
@@ -60,7 +60,7 @@ def initialize_gpu_mem():
         base_t = rmm.mr.ManagedMemoryResource if uvm_enabled else rmm.mr.CudaMemoryResource
         rmm.mr.set_current_device_resource(rmm.mr.PoolMemoryResource(base_t(), pool_size, pool_max_size))
     elif uvm_enabled:
-        from cudf import rmm
+        import rmm
         rmm.mr.set_current_device_resource(rmm.mr.ManagedMemoryResource())
     else:
         # Do nothing, whether to use RMM (default mode) or not depends on UDF definition.

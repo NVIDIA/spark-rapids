@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
@@ -27,12 +33,22 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.parquet.schema.LogicalTypeAnnotation._
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExpression, RapidsConf, RapidsMeta, TernaryExprMeta}
 
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.catalyst.expressions.{Conv, Expression}
+import org.apache.spark.sql.rapids.GpuConv
 
-object ParquetTimestampAnnotationShims {
-  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
-      TimestampType
-  }
+class GpuConvMeta(
+    expr: Conv,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_,_,_]],
+    rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
+
+  /**
+   * For Spark version < 340, do not support ansiEnabled.
+   */
+  override def convertToGpu(
+      numStr: Expression,
+      fromBase: Expression,
+      toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase, ansiEnabled = false)
 }

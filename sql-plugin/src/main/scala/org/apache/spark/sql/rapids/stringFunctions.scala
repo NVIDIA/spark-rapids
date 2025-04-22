@@ -30,10 +30,12 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
+import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.errors.ConvUtils
 import org.apache.spark.sql.rapids.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -2136,98 +2138,114 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   }
 }
 
-class GpuConvMeta(
-  expr: Conv,
-  conf: RapidsConf,
-  parent: Option[RapidsMeta[_,_,_]],
-  rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
-
-  override def tagExprForGpu(): Unit = {
-    val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
-    val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
-    val errorPostfix = "only literal 10 or 16 are supported for source and target radixes"
-    (fromBaseLit, toBaseLit) match {
-      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType))) =>
-        def isBaseSupported(base: Any): Boolean = base == 10 || base == 16
-        if (!isBaseSupported(fromBaseVal) && !isBaseSupported(toBaseVal)) {
-          willNotWorkOnGpu(because = s"both ${fromBaseVal} and ${toBaseVal} are not " +
-            s"a supported radix, ${errorPostfix}")
-        } else if (!isBaseSupported(fromBaseVal)) {
-          willNotWorkOnGpu(because = s"${fromBaseVal} is not a supported source radix, " +
-            s"${errorPostfix}")
-        } else if (!isBaseSupported(toBaseVal)) {
-          willNotWorkOnGpu(because = s"${toBaseVal} is not a supported target radix, " +
-            s"${errorPostfix}")
-        }
-      case _ =>
-        // This will never happen in production as the function signature enforces
-        // integer types for the bases, but nice to have an edge case handling.
-        willNotWorkOnGpu(because = "either source radix or target radix is not an integer " +
-          "literal, " + errorPostfix)
-    }
-  }
-
-  override def convertToGpu(
-    numStr: Expression,
-    fromBase: Expression,
-    toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase)
-}
-
-
-case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
+case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, ansiEnabled: Boolean)
   extends GpuTernaryExpression {
 
   override def doColumnar(
-    v1: GpuColumnVector,
-    v2: GpuColumnVector,
-    v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+    strCv: GpuColumnVector,
+    fromCv: GpuColumnVector,
+    toCv: GpuColumnVector): ColumnVector = {
+    if (ansiEnabled &&
+      NumberConverter.isConvertOverflowCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)) {
+      ConvUtils.overflowInConvError()
+    }
+    NumberConverter.convertCvCvCv(strCv.getBase, fromCv.getBase, toCv.getBase)
   }
 
-  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strS: GpuScalar, fromCv: GpuColumnVector, toCv: GpuColumnVector): ColumnVector = {
+    if (!strS.isValid) {
+      GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
+    } else {
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowSCvCv(strS.getBase, fromCv.getBase, toCv.getBase)) {
+        ConvUtils.overflowInConvError()
+      }
+      NumberConverter.convertSCvCv(strS.getBase, fromCv.getBase, toCv.getBase)
+    }
   }
 
-  override def doColumnar(v1: GpuScalar, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strS: GpuScalar, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
+
+    if (!strS.isValid || !fromS.isValid) {
+      GpuColumnVector.columnVectorFromNull(toCv.getRowCount.toInt, dataType)
+    } else {
+      val fromRadix = fromS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+      NumberConverter.isConvertOverflowSSCv (strS.getBase, fromRadix, toCv.getBase) ) {
+        ConvUtils.overflowInConvError()
+      }
+      NumberConverter.convertSSCv(strS.getBase, fromRadix, toCv.getBase)
+    }
   }
 
-  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strS: GpuScalar, fromCv: GpuColumnVector, toS: GpuScalar): ColumnVector = {
+    if (!strS.isValid || !toS.isValid) {
+      GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
+    } else {
+        val toRadix = toS.getValue.asInstanceOf[Int]
+        if (ansiEnabled &&
+          NumberConverter.isConvertOverflowSCvS(strS.getBase, fromCv.getBase, toRadix)) {
+          ConvUtils.overflowInConvError()
+        }
+        NumberConverter.convertSCvS(strS.getBase, fromCv.getBase, toRadix)
+    }
   }
 
-  override def doColumnar(v1: GpuColumnVector, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strCv: GpuColumnVector, fromS: GpuScalar, toCv: GpuColumnVector): ColumnVector = {
+    if (!fromS.isValid) {
+      GpuColumnVector.columnVectorFromNull(toCv.getRowCount.toInt, dataType)
+    } else {
+      val fromRadix = fromS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowCvSCv(strCv.getBase, fromRadix, toCv.getBase)) {
+        ConvUtils.overflowInConvError()
+      }
+      NumberConverter.convertCvSCv(strCv.getBase, fromRadix, toCv.getBase)
+    }
   }
 
-  override def doColumnar(v1: GpuColumnVector, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
-    throw new UnsupportedOperationException()
+  override def doColumnar(
+      strCv: GpuColumnVector, fromCv: GpuColumnVector, toS: GpuScalar): ColumnVector = {
+    if (!toS.isValid) {
+      GpuColumnVector.columnVectorFromNull(fromCv.getRowCount.toInt, dataType)
+    } else {
+      val toRadix = toS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowCvCvS(strCv.getBase, fromCv.getBase, toRadix)) {
+        ConvUtils.overflowInConvError()
+      }
+      NumberConverter.convertCvCvS(strCv.getBase, fromCv.getBase, toRadix)
+    }
   }
 
   override def doColumnar(
     numRows: Int,
-    strScalar: GpuScalar,
-    fromBase: GpuScalar,
-    toBase: GpuScalar
+    strSr: GpuScalar,
+    fromS: GpuScalar,
+    toS: GpuScalar
   ): ColumnVector = {
-    withResource(GpuColumnVector.from(strScalar, numRows, strScalar.dataType)) { strCV =>
-      doColumnar(strCV, fromBase, toBase)
-    }
+    throw new RuntimeException("Logic error: Spark should fold the conv expr into scalar value.")
   }
 
   override def doColumnar(
-    str: GpuColumnVector,
-    fromBase: GpuScalar,
-    toBase: GpuScalar
+    strCv: GpuColumnVector,
+    fromS: GpuScalar,
+    toS: GpuScalar
   ): ColumnVector = {
-    (fromBase.getValue, toBase.getValue) match {
-      case (fromRadix: Int, toRadix: Int) =>
-        withResource(
-          CastStrings.toIntegersWithBase(str.getBase, fromRadix, false, DType.UINT64)
-        ) { intCV =>
-          CastStrings.fromIntegersWithBase(intCV, toRadix)
-        }
-      case _ => throw new UnsupportedOperationException()
+    if (!fromS.isValid || !toS.isValid) {
+      GpuColumnVector.columnVectorFromNull(strCv.getRowCount.toInt, dataType)
+    } else {
+      val fromRadix = fromS.getValue.asInstanceOf[Int]
+      val toRadix = toS.getValue.asInstanceOf[Int]
+      if (ansiEnabled &&
+        NumberConverter.isConvertOverflowCvSS(strCv.getBase, fromRadix, toRadix)) {
+        ConvUtils.overflowInConvError()
+      }
+      NumberConverter.convertCvSS(strCv.getBase, fromRadix, toRadix)
     }
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Rmm, Table, TableWriter}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableFromBatchColumns
+import com.nvidia.spark.rapids.parquet.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers.{any, isA}
 import org.mockito.Mockito.{doAnswer, mock, mockStatic, spy, times, verify, when}
